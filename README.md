@@ -62,3 +62,13 @@ target_link_libraries(your_app PRIVATE iiLocalLLM::iiLocalLLM)
 - `share/iiLocalLLM/README.md`: 이 문서
 
 Qt 자체는 재설치하거나 번들링하지 않는다. 실행 환경에도 Qt 6.8.3 Core가 있어야 한다. 설치 RPATH에 링크 의존 경로를 반영하며, 운영체제별 Qt 배포가 필요한 제품화 작업은 이 placeholder의 범위 밖이다. Qt 사용 조건은 기존 Qt 설치의 라이선스를 따른다.
+
+## License
+
+SPDX-License-Identifier: AGPL-3.0-only
+
+iiLocalLLM의 자체 작성 코드와 문서는 GNU Affero General Public License v3.0 전용으로
+배포한다. 전체 조건은 [LICENSE](LICENSE)를 따른다.
+
+Qt를 포함한 외부 라이브러리와 별도 고지가 있는 서드파티 코드는 각자의 라이선스를
+유지한다. 이 프로젝트의 라이선스 선언은 해당 서드파티 라이선스를 대체하지 않는다.
