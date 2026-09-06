@@ -14,7 +14,7 @@ const QString message = iiLocalLLM::helloWorld(); // Hello world!
 
 ## 빌드, 테스트, 설치
 
-CMake 3.24 이상, C++20 컴파일러, Qt **6.8.3** Core 개발 파일이 필요하다. macOS에서는 기본으로 `$HOME/Qt/6.8.3/macos`를 탐색한다.
+CMake 3.24 이상, C++20 컴파일러, Qt **6.8.3** Core 개발 파일이 필요하다. macOS에서는 기본으로 `/Volumes/Storage/Qt/6.8.3/macos`를 탐색한다.
 
 ```sh
 ./install.sh
@@ -26,7 +26,7 @@ CMake 3.24 이상, C++20 컴파일러, Qt **6.8.3** Core 개발 파일이 필요
 
 ```sh
 INSTALL_PREFIX="$HOME/.local/SDK/iiLocalLLM" \
-QT_PREFIX_PATH="$HOME/Qt/6.8.3/macos" \
+QT_PREFIX_PATH="/Volumes/Storage/Qt/6.8.3/macos" \
 CMAKE_PREFIX_PATH="/additional/prefix" \
 ./install.sh
 ```
@@ -35,14 +35,14 @@ CMAKE_PREFIX_PATH="/additional/prefix" \
 
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
-  -DCMAKE_PREFIX_PATH="$HOME/Qt/6.8.3/macos" \
+  -DCMAKE_PREFIX_PATH="/Volumes/Storage/Qt/6.8.3/macos" \
   -DCMAKE_INSTALL_PREFIX="$HOME/.local/SDK/iiLocalLLM"
 cmake --build build --config Release --parallel
 ctest --test-dir build -C Release --output-on-failure
 cmake --install build --config Release
 cmake -S tests/consumer -B build/consumer/build \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="$HOME/.local/SDK/iiLocalLLM;$HOME/Qt/6.8.3/macos"
+  -DCMAKE_PREFIX_PATH="$HOME/.local/SDK/iiLocalLLM;/Volumes/Storage/Qt/6.8.3/macos"
 cmake --build build/consumer/build --config Release --parallel
 ctest --test-dir build/consumer/build -C Release --output-on-failure
 ```
