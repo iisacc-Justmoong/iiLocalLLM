@@ -8,6 +8,9 @@ fi
 
 source_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 build_dir="$source_dir/build"
+mkdir -p "$build_dir/tmp" "$build_dir/ccache"
+export TMPDIR="$build_dir/tmp"
+export CCACHE_DIR="$build_dir/ccache"
 install_prefix="${INSTALL_PREFIX:-$HOME/.local/SDK/iiLocalLLM}"
 qt_prefix="${QT_PREFIX_PATH:-}"
 if [[ -z "$qt_prefix" && -d "/Volumes/Storage/Qt/6.8.3/macos" ]]; then
@@ -18,11 +21,16 @@ if [[ -n "$qt_prefix" ]]; then
     prefix_path="$qt_prefix${prefix_path:+;$prefix_path}"
 fi
 
-cmake -S "$source_dir" -B "$build_dir" \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DBUILD_TESTING=ON \
-    -DCMAKE_INSTALL_PREFIX="$install_prefix" \
-    -DCMAKE_PREFIX_PATH="$prefix_path"
+cmake_args=(-S "$source_dir" -B "$build_dir"
+    -DCMAKE_BUILD_TYPE=Release
+    -DBUILD_TESTING=ON
+    "-DCMAKE_INSTALL_PREFIX=$install_prefix"
+    "-DCMAKE_PREFIX_PATH=$prefix_path")
+if [[ -n "${IILOCALLLM_WITH_LLAMA:-}" ]]; then
+    cmake_args+=("-DIILOCALLLM_WITH_LLAMA=$IILOCALLLM_WITH_LLAMA")
+fi
+
+cmake "${cmake_args[@]}"
 cmake --build "$build_dir" --config Release --parallel
 ctest --test-dir "$build_dir" -C Release --output-on-failure
 cmake --install "$build_dir" --config Release

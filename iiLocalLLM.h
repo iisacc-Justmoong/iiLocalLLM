@@ -1,17 +1,17 @@
 #pragma once
 
-#include <QtCore/QString>
-#include <QtCore/qglobal.h>
-
-#if defined(IILOCALLLM_BUILDING_LIBRARY)
-#  define IILOCALLLM_EXPORT Q_DECL_EXPORT
-#else
-#  define IILOCALLLM_EXPORT Q_DECL_IMPORT
-#endif
+#include "Types.h"
+#include "Hardware.h"
+#include "ModelManifest.h"
+#include "ModelCatalog.h"
+#include "Runtime.h"
+#include "Service.h"
+#include "LocalIpcServer.h"
+#include "HttpApiServer.h"
 
 namespace iiLocalLLM {
 
-/// Returns the placeholder greeting; no domain functionality is implemented.
+/// Legacy 0.1 API, retained for source and binary compatibility.
 [[nodiscard]] IILOCALLLM_EXPORT QString helloWorld();
 
 } // namespace iiLocalLLM

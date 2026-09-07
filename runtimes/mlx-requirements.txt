@@ -1,0 +1,3 @@
+# Verified optional Apple Silicon runtime; install in a project-local Python environment.
+mlx==0.32.2
+mlx-lm==0.31.3

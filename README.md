@@ -1,74 +1,240 @@
 # iiLocalLLM
 
-C++20 및 Qt 6.8.3 Core를 사용하는 버전 0.1.0 동적 placeholder 라이브러리이다. 실제 도메인 기능은 제공하지 않으며, `iiLocalLLM::helloWorld()`가 정확히 `Hello world!`를 반환하는 최소 SDK이다. 외부 의존성은 기존 Qt Core뿐이다.
+C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.2.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
 
-## 공개 API
+```text
+C++ Local API / Native IPC / localhost HTTP
+                  │
+           iiLocalLLM Service
+     Hardware Detection / Device Policy
+    Model Manager ── ModelCatalog → Models/manifest.json
+    Session Manager / RuntimeManager
+    Prompt Engine / Context Cache Manager
+        FIFO Scheduler / Streaming
+                  │
+        Runtime → RuntimeModel → RuntimeContext
+             ┌────┴─────┐
+     llama.cpp/GGUF   MLX/Python
+```
+
+| 구성 | 동작 |
+| --- | --- |
+| Model Manager | install/remove/list/resolve/verify/load/unload, manifest·URI·파일 무결성 관리, 엔진 수명 조정 |
+| ModelCatalog / RuntimeManager | 엔진과 독립된 디스크 카탈로그 / 모델 형식·장치에 따른 런타임 선택과 메모리 수명 |
+| Hardware / Policy | GPU vendor·VRAM·통합 메모리·RAM·CPU·가속 API 검사, Metal → CUDA → Vulkan → CPU 정책 |
+| Session Manager | 모델별 system/user/assistant 이력, 초기화·종료 |
+| Prompt / Chat Engine | 실제 tokenizer, 출력 토큰 예약, 오래된 완결 턴 제거 |
+| Context / KV Cache Manager | 세션별 runtime context, LRU, 개수·예약 토큰 상한 |
+| Scheduler | 전용 작업 스레드, bounded FIFO, 취소, 종료 시 future 완료 |
+| Streaming | started → delta → finished, Unicode 처리, 청크를 가로지르는 stop |
+| Local API / IPC / HTTP | C++ future/handle API, 사용자 전용 Local Socket의 NDJSON, localhost Chat Completions JSON/SSE |
+| Runtime Abstraction | Runtime / RuntimeModel / RuntimeContext의 세 인터페이스 |
+
+ONNX 등은 위 인터페이스를 구현하여 등록한다. 현재 내장 어댑터는 llama.cpp와 MLX이다. HTTP는 텍스트 Chat Completions 일부 계약을 구현한다. 도구 호출, 멀티모달, 디스크 세션 저장은 제공하지 않는다.
+
+## 빌드
+
+CMake 3.24 이상, C++20 컴파일러, **Qt 6.8.3** Core/Network가 필요하다. 테스트에는 Qt Test와 Python 3도 사용한다. 헤더와 구현을 함께 배치하며 별도 소스 include 디렉터리를 두지 않는다.
+
+기본 빌드는 대형 추론 엔진을 다운로드하지 않는다. llama.cpp 옵션을 켜면 고정 커밋의 아카이브를 SHA-256으로 검증하고 공유 SDK에 정적으로 링크한다. 모든 빌드 산출물은 build/ 아래에 둔다.
+
+```sh
+mkdir -p build/tmp build/ccache
+export TMPDIR="$PWD/build/tmp"
+export CCACHE_DIR="$PWD/build/ccache"
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
+  -DCMAKE_PREFIX_PATH=/Volumes/Storage/Qt/6.8.3/macos \
+  -DIILOCALLLM_WITH_LLAMA=ON
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
+
+기존 llama.cpp 소스는 `IILOCALLLM_LLAMA_SOURCE_DIR`로 지정한다. 검증 커밋은 `5202104b59ada9005db079eea43882a2b7bf5802`이다. 다른 커밋의 C API 호환성은 별도 확인이 필요하다.
+
+새 빌드 구성은 설치된 CUDA Toolkit 및 Vulkan SDK(glslc, SPIRV-Headers 포함)를 탐지하여 해당 llama.cpp 모듈의 기본 빌드 여부를 정한다. Metal은 Apple 플랫폼의 기본 빌드를 따른다. GGML_CUDA/GGML_VULKAN 등의 CMake 값은 배포 패키지의 포함 모듈을 정하며 앱의 실행 장치 선택 API가 아니다. 기존 CMake 캐시 값은 보존한다.
+
+## C++ API
+
+모델 패키지를 먼저 설치한다. `manifest.json`은 다음 최소 필드를 갖는다. 설치 시 전체 파일의 크기와 SHA-256 목록을 생성하며, 이후 로드 전에 다시 검증한다.
+
+```text
+Models/
+└─ qwen3-8b-q4/
+   ├─ manifest.json
+   ├─ model.gguf
+   └─ tokenizer.json
+```
+
+```json
+{
+  "id": "qwen3-8b-q4",
+  "architecture": "qwen3",
+  "format": "gguf",
+  "quantization": "Q4_K_M",
+  "context_length": 32768,
+  "capabilities": ["text-generation", "chat", "tool-calling"]
+}
+```
+
+GGUF의 기본 진입 파일은 `model.gguf`이다. 다른 이름이면 `entry_point`를 지정한다. MLX는 `format: "mlx"`와 기본 `entry_point: "."`를 사용한다. capabilities는 패키지의 선언이며 도구 호출 API를 추가하지 않는다. 카탈로그 API, 스키마, 검증 범위는 [docs/ModelManagement.md](docs/ModelManagement.md)에 있다.
+
+아래는 daemon 또는 임베딩 서비스 호스트의 C++ 예시이다. 여러 앱이 모델을 공유할 때에는 하나의 iiLocalLLMD에 Native IPC/HTTP로 접속한다. 호스트가 지정하는 modelsDirectory는 저장소 위치이며 클라이언트 추론 요청에는 파일 경로가 없다.
 
 ```cpp
 #include <iiLocalLLM.h>
+#include <QCoreApplication>
+#include <iostream>
 
-const QString message = iiLocalLLM::helloWorld(); // Hello world!
+int main(int argc, char** argv) {
+    QCoreApplication app(argc, argv);
+    iiLocalLLM::ServiceOptions options;
+    options.modelsDirectory = "Models";
+    iiLocalLLM::Service service(options);
+    auto hardware = service.hardware();
+    auto model = service.loadModel({"model://qwen3-8b-q4", 2048}).get();
+    std::cout << iiLocalLLM::enumName(model.execution.device.backend).toStdString() << '\n';
+    auto session = service.createSession("model://qwen3-8b-q4", "You are a concise assistant.").get();
+    iiLocalLLM::ChatRequest request;
+    request.sessionId = session;
+    request.prompt = "Explain KV caching.";
+    request.options.maxTokens = 128;
+    auto generation = service.chat(request, [](const iiLocalLLM::StreamEvent& event) {
+        if (event.kind == iiLocalLLM::StreamEventKind::Delta)
+            std::cout << event.text.toStdString() << std::flush;
+    });
+    // 다른 스레드에서도 generation.cancel()로 취소할 수 있다.
+    auto result = generation.result.get();
+    service.closeSession(session).get();
+    service.unloadModel("model://qwen3-8b-q4").get();
+    return result.errorCode == iiLocalLLM::ErrorCode::None ? 0 : 1;
+}
 ```
 
-공개 헤더와 소스는 프로젝트 루트에 함께 둔다. 공개 함수는 플랫폼별 export/import 매크로를 사용한다. CMake 타깃은 `iiLocalLLM::iiLocalLLM`이며 C++20 요구와 Qt Core 의존성을 소비자에게 전달한다.
+제어 메서드의 실패는 future에서 `Error`로 전달한다. chat은 오류·취소도 GenerationResult로 반환하고 terminal 이벤트를 한 번 전달한다. 큐 거절 또는 실행 전 취소에는 started/delta가 없을 수 있다.
 
-## 빌드, 테스트, 설치
+콜백은 작업 스레드에서 실행하며 즉시 큐 거절은 호출 스레드에서 전달한다. Qt UI 갱신은 queued invoke로 넘긴다. 콜백 안에서 서비스 future를 기다리거나 서비스를 파괴하면 안 된다. 콜백은 빨리 반환해야 한다. 서비스 파괴는 진행 중·대기 작업을 취소하고 worker 종료를 기다린다. 파괴와 새 메서드 호출을 동시에 수행하지 않는다.
 
-CMake 3.24 이상, C++20 컴파일러, Qt **6.8.3** Core 개발 파일이 필요하다. macOS에서는 기본으로 `/Volumes/Storage/Qt/6.8.3/macos`를 탐색한다.
+## CLI와 공유 daemon
+
+`iillm`은 Qt Core/Network만 링크하는 Native IPC 클라이언트이다. 추론 엔진을 링크하거나 daemon을 대신해 모델을 실행하지 않는다.
 
 ```sh
-./install.sh
+export IILLM_SOCKET="$PWD/build/llm.sock"
+./build/iiLocalLLMD --models-root "$PWD/build/Models" --socket "$IILLM_SOCKET" --http-port 8080
+# 다른 터미널에서 같은 IILLM_SOCKET으로 접속한다.
+./build/iillm pull qwen3:8b
+./build/iillm models
+./build/iillm run qwen3:8b
+./build/iillm ps
 ```
 
-단독 빌드에서 기본 설치 경로를 적용하며, 상위 CMake 프로젝트에 포함할 때에는 상위 프로젝트의 설치 경로를 유지한다. 스크립트는 `build/`에서 Release 구성·빌드·CTest를 실행하고 `$HOME/.local/SDK/iiLocalLLM`에 설치한다. 이어 설치된 CMake 패키지만 소비하는 별도 프로젝트를 `build/consumer/build/`에 구성하고 빌드·CTest를 실행한다. 두 테스트 모두 C++20 및 Qt 헤더 버전, 실제 Qt 런타임 버전, 반환 문자열을 검증한다.
+`qwen3:8b`는 서비스 registry에서 `model://qwen3-8b-q4`로 해석한다. pull은 서비스가 고정된 공식 GGUF를 다운로드하고 SHA-256 검증 후 설치한다. CLI·GUI·Python·에이전트의 요청은 같은 상주 모델을 재사용한다. 모델이 메모리에 없으면 서비스가 예산과 가용 RAM을 검사하고 유휴 LRU 모델을 내린 뒤 로드한다. 기본 keep_alive는 5분이며 RAM 8 GiB 이하에서는 0이다. `iillm run qwen3:8b --keep-alive 0`으로 요청 직후 해제할 수 있다.
 
-설정은 명령행 인자 대신 환경변수로 지정한다. `CMAKE_PREFIX_PATH`는 세미콜론으로 구분하는 추가 CMake 검색 경로이다.
+[CLI 사용법](docs/CLI.md), [상주·메모리 정책](docs/Residency.md)에 설치 원본, 설정, 실패·취소 계약을 설명한다. 기존 `iilocal-llm-service` 실행 파일도 유지한다.
+
+## IPC 서비스
+
+로컬 패키지를 설치한 뒤 URI만 담은 models.json으로 부팅한다. `--models-root`의 기본값은 작업 디렉터리의 Models이다. 안정적인 서비스 배포에는 절대 저장소 경로를 지정한다.
+
+```json
+{"models":[{"model":"model://qwen3-8b-q4","context_tokens":2048,"options":{"threads":4}}]}
+```
 
 ```sh
-INSTALL_PREFIX="$HOME/.local/SDK/iiLocalLLM" \
-QT_PREFIX_PATH="/Volumes/Storage/Qt/6.8.3/macos" \
-CMAKE_PREFIX_PATH="/additional/prefix" \
-./install.sh
+./build/iilocal-llm-service --models-root "$PWD/build/Models" --install /absolute/path/qwen-package
+./build/iilocal-llm-service --models-root "$PWD/build/Models" \
+  --config models.json --socket "$PWD/build/llm.sock"
 ```
 
-수동 실행도 가능하다. 모든 빌드 산출물은 `build/` 아래에 둔다.
+설정 파일 없이 시작하여 models.install 또는 models.pull로 설치할 수 있다. models.install은 로컬 복사이며 models.pull은 서비스 registry의 검증된 원격 원본을 사용한다. 설치된 모델은 첫 생성 요청에서 자동 로드한다. 저장소마다 서비스 하나가 소유권 잠금을 유지하므로 실행 중인 서비스에는 IPC로 설치한다. 설치 파일은 재시작 후에도 유지하고 로드 상태와 세션은 다시 만든다. 기존 소켓을 자동 삭제하지 않는다. SIGINT/SIGTERM에서 연결과 추론을 정리한다. macOS Unix 소켓의 경로 길이 제한 때문에 짧은 경로를 사용한다. 프로토콜과 클라이언트 예시는 [docs/IPC.md](docs/IPC.md)에 있다.
+
+## localhost HTTP
+
+Native IPC와 HTTP를 같은 서비스에서 동시에 활성화한다. IPC는 macOS/Linux의 Unix Domain Socket과 Windows Named Pipe를 사용한다. HTTP는 127.0.0.1에만 바인딩한다.
 
 ```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
-  -DCMAKE_PREFIX_PATH="/Volumes/Storage/Qt/6.8.3/macos" \
-  -DCMAKE_INSTALL_PREFIX="$HOME/.local/SDK/iiLocalLLM"
-cmake --build build --config Release --parallel
-ctest --test-dir build -C Release --output-on-failure
-cmake --install build --config Release
-cmake -S tests/consumer -B build/consumer/build \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="$HOME/.local/SDK/iiLocalLLM;/Volumes/Storage/Qt/6.8.3/macos"
-cmake --build build/consumer/build --config Release --parallel
-ctest --test-dir build/consumer/build -C Release --output-on-failure
+./build/iilocal-llm-service --models-root "$PWD/build/Models" \
+  --config models.json --socket "$PWD/build/llm.sock" --http-port 8080
+curl http://127.0.0.1:8080/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"model://qwen3-8b-q4","messages":[{"role":"user","content":"Hello"}],"max_tokens":128}'
 ```
 
-## 설치 패키지 사용
+`--http-port 0`은 빈 포트를 자동 선택하고 주소를 출력한다. `--http-port`만 지정하면 HTTP 전용이고, 둘 다 생략하면 사용자별 기본 Native IPC endpoint로 시작한다. GET /health, GET /v1/models, POST /v1/chat/completions를 제공한다. `stream: true`는 SSE delta와 [DONE]을 반환한다.
+
+HTTP는 Service::complete를 통해 기존 채팅 실행 경로와 scheduler를 사용한다. messages의 과거 대화와 최신 user 입력을 임시 세션으로 처리하고 완료·오류·연결 취소 시 세션과 KV를 정리한다. Native IPC에서 로드한 모델을 HTTP가 그대로 사용하며, 장기 IPC 세션의 이력은 유지한다. 지원하는 텍스트 Chat Completions 범위, Python 예제, 오류·자원 제한은 [docs/HTTP.md](docs/HTTP.md)에 있다.
+
+## MLX
+
+MLX는 Apple Silicon용 선택 의존성이다. 별도 Python 환경과 로컬 모델 디렉터리가 필요하다. 검증 버전은 mlx-lm 0.31.3 / mlx 0.32.2이다.
+
+```sh
+python3 -m venv build/mlx-env
+build/mlx-env/bin/python -m pip install -r runtimes/mlx-requirements.txt
+./build/iilocal-llm-service --socket "$PWD/build/llm.sock" \
+  --mlx-python "$PWD/build/mlx-env/bin/python" \
+  --mlx-worker "$PWD/runtimes/mlx_worker.py"
+```
+
+tokenizer/config/safetensors와 MLX manifest를 포함한 패키지를 설치하고 URI로 로드하면 서비스가 MLX를 선택한다. 앱은 runtime을 지정하지 않는다. 런타임은 네트워크 다운로드를 하지 않고 trust_remote_code=False를 적용한다. 가중치는 별도로 준비한다. 모델당 Python 프로세스 하나를 유지하고 세션별 KV 상태를 분리한다. 취소·타임아웃·소비자 오류 시 프로세스를 종료하고 다음 요청에서 모델을 다시 로드한다. 이때 같은 모델의 다른 세션도 물리 KV 캐시가 사라지지만 대화 이력은 유지된다. MLX 기본 장치와 생성 stream은 서비스가 지정한 Metal/CPU로 초기화한다. 임베딩 서비스의 Python/worker 배포 경로는 Service 생성자의 두 번째 MlxRuntimeOptions 인수로 지정한다.
+
+## 실행 정책
+
+앱은 ModelLoadRequest의 model URI/contextTokens/options를 전달한다. ModelManager가 URI를 해석하고 manifest·전체 파일 해시·형식 구조를 검증한 뒤 내부 ModelSpec에 실제 경로와 형식을 전달한다. GGUF는 llama.cpp, MLX 패키지는 MLX가 처리한다. 내장 런타임 등록도 서비스가 처리한다. 모델 형식은 장치 선택과 별개이므로 Apple Silicon에서도 GGUF는 llama.cpp/Metal로 실행한다.
+
+| 하드웨어와 가용 조건 | 선택 |
+| --- | --- |
+| Apple Silicon + 동작하는 Metal | Metal |
+| NVIDIA GPU + 동작하는 CUDA | CUDA |
+| AMD/Intel GPU + 동작하는 Vulkan | Vulkan |
+| 모델 런타임에서 사용할 수 있는 위 GPU 경로가 없음 | CPU |
+
+GPU 가속은 해당 엔진에도 컴파일·지원되어 있어야 한다. 같은 우선순위에서는 확인된 메모리 크기, 장치 id 순으로 정렬한다. 모델 로드 또는 llama.cpp GPU 컨텍스트 사전 할당 실패 시 CPU로 재시도한다. 잘못된 입력·취소는 재시도하지 않는다. runtime/backend/device/gpu_layers를 모델 요청에 넣으면 invalid_argument이다. 실행 결과는 ModelInfo.execution 및 models.loaded로 조회하며 hardware.get 또는 `build/iilocal-llm-service --hardware`로 부팅 시 검사한 정보를 조회한다. 필드 의미와 실패 범위는 [docs/HardwarePolicy.md](docs/HardwarePolicy.md)에 있다.
+
+contextTokens=0 또는 생략 시 manifest.context_length, ServiceOptions.defaultContextTokens(기본 2048), 캐시 토큰 예산 중 최솟값을 사용한다. 명시한 컨텍스트가 manifest 상한을 넘으면 context_overflow이다. 명시적인 unload/remove는 해당 모델의 세션을 모두 닫은 뒤 호출한다. 자동 LRU/만료는 세션의 이력을 보존하면서 KV와 가중치를 해제한다.
+
+기본 상한은 대기 작업 64개, 모델 4개, 세션 128개, 캐시 컨텍스트 4개, 예약 컨텍스트 토큰 합계 16,384개이다. ServiceOptions로 변경한다. 제어와 생성을 한 worker에서 FIFO로 실행한다. 같은 세션의 후속 요청은 앞선 성공 응답이 저장된 뒤 최신 이력을 읽는다. 여러 Service 인스턴스 사이의 GPU 사용량은 별도 관리 대상이다.
+
+ModelResidencyManager가 가중치·KV·런타임 여유분의 바이트 예약과 최신 가용 RAM을 검사한다. 개수/바이트 상한에 도달하면 유휴 LRU 모델을 해제하고, 만료 시에는 새 요청 없이도 worker가 해제한다. 활성 요청은 보호하며 유휴 세션의 이력은 보존한다. 추정치는 프로세스 RSS의 강제 상한이 아니다. 상세 산식과 한계는 [Residency.md](docs/Residency.md)에 있다. 배치 추론은 제공하지 않는다.
+
+실제 prompt 토큰과 maxTokens 합계로 컨텍스트를 검사한다. 초과 시 오래된 user/assistant 쌍을 제거하되 system과 최신 user는 보존한다. 여전히 초과하면 context_overflow이다. 성공한 경우에만 축소한 이력과 assistant를 저장한다. 오류·취소 시 기존 이력을 유지하고 KV를 폐기한다. 이미 보낸 partial text는 결과에 남아도 이력에는 저장하지 않는다. 오류·취소 시 중간 토큰 사용량은 완전하지 않을 수 있다.
+
+llama.cpp의 내장 chat template formatter가 지원하지 않는 템플릿은 오류이다. 템플릿 없는 GGUF에는 options.chat_template을 명시한다(예: chatml). 임의 모델에 ChatML을 자동 적용하지 않는다. MLX는 모델 tokenizer의 chat template을 사용한다. 부분 KV 제거가 불가능한 모델은 캐시를 새로 구성한다.
+
+stop 문자열은 청크 사이 부분 일치를 보관하고 완성되면 출력에서 제외한다. stop으로 잘린 KV는 이력과 달라질 수 있어 폐기한다. 생성 옵션은 maxTokens, temperature, topP, topK, seed, stop이다. 동일 seed가 서로 다른 런타임에서 동일 출력을 보장하지는 않는다.
+
+구조와 확장 계약은 [docs/Architecture.md](docs/Architecture.md)에 있다.
+
+## 설치와 검증
+
+기본 설치 경로는 $HOME/.local/SDK/iiLocalLLM이다. install.sh는 빌드·CTest·설치 후 설치된 패키지를 소비하는 별도 프로젝트도 검증한다. Workspace staging 경로를 지정할 수 있다.
+
+```sh
+IILOCALLLM_WITH_LLAMA=ON INSTALL_PREFIX="$PWD/build/stage" ./install.sh
+```
+
+IILOCALLLM_WITH_LLAMA를 생략하면 기존 CMake 선택을 유지하며 새 구성의 기본값은 OFF이다. INSTALL_PREFIX, QT_PREFIX_PATH, CMAKE_PREFIX_PATH로 경로를 설정한다. Qt와 MLX Python 환경은 패키지에 복사하지 않는다.
 
 ```cmake
-find_package(iiLocalLLM 0.1.0 CONFIG REQUIRED)
+find_package(iiLocalLLM 0.2.0 CONFIG REQUIRED)
 target_link_libraries(your_app PRIVATE iiLocalLLM::iiLocalLLM)
 ```
 
-소비자를 구성할 때 SDK 설치 경로와 Qt 경로를 `CMAKE_PREFIX_PATH`에 추가한다. 기본 설치 구성은 다음과 같다.
+공개 헤더, 공유 라이브러리, CMake package, iiLocalLLMD, iillm, 호환 daemon 이름, MLX worker, 기본 registry, 문서와 외부 라이선스 고지를 설치한다. HTTP에는 고정한 cpp-httplib 단일 헤더를 내부적으로 사용하며 별도 HTTP 런타임 설치나 네트워크 다운로드가 필요 없다. 설치된 daemon은 상대 경로로 worker를 찾는다. 커스텀 datadir에는 --mlx-worker를 지정한다.
 
-- `include/iiLocalLLM.h`: 공개 헤더
-- `lib/`: 버전이 있는 공유 라이브러리; Windows 런타임 DLL은 `bin/`
-- `lib/cmake/iiLocalLLM/`: Config, ConfigVersion 및 Targets 패키지
-- `share/iiLocalLLM/README.md`: 이 문서
+기본 CTest는 레거시 API, 서비스·IPC, 모델 상주·LRU·만료·메모리 거절, HTTP JSON/SSE·취소·제한, 영속 카탈로그·manifest·무결성, CLI의 daemon 통신·loopback pull·실패·취소·재시작, 하드웨어 자동 선택·CPU 재시도, MLX 캐시·장치 정책을 검증하며 인터넷이나 실제 모델이 필요 없다. IPC와 HTTP 테스트는 loopback 소켓을 사용한다. 실제 추론 테스트는 로컬 모델을 명시한 경우에만 등록한다.
 
-Qt 자체는 재설치하거나 번들링하지 않는다. 실행 환경에도 Qt 6.8.3 Core가 있어야 한다. 설치 RPATH에 링크 의존 경로를 반영하며, 운영체제별 Qt 배포가 필요한 제품화 작업은 이 placeholder의 범위 밖이다. Qt 사용 조건은 기존 Qt 설치의 라이선스를 따른다.
+```sh
+cmake -S . -B build -DIILOCALLLM_WITH_LLAMA=ON \
+  -DIILOCALLLM_TEST_GGUF="/absolute/path/test.gguf" \
+  -DIILOCALLLM_TEST_MLX_MODEL="/absolute/path/mlx-model" \
+  -DIILOCALLLM_MLX_PYTHON="$PWD/build/mlx-env/bin/python"
+cmake --build build --parallel
+ctest --test-dir build --output-on-failure
+```
 
-## License
+GGUF smoke는 chatml을 명시하여 경량 테스트 모델도 사용한다. 임시 패키지 설치·검증·URI 로드부터 서비스의 자동 장치 선택, 실제 추론·두 번째 턴 KV 재사용·초기화·취소·재생성·제거까지 검증한다. 독립 daemon 테스트는 원본 패키지 경로를 바꾸고 서비스를 재시작하여 카탈로그의 지속성을 확인한다. 별도 어댑터 적합성 테스트가 실제 CPU 추론도 검증한다. 모델 답변 품질이나 모든 아키텍처 호환성 평가는 아니다. 환경과 결과는 [docs/Verification.md](docs/Verification.md)에 기록한다.
 
-SPDX-License-Identifier: AGPL-3.0-only
+## 라이선스
 
-iiLocalLLM의 자체 작성 코드와 문서는 GNU Affero General Public License v3.0 전용으로
-배포한다. 전체 조건은 [LICENSE](LICENSE)를 따른다.
-
-Qt를 포함한 외부 라이브러리와 별도 고지가 있는 서드파티 코드는 각자의 라이선스를
-유지한다. 이 프로젝트의 라이선스 선언은 해당 서드파티 라이선스를 대체하지 않는다.
+자체 코드·문서는 **AGPL-3.0-only**이며 [LICENSE](LICENSE)를 따른다. 외부 의존성과 가중치는 각각의 라이선스를 유지한다. 도입 검토와 출처는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)에 있다.
