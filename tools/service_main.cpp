@@ -1,5 +1,7 @@
 #include <iiLocalLLM.h>
 #include "IpcEndpoint.h"
+#include "PrivateFile.h"
+#include <agent/Api.h>
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
@@ -10,6 +12,7 @@
 #include <QtCore/QTimer>
 #include <csignal>
 #include <iostream>
+#include <optional>
 
 namespace {
 volatile std::sig_atomic_t interrupted = 0;
@@ -42,6 +45,10 @@ int main(int argc, char** argv)
         {QStringLiteral("context-tokens"), QStringLiteral("Default model context capacity"), QStringLiteral("count"), QStringLiteral("2048")},
         {QStringLiteral("keep-alive"), QStringLiteral("Idle model lifetime, e.g. 5m or 0; default is hardware-dependent"), QStringLiteral("duration")},
         {QStringLiteral("http-port"), QStringLiteral("Enable HTTP on 127.0.0.1; 0 selects an available port"), QStringLiteral("port")},
+        {"agent-workspace", "Enable the agent API for this existing workspace.", "directory"},
+        {"agent-state", "Private agent state directory outside the workspace.", "directory"},
+        {"agent-credentials", "Private JSON object mapping client IDs to distinct random tokens (32..256 URL-safe characters).", "file"},
+        {"agent-allow", "Allow a tool name or wildcard; repeat for more rules. Read-only tools are allowed by default.", "pattern"},
         {QStringLiteral("install"), QStringLiteral("Install a local manifest bundle; repeat for multiple bundles"), QStringLiteral("directory")},
         {QStringLiteral("hardware"), QStringLiteral("Inspect startup hardware as JSON and exit")}});
     parser.process(app);
@@ -61,6 +68,30 @@ int main(int argc, char** argv)
         options.maxModels = int(integer("max-models", 1024));
         options.defaultContextTokens = int(integer("context-tokens", 1048576));
         if (parser.isSet("keep-alive")) options.keepAliveMs = iiLocalLLM::parseKeepAlive(parser.value("keep-alive"));
+        // Validate private credentials before hardware/driver initialization.
+        namespace a = iiLocalLLM::agent;
+        std::optional<a::ApiOptions> agentConfig;
+        if (parser.isSet("agent-workspace") || parser.isSet("agent-state") || parser.isSet("agent-credentials") || parser.isSet("agent-allow")) {
+            if (!parser.isSet("agent-workspace") || !parser.isSet("agent-state") || !parser.isSet("agent-credentials"))
+                throw std::runtime_error("Agent API requires --agent-workspace, --agent-state and --agent-credentials together");
+            a::ApiOptions config; config.workingDirectory = QFileInfo(parser.value("agent-workspace")).canonicalFilePath();
+            const auto credentials = QFileInfo(parser.value("agent-credentials")).canonicalFilePath();
+            const auto prefix = config.workingDirectory.endsWith('/') ? config.workingDirectory : config.workingDirectory + '/';
+            if (config.workingDirectory.isEmpty() || credentials == config.workingDirectory || credentials.startsWith(prefix))
+                throw std::runtime_error("Agent workspace must exist and the credential file must be outside it");
+            QJsonParseError error;
+            const auto document = QJsonDocument::fromJson(iiLocalLLMClient::readPrivateFile(parser.value("agent-credentials")), &error);
+            if (error.error != QJsonParseError::NoError || !document.isObject()) throw std::runtime_error("Agent credentials must be a JSON object");
+            const auto entries = document.object();
+            for (auto it = entries.begin(); it != entries.end(); ++it) {
+                if (!it.value().isString()) throw std::runtime_error("Agent credentials must map client IDs to strings");
+                config.clientTokens.insert(it.key(), it.value().toString());
+            }
+            config.stateDirectory = parser.value("agent-state");
+            // Keep HTTP workers available for cancellation and status while runs wait.
+            config.maxConcurrentRequests = 6; config.maxQueuedRequests = 0;
+            agentConfig = std::move(config);
+        }
         iiLocalLLM::Service service(options, {parser.value(QStringLiteral("mlx-python")), worker});
         if (parser.isSet(QStringLiteral("hardware"))) {
             std::cout << QJsonDocument(iiLocalLLM::hardwareObject(service.hardware())).toJson().constData();
@@ -101,12 +132,20 @@ int main(int argc, char** argv)
                     << QJsonDocument(iiLocalLLM::executionObject(model.execution)).toJson(QJsonDocument::Compact).constData() << std::endl;
             }
         }
-        iiLocalLLM::LocalIpcServer server(service);
+        std::shared_ptr<iiLocalLLM::agent::Api> agent;
+        if (agentConfig) {
+            auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, agentConfig->workingDirectory);
+            QList<a::PermissionRule> rules;
+            for (const auto& name : parser.values("agent-allow")) rules.append({name, a::PermissionBehavior::Allow});
+            auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::DontAsk, rules);
+            agent = std::make_shared<a::Api>(std::make_shared<a::ServiceModel>(service), registry, policy, std::move(*agentConfig));
+        }
+        iiLocalLLM::LocalIpcServer server(service); server.setRpcHandler(agent);
         if (parser.isSet(QStringLiteral("socket")) || !parser.isSet(QStringLiteral("http-port"))) {
             if (!server.listen(parser.isSet("socket") ? parser.value("socket") : iiLocalLLMClient::defaultEndpoint())) throw std::runtime_error(server.errorString().toStdString());
             std::cout << "iiLocalLLM listening: " << server.serverName().toStdString() << std::endl;
         }
-        iiLocalLLM::HttpApiServer http(service);
+        iiLocalLLM::HttpApiServer http(service); http.setRpcHandler(agent);
         if (parser.isSet(QStringLiteral("http-port"))) {
             bool valid = false;
             const auto port = parser.value(QStringLiteral("http-port")).toUInt(&valid);

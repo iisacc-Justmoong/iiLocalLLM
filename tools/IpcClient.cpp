@@ -17,7 +17,7 @@ void checkError(const QJsonObject& response)
 IpcClient::IpcClient(QString endpoint, const volatile std::sig_atomic_t* interrupted)
     : endpoint_(std::move(endpoint)), interrupted_(interrupted) { socket_.setReadBufferSize(4 * 1024 * 1024 + 1); }
 QJsonValue IpcClient::call(const QString& method, const QJsonObject& params,
-                         std::function<void(const QJsonObject&)> event, int timeoutMs)
+                         std::function<void(const QJsonObject&)> event, int timeoutMs, const QString& credential)
 {
     if (interrupted_ && *interrupted_) fail(QStringLiteral("Interrupted"));
     if (socket_.state() != QLocalSocket::ConnectedState) {
@@ -26,7 +26,9 @@ QJsonValue IpcClient::call(const QString& method, const QJsonObject& params,
             + QStringLiteral(". Start iiLocalLLMD with the same --socket (or IILLM_SOCKET). ") + socket_.errorString());
     }
     const auto id = QString::number(++nextId_);
-    const auto bytes = QJsonDocument(QJsonObject{{"id", id}, {"method", method}, {"params", params}}).toJson(QJsonDocument::Compact) + '\n';
+    QJsonObject request{{"id", id}, {"method", method}, {"params", params}};
+    if (!credential.isEmpty()) request["auth"] = credential;
+    const auto bytes = QJsonDocument(request).toJson(QJsonDocument::Compact) + '\n';
     if (bytes.size() > 1024 * 1024) fail(QStringLiteral("Request exceeds the service frame limit"));
     if (socket_.write(bytes) != bytes.size()) fail(socket_.errorString());
     socket_.flush();

@@ -10,7 +10,7 @@ class IpcClient {
 public:
     IpcClient(QString endpoint, const volatile std::sig_atomic_t* interrupted = nullptr);
     QJsonValue call(const QString& method, const QJsonObject& params = {},
-                   std::function<void(const QJsonObject&)> event = {}, int timeoutMs = 300000);
+                   std::function<void(const QJsonObject&)> event = {}, int timeoutMs = 300000, const QString& credential = {});
 private:
     QString endpoint_;
     const volatile std::sig_atomic_t* interrupted_;

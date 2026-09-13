@@ -24,6 +24,8 @@ public:
     Engine& operator=(const Engine&) = delete;
     Session createSession(QString model, QString workspace, QString systemPrompt = {});
     Session session(const QString& id) const;
+    QStringList sessions() const;
+    Session forkSession(const QString& id, const QString& throughMessageId = {});
     RunHandle run(RunRequest, EventCallback = {});
 private:
     class Impl;

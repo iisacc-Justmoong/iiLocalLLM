@@ -6,6 +6,8 @@ C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.
 
 C++ stdio MCP 클라이언트가 외부 도구·리소스·프롬프트를 인식하고 에이전트 엔진에 연결한다. `iillm-mcp` 서버와 C++ 내장 API로 앱 도구 및 로컬 에이전트 실행을 외부 MCP 클라이언트에 제공한다. 프로토콜·정책·자료 보존 및 현재 지원 경계는 [MCP.md](docs/MCP.md) · [MCP 서버·앱 도구 제공](docs/MCPServer.md)에 설명한다.
 
+`agent::Api`를 같은 daemon의 HTTP `/v1/rpc`와 native IPC에 연결하면 앱별 키 인증·영속 세션·기본 transcript 분기·실행 이벤트·취소를 공유한다. 설치된 `iillm --auth-file FILE rpc METHOD [PARAMS_FILE]`로도 호출한다. 설정·메서드·수명·현재 한계는 [AgentAPI.md](docs/AgentAPI.md)에 설명한다.
+
 ```text
 C++ Local API / Native IPC / localhost HTTP
                   │
@@ -34,7 +36,7 @@ C++ Local API / Native IPC / localhost HTTP
 | Local API / IPC / HTTP | C++ future/handle API, 사용자 전용 Local Socket의 NDJSON, localhost Chat Completions JSON/SSE |
 | Runtime Abstraction | Runtime / RuntimeModel / RuntimeContext의 세 인터페이스 |
 
-ONNX 등은 위 인터페이스를 구현하여 등록한다. 현재 내장 어댑터는 llama.cpp와 MLX이다. HTTP는 텍스트 Chat Completions 일부 계약을 구현한다. 도구 호출, 멀티모달, 디스크 세션 저장은 제공하지 않는다.
+ONNX 등은 위 인터페이스를 구현하여 등록한다. 현재 내장 어댑터는 llama.cpp와 MLX이다. HTTP Chat Completions는 텍스트와 함수 도구 호출 일부 계약을 구현한다. 영속 에이전트 세션은 별도 agent API로 제공하며 멀티모달 입력은 미완료이다.
 
 ## 상세 제어 객체
 

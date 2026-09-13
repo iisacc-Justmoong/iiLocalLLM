@@ -32,6 +32,7 @@ QString enumName(ErrorCode code)
     case ErrorCode::InvalidManifest: return QStringLiteral("invalid_manifest");
     case ErrorCode::IntegrityFailure: return QStringLiteral("integrity_failure");
     case ErrorCode::StorageFailure: return QStringLiteral("storage_failure");
+    case ErrorCode::Unauthorized: return QStringLiteral("unauthorized");
     }
     return QStringLiteral("unknown");
 }

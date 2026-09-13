@@ -95,9 +95,12 @@
       "status": "partial",
       "evidence": [
         "agent/SessionStore.cpp",
-        "tests/agent_tests.cpp"
+        "tests/agent_tests.cpp",
+        "agent/Api.cpp",
+        "tests/agent_api_tests.cpp",
+        "tests/agent_api_smoke.py"
       ],
-      "remaining": "Locked JSONL resume and interrupted-result reconciliation implemented; fork/compaction boundaries/rewind remain."
+      "remaining": "Locked JSONL resume, interrupted-result reconciliation and basic transcript fork implemented; artifact cloning, persistent fork ancestry, compaction boundaries and filesystem rewind remain."
     },
     {
       "id": "subagents",
@@ -169,9 +172,18 @@
         "Service.cpp",
         "HttpApiServer.cpp",
         "tests/http_tests.cpp",
-        "tests/chat_smoke.py"
+        "tests/chat_smoke.py",
+        "Rpc.h",
+        "agent/Api.cpp",
+        "LocalIpcServer.cpp",
+        "tools/service_main.cpp",
+        "tools/client_main.cpp",
+        "tests/agent_api_tests.cpp",
+        "tests/agent_transport_tests.cpp",
+        "tests/agent_api_smoke.py",
+        "tests/consumer/api.cpp"
       ],
-      "remaining": "C++ structured conversation, HTTP/SSE function-call roundtrip and MCP agent run/session tools implemented; HTTP agent run/session endpoints and native IPC harness methods remain."
+      "remaining": "Authenticated HTTP/native IPC agent sessions, attached runs, ordered events, cancellation and thin CLI implemented; durable background jobs, idempotent response replay, live permission mediation and actual iisacc product integration remain."
     },
     {
       "id": "discovery",

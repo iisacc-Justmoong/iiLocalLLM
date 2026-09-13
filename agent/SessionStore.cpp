@@ -23,6 +23,27 @@ QString safeId(const QString& id) {
     if (!uuid.match(id).hasMatch()) throw Error(ErrorCode::InvalidArgument, "Invalid agent session ID");
     return id;
 }
+Session publish(const QString& root, qint64 maximum, Session value) {
+    const auto header = line({{"type", "session"}, {"version", 1}, {"id", value.id}, {"model", value.model},
+        {"system_prompt", value.systemPrompt}, {"working_directory", value.workingDirectory}});
+    if (header.size() > 4 * 1024 * 1024 || header.size() > maximum)
+        throw Error(ErrorCode::ResourceLimit, "Agent transcript header exceeds limit");
+    const auto directory = QDir(root).filePath(value.id);
+    storage(QDir().mkdir(directory), "Cannot create agent session directory");
+    struct DirectoryGuard { QString path; bool keep = false; ~DirectoryGuard() { if (!keep) QDir().rmdir(path); } } guard{directory};
+    QSaveFile file(QDir(directory).filePath("transcript.jsonl"));
+    storage(file.open(QIODevice::WriteOnly) && file.write(header) == header.size(), "Cannot create agent transcript");
+    detail::ProtocolState state; QString parent; qint64 size = header.size();
+    for (const auto& message : value.messages) {
+        state.accept(message);
+        const auto bytes = line({{"type", "message"}, {"parent_id", parent}, {"message", toJson(message)}});
+        if (bytes.size() > 4 * 1024 * 1024 || size > maximum - bytes.size())
+            throw Error(ErrorCode::ResourceLimit, "Forked transcript exceeds limit");
+        storage(file.write(bytes) == bytes.size(), "Cannot write forked transcript");
+        size += bytes.size(); parent = message.id;
+    }
+    storage(file.commit(), "Cannot publish agent transcript"); guard.keep = true; return value;
+}
 }
 class SessionLease::Impl {
 public:
@@ -64,13 +85,22 @@ Session SessionStore::create(QString model, QString prompt, QString workingDirec
     if (model.trimmed().isEmpty() || workspace.isEmpty() || !QFileInfo(workspace).isDir())
         throw Error(ErrorCode::InvalidArgument, "Model and existing workspace are required");
     Session value{QUuid::createUuid().toString(QUuid::WithoutBraces), std::move(model), std::move(prompt), workspace, {}};
-    auto directory = QDir(directory_).filePath(value.id);
-    storage(QDir().mkdir(directory), "Cannot create agent session directory");
-    QSaveFile file(QDir(directory).filePath("transcript.jsonl"));
-    const auto bytes = line({{"type", "session"}, {"version", 1}, {"id", value.id}, {"model", value.model},
-        {"system_prompt", value.systemPrompt}, {"working_directory", value.workingDirectory}});
-    storage(file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size() && file.commit(), "Cannot create agent transcript");
-    return value;
+    return publish(directory_, maxTranscriptBytes_, std::move(value));
+}
+Session SessionStore::fork(const QString& id, const QString& throughMessageId) const {
+    const auto source = acquire(id); auto value = source->session();
+    if (!QDir(source->artifactsDirectory()).entryList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden).isEmpty())
+        throw Error(ErrorCode::RuntimeUnavailable, "Forking sessions with artifacts requires artifact cloning, which is not yet supported");
+    if (!throughMessageId.isEmpty()) {
+        qsizetype end = 0;
+        while (end < value.messages.size() && value.messages[end].id != throughMessageId) ++end;
+        if (end == value.messages.size()) throw Error(ErrorCode::NotFound, "Fork message was not found");
+        value.messages = value.messages.first(end + 1);
+    }
+    if (!pendingToolCalls(value.messages).isEmpty())
+        throw Error(ErrorCode::InvalidArgument, "Cannot fork across an unresolved tool call");
+    value.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    return publish(directory_, maxTranscriptBytes_, std::move(value));
 }
 std::unique_ptr<SessionLease> SessionStore::acquire(const QString& id) const {
     const auto directory = QDir(directory_).filePath(safeId(id));

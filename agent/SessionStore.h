@@ -18,6 +18,8 @@ class IILOCALLLM_EXPORT SessionStore {
 public:
     explicit SessionStore(QString directory, qint64 maxTranscriptBytes = 64 * 1024 * 1024);
     Session create(QString model, QString systemPrompt, QString workingDirectory) const;
+    // Copies a complete message boundary into a new, atomically published session.
+    Session fork(const QString& id, const QString& throughMessageId = {}) const;
     // Lease excludes concurrent writers, including other processes, for the whole run.
     std::unique_ptr<SessionLease> acquire(const QString& id) const;
     Session load(const QString& id) const;

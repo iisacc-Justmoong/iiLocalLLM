@@ -1,5 +1,6 @@
 #include "IpcClient.h"
 #include "IpcEndpoint.h"
+#include "PrivateFile.h"
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QFile>
@@ -97,9 +98,10 @@ int main(int argc, char** argv)
         {"temperature", "Sampling temperature in [0, 10]; 0 selects greedy decoding", "value", "0.7"},
         {"system", "System prompt for run", "text"},
         {"options", "JSON file containing generation controls for run", "file"},
+        {"auth-file", "Private file containing the app token for rpc.", "file"},
         {"defaults", "Include literal defaults in parameter exports"},
         {"redact", "Redact sensitive fields in parameter exports"}});
-    parser.addPositionalArgument("command", "run MODEL [PROMPT] | models | pull MODEL | ps | parameters [GROUP [FILE]]");
+    parser.addPositionalArgument("command", "run MODEL [PROMPT] | models | pull MODEL | ps | parameters [GROUP [FILE]] | rpc METHOD [FILE]");
     parser.addPositionalArgument("arguments", "Model reference and optional prompt", "[arguments...]");
     parser.process(app);
     const auto args = parser.positionalArguments();
@@ -120,7 +122,14 @@ int main(int argc, char** argv)
                 throw std::runtime_error("Configuration file must contain a JSON object");
             return document.object();
         };
-        if (command == "parameters") {
+        if (command == "rpc") {
+            if (args.size() < 2 || args.size() > 3 || !parser.isSet("auth-file"))
+                throw std::runtime_error("Usage: iillm --auth-file FILE rpc METHOD [PARAMS_JSON_FILE]");
+            const auto token = QString::fromUtf8(iiLocalLLMClient::readPrivateFile(parser.value("auth-file"), 512)).trimmed();
+            if (token.size() < 32 || token.size() > 256) throw std::runtime_error("Invalid app token length");
+            const auto params = args.size() == 3 ? readObject(args[2]) : QJsonObject{};
+            printJson(client.call(args[1], params, [json](const QJsonObject& event) { if (json) printJson(event); }, 300000, token));
+        } else if (command == "parameters") {
             if (args.size() > 3) throw std::runtime_error("Usage: iillm parameters [GROUP [FILE]]");
             if (args.size() == 1) {
                 const auto groups = client.call("parameters.list");
@@ -213,7 +222,7 @@ int main(int argc, char** argv)
                 }
             } catch (...) { try { close(); } catch (...) {} throw; }
             close();
-        } else throw std::runtime_error("Unknown command. Use run, models, pull or ps.");
+        } else throw std::runtime_error("Unknown command. Use run, models, pull, ps, parameters or rpc.");
         return interrupted ? 130 : 0;
     } catch (const std::exception& error) {
         std::cerr << "iillm: " << error.what() << '\n';

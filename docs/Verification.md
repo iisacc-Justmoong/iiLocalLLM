@@ -1,5 +1,29 @@
 # 구현 검증 기록
 
+## 2026-09-14 인증된 에이전트 HTTP·IPC API
+
+Apple M1 Max / Qt 6.8.3에서 `agent::Api`, 전송 공통 `RpcHandler`, daemon 설정과 얇은 CLI의 인증된 RPC 호출을 구현·검증했다. 동일 앱의 HTTP/native IPC 세션·실행을 공유하는 범위이며, 전체 하네스 및 Society/Dreamscapes 제품 연결 완료를 뜻하지 않는다.
+
+| 검증 | 관측 결과 |
+|---|---|
+| 최종 Release 빌드·전체 CTest | **30/30 통과**, 123.31초. GGUF/MLX CPU·Metal, 기존 CLI/HTTP/MCP 및 새 API 실제 추론 포함 |
+| API·전송 회귀 | 잘못된 키, 앱 간 세션·요청 차단, 고정 workspace, state 소유 잠금, 큐·기한·세션 상한, 페이지·재시작·분기, 이벤트 순서, HTTP에서 IPC 실행 취소, 연결 해제·출력 초과·종료 검사 |
+| 실제 daemon·CLI | 키 파일 소유·권한 검사, 로그/CLI 출력에서 키 미노출, HTTP/native/CLI의 동일 세션, 다른 앱 차단, daemon 재시작 후 원본·분기 기록 복원 통과 |
+| 소스 빌드의 실제 모델 | HTTP SSE → Qwen2.5 0.5B Q4_K_M → Read → 관측값 답변. **41 생성 토큰·이벤트 9개**, 재시작 후 CLI에서 분기 세션 이어가기 통과 |
+| ASan + UBSan | Debug·llama 비활성화 빌드에서 기존 agent/service/http 및 새 API/전송/daemon **6/6 통과**, 9.01초 |
+| 새 설치 패키지 | `build/agent-api-stage`를 이용한 별도 공개 헤더·CMake 소비자 **6/6 통과**, 52.77초. 새 RpcHandler/Api·두 transport setter 링크·실행 포함 |
+| 설치본 실제 모델 | 설치된 daemon·iillm으로 별도 임의 파일 값을 Read하고 답변, 분기·재시작·이어서 실행 통과. **40 생성 토큰·이벤트 9개** |
+| 설치본 로더·CLI 경계 | DYLD/QT/QML 경로 override 제거. `build/agent-api-stage/lib/libiiLocalLLM.0.4.0.dylib` 로딩 확인. 설치된 iillm에는 SDK/llama/ggml 링크 없음 |
+| 제어 카탈로그 | Unauthorized 오류 추가에 맞춰 Types.h provenance 해시만 재생성. **391그룹·9,183필드**와 설정 내용 유지, catalog 검사 통과 |
+
+새 API 및 transport setter가 없는 상태에서 링크 실패, 이전 daemon에서 새 옵션 미인식을 먼저 확인했다. 취소 시험의 초기 충돌은 임시 QJsonObject에 대한 QJsonValueRef를 테스트가 보관한 원인이었고 값 복사로 고쳤다. Python 수락 시험의 HTTP 모듈 이름 가림도 수정했다. 새 코드의 최종 빌드는 경고 없이 통과했다. 최초 전체 재빌드에는 기존 `tests/service_tests.cpp`의 nodiscard 경고 4개가 있었으며 해당 테스트는 이번 변경 범위가 아니다.
+
+설치본 수락 시험은 초기 두 차례 키 파일 거부를 기다리던 10초 제한에서 실패했다. 별도 하드웨어 실행은 **21.377초** 뒤 정상 완료했고, 그동안의 프로세스 샘플에서 `probeLlamaHardware → ggml_metal_library_init → newLibraryWithSource` 대기를 확인했다. 키 파일의 경로·권한·JSON 검사를 Service 초기화 앞에 배치했다. 수락 시험의 정상 시작 대기는 RPC 기한과 분리해 60초로 두고 시작 시간을 기록한다. 수정된 설치본은 잘못된 키 파일을 **0.421초**에 GPU 초기화 없이 거부했으며, 정상 첫 시작 **21.885초**, 재시작 **0.091초**를 기록했다. 실제 Metal 콜드 스타트 지연 자체를 제거한 변경은 아니다.
+
+소스·설치본 모두 관측 문자열을 정확히 포함했지만 모델은 소개 문장·마침표 또는 코드 블록을 덧붙였다. 이 시험은 도구 관측값 전달과 대화 복원을 증명하며 정확한 최종 출력 형식이나 일반 답변 품질을 보장하지 않는다. 분기는 현재 artifact가 없는 transcript에 한정한다. 영속 작업 핸들·응답 재전송·artifact 복제·파일 rewind·분기 계보·실제 제품 연동은 미완료로 유지한다. 기본 사용자 SDK 위치나 이미 실행 중인 사용자 daemon을 이번 설치 시험 대상으로 바꾸지 않았다.
+
+재현 경로는 `tests/agent_api_tests.cpp`, `tests/agent_transport_tests.cpp`, `tests/agent_api_smoke.py`, `tests/consumer/api.cpp`이다. 로컬 증거는 `build/agent-api-release-ctest-final.log`, `build/agent-api-sanitizer-tests-final.log`, `build/agent-api-consumer-ctest.log`, `build/agent-api-installed-result.json`, `build/agent-api-installed-loader.log`, `build/agent-api-hardware-startup.sample.txt`, `build/agent-api-verification.json`에 보관한다. 최초 실패 로그도 보존한다. 사용 계약은 [AgentAPI.md](AgentAPI.md)에 있다.
+
 ## 2026-09-14 C++ MCP 서버·앱 브리지·로컬 에이전트 제공
 
 Apple M1 Max / Qt 6.8.3에서 0.4.0의 `mcp::ServerSession`, POSIX `serveStdio`, `agent::mcpServerOptions`와 `iillm-mcp`를 검증했다. 외부 MCP 클라이언트가 앱 도구와 연결별 로컬 에이전트를 실행하는 범위다. 전체 하네스 및 실제 Society/Dreamscapes 연결 완료를 뜻하지 않는다.

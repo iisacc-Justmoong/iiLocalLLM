@@ -182,6 +182,12 @@ Session Engine::createSession(QString model, QString workspace, QString systemPr
     return d->store.create(std::move(model), std::move(systemPrompt), std::move(workspace));
 }
 Session Engine::session(const QString& id) const { return d->store.load(id); }
+QStringList Engine::sessions() const { return d->store.list(); }
+Session Engine::forkSession(const QString& id, const QString& throughMessageId) {
+    std::lock_guard lock(d->mutex);
+    if (d->busySessions.contains(id)) throw Error(ErrorCode::ModelInUse, "Cannot fork a session with an accepted run");
+    return d->store.fork(id, throughMessageId);
+}
 RunHandle Engine::run(RunRequest request, EventCallback callback) {
     auto promise = std::make_shared<std::promise<RunResult>>();
     RunHandle handle{uuid(), {}, promise->get_future().share()};

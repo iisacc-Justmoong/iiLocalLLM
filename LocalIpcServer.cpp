@@ -103,6 +103,7 @@ public:
     QString listenError;
     QTimer timer;
     std::vector<std::shared_ptr<Client>> clients;
+    std::shared_ptr<RpcHandler> rpcHandler;
 
     void close()
     {
@@ -182,6 +183,9 @@ public:
             auto client = weak.lock();
             if (!client) return true;
             if (f->wait_for(std::chrono::seconds(0)) != std::future_status::ready) return false;
+            // A ready extension future fences all callbacks. Drain any events
+            // arriving since poll() so the final reply cannot overtake them.
+            if (!drain(client)) return true;
             if (!operationId.isEmpty()) client->generations.remove(operationId);
             try {
                 if constexpr (std::is_void_v<decltype(f->get())>) { f->get(); reply(client, id, QJsonObject{}); }
@@ -211,29 +215,37 @@ public:
             });
         }
     }
+    bool drain(const std::shared_ptr<Client>& c)
+    {
+        std::deque<QJsonObject> events;
+        bool failed;
+        {
+            std::lock_guard lock(c->inbox->mutex);
+            failed = c->inbox->overflow || c->inbox->closed;
+            events.swap(c->inbox->events); c->inbox->bytes = 0;
+        }
+        if (failed) {
+            c->socket->abort();
+            for (const auto& token : c->generations) token.cancel();
+            return false;
+        }
+        for (const auto& e : events) {
+            send(c, e);
+            if (e.value("event") == "done") {
+                c->ids.remove(e.value("id").toString());
+                c->generations.remove(e.value("request_id").toString());
+            }
+        }
+        return c->socket->state() == QLocalSocket::ConnectedState;
+    }
     void poll()
     {
         for (auto it = clients.begin(); it != clients.end();) {
             auto c = *it;
-            bool overflow;
-            std::deque<QJsonObject> events;
-            {
-                std::lock_guard lock(c->inbox->mutex);
-                overflow = c->inbox->overflow;
-                events.swap(c->inbox->events);
-                c->inbox->bytes = 0;
-            }
-            if (overflow || c->socket->state() != QLocalSocket::ConnectedState) {
+            if (c->socket->state() != QLocalSocket::ConnectedState || !drain(c)) {
                 disconnect(c);
                 it = clients.erase(it);
                 continue;
-            }
-            for (const auto& e : events) {
-                send(c, e);
-                if (e.value(QStringLiteral("event")) == QStringLiteral("done")) {
-                    c->ids.remove(e.value(QStringLiteral("id")).toString());
-                    c->generations.remove(e.value(QStringLiteral("request_id")).toString());
-                }
             }
             std::erase_if(c->pending, [](auto& ready) { return ready(); });
             ++it;
@@ -266,12 +278,13 @@ public:
                     throw Error(ErrorCode::QueueFull, QStringLiteral("Connection request limit reached"));
                 c->ids.insert(id);
                 reserved = true;
-                dispatch(c, id, method, object(request, QStringLiteral("params")));
+                dispatch(c, id, method, object(request, QStringLiteral("params")), string(request, "auth", false));
             } catch (const Error& e) { error(c, id, e, reserved); }
+            catch (const std::exception& e) { error(c, id, Error(ErrorCode::RuntimeFailure, QString::fromUtf8(e.what())), reserved); }
         }
         if (c->input.size() > options.maxFrameBytes) c->socket->abort();
     }
-    void dispatch(const std::shared_ptr<Client>& c, const QString& id, const QString& method, const QJsonObject& p)
+    void dispatch(const std::shared_ptr<Client>& c, const QString& id, const QString& method, const QJsonObject& p, const QString& auth)
     {
         const auto noValue = [] { return QJsonObject{}; };
         if (method == QStringLiteral("hardware.get")) {
@@ -403,6 +416,24 @@ public:
             if (found == c->generations.cend()) throw Error(ErrorCode::NotFound, QStringLiteral("Request not owned by this connection"));
             found->cancel();
             reply(c, id, QJsonObject{{QStringLiteral("cancel_requested"), true}});
+        } else if (rpcHandler) {
+            const auto handle = rpcHandler->dispatch(method, p, auth,
+                [weak = std::weak_ptr<Inbox>(c->inbox), id, limit = options.maxBufferedOutputBytes](const QJsonObject& value) {
+                    auto inbox = weak.lock();
+                    if (!inbox) throw Error(ErrorCode::Cancelled, "IPC connection closed");
+                    QJsonObject event{{"id", id}, {"event", "rpc"}, {"data", value}};
+                    const auto size = line(event).size(); std::lock_guard lock(inbox->mutex);
+                    if (inbox->closed || inbox->overflow || size > limit - inbox->bytes) {
+                        inbox->overflow = true; throw Error(ErrorCode::ConsumerFailure, "IPC output buffer limit reached");
+                    }
+                    inbox->bytes += size; inbox->events.push_back(std::move(event));
+                });
+            if (!handle.result.valid() || handle.requestId.isEmpty() || handle.requestId.size() > 128) {
+                handle.cancel(); throw Error(ErrorCode::ProtocolError, "Invalid RPC handler response");
+            }
+            c->generations.insert(handle.requestId, handle.cancellation);
+            send(c, {{"id", id}, {"event", "accepted"}, {"request_id", handle.requestId}});
+            watch(c, id, handle.result, [](const QJsonValue& result) { return result; }, handle.requestId);
         } else throw Error(ErrorCode::NotFound, QStringLiteral("Unknown method"));
     }
 };
@@ -410,6 +441,10 @@ LocalIpcServer::LocalIpcServer(Service& service, IpcOptions options, QObject* pa
     : QObject(parent), d(std::make_unique<Impl>(service, options, this)) {}
 LocalIpcServer::~LocalIpcServer() = default;
 bool LocalIpcServer::listen(const QString& name) { return d->listen(name); }
+void LocalIpcServer::setRpcHandler(std::shared_ptr<RpcHandler> handler) {
+    if (d->server.isListening()) throw Error(ErrorCode::ModelInUse, "Close IPC before replacing its RPC handler");
+    d->rpcHandler = std::move(handler);
+}
 void LocalIpcServer::close() { d->close(); }
 QString LocalIpcServer::serverName() const { return d->server.fullServerName(); }
 QString LocalIpcServer::errorString() const { return d->listenError.isEmpty() ? d->server.errorString() : d->listenError; }

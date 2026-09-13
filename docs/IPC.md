@@ -2,6 +2,8 @@
 
 전송은 QLocalSocket(Unix domain socket / Windows named pipe)이고 UTF-8 JSON 객체 + LF가 한 프레임이다. HTTP/SSE/JSON-RPC 2.0과 별개의 로컬 프로토콜이다.
 
+`setRpcHandler`로 확장 메서드를 연결할 수 있다. daemon의 인증된 `agent.*` 메서드는 최상위 `auth` 키와 accepted/rpc 이벤트를 사용한다. 같은 앱의 HTTP 세션·취소와 공유하는 계약은 [AgentAPI.md](AgentAPI.md)에 있다. 기존 메서드의 인증·응답 계약은 유지된다.
+
 동일 Service에 localhost HTTP도 함께 연결할 수 있다. `--socket <endpoint> --http-port <port>`로 두 계층을 시작하며 모델·scheduler·자원 상한을 공유한다. Native IPC는 장기 세션과 모델 관리를, [HTTP](HTTP.md)는 외부 프로그램용 텍스트 Chat Completions JSON/SSE를 제공한다.
 
 요청은 `{"id":"client-id","method":"...","params":{...}}`이다. id는 1~128자 문자열이며 연결 내 미완료 요청 사이 중복은 거부한다. 일반 응답은 `{"id":"client-id","result":...}` 또는 `{"id":"client-id","error":{"code":"...","message":"..."}}`이다.

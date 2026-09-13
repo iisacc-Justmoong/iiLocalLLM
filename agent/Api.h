@@ -1,0 +1,36 @@
+#pragma once
+#include "Engine.h"
+#include "../Rpc.h"
+#include <QtCore/QMap>
+
+namespace iiLocalLLM::agent {
+struct ApiOptions {
+    QString workingDirectory;
+    QString stateDirectory; // Private directory disjoint from the tool workspace.
+    QMap<QString, QString> clientTokens; // Stable app/client ID -> secret (at least 32 bytes).
+    EngineOptions engine; // sessionsDirectory is assigned per authenticated client.
+    int maxConcurrentRequests = 8;
+    int maxQueuedRequests = 32;
+    int maxSessionsPerClient = 1024;
+    int maxTurns = 32;
+    int maxResultBytes = 4 * 1024 * 1024;
+    int requestTimeoutMs = 300000;
+};
+// One authenticated service shared by HTTP and native IPC. App identities own
+// separate persistent Engine stores. Model, registry and policy are host-owned.
+// Never close/destroy from an event callback; handlers must cooperate with cancel.
+class IILOCALLLM_EXPORT Api final : public RpcHandler {
+public:
+    Api(std::shared_ptr<Model>, std::shared_ptr<ToolRegistry>,
+        std::shared_ptr<const PermissionPolicy>, ApiOptions);
+    ~Api() override;
+    Api(const Api&) = delete;
+    Api& operator=(const Api&) = delete;
+    RpcHandle dispatch(QString method, QJsonObject parameters, QString credential,
+        RpcEventCallback = {}) override;
+    void close();
+private:
+    class Impl;
+    std::shared_ptr<Impl> d;
+};
+}

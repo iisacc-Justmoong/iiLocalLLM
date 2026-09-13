@@ -22,7 +22,7 @@ namespace iiLocalLLM {
 enum class ErrorCode { None, InvalidArgument, NotFound, AlreadyExists, ModelInUse,
     QueueFull, Cancelled, ContextOverflow, ResourceLimit, RuntimeUnavailable,
     RuntimeFailure, Timeout, ConsumerFailure, ShuttingDown, ProtocolError,
-    InvalidManifest, IntegrityFailure, StorageFailure };
+    InvalidManifest, IntegrityFailure, StorageFailure, Unauthorized };
 enum class Role { System, User, Assistant };
 enum class FinishReason { Stop, Length, Cancelled, Error };
 enum class StreamEventKind { Started, Delta, Finished };

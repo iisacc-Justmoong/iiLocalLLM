@@ -1,5 +1,6 @@
 #pragma once
 #include "Service.h"
+#include "Rpc.h"
 #include <QtCore/QObject>
 
 namespace iiLocalLLM {
@@ -17,6 +18,7 @@ public:
     explicit LocalIpcServer(Service& service, IpcOptions options = {}, QObject* parent = nullptr);
     ~LocalIpcServer() override;
     bool listen(const QString& name);
+    void setRpcHandler(std::shared_ptr<RpcHandler>); // Only while closed; handles extension methods.
     void close();
     QString serverName() const;
     QString errorString() const;

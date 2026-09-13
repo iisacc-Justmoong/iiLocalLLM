@@ -17,6 +17,7 @@ using namespace std::chrono_literals;
 int statusFor(ErrorCode code)
 {
     switch (code) {
+    case ErrorCode::Unauthorized: return 401;
     case ErrorCode::InvalidArgument: case ErrorCode::InvalidManifest: case ErrorCode::ContextOverflow: return 400;
     case ErrorCode::NotFound: return 404;
     case ErrorCode::AlreadyExists: case ErrorCode::ModelInUse: return 409;
@@ -39,7 +40,10 @@ void respond(httplib::Response& response, const QJsonObject& value, int status =
     response.set_content(json(value).toStdString(), "application/json; charset=utf-8");
 }
 void fail(httplib::Response& response, const Error& error)
-{ respond(response, errorObject(error.code(), QString::fromUtf8(error.what())), statusFor(error.code())); }
+{
+    if (error.code() == ErrorCode::Unauthorized) response.set_header("WWW-Authenticate", "Bearer realm=\"iiLocalLLM\"");
+    respond(response, errorObject(error.code(), QString::fromUtf8(error.what())), statusFor(error.code()));
+}
 void require(bool condition, const QString& message)
 { if (!condition) throw Error(ErrorCode::InvalidArgument, message); }
 void fields(const QJsonObject& object, const QSet<QString>& allowed)
@@ -153,6 +157,13 @@ struct StreamState {
     GenerationResult result;
     GenerationHandle generation; // Assigned/read only by the HTTP handler, never by the service callback.
 };
+struct RpcStreamState {
+    std::mutex mutex;
+    std::deque<QByteArray> frames;
+    qsizetype buffered = 0;
+    bool overflow = false, abandoned = false;
+    RpcHandle operation; // Only the HTTP handler/provider accesses this field.
+};
 }
 class HttpApiServer::Impl {
 public:
@@ -202,6 +213,9 @@ public:
         server.Post("/v1/chat/completions", [this](const auto& request, auto& response) {
             guarded(response, [&] { complete(request, response); });
         });
+        server.Post("/v1/rpc", [this](const auto& request, auto& response) {
+            guarded(response, [&] { rpc(request, response); });
+        });
     }
     Service& service;
     HttpOptions options;
@@ -212,6 +226,7 @@ public:
     QString lastError;
     std::mutex activeMutex;
     std::vector<CancellationToken> active;
+    std::shared_ptr<RpcHandler> rpcHandler;
 
     template<class F> void guarded(httplib::Response& response, F function)
     {
@@ -226,10 +241,96 @@ public:
         if (disconnected()) throw Error(ErrorCode::Cancelled, QStringLiteral("HTTP client disconnected"));
         if (Clock::now() >= deadline) throw Error(ErrorCode::Timeout, QStringLiteral("HTTP request deadline exceeded"));
     }
-    template<class T> void await(std::future<T>& future, const httplib::Request& request, Clock::time_point deadline)
+    template<class Future> void await(Future& future, const httplib::Request& request, Clock::time_point deadline)
     {
         while (future.wait_for(50ms) != std::future_status::ready) check(request.is_connection_closed, deadline);
         check(request.is_connection_closed, deadline);
+    }
+    void rpc(const httplib::Request& request, httplib::Response& response)
+    {
+        if (!rpcHandler) throw Error(ErrorCode::NotFound, "RPC API is not configured");
+        const auto type = QString::fromStdString(request.get_header_value("Content-Type")).section(';', 0, 0).trimmed();
+        if (type.compare("application/json", Qt::CaseInsensitive) != 0) {
+            respond(response, errorObject(ErrorCode::InvalidArgument, "Content-Type must be application/json"), 415); return;
+        }
+        QJsonParseError parseError;
+        const auto document = QJsonDocument::fromJson(QByteArray::fromStdString(request.body), &parseError);
+        require(parseError.error == QJsonParseError::NoError && document.isObject(), "Expected a JSON object");
+        const auto body = document.object(); fields(body, {"id", "method", "params", "stream"});
+        require(body["id"].isString() && !body["id"].toString().trimmed().isEmpty() && body["id"].toString().size() <= 128, "Invalid RPC id");
+        require(body["method"].isString() && !body["method"].toString().trimmed().isEmpty() && body["method"].toString().size() <= 128, "Invalid RPC method");
+        require(!body.contains("params") || body["params"].isObject(), "RPC params must be an object");
+        const auto auth = request.get_header_value("Authorization");
+        if (request.get_header_value_count("Authorization") != 1 || !auth.starts_with("Bearer ") || auth.size() > 263)
+            throw Error(ErrorCode::Unauthorized, "Expected one Bearer credential");
+        const bool streaming = boolean(body, "stream"); const auto id = body["id"].toString();
+        const auto deadline = Clock::now() + std::chrono::milliseconds(options.requestTimeoutMs);
+        check(request.is_connection_closed, deadline);
+        auto state = std::make_shared<RpcStreamState>(); const auto limit = options.maxBufferedOutputBytes;
+        RpcEventCallback callback;
+        if (streaming) callback = [state, id, limit](const QJsonObject& event) {
+            auto data = frame({{"id", id}, {"event", "rpc"}, {"data", event}});
+            std::lock_guard lock(state->mutex);
+            if (state->abandoned) throw Error(ErrorCode::Cancelled, "RPC connection closed");
+            if (state->overflow || data.size() > limit - state->buffered) {
+                state->overflow = true; throw Error(ErrorCode::ResourceLimit, "HTTP RPC output limit exceeded");
+            }
+            state->buffered += data.size(); state->frames.push_back(std::move(data));
+        };
+        state->operation = rpcHandler->dispatch(body["method"].toString(), body["params"].toObject(), QString::fromStdString(auth.substr(7)), std::move(callback));
+        auto guard = std::shared_ptr<void>(nullptr, [this, state](void*) {
+            state->operation.cancel();
+            { std::lock_guard lock(state->mutex); state->abandoned = true; state->frames.clear(); state->buffered = 0; }
+            std::lock_guard lock(activeMutex); std::erase_if(active, [](const auto& token) { return token.isCancelled(); });
+        });
+        require(state->operation.result.valid() && !state->operation.requestId.isEmpty() && state->operation.requestId.size() <= 128, "Invalid RPC handler response");
+        { std::lock_guard lock(activeMutex); active.push_back(state->operation.cancellation); }
+        const QJsonObject envelope{{"id", id}, {"request_id", state->operation.requestId}};
+        auto finish = [envelope, limit](const std::shared_future<QJsonValue>& future) {
+            auto result = envelope; result["result"] = future.get();
+            if (json(result).size() > limit) throw Error(ErrorCode::ResourceLimit, "HTTP RPC result limit exceeded");
+            return result;
+        };
+        if (!streaming) {
+            try { await(state->operation.result, request, deadline); respond(response, finish(state->operation.result)); }
+            catch (const Error& error) { auto result = errorObject(error.code(), QString::fromUtf8(error.what()));
+                for (auto it = envelope.begin(); it != envelope.end(); ++it) result[it.key()] = it.value();
+                respond(response, result, statusFor(error.code())); }
+            return;
+        }
+        auto accepted = envelope; accepted["event"] = "accepted";
+        { std::lock_guard lock(state->mutex); auto data = frame(accepted);
+            state->buffered += data.size(); state->frames.push_front(std::move(data));
+            state->overflow |= state->buffered > limit; }
+        response.set_header("X-Accel-Buffering", "no");
+        response.set_chunked_content_provider("text/event-stream; charset=utf-8",
+            [this, state, guard, finish, envelope, deadline, disconnected = request.is_connection_closed](size_t, httplib::DataSink& sink) {
+                auto failed = [&](ErrorCode code, const QString& message) {
+                    state->operation.cancel();
+                    if (code == ErrorCode::Cancelled || code == ErrorCode::ShuttingDown) return false;
+                    auto result = envelope; result["event"] = "done"; result["error"] = errorObject(code, message)["error"];
+                    const auto data = frame(result) + QByteArrayLiteral("data: [DONE]\n\n");
+                    if (!sink.write(data.constData(), size_t(data.size()))) return false; sink.done(); return true;
+                };
+                try {
+                    check(disconnected, deadline);
+                    // Read readiness before draining: the future fences callbacks.
+                    const bool ready = state->operation.result.wait_for(10ms) == std::future_status::ready;
+                    std::deque<QByteArray> pending;
+                    { std::lock_guard lock(state->mutex);
+                        if (state->overflow) throw Error(ErrorCode::ResourceLimit, "HTTP RPC output limit exceeded");
+                        pending.swap(state->frames); state->buffered = 0; }
+                    for (const auto& data : pending) if (!sink.write(data.constData(), size_t(data.size()))) return false;
+                    if (ready) {
+                        auto result = finish(state->operation.result); result["event"] = "done";
+                        const auto data = frame(result) + QByteArrayLiteral("data: [DONE]\n\n");
+                        if (!sink.write(data.constData(), size_t(data.size()))) return false; sink.done();
+                    }
+                    return true;
+                } catch (const Error& error) { return failed(error.code(), QString::fromUtf8(error.what())); }
+                catch (const std::exception&) { return failed(ErrorCode::RuntimeFailure, "RPC handler failed"); }
+                catch (...) { return failed(ErrorCode::RuntimeFailure, "Unknown RPC handler failure"); }
+            }, [guard](bool) {});
     }
     void complete(const httplib::Request& request, httplib::Response& response)
     {
@@ -381,6 +482,10 @@ public:
 HttpApiServer::HttpApiServer(Service& service, HttpOptions options) : d(std::make_unique<Impl>(service, options)) {}
 HttpApiServer::~HttpApiServer() { d->close(); }
 bool HttpApiServer::listen(quint16 port) { return d->listen(port); }
+void HttpApiServer::setRpcHandler(std::shared_ptr<RpcHandler> handler) {
+    if (d->thread.joinable()) throw Error(ErrorCode::ModelInUse, "Close HTTP before replacing its RPC handler");
+    d->rpcHandler = std::move(handler);
+}
 void HttpApiServer::close() { d->close(); }
 quint16 HttpApiServer::port() const { return d->boundPort; }
 QString HttpApiServer::errorString() const { return d->lastError; }

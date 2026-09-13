@@ -1,6 +1,6 @@
 # C++ 에이전트 실행 계층
 
-전체 목표와 미완료 영역은 [HarnessParity.md](HarnessParity.md) 및 `catalog/harness-parity.json`에서 추적한다. 이 문서는 현재 추가한 네이티브 실행 계층의 실제 계약을 설명한다. 기존 daemon의 HTTP에는 모델의 함수 도구 호출을 연결했다. C++ stdio MCP 클라이언트와 도구 어댑터는 [MCP.md](MCP.md), 외부에서 앱 도구와 로컬 에이전트를 호출하는 서버는 [MCPServer.md](MCPServer.md)에 설명한다. 에이전트 실행/세션 관리 IPC·HTTP 메서드와 MCP 전체 호환은 아직 미완료이다.
+전체 목표와 미완료 영역은 [HarnessParity.md](HarnessParity.md) 및 `catalog/harness-parity.json`에서 추적한다. 이 문서는 현재 추가한 네이티브 실행 계층의 실제 계약을 설명한다. 기존 daemon의 HTTP에는 모델의 함수 도구 호출을 연결했다. C++ stdio MCP 클라이언트와 도구 어댑터는 [MCP.md](MCP.md), 외부에서 앱 도구와 로컬 에이전트를 호출하는 서버는 [MCPServer.md](MCPServer.md)에 설명한다. 인증된 에이전트 실행·세션 관리 IPC·HTTP/SSE는 [AgentAPI.md](AgentAPI.md)에 설명한다. 전체 MCP/하네스 호환 및 실제 앱 연결은 아직 미완료이다.
 
 ## 계층
 
@@ -29,6 +29,8 @@ Tool은 정의, 실행 함수, 선택적 도메인 검증, 입력별 동시 실�
 SessionStore는 `<sessions>/<uuid>/transcript.jsonl`을 사용한다. 첫 줄은 버전·모델·작업 디렉터리를 담고, 이후 메시지는 parent_id로 연결한다. 실행 동안 QLockFile을 유지해 다른 프로세스의 동시 기록도 막는다. 마지막 불완전 레코드는 버리고, 중간 JSON 오류나 연결 불일치는 손상으로 처리한다. 프로세스 중단 복원을 지원하지만 fsync 기반 전원 장애 내구성을 보장하는 것은 아니다.
 
 도구 요청은 실제 실행 전에 기록한다. 재개 시 결과가 기록되지 않은 요청은 `결과 미확인` 오류 결과로 닫으며 자동 재실행하지 않는다. 취소·실패 뒤에도 가능한 경우 남은 도구 요청에 대응 결과를 기록한다. 동일 세션에는 동시에 하나의 실행만 수락한다.
+
+`SessionStore::fork`/`Engine::forkSession`은 실행 중이 아닌 transcript를 지정 메시지까지 별도 UUID로 게시한다. 결과가 빠진 도구 호출 경계와 artifact가 있는 세션은 거부한다. artifact 복제·분기 계보·파일 rewind는 아직 없다. 생성 헤더와 복사 기록의 용량도 게시 전에 검사한다.
 
 Engine은 제한된 QThreadPool과 수락 대기열을 사용한다. 도구는 입력별 동시 실행 가능 여부에 따라 묶으며 기본 최대 10개이다. 동시 실행 불가 도구는 앞선 묶음의 완료 후 실행한다. 입력을 바꿀 수 있는 훅이 있으면 현재 스케줄러는 도구 실행을 직렬화한다. 이벤트 콜백은 실행별로 직렬화하지만 서로 다른 실행 간에는 동시에 호출될 수 있다.
 

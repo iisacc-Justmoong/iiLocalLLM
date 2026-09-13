@@ -1,5 +1,7 @@
 # Native IPC와 localhost HTTP
 
+이 문서는 모델 Chat Completions 계약이다. 인증된 영속 에이전트 실행·세션 관리용 `POST /v1/rpc`는 [AgentAPI.md](AgentAPI.md)에 설명한다. 두 API는 같은 Service의 추론 스케줄러를 사용한다.
+
 LocalIpcServer와 HttpApiServer는 같은 Service를 참조한다. 모델 카탈로그·로드 상태·하드웨어 선택·세션 제한·컨텍스트 예산·FIFO는 서비스에 하나만 존재한다. Native IPC는 macOS/Linux에서 Unix Domain Socket, Windows에서 Named Pipe를 사용한다. HTTP는 127.0.0.1의 TCP 포트에서 외부 프로그램·Python·외부 CLI에 텍스트 및 함수 도구 호출 Chat Completions를 제공한다.
 
 ```text

@@ -1,5 +1,6 @@
 #pragma once
 #include "Service.h"
+#include "Rpc.h"
 
 namespace iiLocalLLM {
 struct HttpOptions {
@@ -20,6 +21,7 @@ public:
     HttpApiServer(const HttpApiServer&) = delete;
     HttpApiServer& operator=(const HttpApiServer&) = delete;
     bool listen(quint16 port = 0); // 0 asks the OS for an available port.
+    void setRpcHandler(std::shared_ptr<RpcHandler>); // Only while closed; enables POST /v1/rpc.
     void close();
     quint16 port() const;
     QString errorString() const;
