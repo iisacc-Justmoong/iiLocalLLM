@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 project(iiLocalLLMConsumer LANGUAGES CXX)
 
-find_package(iiLocalLLM 0.4.0 CONFIG REQUIRED)
+find_package(iiLocalLLM 0.5.0 CONFIG REQUIRED)
 add_executable(iiLocalLLMConsumer ../hello_world.cpp)
 target_link_libraries(iiLocalLLMConsumer PRIVATE iiLocalLLM::iiLocalLLM)
 set_target_properties(iiLocalLLMConsumer PROPERTIES CXX_EXTENSIONS OFF)

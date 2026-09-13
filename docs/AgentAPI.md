@@ -36,12 +36,13 @@ iiLocalLLMD --models-root Models --context-tokens 4096 \
 
 | 메서드 | params | 결과 |
 |---|---|---|
-| `agent.info` | `{}` | protocol, client_id, 지원 methods, max_turns, working_directory |
+| `agent.info` | `{}` | protocol, client_id, 지원 methods, max_turns, working_directory, project_context_enabled |
 | `agent.sessions.create` | 필수 `model`, 선택 `system` | 새 session_id와 세션 메타데이터 |
 | `agent.sessions.list` | 선택 `cursor`, `limit`(기본 32, 1~100) | session_id 목록, 다음 페이지가 있을 때 next_cursor |
 | `agent.sessions.get` | 필수 `session_id`, 선택 `offset`(기본 0), `limit`(기본 32, 0~100) | 세션 메타데이터, 전체 message_count, 요청 범위 messages, 필요 시 next_offset |
 | `agent.sessions.fork` | 필수 `session_id`, 선택 `through_message_id` | 새 session_id, 복사한 message_count, parent_session_id |
-| `agent.run` | 필수 `session_id`, `prompt`; 선택 `options`, `max_turns` | RunResult: run_id, session_id, status, text, usage, 필요한 경우 error |
+| `agent.context.get` | 필수 `session_id`; 선택 `context_paths` | 현재 지침 파일·본문·SHA-256·적용 경로·fingerprint |
+| `agent.run` | 필수 `session_id`, `prompt`; 선택 `options`, `max_turns`, `context_paths` | RunResult: run_id, session_id, status, text, usage, 필요한 경우 error |
 | `agent.cancel` | `request_id` | cancel_requested: true |
 | `agent.status` | `request_id` | method, session_id, queued/running, cancel_requested |
 
@@ -131,3 +132,9 @@ daemon은 HTTP 작업자 8개 중 제어 요청을 처리할 여유를 두기 �
 status는 현재 프로세스에서 진행 중인 요청만 조회한다. 완료 후·재시작 후 request_id는 NotFound가 될 수 있다. transcript는 재시작 후 같은 세션 ID로 이어갈 수 있지만 실행 응답 재전송, 영속 작업 핸들, idempotency key는 아직 없다. 연결이 끊긴 실행을 자동 재시도하지 말고 세션 기록에서 결과를 확인한다. 이전 프로세스에서 도구 결과를 남기지 못한 호출은 기존 Engine의 결과 미확인 처리로 닫는다.
 
 검증은 `tests/agent_api_tests.cpp`, `tests/agent_transport_tests.cpp`, `tests/agent_api_smoke.py`, 설치 소비자 `tests/consumer/api.cpp`에 있다. 실제 수치와 모델·설치 검증 결과는 [Verification.md](Verification.md)에 기록한다.
+
+## 프로젝트 지침
+
+0.5.0부터 고정 workspace 안의 CLAUDE.md·AGENTS.md·`.claude/rules`를 매 모델 호출 전에 읽는다. `context_paths`는 최대 128개 문자열이며 작업 루트 안의 파일 경로다. 아직 생성하지 않은 파일도 지정할 수 있다. `agent.context.get`에 지정한 경로는 조회에만 사용하고, `agent.run`에 지정한 경로는 세션에 기록하여 이어지는 실행과 분기에 유지한다. 다른 앱의 세션 조회는 기존과 같이 거부한다. 호스트만 `--agent-no-project-context`로 자동 로딩을 끄거나 `--agent-context-exclude PATTERN`을 반복해 제외 패턴을 설정할 수 있다. RPC로 루트·제외·상한을 변경할 수 없다.
+
+변경된 스냅샷은 `instructions_loaded` 이벤트로 경로·해시·패턴을 알린다. 이벤트에는 지침 본문을 넣지 않는다. 본문은 인증된 조회 결과와 모델 입력에만 포함한다. 자동 지침은 파일의 직접 읽기 이력이나 수정 권한을 만들지 않는다. 상세 범위·순서·상한·미구현 항목은 [ProjectContext.md](ProjectContext.md)를 참조한다.

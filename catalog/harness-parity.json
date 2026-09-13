@@ -80,8 +80,17 @@
     {
       "id": "context",
       "requirement": "프롬프트 조합·CLAUDE/AGENTS 규칙·첨부·요약·microcompact·cache 관리",
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "agent/ProjectContext.h",
+        "agent/ProjectContext.cpp",
+        "agent/Engine.cpp",
+        "agent/Api.cpp",
+        "tests/context_tests.cpp",
+        "tests/agent_api_smoke.py",
+        "docs/ProjectContext.md"
+      ],
+      "remaining": "Workspace-bounded CLAUDE/AGENTS discovery, Markdown imports, scoped YAML rules, fresh prompt composition and authenticated inspection implemented. Managed/user/external sources, full glob/worktree compatibility, general attachments, summarization, microcompact and instruction cache remain."
     },
     {
       "id": "memory",

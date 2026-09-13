@@ -76,3 +76,7 @@ Service는 ServiceModel과 Engine보다 오래 살아야 한다. Engine 파괴�
 Native ServiceModel의 도구 오류는 tool 역할의 `Tool error:` 결과로 전달한다. 기본 llama.cpp 로그에서는 생성 토큰을 포함하는 debug 메시지를 내보내지 않는다. 모든 CTest 임시 디렉터리는 build/tmp 아래에 생성한다.
 
 MCP 서버는 [MCPServer.md](MCPServer.md)의 C++ ToolRegistry 공개와 연결별 로컬 에이전트 실행을 제공한다. 파일 읽기 이력·권한·동시 실행 경계를 유지한다. HTTP 서버·인증·앱 자동 발견·실제 제품 연동은 전체 대응표에 남아 있다.
+
+## 프로젝트 지침과 입력 조합 (0.5.0)
+
+`EngineOptions.projectContext`의 기본 동작은 세션 작업 폴더 안의 CLAUDE.md·AGENTS.md·경로별 규칙을 불러오는 것이다. `Engine::context()`로 현재 조합을 조회하며 `RunRequest.contextPaths`로 시작 시 적용할 파일 경로를 지정한다. `Read`·`Write`·`Edit`이 실제 관측한 workspace 경로도 다음 모델 호출부터 적용한다. 조합된 지침은 host system prompt를 바꾸지 않는 임시 User 메시지이며 원본 transcript에 중복 저장하지 않는다. 자세한 계약과 기준 소스 대비 차이는 [ProjectContext.md](ProjectContext.md)에 있다. `EngineOptions`·`RunRequest` ABI 변경으로 0.5 헤더를 사용하는 앱은 0.5 라이브러리에 링크해야 한다.

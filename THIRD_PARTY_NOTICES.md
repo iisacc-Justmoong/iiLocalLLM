@@ -50,3 +50,12 @@ MLX 0.32.2 + mlx-lm 0.31.3의 min-p 최소 후보 수 실행 오류를 실제 �
 The existing pinned llama.cpp source also supplies the native Jinja chat templates, tool grammar sampling and PEG output parser. No new inference process is introduced. The common static library is linked privately; its cpp-httplib symbols use a separate namespace to avoid collisions with the service HTTP server. OpenSSL downloads, LLGuidance and upstream subprocess support are disabled.
 
 Its bundled nlohmann/json 3.12.0 is MIT licensed. Copyright notices and the MIT text are preserved in `third_party/llama-common/nlohmann-json.LICENSE`; common/base64.hpp is Unlicense (`third_party/llama-common/base64.UNLICENSE`). The existing llama.cpp and cpp-httplib license notices continue to apply.
+
+## 프로젝트 지침 파서 (2026-09-14)
+
+Markdown은 [MD4C release-0.5.3](https://github.com/mity/md4c/tree/472c417005c2c71b8617de4f7b8d6b30411d78f4), YAML은 [LibYAML 0.2.5](https://github.com/yaml/libyaml/tree/2c891fc7a770e8ba2fec34fc6b545c672beb37e6)를 사용한다. 둘 다 MIT 라이선스이며 공개 C++ 헤더로 외부 타입을 노출하지 않는다. 원본 C 파서를 private object로 정적 포함하므로 실행 프로세스·Python·추가 공유 라이브러리가 필요하지 않다. 원본 라이선스는 설치된 `share/iiLocalLLM/licenses/md4c.LICENSE`와 `libyaml.LICENSE`에 포함한다.
+
+- MD4C 공식 태그·변경 기록에서 CommonMark 처리와 복잡도 관련 수정을 확인했다. 압축 원본 244,633 bytes, SHA-256 `353c346f376b87c954a13f3415ede2d51264cc61dc5abcd38ff1d2aa0d059b9e`.
+- LibYAML은 릴리스 주기가 긴 C 파서다. 공식 태그 목록에서 안정판 0.2.5와 0.2.6-rc.1을 확인했으며 안정판을 고정했다. 압축 원본 85,055 bytes, SHA-256 `fa240dbf262be053f3898006d502d514936c818e422afdcf33921c63bed9bf2e`. frontmatter 입력·이벤트·깊이를 제한하고 alias는 거부한다.
+- CMake `ContextParsers.cmake`에서 다운로드 해시를 검사한다. Markdown 토큰화와 YAML 문법을 직접 재구현하지 않고, iiLocalLLM 고유의 경로 범위·규칙 선택·순서·출처 조합만 C++에서 처리한다. glob의 regex 컴파일·매칭은 기존 Qt/PCRE2에 맡기며 지원하는 glob 표기와 차이는 ProjectContext.md에 명시한다.
+- macOS 빌드에서 C 파서를 활성화하면서 ggml의 `.m` 파일과 SDK의 `.mm` 파일을 구분하도록 Objective-C와 Objective-C++ 언어를 명시했다. llama.cpp 원본은 수정하지 않았다.

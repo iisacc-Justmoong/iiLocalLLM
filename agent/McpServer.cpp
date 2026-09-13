@@ -68,6 +68,7 @@ public:
         run.definition.inputSchema = {{"type", "object"}, {"additionalProperties", false}, {"required", QJsonArray{"prompt"}},
             {"properties", QJsonObject{{"prompt", QJsonObject{{"type", "string"}, {"minLength", 1}, {"maxLength", 1048576}}},
                 {"new_session", QJsonObject{{"type", "boolean"}}},
+                {"context_paths", QJsonObject{{"type", "array"}, {"maxItems", 128}, {"items", QJsonObject{{"type", "string"}, {"minLength", 1}, {"maxLength", 4096}}}}},
                 {"max_turns", QJsonObject{{"type", "integer"}, {"minimum", 1}, {"maximum", options.maxAgentTurns}}}}}};
         run.definition.outputSchema = {{"type", "object"}, {"required", QJsonArray{"run_id", "session_id", "text", "status", "turns", "usage"}},
             {"properties", QJsonObject{{"run_id", QJsonObject{{"type", "string"}}}, {"session_id", QJsonObject{{"type", "string"}}},
@@ -79,6 +80,7 @@ public:
             if (conversation->id.isEmpty() || args["new_session"].toBool())
                 conversation->id = self->options.engine->createSession(self->options.model, self->options.workingDirectory, self->options.systemPrompt).id;
             RunRequest request{conversation->id, args["prompt"].toString(), self->options.generation, args["max_turns"].toInt(self->options.maxAgentTurns)};
+            for (const auto& path : args["context_paths"].toArray()) request.contextPaths.append(path.toString());
             int progress = 0;
             auto handle = self->options.engine->run(request, [&](const Event& event) {
                 if (context.progress) context.progress({{"progress", ++progress}, {"message", enumName(event.kind)},

@@ -29,7 +29,7 @@ int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("iiLocalLLMD"));
-    app.setApplicationVersion(QStringLiteral("0.4.0"));
+    app.setApplicationVersion(QStringLiteral("0.5.0"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("iiLocalLLM local JSON IPC service"));
     parser.addHelpOption(); parser.addVersionOption();
@@ -49,6 +49,8 @@ int main(int argc, char** argv)
         {"agent-state", "Private agent state directory outside the workspace.", "directory"},
         {"agent-credentials", "Private JSON object mapping client IDs to distinct random tokens (32..256 URL-safe characters).", "file"},
         {"agent-allow", "Allow a tool name or wildcard; repeat for more rules. Read-only tools are allowed by default.", "pattern"},
+        {"agent-no-project-context", "Disable automatic project instruction loading for the agent API."},
+        {"agent-context-exclude", "Exclude a workspace-relative instruction glob; repeat for more patterns.", "pattern"},
         {QStringLiteral("install"), QStringLiteral("Install a local manifest bundle; repeat for multiple bundles"), QStringLiteral("directory")},
         {QStringLiteral("hardware"), QStringLiteral("Inspect startup hardware as JSON and exit")}});
     parser.process(app);
@@ -71,7 +73,8 @@ int main(int argc, char** argv)
         // Validate private credentials before hardware/driver initialization.
         namespace a = iiLocalLLM::agent;
         std::optional<a::ApiOptions> agentConfig;
-        if (parser.isSet("agent-workspace") || parser.isSet("agent-state") || parser.isSet("agent-credentials") || parser.isSet("agent-allow")) {
+        if (parser.isSet("agent-workspace") || parser.isSet("agent-state") || parser.isSet("agent-credentials") || parser.isSet("agent-allow")
+            || parser.isSet("agent-no-project-context") || parser.isSet("agent-context-exclude")) {
             if (!parser.isSet("agent-workspace") || !parser.isSet("agent-state") || !parser.isSet("agent-credentials"))
                 throw std::runtime_error("Agent API requires --agent-workspace, --agent-state and --agent-credentials together");
             a::ApiOptions config; config.workingDirectory = QFileInfo(parser.value("agent-workspace")).canonicalFilePath();
@@ -88,6 +91,8 @@ int main(int argc, char** argv)
                 config.clientTokens.insert(it.key(), it.value().toString());
             }
             config.stateDirectory = parser.value("agent-state");
+            config.engine.projectContext.enabled = !parser.isSet("agent-no-project-context");
+            config.engine.projectContext.excludes = parser.values("agent-context-exclude");
             // Keep HTTP workers available for cancellation and status while runs wait.
             config.maxConcurrentRequests = 6; config.maxQueuedRequests = 0;
             agentConfig = std::move(config);

@@ -1,6 +1,7 @@
 #pragma once
 #include "Tools.h"
 #include "SessionStore.h"
+#include "ProjectContext.h"
 #include "../Service.h"
 
 namespace iiLocalLLM::agent {
@@ -13,6 +14,7 @@ struct EngineOptions {
     int maxInputCharacters = 1024 * 1024;
     QList<Hook> hooks;
     PermissionCallback permission;
+    ProjectContextOptions projectContext;
 };
 class IILOCALLLM_EXPORT Engine {
 public:
@@ -26,6 +28,7 @@ public:
     Session session(const QString& id) const;
     QStringList sessions() const;
     Session forkSession(const QString& id, const QString& throughMessageId = {});
+    ProjectContext context(const QString& sessionId, const QStringList& targetPaths = {}, const CancellationToken& = {}) const;
     RunHandle run(RunRequest, EventCallback = {});
 private:
     class Impl;

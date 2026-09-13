@@ -82,7 +82,13 @@ public:
             lease = store.acquire(request.sessionId);
             repair();
             send({EventKind::Started, runId, request.sessionId, {}, {}, {}});
-            append({{}, MessageRole::User, request.prompt});
+            auto paths = projectContextPaths(lease->session().messages); paths.append(request.contextPaths); paths.removeDuplicates();
+            const auto initial = loadProjectContext(lease->session().workingDirectory, paths, options.projectContext, token);
+            Message user{{}, MessageRole::User, request.prompt};
+            if (!request.contextPaths.isEmpty() && options.projectContext.enabled)
+                user.metadata.insert("iilocal.context_paths", QJsonArray::fromStringList(initial.targetPaths));
+            append(std::move(user));
+            QString lastContextFingerprint;
             for (int turn = 1; turn <= request.maxTurns; ++turn) {
                 result.turns = turn; token.throwIfCancelled();
                 auto before = hooks(HookKind::BeforeModel, request.prompt);
@@ -92,6 +98,12 @@ public:
                 const auto turnRegistry = registry->snapshot();
                 const ToolRunner runner(turnRegistry, policy, {options.hooks, options.permission});
                 ModelRequest modelRequest{session.model, session.systemPrompt, session.messages, turnRegistry->definitions(false), request.generation, session.id};
+                const auto context = loadProjectContext(session.workingDirectory, projectContextPaths(session.messages), options.projectContext, token);
+                if (!context.files.isEmpty()) modelRequest.messages.prepend(context.message());
+                if (context.fingerprint != lastContextFingerprint) {
+                    lastContextFingerprint = context.fingerprint;
+                    send({EventKind::InstructionsLoaded, runId, session.id, {}, {}, context.toJson(false)});
+                }
                 qsizetype streamed = 0;
                 auto reply = model->generate(modelRequest, token, [&](const QString& text) {
                     token.throwIfCancelled(); streamed += text.size();
@@ -188,12 +200,18 @@ Session Engine::forkSession(const QString& id, const QString& throughMessageId) 
     if (d->busySessions.contains(id)) throw Error(ErrorCode::ModelInUse, "Cannot fork a session with an accepted run");
     return d->store.fork(id, throughMessageId);
 }
+ProjectContext Engine::context(const QString& id, const QStringList& targetPaths, const CancellationToken& token) const {
+    const auto session = d->store.load(id); auto paths = projectContextPaths(session.messages);
+    paths.append(targetPaths); paths.removeDuplicates();
+    return loadProjectContext(session.workingDirectory, paths, d->options.projectContext, token);
+}
 RunHandle Engine::run(RunRequest request, EventCallback callback) {
     auto promise = std::make_shared<std::promise<RunResult>>();
     RunHandle handle{uuid(), {}, promise->get_future().share()};
     try {
         if (request.prompt.trimmed().isEmpty() || request.prompt.size() > d->options.maxInputCharacters
-            || request.maxTurns < 1 || request.maxTurns > 10000) throw Error(ErrorCode::InvalidArgument, "Invalid agent run request");
+            || request.maxTurns < 1 || request.maxTurns > 10000
+            || request.contextPaths.size() > d->options.projectContext.maxTargetPaths) throw Error(ErrorCode::InvalidArgument, "Invalid agent run request");
         validateGenerationOptions(request.generation);
         std::lock_guard lock(d->mutex);
         if (d->stopping) throw Error(ErrorCode::ShuttingDown, "Agent engine is shutting down");

@@ -2,6 +2,7 @@
 #include <QtCore/QCoreApplication>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QDir>
+#include <QtCore/QFile>
 #include <iostream>
 namespace a = iiLocalLLM::agent;
 class AppModel final : public a::Model {
@@ -25,7 +26,11 @@ int main(int argc, char** argv) {
         registry->add(std::move(tool));
         a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
         a::Engine engine(std::make_shared<AppModel>(), registry, std::make_shared<a::RulePolicy>(), options);
+        QFile instructions(root.filePath("AGENTS.md"));
+        if (!instructions.open(QIODevice::WriteOnly) || instructions.write("Installed project instructions") < 0) return 4;
+        instructions.close();
         const auto session = engine.createSession("app-test", root.path());
+        if (engine.context(session.id).files.size() != 1 || a::loadProjectContext(root.path()).files.size() != 1) return 5;
         const auto result = engine.run({session.id, "Read my document"}).result.get();
         if (result.status != a::RunStatus::Completed || result.text != "installed document") return 1;
         if (engine.session(session.id).messages.size() != 4) return 2;

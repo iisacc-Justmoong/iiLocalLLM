@@ -74,3 +74,7 @@ ctest --test-dir build -R 'mcp' --output-on-failure
 iiLocalLLM.mcp_official은 공식 SDK 서버의 도구·자료·프롬프트·진행 알림·역방향 roots를 검사한다. Qwen GGUF도 설정하면 iiLocalLLM.agent_mcp_inference에서 로컬 모델이 실제 MCP 도구를 선택해 프롬프트에 없는 임의 파일 값을 최종 응답으로 반환하는지 검사한다. 설치 소비자는 같은 공식 SDK 교차 검증을 설치된 헤더·라이브러리만으로 수행한다. 관측한 실행 결과는 Verification.md에 기록한다.
 
 분석 참조는 Exhen/claude-code-2.1.88의 c8cd253554319f32ff64ff7000636199f720c9bc에서 services/mcp/client.ts의 stdio·roots·도구 변환 경로다. 구현은 다음 공식 프로토콜 계약을 기준으로 작성했다: [수명](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle), [전송](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports), [도구](https://modelcontextprotocol.io/specification/2025-11-25/server/tools), [진행](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/progress), [취소](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/cancellation), [roots](https://modelcontextprotocol.io/specification/2025-11-25/client/roots).
+
+## 프로젝트 지침 경로 (0.5.0)
+
+`iiLocalLLM.agent.run`의 선택적 `context_paths`는 최대 128개 workspace 파일 경로를 받는다. 지침을 첫 모델 호출 전에 적용하며 연결별 Engine 세션에만 범위를 유지한다. 잘못된 경로·루트 이탈은 isError 결과이고, workspace의 파일을 읽은 경우에도 다음 모델 호출부터 하위 지침을 적용한다. `instructions_loaded`는 기존 MCP progress의 `iisacc/agentEvent`로 전달된다. [ProjectContext.md](ProjectContext.md)의 순서·상한·미구현 항목을 함께 참조한다.

@@ -29,6 +29,11 @@ def main():
         root = Path(directory)
         workspace = root / "work"
         workspace.mkdir()
+        verification_code = "CTX_" + secrets.token_hex(5)
+        (workspace / "AGENTS.md").write_text("Use the project instructions for the current task.\n")
+        (workspace / "src").mkdir()
+        scoped_instructions = workspace / "src" / "AGENTS.md"
+        scoped_instructions.write_text("The project verification code is " + verification_code + ". When asked for this code, reply with it.\n")
         state = root / "private"
         credentials = root / "credentials.json"
         token, other = secrets.token_urlsafe(36), secrets.token_urlsafe(36)
@@ -146,7 +151,24 @@ def main():
             assert http(port, "agent.sessions.get", {"session_id": session}, auth=other)[0] == 404
             assert http(port, "agent.sessions.list", auth=other)[1]["result"]["sessions"] == []
             evidence["checks"] += ["http_native_cli_session_identity", "cross_app_isolation"]
+            scope = {"session_id": session, "context_paths": ["src/future.cpp"]}
+            context = cli("agent.context.get", scope)
+            assert len(context["files"]) == 2, context
+            assert context["files"][1]["sha256"] == hashlib.sha256(scoped_instructions.read_bytes()).hexdigest()
+            assert verification_code in context["files"][1]["content"]
+            assert http(port, "agent.context.get", scope, auth=other)[0] == 404
+            assert http(port, "agent.context.get", {"session_id": session, "context_paths": ["../credentials.json"]})[0] == 400
+            assert len(native("agent.context.get", {"session_id": session})[-1]["result"]["files"]) == 1
+            evidence["checks"] += ["scoped_context_http_native_cli", "instruction_hash", "context_root_confinement"]
             if args.model:
+                context_session = cli("agent.sessions.create", {"model": model})["session_id"]
+                response = native("agent.run", dict(scope, session_id=context_session, prompt="What is the project verification code? Reply with the code only.",
+                    max_turns=4, options={"max_tokens": 128, "temperature": 0}))
+                result = response[-1]["result"]
+                assert result["status"] == "completed" and verification_code in result["text"], result
+                assert any(e.get("event") == "rpc" and e["data"]["event"] == "instructions_loaded" for e in response), response
+                evidence["project_context_answer"] = result["text"]
+                evidence["checks"].append("real_qwen_scoped_project_instructions")
                 secret = "LOCAL_" + secrets.token_hex(6)
                 (workspace / "secret.txt").write_text(secret)
                 prompt = "Use the Read tool to read secret.txt. Then reply with the exact file content."
@@ -154,8 +176,8 @@ def main():
                     "max_turns": 4, "options": {"max_tokens": 192, "temperature": 0}}, stream=True)
                 assert status == 200 and frames[0]["event"] == "accepted"
                 result = frames[-1]["result"]
-                assert result["status"] == "completed" and secret in result["text"], result
                 history = native("agent.sessions.get", {"session_id": session})[-1]["result"]["messages"]
+                assert result["status"] == "completed" and secret in result["text"], {"result": result, "history": history}
                 assert any(m["role"] == "tool" and secret in m["text"] for m in history), history
                 sequence = [e["data"]["sequence"] for e in frames if e.get("event") == "rpc"]
                 assert sequence == list(range(1, len(sequence) + 1)), sequence
@@ -170,7 +192,7 @@ def main():
         with daemon() as port:
             after = http(port, "agent.sessions.get", {"session_id": session})[1]["result"]
             assert after == before
-            assert len(cli("agent.sessions.list")["sessions"]) == 2
+            assert len(cli("agent.sessions.list")["sessions"]) == (3 if args.model else 2)
             assert native("agent.sessions.get", {"session_id": fork})[-1]["result"]["message_count"] == before["message_count"]
             evidence["checks"] += ["daemon_restart_resume", "transcript_fork"]
             if args.model:

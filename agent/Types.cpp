@@ -32,7 +32,7 @@ QString enumName(EventKind v) {
         case EventKind::Message: return "message"; case EventKind::ToolStarted: return "tool_started";
         case EventKind::ToolProgress: return "tool_progress"; case EventKind::ToolFinished: return "tool_finished";
         case EventKind::PermissionRequested: return "permission_requested"; case EventKind::Hook: return "hook";
-        case EventKind::Finished: return "finished"; }
+        case EventKind::Finished: return "finished"; case EventKind::InstructionsLoaded: return "instructions_loaded"; }
     return "unknown";
 }
 QJsonObject toJson(const ToolCall& c) { return {{"id", c.id}, {"name", c.name}, {"arguments", c.arguments}}; }

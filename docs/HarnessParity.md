@@ -16,7 +16,7 @@
 | shell | Bash/PowerShell·환경·cwd·프로세스 트리 취소·백그라운드 작업 | partial |
 | web | WebFetch/WebSearch·컨텐츠 변환·캐시·네트워크 정책 | pending |
 | multimodal | 이미지·PDF·노트북·음성 입력과 모델별 지원 협상 | pending |
-| context | 프롬프트 조합·CLAUDE/AGENTS 규칙·첨부·요약·microcompact·cache 관리 | pending |
+| context | 프롬프트 조합·CLAUDE/AGENTS 규칙·첨부·요약·microcompact·cache 관리 | partial |
 | memory | 프로젝트 Markdown 메모리·검색·자동 정리·세션 메모리 | pending |
 | sessions | JSONL 영속 기록·resume/fork·압축 경계·파일 rewind | partial |
 | subagents | 전문 에이전트·부모 컨텍스트 fork·모델/도구/권한 범위·백그라운드 알림 | pending |
@@ -56,3 +56,5 @@
 - 공식 MCP SDK 목록에는 C++이 없다. 프로토콜은 버전 고정된 공식 규격으로 검증하며 기존 Qt 전송을 활용한다. MCP 2025-11-25 호환과 최신 2026-07-28의 차이를 별도로 추적한다.
 
 출처: https://github.com/danielaparker/jsoncons/releases/tag/v1.9.0 , https://modelcontextprotocol.io/docs/2026-07-28/sdk , https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle
+
+0.5.0은 workspace 지침·Markdown import·YAML 경로 규칙·실제 모델 입력 조합과 인증된 API 조회를 추가한다. MCP 실행도 `context_paths`를 지원한다. [ProjectContext.md](ProjectContext.md)에 대응 범위를 기록하며 managed/user 지침·첨부·요약·microcompact·캐시는 남아 있다.

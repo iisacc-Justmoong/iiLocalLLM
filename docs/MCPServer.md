@@ -28,7 +28,7 @@ build/iillm-mcp --workspace /absolute/project \
 
 | 도구 | 입력 | 동작 |
 |---|---|---|
-| iiLocalLLM.agent.run | prompt, 선택 new_session·max_turns | 해당 MCP 연결의 로컬 대화에서 에이전트 실행. 상태·텍스트·턴·사용량·실행/세션 ID를 structuredContent로 반환 |
+| iiLocalLLM.agent.run | prompt, 선택 new_session·max_turns·context_paths | 해당 MCP 연결의 로컬 대화에서 에이전트 실행. 상태·텍스트·턴·사용량·실행/세션 ID를 structuredContent로 반환 |
 | iiLocalLLM.agent.session | 선택 include_messages | 해당 연결의 대화 ID·모델·메시지 수, 선택 transcript 반환. 다른 세션 ID를 입력받지 않음 |
 
 에이전트 이벤트는 요청의 progressToken이 있을 때 증가하는 progress와 `_meta["iisacc/agentEvent"]`로 전달한다. 클라이언트 취소는 MCP 요청 → Engine RunHandle → 실제 추론·도구로 전파한다. 완료·실패 후 도구 결과는 기존 JSONL 복구 계약을 따른다. 연결 종료 시 연결과 대화 사이의 메모리 매핑을 제거하고 영속 transcript는 보존한다. 다른 연결의 기존 대화를 자동으로 재개하지 않는다. 인증된 재개·fork API는 아직 남아 있다.
@@ -84,3 +84,5 @@ stdio는 응답이 없는 유휴 상태에도 출력 파이프의 연결 종료�
 기본 CTest mcp_server는 독립 연결, 초기화, 용량, 취소·역방향 요청, 목록·구독·구형 배열, 스키마·정책, 실행 순서·파일 읽기 상태·대화 격리를 검사한다. 공식 SDK 1.26.0을 설정하면 mcp_server_official이 실제 실행 파일의 파일 읽기·허용/거부·입력 검증·경로 제한과 Bash 및 자식 프로세스 취소를 확인한다. Qwen fixture를 설정하면 mcp_server_inference가 외부 MCP 클라이언트 → C++ 서버 → 실제 로컬 모델 → Read → 최종 답변·transcript·진행 알림을 검증한다. 관측 결과와 설치 소비자 증거는 Verification.md에 별도로 기록한다.
 
 분석 참조는 Exhen/claude-code-2.1.88의 c8cd253554319f32ff64ff7000636199f720c9bc에서 entrypoints/mcp.ts의 도구 공개·stdio 경로다. 독립 C++ 구현의 기준은 공식 [수명 규격](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle), [stdio 전송](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports), [도구 규격](https://modelcontextprotocol.io/specification/2025-11-25/server/tools), [2025-03 배열 규칙](https://modelcontextprotocol.io/specification/2025-03-26/basic), [2025-06 변경 기록](https://modelcontextprotocol.io/specification/2025-06-18/changelog)이다.
+
+프로젝트 지침은 0.5.0부터 내부 Engine에서 매 모델 호출 전에 조합한다. `context_paths`는 최대 128개 파일 경로이며 해당 연결의 세션에만 유지한다. 경로별 규칙을 첫 호출 전에 적용하려면 이 값을 지정한다. `instructions_loaded` 이벤트는 기존 agent progress metadata로 전달한다. 상세 계약은 [ProjectContext.md](ProjectContext.md)에 있다.

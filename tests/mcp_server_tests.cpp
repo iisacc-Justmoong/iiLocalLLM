@@ -2,6 +2,7 @@
 #include <agent/McpServer.h>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QFile>
+#include <QtCore/QDir>
 #include <QtCore/QElapsedTimer>
 #include <QtTest/QTest>
 #include <chrono>
@@ -197,6 +198,14 @@ private slots:
         QVERIFY(call(second, 3, "iiLocalLLM.agent.session", {{"session_id", one["structuredContent"].toObject()["session_id"]}})["isError"].toBool());
         const auto reset = call(first, 4, "iiLocalLLM.agent.run", {{"prompt", "new"}, {"new_session", true}});
         QCOMPARE(reset["structuredContent"].toObject()["text"].toString(), "new");
+        QVERIFY(QDir().mkpath(root.filePath("src")));
+        QFile rules(root.filePath("src/AGENTS.md")); QVERIFY(rules.open(QIODevice::WriteOnly));
+        rules.write("Scoped MCP instructions"); rules.close();
+        const auto scoped = call(first, 5, "iiLocalLLM.agent.run", {{"prompt", "scoped"}, {"context_paths", QJsonArray{"src/new.cpp"}}});
+        QVERIFY(scoped["structuredContent"].toObject()["text"].toString().contains("Scoped MCP instructions"));
+        const auto unrelated = call(second, 4, "iiLocalLLM.agent.run", {{"prompt", "unchanged"}});
+        QVERIFY(!unrelated["structuredContent"].toObject()["text"].toString().contains("Scoped MCP instructions"));
+        QVERIFY(call(first, 6, "iiLocalLLM.agent.run", {{"prompt", "invalid"}, {"context_paths", QJsonArray{"../outside"}}})["isError"].toBool());
     }
     void resourcesPromptsSubscriptionsAndLegacyContent() {
         auto o = options();

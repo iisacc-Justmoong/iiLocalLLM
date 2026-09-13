@@ -1,5 +1,28 @@
 # 구현 검증 기록
 
+## 2026-09-14 프로젝트 지침·경로별 컨텍스트 (0.5.0)
+
+Apple M1 Max / Qt 6.8.3에서 C++ 프로젝트 지침 로더를 실제 Engine 입력에 연결했다. CLAUDE.md·AGENTS.md, Markdown import, YAML 경로 규칙, 중복·순환·루트 경계·상한, 매 모델 호출 전 갱신, 인증된 HTTP/native IPC 조회, MCP 실행 경로를 검증했다. MD4C 0.5.3·LibYAML 0.2.5를 private C object로 포함하며 원본 해시와 라이선스를 고정했다. 전체 하네스 완료나 제품 앱 연동 완료를 뜻하지 않는다.
+
+| 검증 | 최종 관측 결과 |
+|---|---|
+| Release 빌드 | 성공. 최종 변경 빌드 로그에 경고·오류 없음 |
+| 전체 CTest | **29/31 통과**, 96.02초. 실패는 `agent_local_inference`, `mcp_server_inference`의 소형 모델 원문 답변 검사 |
+| 새 컨텍스트 검사 | Markdown 코드·주석 구분, import 순서·중복·symlink·깊이, glob·YAML 조건, UTF-8 BOM·CRLF·한국어 파일명, 크기·개수·스캔 상한, 갱신·삭제·resume·fork·편집 선행 읽기 유지 통과 |
+| 실제 API·Qwen | 지침 파일에만 적힌 코드 답변, 경로별 조회·해시·앱 격리, Read 관측값, HTTP SSE 이벤트, daemon 재시작·CLI 분기 이어가기 통과. 42 생성 토큰·이벤트 11개는 파일 읽기 실행 기준 |
+| ASan + UBSan | **8/8 통과**, 11.94초. C++뿐 아니라 새 C 파서도 sanitizer 플래그로 빌드. agent/context/service/http/API/transport/MCP 서버/daemon 검사 |
+| 새 설치 패키지 | `build/context-stage`와 독립 `build/context-consumer/build`에서 **6/6 통과**, 3.99초. 공개 ProjectContext·Engine API 링크·실행 포함 |
+| 설치본 실제 추론 | 별도 지침 코드 `CTX_bcbff7b5c2` 답변, Read 관측값·HTTP/native/CLI·재시작·분기 통과. 파일 읽기 44 생성 토큰·이벤트 11개 |
+| ABI·배포 | 공개 EngineOptions·RunRequest 변경으로 SOVERSION 0.5. CLI·MCP 구현 버전도 0.5.0. 얇은 iillm은 Core/Network 전용 링크 유지 |
+
+로더 미구현 상태에서 4개 동작 검사 실패, Engine 연결 전 실제 입력 검사 실패를 먼저 확인했다. UTF-8 BOM이 있는 rules frontmatter가 조건 없이 적용되는 문제도 별도의 실패 재현 뒤 수정했다. BOM은 파싱에서 제거하되 원본 SHA-256에는 포함한다. C 파서 추가 후 macOS `.m` 파일이 Objective-C++로 분류되던 빌드 오류는 Objective-C/Objective-C++ 언어를 명시해 수정했으며 llama.cpp 원본을 바꾸지 않았다.
+
+**모델의 원문 답변 정확도 문제는 남아 있다.** Qwen2.5 0.5B Q4_K_M이 도구로 관측한 임의 문자열을 최종 응답에서 `This is a secret message.`로 바꾸거나 경로를 추측하는 사례를 관측했다. 지침 입력에서 감사용 해시를 제외하고 상대 경로·본문을 구분하여 프로젝트 지침 수락 시험은 통과했지만, 임의 파일 원문 답변의 일반적인 신뢰성까지 해결한 것은 아니다. 실패 값 `LOCAL_df5e751e8d69`를 이전 0.4.0 설치본에 넣어 같은 잘못된 답변을 재현했으며 로더 출력으로 해당 0.4.0 dylib를 확인했다. BOM 보완 전 전체 31/31 통과 실행과 개별 재검사 통과 기록도 있지만, 최신 소스의 마지막 전체 실행은 위 **29/31**로 기록한다. 성공한 실행만 선택해 품질 문제를 지우지 않았다. 검증 조건을 완화하거나 모델의 응답을 코드에서 관측값으로 덮어쓰지 않았다.
+
+사용 계약·지원 차이는 [ProjectContext.md](ProjectContext.md)에 있다. managed/user 지침, 외부 import, 일반 첨부, 자동 요약·microcompact·캐시, 전체 하네스 및 실제 제품 연결은 남아 있다. 기본 사용자 SDK 위치와 이미 실행 중인 사용자 daemon은 설치 시험 대상으로 변경하지 않았다.
+
+재현 코드는 `tests/context_tests.cpp`, `tests/agent_api_tests.cpp`, `tests/agent_api_smoke.py`, `tests/mcp_server_tests.cpp`, `tests/consumer/agent.cpp`이다. 로컬 증거는 `build/context-red-tests.log`, `build/context-engine-red-tests.log`, `build/context-bom-red-tests.log`, `build/context-release-ctest-verified.log`, `build/context-sanitizer-tests-verified.log`, `build/context-consumer-tests-verified.log`, `build/context-installed-result.json`, `build/context-compare-old-result.log`, `build/context-compare-old-loader.log`, `build/context-verification.json`에 보관한다.
+
 ## 2026-09-14 인증된 에이전트 HTTP·IPC API
 
 Apple M1 Max / Qt 6.8.3에서 `agent::Api`, 전송 공통 `RpcHandler`, daemon 설정과 얇은 CLI의 인증된 RPC 호출을 구현·검증했다. 동일 앱의 HTTP/native IPC 세션·실행을 공유하는 범위이며, 전체 하네스 및 Society/Dreamscapes 제품 연결 완료를 뜻하지 않는다.

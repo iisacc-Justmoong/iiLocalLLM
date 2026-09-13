@@ -1,5 +1,6 @@
 #include <agent/Api.h>
 #include <QtCore/QDir>
+#include <QtCore/QFile>
 #include <QtCore/QTemporaryDir>
 #include <QtTest/QTest>
 #include <chrono>
@@ -42,6 +43,26 @@ template<class F> void error(F fn, ErrorCode expected) {
 class AgentApiTests : public QObject {
     Q_OBJECT
 private slots:
+    void projectContextIsAuthenticatedAndWorkspaceBound() {
+        QTemporaryDir root; auto o = options(root); auto model = std::make_shared<Model>();
+        auto put = [](const QString& path, const QByteArray& text) { QDir().mkpath(QFileInfo(path).absolutePath()); QFile f(path); QVERIFY(f.open(QIODevice::WriteOnly)); QCOMPARE(f.write(text), text.size()); };
+        put(QDir(o.workingDirectory).filePath("AGENTS.md"), "Root rule");
+        put(QDir(o.workingDirectory).filePath("src/AGENTS.md"), "Nested rule");
+        a::Api api(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), o);
+        const auto id = call(api, "agent.sessions.create", {{"model", "fixture"}}).value("session_id");
+        const QJsonObject scope{{"session_id", id}, {"context_paths", QJsonArray{"src/new.cpp"}}};
+        QCOMPARE(call(api, "agent.context.get", scope).value("files").toArray().size(), 2);
+        error([&] { call(api, "agent.context.get", scope, secondToken); }, ErrorCode::NotFound);
+        error([&] { call(api, "agent.context.get", scope, "wrong"); }, ErrorCode::Unauthorized);
+        error([&] { call(api, "agent.context.get", {{"session_id", id}, {"context_paths", QJsonArray{"../private"}}}); }, ErrorCode::InvalidArgument);
+        error([&] { call(api, "agent.context.get", {{"session_id", id}, {"context_paths", "src/new.cpp"}}); }, ErrorCode::InvalidArgument);
+        error([&] { call(api, "agent.context.get", {{"session_id", id}, {"context_paths", QJsonArray{1}}}); }, ErrorCode::InvalidArgument);
+        auto run = scope; run["prompt"] = "inspect rules";
+        QVERIFY(call(api, "agent.run", run).value("text").toString().contains("Nested rule"));
+        QCOMPARE(call(api, "agent.context.get", {{"session_id", id}}).value("files").toArray().size(), 2);
+        auto invalid = o; invalid.engine.projectContext.rootDirectory = root.path();
+        error([&] { a::Api rejected(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), invalid); }, ErrorCode::InvalidArgument);
+    }
     void authenticationIsolationAndRestart() {
         QTemporaryDir root; auto o = options(root); auto model = std::make_shared<Model>();
         const auto registry = std::make_shared<a::ToolRegistry>(); auto policy = std::make_shared<a::RulePolicy>();

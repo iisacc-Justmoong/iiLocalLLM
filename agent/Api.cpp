@@ -36,8 +36,18 @@ int integer(const QJsonObject& p, const QString& key, int fallback, int minimum,
 QJsonObject object(const QJsonObject& p, const QString& key) {
     const auto value = p.value(key); require(value.isUndefined() || value.isObject(), "Invalid agent API " + key); return value.toObject();
 }
+QStringList contextPaths(const QJsonObject& parameters, int limit) {
+    const auto value = parameters.value("context_paths");
+    require(value.isUndefined() || (value.isArray() && value.toArray().size() <= limit), "Invalid agent API context_paths");
+    QStringList paths;
+    for (const auto& item : value.toArray()) {
+        require(item.isString() && !item.toString().isEmpty() && item.toString().size() <= 4096, "Invalid agent API context path");
+        paths.append(item.toString());
+    }
+    return paths;
+}
 QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.sessions.list", "agent.sessions.get",
-    "agent.sessions.fork", "agent.run", "agent.cancel", "agent.status"}; }
+    "agent.sessions.fork", "agent.context.get", "agent.run", "agent.cancel", "agent.status"}; }
 QJsonObject sessionObject(const Session& s, int offset = 0, int limit = 0) {
     require(offset <= s.messages.size(), "Message offset exceeds the session length");
     QJsonArray messages;
@@ -75,6 +85,10 @@ public:
             && options.maxResultBytes >= 1024 && options.requestTimeoutMs > 0, "Invalid agent API configuration");
         options.workingDirectory = QFileInfo(options.workingDirectory).canonicalFilePath();
         require(!options.workingDirectory.isEmpty() && QFileInfo(options.workingDirectory).isDir(), "Agent API workspace must exist");
+        require(options.engine.projectContext.rootDirectory.isEmpty()
+            || QFileInfo(options.engine.projectContext.rootDirectory).canonicalFilePath() == options.workingDirectory,
+            "Agent API instruction root must equal its workspace");
+        options.engine.projectContext.rootDirectory = options.workingDirectory;
         require(!options.stateDirectory.trimmed().isEmpty() && QDir().mkpath(options.stateDirectory), "Cannot create agent API state directory");
         options.stateDirectory = QFileInfo(options.stateDirectory).canonicalFilePath();
         require(!nested(options.stateDirectory, options.workingDirectory) && !nested(options.workingDirectory, options.stateDirectory),
@@ -118,7 +132,7 @@ public:
         if (method == "agent.info") {
             fields(p, {}); QJsonArray names; for (const auto& name : methods()) names.append(name);
             return QJsonObject{{"protocol", "iisacc.agent/1"}, {"client_id", client->id}, {"methods", names}, {"max_turns", options.maxTurns},
-                {"working_directory", options.workingDirectory}};
+                {"working_directory", options.workingDirectory}, {"project_context_enabled", options.engine.projectContext.enabled}};
         }
         if (method == "agent.sessions.create") {
             fields(p, {"model", "system"}); const auto model = text(p, "model"), prompt = text(p, "system", false);
@@ -141,6 +155,10 @@ public:
             fields(p, {"session_id", "offset", "limit"});
             return sessionObject(session(client, p), integer(p, "offset", 0, 0, 1000000), integer(p, "limit", 32, 0, 100));
         }
+        if (method == "agent.context.get") {
+            fields(p, {"session_id", "context_paths"}); const auto original = session(client, p);
+            return client->engine->context(original.id, contextPaths(p, options.engine.projectContext.maxTargetPaths), job->token).toJson();
+        }
         if (method == "agent.sessions.fork") {
             fields(p, {"session_id", "through_message_id"}); const auto original = session(client, p);
             std::lock_guard lock(client->creation);
@@ -148,8 +166,9 @@ public:
             auto result = sessionObject(client->engine->forkSession(original.id, text(p, "through_message_id", false)));
             result["parent_session_id"] = original.id; return result;
         }
-        fields(p, {"session_id", "prompt", "options", "max_turns"}); const auto original = session(client, p);
+        fields(p, {"session_id", "prompt", "options", "max_turns", "context_paths"}); const auto original = session(client, p);
         RunRequest request{original.id, text(p, "prompt"), generationOptionsFromJson(object(p, "options")), integer(p, "max_turns", options.maxTurns, 1, options.maxTurns)};
+        request.contextPaths = contextPaths(p, options.engine.projectContext.maxTargetPaths);
         job->token.throwIfCancelled();
         require(Clock::now() < job->deadline, "Agent API request deadline exceeded", ErrorCode::Timeout);
         quint64 sequence = 0;

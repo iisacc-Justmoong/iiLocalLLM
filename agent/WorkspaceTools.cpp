@@ -123,7 +123,9 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         for (qsizetype n = offset - 1; n < lines.size() && n < qsizetype(offset - 1) + limit; ++n) output.append(lines[n]);
         const bool complete = offset == 1 && limit >= lines.size();
         workspace->remember(c, path, bytes, complete);
-        return ToolResult{output.join('\n'), {{"path", path}, {"offset", offset}, {"lines", output.size()}, {"complete", complete}}};
+        const QJsonObject contextPaths = path == workspace->root || path.startsWith(workspace->root + '/')
+            ? QJsonObject{{"iilocal.context_paths", QJsonArray{path}}} : QJsonObject{};
+        return ToolResult{output.join('\n'), {{"path", path}, {"offset", offset}, {"lines", output.size()}, {"complete", complete}}, false, {}, contextPaths};
     }; registry.add(std::move(read));
     Tool write;
     write.definition = {"Write", "Write a UTF-8 file. Existing files must have been read completely and remain unchanged.",
@@ -134,7 +136,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         std::optional<QByteArray> before;
         if (QFileInfo::exists(path)) before = workspace->writable(c, path);
         const auto backup = workspace->write(c, path, a["content"].toString().toUtf8(), before);
-        return ToolResult{"Wrote " + path, {{"path", path}, {"backup_path", backup}}};
+        return ToolResult{"Wrote " + path, {{"path", path}, {"backup_path", backup}}, false, {}, {{"iilocal.context_paths", QJsonArray{path}}}};
     }; registry.add(std::move(write));
     Tool edit;
     edit.definition = {"Edit", "Replace exact text in a previously read UTF-8 file. Multiple matches require replace_all=true.",
@@ -149,7 +151,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         require(matches > 0, "old_string was not found"); require(matches == 1 || a["replace_all"].toBool(), "Multiple matches require replace_all=true");
         text.replace(old, replacement);
         const auto backup = workspace->write(c, path, text.toUtf8(), before);
-        return ToolResult{"Edited " + path, {{"path", path}, {"replacements", matches}, {"backup_path", backup}}};
+        return ToolResult{"Edited " + path, {{"path", path}, {"replacements", matches}, {"backup_path", backup}}, false, {}, {{"iilocal.context_paths", QJsonArray{path}}}};
     }; registry.add(std::move(edit));
     Tool glob;
     glob.definition = {"Glob", "List matching relative file paths in the workspace (up to 1000 results).",

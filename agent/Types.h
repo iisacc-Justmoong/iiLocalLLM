@@ -7,7 +7,7 @@ namespace iiLocalLLM::agent {
 enum class MessageRole { User, Assistant, Tool };
 enum class RunStatus { Completed, Cancelled, TurnLimit, Failed };
 enum class EventKind { Started, ModelDelta, Message, ToolStarted, ToolProgress, ToolFinished,
-    PermissionRequested, Hook, Finished };
+    PermissionRequested, Hook, Finished, InstructionsLoaded };
 struct ToolCall {
     QString id;
     QString name;
@@ -84,6 +84,7 @@ struct RunRequest {
     QString prompt;
     GenerationOptions generation;
     int maxTurns = 32;
+    QStringList contextPaths; // Explicit workspace paths whose instructions apply before the first model call.
 };
 struct RunUsage {
     qint64 promptTokens = 0;
