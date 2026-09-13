@@ -26,7 +26,7 @@
 | cancel | request_id | cancel_requested; 이 연결의 생성 또는 pull만 취소 |
 | stats | {} | loaded_models, sessions, cached_contexts, reserved_context_tokens, cache_evictions, resident_estimated_bytes, memory_budget_bytes, available_ram_bytes(null 가능), default_keep_alive_ms, model_loads, model_evictions |
 
-상태를 다루는 제어 메서드도 FIFO에 들어가므로 긴 추론 뒤에서 대기할 수 있다. hardware.get은 부팅 시 스냅샷, models.loaded는 worker가 게시한 상주 모델 스냅샷을 사용하므로 긴 추론 중에도 응답한다. stats와 나머지 제어 API는 FIFO에 들어간다. cancel은 worker 큐를 거치지 않으며 연결의 미완료 요청 상한에도 허용한다. 성공한 cancel 응답은 취소 요청 접수이며 이미 끝난 결과를 소급 취소하지 않는다.
+상태를 다루는 제어 메서드도 FIFO에 들어가므로 긴 추론 뒤에서 대기할 수 있다. hardware.get은 부팅 시 스냅샷, models.loaded는 worker가 게시한 상주 모델 스냅샷을 사용하므로 긴 추론 중에도 응답한다. parameters.list/get/validate는 모델 실행과 무관한 카탈로그 조회·검증으로 Qt 이벤트 루프에서 처리한다. stats와 나머지 제어 API는 FIFO에 들어간다. cancel은 worker 큐를 거치지 않으며 연결의 미완료 요청 상한에도 허용한다. 성공한 cancel 응답은 취소 요청 접수이며 이미 끝난 결과를 소급 취소하지 않는다.
 
 ```json
 {"id":"hardware","method":"hardware.get","params":{}}
@@ -112,3 +112,11 @@ with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
             print("\n", event["result"]["finish_reason"])
             break
 ```
+
+## 제어 파라미터
+
+- `parameters.list {}`: id/description/phase/fields 그룹 요약 배열.
+- `parameters.get {"group":"trl.GRPOConfig"}`: 타입·기본값·설명·소스·바인딩을 포함한 상세 정의.
+- `parameters.validate {"group":"peft.LoraConfig","values":{"r":16},"defaults":false,"redact":false}`: 필수 필드를 포함해 검증한 원본 JSON. 잘못된 필드·타입·제약은 invalid_argument.
+
+`chat.options`는 `iiLocalLLM.GenerationOptions` 객체의 16개 필드를 받으며 알 수 없는 옵션을 거부한다. [Parameters.md](Parameters.md)의 필드표와 예제를 따른다. 학습·파인튜닝 객체를 조회·내보내는 작업은 모델이나 학습 패키지를 로드하지 않는다.

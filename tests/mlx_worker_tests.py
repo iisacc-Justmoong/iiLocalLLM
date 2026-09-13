@@ -8,6 +8,29 @@ worker = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(worker)
 
 
+class HistoryTests(unittest.TestCase):
+    class Array(list):
+        dtype = "int32"
+        def tolist(self):
+            return list(self)
+
+    def test_cached_and_prefilled_tokens_are_present_for_every_penalty(self):
+        mx = SimpleNamespace(array=lambda values, **_: self.Array(values),
+                             concatenate=lambda arrays: self.Array(sum((list(a) for a in arrays), [])))
+        observed = []
+        def processor(tokens, logits):
+            observed.append(list(tokens))
+            return logits
+        apply = worker.full_history_processor([1, 2, 3, 4], [processor], mx)
+        logits = SimpleNamespace(shape=(1, 10))
+        apply(self.Array([4]), logits)
+        apply(self.Array([4, 5]), logits)
+        self.assertEqual(observed, [[1, 2, 3, 4], [1, 2, 3, 4, 5]])
+        invalid = worker.full_history_processor([1, 2, 3], [processor], mx, [10])
+        with self.assertRaisesRegex(ValueError, "vocabulary"):
+            invalid(self.Array([3]), logits)
+
+
 class DeviceTests(unittest.TestCase):
     def device(self, metal):
         self.events = []

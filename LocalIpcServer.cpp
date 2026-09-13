@@ -1,4 +1,5 @@
 #include "LocalIpcServer.h"
+#include "Parameters.h"
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QCryptographicHash>
@@ -275,6 +276,28 @@ public:
         const auto noValue = [] { return QJsonObject{}; };
         if (method == QStringLiteral("hardware.get")) {
             reply(c, id, hardwareObject(service.hardware()));
+        } else if (method == "parameters.list") {
+            QJsonArray groups;
+            const auto catalog = ParameterCatalog::builtin();
+            for (const auto& name : catalog.groups()) {
+                const auto group = catalog.group(name);
+                groups.append(QJsonObject{{"id",name},{"description",group.description},
+                    {"phase",enumName(group.phase)},{"fields",int(group.parameters.size())}});
+            }
+            reply(c, id, groups);
+        } else if (method == "parameters.get") {
+            const auto name = string(p, "group");
+            const auto catalog = ParameterCatalog::builtin();
+            (void)catalog.group(name);
+            for (const auto& group : catalog.toJson().value("groups").toArray())
+                if (group.toObject().value("id") == name) { reply(c,id,group); break; }
+        } else if (method == "parameters.validate") {
+            for (const auto* flag : {"defaults", "redact"})
+                if (p.contains(flag) && !p.value(flag).isBool()) throw Error(ErrorCode::InvalidArgument, "Parameter export flags must be boolean");
+            auto parameters = ParameterObject::fromNativeJson(string(p, "group"), object(p, "values"));
+            const auto issues = parameters.validate(true);
+            if (!issues.isEmpty()) throw Error(ErrorCode::InvalidArgument, issues.first().path + ": " + issues.first().message);
+            reply(c,id,parameters.toNativeJson(p.value("defaults").toBool(),p.value("redact").toBool()));
         } else if (method == QStringLiteral("models.list")) {
             watch(c, id, service.installedModels(), modelListingObject);
         } else if (method == QStringLiteral("models.install")) {
@@ -349,18 +372,7 @@ public:
             r.prompt = string(p, QStringLiteral("prompt"));
             r.keepAliveMs = parseKeepAlive(p.value(QStringLiteral("keep_alive")));
             const auto o = object(p, QStringLiteral("options"));
-            r.options.maxTokens = number(o, QStringLiteral("max_tokens"), 256, 1, 1024 * 1024, true);
-            r.options.temperature = number(o, QStringLiteral("temperature"), 0.7, 0, 10);
-            r.options.topP = number(o, QStringLiteral("top_p"), 0.9, 0.000001, 1);
-            r.options.topK = number(o, QStringLiteral("top_k"), 40, 0, 1000000, true);
-            r.options.seed = number(o, QStringLiteral("seed"), 0, 0, std::numeric_limits<quint32>::max(), true);
-            if (o.contains(QStringLiteral("stop"))) {
-                if (!o.value(QStringLiteral("stop")).isArray()) throw Error(ErrorCode::InvalidArgument, QStringLiteral("stop must be an array"));
-                for (const auto& v : o.value(QStringLiteral("stop")).toArray()) {
-                    if (!v.isString()) throw Error(ErrorCode::InvalidArgument, QStringLiteral("stop entries must be strings"));
-                    r.options.stop.append(v.toString());
-                }
-            }
+            r.options = generationOptionsFromJson(o);
             auto handle = service.chat(r, [weak = std::weak_ptr<Inbox>(c->inbox), id, limit = options.maxBufferedOutputBytes](const StreamEvent& e) {
                 const auto inbox = weak.lock();
                 if (!inbox) throw Error(ErrorCode::ConsumerFailure, QStringLiteral("IPC client disconnected"));

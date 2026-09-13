@@ -33,6 +33,8 @@ public:
     std::future<ServiceStats> stats();
     GenerationHandle chat(ChatRequest request, StreamCallback onEvent = {});
     GenerationHandle complete(CompletionRequest request, StreamCallback onEvent = {});
+    // Native tool template/grammar/parser lane. Never coerces tool results into user text.
+    GenerationHandle converse(ConversationRequest request, StreamCallback onEvent = {});
 private:
     class Impl;
     std::unique_ptr<Impl> d;

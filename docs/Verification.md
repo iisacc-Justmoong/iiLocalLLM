@@ -1,5 +1,62 @@
 # 구현 검증 기록
 
+## 2026-09-14 C++ 에이전트 실행 및 네이티브 도구 호출
+
+Apple M1 Max / Qt 6.8.3 / Release 빌드에서 `agent::Engine`, 도구 스키마·권한·훅, JSONL 세션 복구, llama.cpp 구조화 대화와 외부 HTTP 함수 호출을 검증했다. 전체 하네스 완료와 iisacc 제품 실제 연동을 뜻하지 않는다. 미완료 영역은 [HarnessParity.md](HarnessParity.md)에 유지한다.
+
+| 검증 | 관측 결과 |
+|---|---|
+| 전체 Release CTest | **19/19 통과**, 69.79초. GGUF Metal/CPU 및 MLX Metal/CPU의 기존 추론도 포함 |
+| 에이전트 코어 | 13개 동작 테스트 통과. 도구 루프, 정책/스키마, 훅 입력 재검증, 취소, 병렬/배타 순서, 잠금/중단 복원, registry 교체 중 스냅샷 일관성 포함 |
+| 실제 C++ 모델/도구 루프 | Qwen2.5 0.5B Q4_K_M이 Read를 스스로 선택하고 프롬프트에 없는 무작위 파일 값을 최종 답변에 반환. 서로 다른 값으로 **3회 연속 통과**, 이후 전체 suite에서도 통과 |
+| 실제 daemon HTTP 도구 왕복 | SSE로 Read 호출 수신 → 외부 클라이언트가 fixture 파일을 실제 읽음 → 동일 ID의 tool 결과 입력 → JSON 최종 답변에서 파일 값 확인. CLI/HTTP 전체 과정 model_loads=1, 종료 후 sessions=0 |
+| 구조화 API 오류/캐시 | 잘못된 역할·호출 ID, required 도구 누락, 호출 재사용, 잘린 출력 거부. 모델별 contextId 격리 및 재사용, 소비자 실패 시 실행 가능한 호출 제거 |
+| HTTP 프로토콜 | tool_choice/parallel_tool_calls 전달, content:null, tool_calls 종료 이유, SSE 호출 index/ID/인자, usage, [DONE] 검증 |
+| 외부 설치 소비자 | `build/agent-stage`의 공개 패키지로 새 consumer를 빌드해 **3/3 통과**. DYLD_LIBRARY_PATH를 제거한 상태에서 앱 도구/모델/세션 ABI 실행 |
+| CLI 링크 경계 | 설치된 iillm의 의존성은 Qt Core/Network와 시스템 라이브러리. iiLocalLLM/llama/ggml 링크 없음 |
+| 파라미터 출처 | Types.h 변경 후 고정된 원본에서 카탈로그 재생성. native 소스 해시와 줄 번호를 제외한 전체 카탈로그의 의미 내용은 이전 설치본과 동일 |
+
+처음 JSON-envelope 방식에서는 소형 모델이 도구를 생략했고, 네이티브 템플릿 연결 후에는 읽은 값을 예문으로 치환한 실패도 관측했다. 실패를 숨기거나 fixture 값을 프롬프트에 넣지 않았다. upstream Jinja/문법/PEG 경로를 연결하고 실제 관측값을 그대로 사용하도록 시스템 지침을 보완한 뒤 위 검증을 통과했다. 이 제한된 수락 테스트는 모든 모델·작업에서의 정확도 보증이 아니다.
+
+검증 로그는 `build/agent-native-build.log`, `build/agent-full-ctest.log`, `build/agent-native-repeat.log`, `build/agent-consumer-ctest.log`이다. 스냅샷 증거는 `build/agent-verification.json`에 기록한다. 설치 경로는 Workspace 안의 stage이며 사용자 기본 SDK 경로 설치, 커밋·푸시, 실제 제품 UI 검증은 이 기록에 포함하지 않는다.
+
+## 2026-09-13 최소 로컬 대화 완성
+
+기존 서비스·런타임을 유지하면서 기본 llama.cpp 빌드, 공식 경량 대화 모델 registry, CLI의 `--temperature`·`/clear`·매 턴 JSON flush를 추가했다. 별도 UI 없이 C++ SDK, 터미널 대화, localhost HTTP JSON/SSE로 사용할 수 있는 범위이다.
+
+Apple M1 Max / RAM 32 GiB / Qt 6.8.3에서 현재 소스를 Release로 빌드하고 다음을 검증했다.
+
+| 검증 | 결과 |
+| --- | --- |
+| 새 CMake 구성 | `IILOCALLLM_WITH_LLAMA`를 지정하지 않은 `build/default/build`의 값이 ON. 기존 고정 llama.cpp 소스를 재사용한 구성 검사 |
+| 변경 전 회귀 재현 | 새 CLI 테스트가 `Unknown option 'temperature'`로 실패하는 것을 확인 후 구현 |
+| 변경 후 서비스·CLI | 2/2 통과. 잘못된 온도 입력 거부, greedy 반복성, `/clear`, 신호 취소·세션 정리 포함 |
+| 전체 Release CTest | **14/14 통과**, 226.14초. GGUF Metal/CPU, MLX Metal/CPU, 실제 대화 수락 테스트 포함 |
+| 공식 모델 pull | 실제 `iillm pull qwen2.5:0.5b`로 HTTPS 다운로드·491,400,032 bytes 및 SHA-256 검증·원자적 설치 완료 |
+| 실제 CLI 대화 | 내장 chat template 사용, `2 + 2`에 `4` 응답. 한국어 자기소개 29 tokens 생성 후 stop 종료 |
+| 대화 이력·캐시 | 이름을 Mira라고 전달한 다음 턴에 `Mira` 응답, 37 tokens 재사용. `/clear` 후 cached_tokens=0, system prompt 유지 |
+| HTTP 및 공유 모델 | JSON/SSE 모두 `4`, 종료 마커·finish_reason 확인. CLI/HTTP 전 과정 model_loads=1, 완료 후 sessions=0 |
+| 설치 소비자 | Workspace `build/minimum-stage`만 찾는 새 C++ 소비자 **2/2 통과**. 라이브러리 경로 환경변수 없이 공개 API·새 registry 별칭 사용 |
+| 설치 실행 파일 | DYLD_LIBRARY_PATH·DYLD_FRAMEWORK_PATH·LIBRARY_PATH·CMAKE_PREFIX_PATH 없이 설치 daemon/CLI의 동일 실제 대화·이력·초기화·HTTP 검증 통과 |
+
+공식 모델은 revision `9217f5db79a29953eb74d5343926648285ec7e67`, SHA-256 `74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db`를 사용했다. 모델 품질 전체를 보증하는 평가가 아니라 최소 대화 경로의 실제 동작 검증이다.
+
+설치 실행 파일의 첫 검증은 기동 60초 제한에 걸렸다. 해당 로그에는 Metal 셰이더 초기화가 약 25.8초 걸린 것이 기록되어 있다. 하드웨어 검사 단독 실행은 정상 종료했고, 테스트의 기동 대기만 120초로 조정한 재검증에서 설치 파일의 모든 대화 검사를 통과했다. MLX는 기존 제한 안에서 152.14초로 통과했다. 서비스의 추론 timeout을 늘리거나 검증 항목을 제거하지 않았다.
+
+실행용 모델 저장소는 `build/chat/Models`이다. macOS에서 `build/Models`와 테스트 fixture 경로 `build/models`가 같은 디렉터리가 될 수 있으므로 실행 문서의 경로를 분리했다. 모델 가중치와 로그는 build/ 아래에 두며 Git 및 SDK 설치 패키지에는 포함하지 않는다. 설치 검증 경로는 Workspace staging이며 사용자의 `.local` 설치나 원격 저장소 게시를 수행한 결과는 아니다.
+
+증거 파일:
+
+- `build/minimum-configure.log`, `build/minimum-build.log`, `build/default-configure.log`
+- `build/minimum-tdd-red.log`, `build/minimum-tdd-green.log`, `build/minimum-full-tests.log`
+- `build/starter-pull.json`, `build/starter-answer.json`, `build/starter-korean.json`, `build/starter-chat-verification.log`
+- `build/minimum-install.log`, `build/minimum-consumer.log`, `build/installed-starter-chat-verification.log`
+- `build/installed-starter-chat-first-attempt.log`, `build/installed-hardware.json`, `build/installed-hardware.log`
+
+재검증은 README의 `IILOCALLLM_TEST_CHAT_GGUF` 설정과 `ctest --test-dir build --output-on-failure`를 사용한다. Windows/Linux 네이티브 실행, CUDA/Vulkan 실기기, GUI, 도구 호출·멀티모달·영구 대화 저장은 이번 최소 구현의 검증 범위에 포함하지 않는다.
+
+## 2026-09-07 기존 서비스 검증
+
 2026-09-07, Apple M1 Max / 32 GiB 통합 메모리의 macOS, AppleClang 21, C++20, Qt 6.8.3 환경에서 실행했다. 테스트는 실제 저장소 소스와 build/ 아래 산출물을 사용했다.
 
 | 검증 | 결과 |
@@ -84,3 +141,19 @@ MLX는 Python 3.12.14, mlx 0.32.2, mlx-lm 0.31.3을 사용했다. 테스트 모�
 - `build/models/`: 로컬 추론 fixture; 배포 패키지에는 포함하지 않는다.
 
 Windows/Linux 네이티브 빌드와 Windows Named Pipe 실행, 실제 NVIDIA/CUDA 및 AMD·Intel/Vulkan 드라이버 실행, ONNX, 다른 모델의 template/가중치, 장시간 서비스 부하 및 모델 품질은 이번 실행에서 검증하지 않았다. HTTP는 문서화한 텍스트 Chat Completions 범위이며 전체 OpenAI API/SDK 호환성 인증은 아니다. CUDA/Vulkan 선택 분기는 정책 단위 테스트 범위이다. ONNX는 사용자 정의 Runtime 구현을 등록할 수 있는 확장 지점만 제공한다. 코드는 로컬 작업 트리에 반영했고 공개 배포나 원격 저장소 변경은 검증 범위에 포함하지 않았다.
+
+## 2026-09-13 상세 파라미터 객체 (0.3.0)
+
+- 공식 프로젝트 13개, 잠금 파일 214개. 391개 그룹, 상속 포함 9,183개 필드, 고유 선언 4,610개. `fetch_parameter_sources.py`로 모든 캐시 해시 확인 후 재생성 결과가 카탈로그·coverage와 바이트 단위로 일치했다.
+- TDD 실패 증거: `build/parameters-tdd-red.log`(공개 헤더 부재), `build/parameter-bindings-red.log`(아직 없는 생성 변환 심볼). 이후 C++ 타입·범위·튜플·상속·null/unset/default·교차 조건·중첩 민감 필드·미지원 바인딩 테스트 통과.
+- 최종 Release 전체 CTest: **17/17 통과, 99.48초**. 로그 `build/parameters-full-tests.log`. 마지막 추가 중첩 redaction 검사는 `build/parameters-final-unit-test.log`에서 통과했다. 최종 빌드 경고 없음.
+- HTTP 확장 옵션이 런타임에 도착하는지 검증했다. 취소된 HTTP 작업의 큐 슬롯이 반환되기 전 정리 요청을 넣던 기존 테스트는 실제 admission을 기다리도록 보완했다.
+- GGUF/MLX 실제 모델에서 토큰 42/43에 서로 다른 강한 logit_bias를 적용해 출력이 바뀌는 것을 검사했다. min-p·최소 후보 수·XTC·패널티·llama typical sampling도 실제 생성에 적용했다. CPU 경로, KV 재사용, 취소·복구, CLI·HTTP JSON/SSE 회귀를 함께 통과했다.
+- mlx-lm 0.31.3의 min-p에서 MLX 0.32.2가 scalar bool을 거부하는 오류를 재현했다. 공식 수정 샘플러를 해시 고정하여 포함했고 수치 회귀 3개와 MLX 실제 생성이 통과했다. source cache의 공식 파일과 vendored sampler의 해시 일치도 자동 검사한다.
+- 검증용 설치 prefix: `build/parameter-stage`. 별도 소비자: `build/parameter-consumer/build`. DYLD/QML/QT_PLUGIN_PATH override를 지운 CTest **2/2 통과, 23.75초**. `build/parameters-consumer-runtime.log`에서 실제 로딩한 파일이 `build/parameter-stage/lib/libiiLocalLLM.0.3.0.dylib`임을 확인했다.
+- 설치된 sampler 경로에서도 min_keep=2 수치 검사를 통과했다. 설치된 CLI에서 391개 그룹 조회, TrainingArguments/LoRA JSON 검증, 새 옵션 파일을 적용한 Qwen 계산 응답 `4`를 확인했다. 증거 `build/parameters-installed-acceptance.json`.
+- 설치된 0.3.0 데몬의 HTTP에 min_p·repetition/presence/frequency penalty를 보냈고 `안녕하세요! 무엇을 도와드릴까요?`를 HTTP 200으로 받았다. 증거 `build/parameters-installed-http.json`.
+
+현재 이 작업이 시작한 데몬은 `build/parameter-stage/bin/iiLocalLLMD`, IPC `build/chat.sock`, HTTP `http://127.0.0.1:50890`이다. 기존 모델 저장소 `build/chat/Models`를 그대로 사용하고 모델은 요청 시 로드한다. 로그는 `build/chat-daemon-parameters.log`이다. 프로세스 생존은 이 검증 시점의 상태이며 영구 등록한 시스템 서비스는 아니다.
+
+소스 구현, 빌드·테스트, 검증용 설치, 로컬 실행을 확인했다. 학습 프레임워크 실행·실제 학습 작업·CUDA/Vulkan/Windows/Linux 장치 검증·사용자 기본 설치 경로 갱신·커밋·푸시는 이 검증의 완료 범위에 포함하지 않는다. 학습 객체의 범위와 선언 검증 한계는 [Parameters.md](Parameters.md)에 명시했다.

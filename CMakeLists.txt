@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(iiLocalLLM VERSION 0.2.0 LANGUAGES CXX)
+project(iiLocalLLM VERSION 0.3.0 LANGUAGES CXX)
 
 if(PROJECT_IS_TOP_LEVEL AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     if(DEFINED ENV{HOME})
@@ -22,25 +22,35 @@ if(NOT _httplib_sha256 STREQUAL "5933c14b2d0f45212925ed18ca579841f5fce717f431fc2
     message(FATAL_ERROR "Vendored cpp-httplib v0.54.1 checksum mismatch")
 endif()
 
-option(IILOCALLLM_WITH_LLAMA "Build the native llama.cpp runtime" OFF)
+option(IILOCALLLM_WITH_LLAMA "Build the native llama.cpp runtime" ON)
 set(IILOCALLLM_LLAMA_SOURCE_DIR "" CACHE PATH "Existing llama.cpp source checkout (optional)")
 set(IILOCALLLM_TEST_GGUF "" CACHE FILEPATH "Local GGUF for optional real inference test")
+set(IILOCALLLM_TEST_CHAT_GGUF "" CACHE FILEPATH "Pinned Qwen2.5 0.5B Q4_K_M GGUF for optional offline chat acceptance test")
 set(IILOCALLLM_TEST_MLX_MODEL "" CACHE PATH "Local MLX model for optional real inference test")
 set(IILOCALLLM_MLX_PYTHON "python3" CACHE STRING "Python interpreter containing mlx-lm")
 
+# Official mlx-lm sampling helpers: dcbcf786c0cf56f9a12fabe9468c887781431ae2 (MIT).
+file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/runtimes/mlx_sample_utils.py" _mlx_sampler_sha)
+if(NOT _mlx_sampler_sha STREQUAL "c93c1eef794725f9f7ce77b6212f61eb6d0fe17b9cd87c06cec6470ee12b07f2")
+    message(FATAL_ERROR "Pinned MLX sampler checksum mismatch")
+endif()
+
 add_library(iiLocalLLM SHARED iiLocalLLM.h iiLocalLLM.cpp
-    Types.h Types.cpp Hardware.h Hardware.cpp Memory.h Memory.cpp Runtime.h Service.h Service.cpp LocalIpcServer.h LocalIpcServer.cpp
+    Types.h Types.cpp Parameters.h Parameters.cpp Hardware.h Hardware.cpp Memory.h Memory.cpp Runtime.h Service.h Service.cpp LocalIpcServer.h LocalIpcServer.cpp
     ModelManifest.h ModelManifest.cpp ModelCatalog.h ModelCatalog.cpp ModelInfo.h HttpApiServer.h HttpApiServer.cpp
     service/Scheduler.h service/Scheduler.cpp
+    service/Conversation.h service/Conversation.cpp
     service/Managers.h service/Managers.cpp
     service/ModelManager.h service/ModelManager.cpp
     service/ModelResidencyManager.h service/ModelResidencyManager.cpp
     service/ModelRegistry.h service/ModelRegistry.cpp ModelPull.h catalog/catalog.qrc
     runtimes/LlamaRuntime.cpp runtimes/MlxRuntime.cpp)
+target_sources(iiLocalLLM PRIVATE agent/Types.cpp agent/Tools.cpp agent/SessionStore.cpp agent/Engine.cpp agent/WorkspaceTools.cpp)
 add_library(iiLocalLLM::iiLocalLLM ALIAS iiLocalLLM)
 target_compile_features(iiLocalLLM PUBLIC cxx_std_20)
 target_compile_definitions(iiLocalLLM PRIVATE IILOCALLLM_BUILDING_LIBRARY)
 target_link_libraries(iiLocalLLM PUBLIC Qt6::Core Qt6::Network PRIVATE Threads::Threads)
+include(cmake/JsonSchema.cmake)
 if(WIN32)
     target_link_libraries(iiLocalLLM PRIVATE ws2_32)
 endif()
@@ -64,7 +74,7 @@ set_target_properties(iiLocalLLM PROPERTIES
     AUTORCC ON
     CXX_EXTENSIONS OFF
     VERSION ${PROJECT_VERSION}
-    SOVERSION ${PROJECT_VERSION_MAJOR}
+    SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
     CXX_VISIBILITY_PRESET hidden
     VISIBILITY_INLINES_HIDDEN YES
     INSTALL_RPATH_USE_LINK_PATH TRUE
@@ -73,7 +83,7 @@ set_target_properties(iiLocalLLM PROPERTIES
 if(IILOCALLLM_WITH_LLAMA)
     include(cmake/Llama.cmake)
     target_compile_definitions(iiLocalLLM PRIVATE IILOCALLLM_WITH_LLAMA)
-    target_link_libraries(iiLocalLLM PRIVATE llama)
+    target_link_libraries(iiLocalLLM PRIVATE llama-common)
 endif()
 
 add_executable(iiLocalLLMService tools/service_main.cpp)
@@ -99,6 +109,15 @@ if(BUILD_TESTING)
     set_target_properties(iiLocalLLMHelloWorld PROPERTIES CXX_EXTENSIONS OFF)
     add_test(NAME iiLocalLLM.hello_world COMMAND iiLocalLLMHelloWorld)
     find_package(Qt6 6.8.3 EXACT REQUIRED COMPONENTS Test)
+    add_executable(iiLocalLLMAgentTests tests/agent_tests.cpp tests/agent_tests.h)
+    target_link_libraries(iiLocalLLMAgentTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
+    set_target_properties(iiLocalLLMAgentTests PROPERTIES AUTOMOC ON)
+    add_test(NAME iiLocalLLM.agent COMMAND iiLocalLLMAgentTests)
+    set_tests_properties(iiLocalLLM.agent PROPERTIES TIMEOUT 90)
+    add_executable(iiLocalLLMParameterTests tests/parameter_tests.cpp)
+    target_link_libraries(iiLocalLLMParameterTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
+    set_target_properties(iiLocalLLMParameterTests PROPERTIES AUTOMOC ON)
+    add_test(NAME iiLocalLLM.parameters COMMAND iiLocalLLMParameterTests)
     add_executable(iiLocalLLMResidencyTests tests/residency_tests.cpp service/ModelResidencyManager.cpp)
     target_link_libraries(iiLocalLLMResidencyTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
     set_target_properties(iiLocalLLMResidencyTests PROPERTIES AUTOMOC ON)
@@ -124,6 +143,7 @@ if(BUILD_TESTING)
     add_test(NAME iiLocalLLM.http COMMAND iiLocalLLMHttpTests)
     set_tests_properties(iiLocalLLM.http PROPERTIES TIMEOUT 90)
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    add_test(NAME iiLocalLLM.parameter_catalog COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/parameter_catalog_tests.py)
     if(UNIX)
         set(_cli_fixture)
         if(IILOCALLLM_WITH_LLAMA AND IILOCALLLM_TEST_GGUF)
@@ -132,6 +152,15 @@ if(BUILD_TESTING)
         add_test(NAME iiLocalLLM.cli COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli_smoke.py
             $<TARGET_FILE:iiLocalLLMD> $<TARGET_FILE:iillm> ${_cli_fixture})
         set_tests_properties(iiLocalLLM.cli PROPERTIES TIMEOUT 150)
+        if(IILOCALLLM_WITH_LLAMA AND IILOCALLLM_TEST_CHAT_GGUF)
+            add_executable(iiLocalLLMAgentRuntimeSmoke tests/agent_runtime_smoke.cpp)
+            target_link_libraries(iiLocalLLMAgentRuntimeSmoke PRIVATE iiLocalLLM::iiLocalLLM)
+            add_test(NAME iiLocalLLM.agent_local_inference COMMAND iiLocalLLMAgentRuntimeSmoke "${IILOCALLLM_TEST_CHAT_GGUF}")
+            set_tests_properties(iiLocalLLM.agent_local_inference PROPERTIES TIMEOUT 180 LABELS "inference")
+            add_test(NAME iiLocalLLM.chat COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/chat_smoke.py
+                $<TARGET_FILE:iiLocalLLMD> $<TARGET_FILE:iillm> "${IILOCALLLM_TEST_CHAT_GGUF}")
+            set_tests_properties(iiLocalLLM.chat PROPERTIES TIMEOUT 300 LABELS "inference")
+        endif()
     endif()
     add_test(NAME iiLocalLLM.mlx_cache_policy COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/mlx_worker_tests.py)
     add_executable(iiLocalLLMRuntimeSmoke tests/runtime_smoke.cpp)
@@ -150,6 +179,7 @@ if(BUILD_TESTING)
         endif()
     endif()
     if(IILOCALLLM_TEST_MLX_MODEL)
+        add_test(NAME iiLocalLLM.mlx_sampling COMMAND "${IILOCALLLM_MLX_PYTHON}" -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/mlx_sampler_tests.py)
         add_test(NAME iiLocalLLM.mlx_inference COMMAND iiLocalLLMRuntimeSmoke mlx "${IILOCALLLM_TEST_MLX_MODEL}"
             "${IILOCALLLM_MLX_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/runtimes/mlx_worker.py")
         set_tests_properties(iiLocalLLM.mlx_inference PROPERTIES TIMEOUT 180 LABELS "inference")
@@ -157,6 +187,10 @@ if(BUILD_TESTING)
             "${IILOCALLLM_MLX_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/runtimes/mlx_worker.py")
         set_tests_properties(iiLocalLLM.mlx_cpu_inference PROPERTIES TIMEOUT 180 LABELS "inference")
     endif()
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tmp")
+    get_property(_iilocal_tests DIRECTORY PROPERTY TESTS)
+    set_tests_properties(${_iilocal_tests} PROPERTIES ENVIRONMENT_MODIFICATION
+        "TMPDIR=set:${CMAKE_CURRENT_BINARY_DIR}/tmp;TMP=set:${CMAKE_CURRENT_BINARY_DIR}/tmp;TEMP=set:${CMAKE_CURRENT_BINARY_DIR}/tmp")
 endif()
 
 install(TARGETS iiLocalLLM EXPORT iiLocalLLMTargets
@@ -165,15 +199,21 @@ install(TARGETS iiLocalLLM EXPORT iiLocalLLMTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 install(TARGETS iiLocalLLMService iiLocalLLMD iillm RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES iiLocalLLM.h Types.h Hardware.h Memory.h ModelManifest.h ModelCatalog.h ModelInfo.h ModelPull.h Runtime.h Service.h LocalIpcServer.h HttpApiServer.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES iiLocalLLM.h Types.h Parameters.h Hardware.h Memory.h ModelManifest.h ModelCatalog.h ModelInfo.h ModelPull.h Runtime.h Service.h LocalIpcServer.h HttpApiServer.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES agent/Types.h agent/Tools.h agent/SessionStore.h agent/Engine.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/agent)
+install(FILES catalog/harness-parity.json DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM)
+install(FILES third_party/jsoncons/LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/licenses RENAME jsoncons.LICENSE)
+install(FILES third_party/jsoncons/A5HASH-LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/licenses RENAME jsoncons-A5HASH.LICENSE)
+install(FILES catalog/parameters.json catalog/parameter-sources.json catalog/parameter-coverage.json DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM)
 install(FILES catalog/registry.json DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM)
 install(FILES README.md LICENSE THIRD_PARTY_NOTICES.md DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM)
 install(DIRECTORY docs/ DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/docs)
-install(FILES runtimes/mlx_worker.py runtimes/mlx-requirements.txt DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/runtimes)
+install(FILES runtimes/mlx_worker.py runtimes/mlx_sample_utils.py runtimes/mlx-requirements.txt DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/runtimes)
 install(FILES third_party/cpp-httplib/LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/licenses RENAME cpp-httplib.LICENSE)
 if(IILOCALLLM_WITH_LLAMA)
     get_target_property(_llama_source_dir llama SOURCE_DIR)
     install(FILES "${_llama_source_dir}/../LICENSE" DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/licenses RENAME llama.cpp.LICENSE)
+    install(DIRECTORY third_party/llama-common/ DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/licenses/llama-common)
 endif()
 install(EXPORT iiLocalLLMTargets
     FILE iiLocalLLMTargets.cmake
@@ -186,7 +226,7 @@ configure_package_config_file(cmake/iiLocalLLMConfig.cmake.in
 )
 write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/iiLocalLLMConfigVersion.cmake
     VERSION ${PROJECT_VERSION}
-    COMPATIBILITY SameMajorVersion
+    COMPATIBILITY SameMinorVersion
 )
 install(FILES
     ${CMAKE_CURRENT_BINARY_DIR}/iiLocalLLMConfig.cmake

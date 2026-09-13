@@ -16,17 +16,24 @@ struct Probe {
     std::mutex mutex;
     QList<ChatMessage> messages;
     QString mode;
+    GenerationOptions options;
+    ConversationRequest conversation;
     std::atomic_int entered = 0, cancelled = 0;
 };
 class Context : public RuntimeContext {
 public:
     explicit Context(std::shared_ptr<Probe> probe) : probe(std::move(probe)) {}
     std::shared_ptr<Probe> probe;
+    RuntimeResult generateConversation(const RuntimeConversationPrompt&, const GenerationOptions&,
+        const CancellationToken& token, const TextCallback& text) override {
+        token.throwIfCancelled(); ++probe->entered; text("fixture raw response");
+        return {FinishReason::Stop, 5, 0};
+    }
     RuntimeResult generate(const TokenList&, const GenerationOptions& options, const CancellationToken& token, const TextCallback& text) override
     {
         ++probe->entered;
         QString mode;
-        { std::lock_guard lock(probe->mutex); mode = probe->mode; }
+        { std::lock_guard lock(probe->mutex); mode = probe->mode; probe->options = options; }
         int emitted = 0;
         try {
             const QStringList parts = mode == "large" ? QStringList{QString(20000, 'x')} : QStringList{QStringLiteral("안"), QStringLiteral("녕"), QStringLiteral(" 🌍")};
@@ -47,6 +54,17 @@ class Model : public RuntimeModel {
 public:
     explicit Model(std::shared_ptr<Probe> probe) : probe(std::move(probe)) {}
     std::shared_ptr<Probe> probe;
+    RuntimeConversationPrompt prepareConversation(const ConversationRequest& request, const CancellationToken&) override {
+        std::lock_guard lock(probe->mutex); probe->conversation = request;
+        return {{1, 2, 3}, {}, {}};
+    }
+    RuntimeConversationReply parseConversation(const RuntimeConversationPrompt&, const QString&) override {
+        std::lock_guard lock(probe->mutex);
+        const auto last = probe->conversation.messages.last().toObject();
+        if (last["role"] == "tool") return {last["content"].toString(), {}, {}};
+        return {{}, {}, QJsonArray{QJsonObject{{"id", "app-call"}, {"type", "function"},
+            {"function", QJsonObject{{"name", "app_lookup"}, {"arguments", "{\"key\":\"value\"}"}}}}}};
+    }
     TokenList tokenize(const QList<ChatMessage>& messages, const CancellationToken&) override
     {
         std::lock_guard lock(probe->mutex);
@@ -122,6 +140,41 @@ QList<QJsonObject> events(const Reply& reply)
 class HttpTests : public QObject {
     Q_OBJECT
 private slots:
+    void structuredToolsRoundTripAndSse()
+    {
+        Fixture fixture; HttpApiServer http(*fixture.service); QVERIFY(http.listen());
+        auto value = body();
+        value["tools"] = QJsonArray{QJsonObject{{"type", "function"}, {"function", QJsonObject{{"name", "app_lookup"},
+            {"description", "Read an app value"}, {"parameters", QJsonObject{{"type", "object"}}}}}}};
+        value["tool_choice"] = "required"; value["parallel_tool_calls"] = false;
+        const auto first = post(http.port(), value); QCOMPARE(first.status, 200);
+        const auto choice = object(first)["choices"].toArray().first().toObject();
+        QCOMPARE(choice["finish_reason"].toString(), "tool_calls");
+        const auto message = choice["message"].toObject(); QVERIFY(message["content"].isNull());
+        const auto call = message["tool_calls"].toArray().first().toObject();
+        QCOMPARE(call["id"].toString(), "app-call"); QCOMPARE(call["function"].toObject()["arguments"].toString(), "{\"key\":\"value\"}");
+        { std::lock_guard lock(fixture.probe->mutex);
+            QCOMPARE(fixture.probe->conversation.toolChoice, "required"); QVERIFY(!fixture.probe->conversation.parallelToolCalls); }
+        auto history = value["messages"].toArray(); history.append(message);
+        history.append(QJsonObject{{"role", "tool"}, {"tool_call_id", "app-call"}, {"content", "actual app value"}});
+        auto followup = value; followup["messages"] = history; followup["tool_choice"] = "auto";
+        const auto second = post(http.port(), followup); QCOMPARE(second.status, 200);
+        QCOMPARE(object(second)["choices"].toArray().first().toObject()["message"].toObject()["content"].toString(), "actual app value");
+        value["stream"] = true; value["stream_options"] = QJsonObject{{"include_usage", true}};
+        const auto stream = post(http.port(), value); QCOMPARE(stream.status, 200);
+        QVERIFY(stream.bytes.endsWith("data: [DONE]\n\n"));
+        int toolChunks = 0, terminals = 0;
+        for (const auto& event : events(stream)) for (const auto& item : event["choices"].toArray()) {
+            const auto part = item.toObject(); const auto calls = part["delta"].toObject()["tool_calls"].toArray();
+            if (!calls.isEmpty()) {
+                ++toolChunks; QCOMPARE(calls.first().toObject()["index"].toInt(), 0); QCOMPARE(calls.first().toObject()["id"].toString(), "app-call");
+            }
+            if (part["finish_reason"] == "tool_calls") ++terminals;
+        }
+        QCOMPARE(toolChunks, 1); QCOMPARE(terminals, 1);
+        QCOMPARE(events(stream).last()["usage"].toObject()["completion_tokens"].toInt(), 5);
+        QCOMPARE(fixture.service->stats().get().sessions, 0);
+    }
     void automaticResidencyAndKeepAlive()
     {
         Fixture fixture; HttpApiServer http(*fixture.service); QVERIFY(http.listen());
@@ -189,8 +242,10 @@ private slots:
         QCOMPARE(request(http.port(), "{}", "/v1/chat/completions", false, {{"Content-Type", "text/plain"}}).status, 415);
         QCOMPARE(request(http.port(), "{}", "/v1/chat/completions", false, {{"Origin", "https://example.com"}}).status, 403);
         QCOMPARE(request(http.port(), "{}", "/v1/chat/completions", false, {{"Host", "rebind.example"}}).status, 403);
-        for (const auto& patch : QList<QJsonObject>{{{"model", "/model.gguf"}}, {{"runtime", "mlx"}}, {{"n", 2}}, {{"tools", QJsonArray{}}},
+        for (const auto& patch : QList<QJsonObject>{{{"model", "/model.gguf"}}, {{"runtime", "mlx"}}, {{"n", 2}}, {{"tools", QJsonObject{}}},
+            {{"tool_choice", "invalid"}}, {{"tool_choice", "required"}}, {{"parallel_tool_calls", "false"}},
             {{"stream", 1}}, {{"max_tokens", 3.5}}, {{"max_tokens", 0}}, {{"max_tokens", 4}, {"max_completion_tokens", 4}},
+            {{"min_p",1.1}}, {{"frequency_penalty","bad"}}, {{"logit_bias",QJsonObject{{"bad",1}}}},
             {{"messages", QJsonArray{QJsonObject{{"role", "assistant"}, {"content", "invalid end"}}}}},
             {{"messages", QJsonArray{QJsonObject{{"role", "user"}, {"content", QJsonArray{}}}}}}}) {
             auto value = body(); for (auto it = patch.begin(); it != patch.end(); ++it) value[it.key()] = it.value();
@@ -201,6 +256,21 @@ private slots:
         QCOMPARE(fixture.probe->entered.load(), 0); QCOMPARE(fixture.service->stats().get().sessions, 0);
         QTcpServer occupied; QVERIFY(occupied.listen(QHostAddress::LocalHost));
         HttpApiServer conflict(*fixture.service); QVERIFY(!conflict.listen(occupied.serverPort())); QVERIFY(!conflict.errorString().isEmpty());
+    }
+    void detailedGenerationParametersReachRuntime()
+    {
+        Fixture fixture; HttpApiServer http(*fixture.service); QVERIFY(http.listen());
+        auto value = body();
+        value.insert("min_p",.05); value.insert("repetition_penalty",1.1);
+        value.insert("presence_penalty",.2); value.insert("frequency_penalty",.3);
+        value.insert("logit_bias",QJsonObject{{"42",-5}});
+        QCOMPARE(post(http.port(),value).status,200);
+        std::lock_guard lock(fixture.probe->mutex);
+        QCOMPARE(fixture.probe->options.minP,.05);
+        QCOMPARE(fixture.probe->options.repetitionPenalty,1.1);
+        QCOMPARE(fixture.probe->options.presencePenalty,.2);
+        QCOMPARE(fixture.probe->options.frequencyPenalty,.3);
+        QCOMPARE(fixture.probe->options.logitBias,QJsonObject({{"42",-5}}));
     }
     void runtimeFailureDisconnectAndCleanup()
     {
@@ -228,6 +298,13 @@ private slots:
         native = fixture.service->chat({session, "slow", {}}); QTRY_VERIFY(fixture.probe->entered.load() == 2);
         QCOMPARE(post(deadline.port(), body()).status, 504);
         native.cancel(); (void)native.result.get();
+        // The timed-out HTTP job is cancelled but may still occupy the sole queue slot
+        // until the scheduler observes it. Wait for admission before asserting cleanup.
+        const auto drained = [&] {
+            try { (void)fixture.service->stats().get(); return true; }
+            catch (const Error& error) { if (error.code() == ErrorCode::QueueFull) return false; throw; }
+        };
+        QTRY_VERIFY(drained());
         fixture.service->closeSession(session).get(); QCOMPARE(fixture.service->stats().get().sessions, 0);
     }
     void outputLimitAndServerShutdown()

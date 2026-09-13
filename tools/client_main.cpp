@@ -2,11 +2,13 @@
 #include "IpcEndpoint.h"
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QCoreApplication>
+#include <QtCore/QFile>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QTextStream>
 #include <iostream>
 #include <optional>
+#include <cmath>
 #ifdef Q_OS_WIN
 #include <io.h>
 #else
@@ -85,14 +87,19 @@ private:
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
-    app.setApplicationName(QStringLiteral("iillm")); app.setApplicationVersion(QStringLiteral("0.2.0"));
+    app.setApplicationName(QStringLiteral("iillm")); app.setApplicationVersion(QStringLiteral("0.3.0"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("Native IPC client of iiLocalLLMD. Inference runs only in the daemon."));
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"s", "socket"}, "Daemon endpoint (default: IILLM_SOCKET or per-user endpoint)", "path"},
         {"json", "Print machine-readable results"}, {"keep-alive", "Model idle retention, e.g. 5m or 0", "duration"},
-        {"max-tokens", "Maximum generated tokens", "count", "256"}, {"system", "System prompt for run", "text"}});
-    parser.addPositionalArgument("command", "run MODEL [PROMPT] | models | pull MODEL | ps");
+        {"max-tokens", "Maximum generated tokens", "count", "256"},
+        {"temperature", "Sampling temperature in [0, 10]; 0 selects greedy decoding", "value", "0.7"},
+        {"system", "System prompt for run", "text"},
+        {"options", "JSON file containing generation controls for run", "file"},
+        {"defaults", "Include literal defaults in parameter exports"},
+        {"redact", "Redact sensitive fields in parameter exports"}});
+    parser.addPositionalArgument("command", "run MODEL [PROMPT] | models | pull MODEL | ps | parameters [GROUP [FILE]]");
     parser.addPositionalArgument("arguments", "Model reference and optional prompt", "[arguments...]");
     parser.process(app);
     const auto args = parser.positionalArguments();
@@ -103,7 +110,31 @@ int main(int argc, char** argv)
         iiLocalLLMClient::IpcClient client(endpoint, &interrupted);
         const auto command = args.first();
         const bool json = parser.isSet("json");
-        if (command == "models" || command == "ps") {
+        auto readObject = [](const QString& path) {
+            QFile file(path);
+            if (!file.open(QIODevice::ReadOnly) || file.size() > 1024 * 1024)
+                throw std::runtime_error("Cannot read configuration file (maximum 1 MiB)");
+            QJsonParseError error;
+            const auto document = QJsonDocument::fromJson(file.readAll(), &error);
+            if (error.error != QJsonParseError::NoError || !document.isObject())
+                throw std::runtime_error("Configuration file must contain a JSON object");
+            return document.object();
+        };
+        if (command == "parameters") {
+            if (args.size() > 3) throw std::runtime_error("Usage: iillm parameters [GROUP [FILE]]");
+            if (args.size() == 1) {
+                const auto groups = client.call("parameters.list");
+                if (json) printJson(groups);
+                else for (const auto& group : groups.toArray()) {
+                    const auto object = group.toObject();
+                    std::cout << object.value("id").toString().toStdString() << '\t'
+                        << object.value("fields").toInt() << " fields\t"
+                        << object.value("phase").toString().toStdString() << '\n';
+                }
+            } else if (args.size() == 2) printJson(client.call("parameters.get", {{"group",args[1]}}));
+            else printJson(client.call("parameters.validate", {{"group",args[1]},{"values",readObject(args[2])},
+                {"defaults",parser.isSet("defaults")},{"redact",parser.isSet("redact")}}));
+        } else if (command == "models" || command == "ps") {
             if (args.size() != 1) throw std::runtime_error("models/ps do not accept positional arguments");
             const auto result = client.call(command == "models" ? "models.list" : "models.loaded");
             if (json) printJson(result);
@@ -138,6 +169,12 @@ int main(int argc, char** argv)
             if (args.size() < 2) throw std::runtime_error("Usage: iillm run MODEL [PROMPT]");
             bool valid = false; const int maxTokens = parser.value("max-tokens").toInt(&valid);
             if (!valid || maxTokens < 1 || maxTokens > 1048576) throw std::runtime_error("max-tokens must be 1..1048576");
+            const double temperature = parser.value("temperature").toDouble(&valid);
+            if (!valid || !std::isfinite(temperature) || temperature < 0 || temperature > 10)
+                throw std::runtime_error("temperature must be a finite number in [0, 10]");
+            auto generation = parser.isSet("options") ? readObject(parser.value("options")) : QJsonObject{};
+            if (parser.isSet("max-tokens")) generation.insert("max_tokens", maxTokens);
+            if (parser.isSet("temperature")) generation.insert("temperature", temperature);
             const auto session = client.call("sessions.create", {{"model", args[1]}, {"system", parser.value("system")}}).toObject().value("session_id").toString();
             auto close = [&] {
                 iiLocalLLMClient::IpcClient cleanup(endpoint);
@@ -145,12 +182,14 @@ int main(int argc, char** argv)
             };
             try {
                 auto run = [&](const QString& prompt) {
-                    QJsonObject request{{"session_id", session}, {"prompt", prompt}, {"options", QJsonObject{{"max_tokens", maxTokens}}}};
+                    QJsonObject request{{"session_id", session}, {"prompt", prompt},
+                        {"options", generation}};
                     if (parser.isSet("keep-alive")) request.insert("keep_alive", parser.value("keep-alive"));
                     const auto result = client.call("chat", request, [json](const QJsonObject& event) {
                         if (!json && event.value("event") == "delta") std::cout << event.value("text").toString().toStdString() << std::flush;
                     });
                     if (json) printJson(result); else std::cout << '\n';
+                    std::cout << std::flush;
                 };
                 if (args.size() > 2) run(args.mid(2).join(' '));
                 else if (!terminalInput()) {
@@ -158,10 +197,17 @@ int main(int argc, char** argv)
                     run(input.all().trimmed());
                 } else {
                     Input input;
+                    std::cerr << "Chat with " << args[1].toStdString()
+                        << ". /clear resets the conversation; /bye exits.\n";
                     while (!interrupted) {
                         std::cerr << "> " << std::flush;
                         const auto prompt = input.line();
                         if (!prompt || *prompt == "/bye" || *prompt == "/exit") break;
+                        if (prompt->trimmed() == "/clear") {
+                            (void)client.call("sessions.reset", {{"session_id", session}});
+                            std::cerr << "Conversation cleared; system prompt retained.\n";
+                            continue;
+                        }
                         if (!prompt->trimmed().isEmpty()) run(*prompt);
                     }
                 }

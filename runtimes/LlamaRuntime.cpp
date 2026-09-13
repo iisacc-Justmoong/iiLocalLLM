@@ -1,17 +1,22 @@
 #include "Runtime.h"
+#include "Parameters.h"
 #include "Utf8Stream.h"
 #include "MemoryEstimate.h"
 #include "hardware/Detection.h"
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QStringConverter>
+#include <QtCore/QJsonDocument>
 #include <algorithm>
+#include <cstdio>
 #include <mutex>
 #include <vector>
 
 #ifdef IILOCALLLM_WITH_LLAMA
 #include <llama.h>
 #include <gguf.h>
+#include <chat.h>
+#include <sampling.h>
 #endif
 
 namespace iiLocalLLM {
@@ -24,7 +29,13 @@ bool abortDecode(void* data) { return static_cast<const CancellationToken*>(data
 void initializeLlama()
 {
     static std::once_flag initialized;
-    std::call_once(initialized, [] { llama_backend_init(); });
+    std::call_once(initialized, [] {
+        // Upstream grammar debug messages contain generated tokens. Keep them out of default logs.
+        llama_log_set([](ggml_log_level level, const char* text, void*) {
+            if (level != GGML_LOG_LEVEL_DEBUG) std::fputs(text, stderr);
+        }, nullptr);
+        llama_backend_init();
+    });
 }
 QString deviceId(ggml_backend_dev_t device)
 {
@@ -49,6 +60,10 @@ int optionInt(const ModelSpec& spec, const char* key, int fallback, int low, int
         throw Error(ErrorCode::InvalidArgument, QStringLiteral("Invalid llama option: ") + QString::fromLatin1(key));
     return n;
 }
+struct LlamaConversationState final : RuntimePromptState {
+    common_chat_params chat;
+    common_chat_parser_params parser;
+};
 class LlamaContext final : public RuntimeContext {
 public:
     LlamaContext(ModelPtr model, const ModelSpec& spec, bool accelerated) : model_(std::move(model)), context_(nullptr, llama_free)
@@ -67,8 +82,29 @@ public:
     }
     RuntimeResult generate(const TokenList& prompt, const GenerationOptions& options,
                            const CancellationToken& cancel, const TextCallback& onText) override
+    { return generateImpl(prompt, options, cancel, onText, nullptr); }
+    RuntimeResult generateConversation(const RuntimeConversationPrompt& prompt, const GenerationOptions& options,
+        const CancellationToken& cancel, const TextCallback& onText) override
+    {
+        const auto* state = dynamic_cast<const LlamaConversationState*>(prompt.state.get());
+        if (!state) throw Error(ErrorCode::InvalidArgument, "Missing llama.cpp conversation template state");
+        return generateImpl(prompt.tokens, options, cancel, onText, state);
+    }
+private:
+    RuntimeResult generateImpl(const TokenList& prompt, const GenerationOptions& options,
+        const CancellationToken& cancel, const TextCallback& onText, const LlamaConversationState* conversation)
     {
         cancel.throwIfCancelled();
+        validateGenerationOptions(options, "llama.cpp");
+        const auto* vocab = llama_model_get_vocab(model_.get());
+        const auto vocabSize = llama_vocab_n_tokens(vocab);
+        if (options.minKeep > vocabSize) throw Error(ErrorCode::InvalidArgument, "min_keep exceeds vocabulary size");
+        std::vector<llama_logit_bias> biases;
+        for (auto it = options.logitBias.begin(); it != options.logitBias.end(); ++it) {
+            const auto token = it.key().toInt();
+            if (token >= vocabSize) throw Error(ErrorCode::InvalidArgument, "logit_bias token is outside the vocabulary");
+            biases.push_back({token, float(it.value().toDouble())});
+        }
         if (prompt.isEmpty() || prompt.size() + options.maxTokens > llama_n_ctx(context_.get()))
             throw Error(ErrorCode::ContextOverflow, QStringLiteral("llama.cpp context overflow"));
         llama_set_abort_callback(context_.get(), abortDecode, const_cast<CancellationToken*>(&cancel));
@@ -83,28 +119,81 @@ public:
         }
         previous_.resize(reuse);
         decode(prompt.sliced(reuse), cancel);
+        SamplerPtr sampler(nullptr, llama_sampler_free);
+        common_sampler_ptr structuredSampler;
+        std::set<llama_token> preserved;
+        if (conversation) {
+            common_params_sampling params;
+            params.seed = options.seed; params.min_keep = options.minKeep;
+            params.top_k = options.topK; params.top_p = options.topP; params.min_p = options.minP;
+            params.typ_p = options.typicalP; params.temp = options.temperature;
+            params.xtc_probability = options.xtcProbability; params.xtc_threshold = options.xtcThreshold;
+            params.penalty_repeat = options.repetitionPenalty;
+            params.penalty_freq = options.frequencyPenalty; params.penalty_present = options.presencePenalty;
+            params.penalty_last_n = options.repetitionContextSize < 0 ? llama_n_ctx(context_.get()) : options.repetitionContextSize;
+            params.logit_bias = biases;
+            params.samplers = {COMMON_SAMPLER_TYPE_PENALTIES, COMMON_SAMPLER_TYPE_TOP_K,
+                COMMON_SAMPLER_TYPE_TYPICAL_P, COMMON_SAMPLER_TYPE_TOP_P, COMMON_SAMPLER_TYPE_MIN_P,
+                COMMON_SAMPLER_TYPE_XTC, COMMON_SAMPLER_TYPE_TEMPERATURE};
+            const auto& chat = conversation->chat;
+            if (!chat.grammar.empty()) params.grammar = {COMMON_GRAMMAR_TYPE_TOOL_CALLS, chat.grammar};
+            params.grammar_lazy = chat.grammar_lazy;
+            params.generation_prompt = chat.generation_prompt;
+            for (const auto& text : chat.preserved_tokens) {
+                const auto tokens = common_tokenize(vocab, text, false, true);
+                if (tokens.size() == 1) preserved.insert(tokens.front());
+            }
+            params.preserved_tokens = preserved;
+            for (auto trigger : chat.grammar_triggers) {
+                if (trigger.type == COMMON_GRAMMAR_TRIGGER_TYPE_WORD) {
+                    const auto tokens = common_tokenize(vocab, trigger.value, false, true);
+                    if (tokens.size() == 1) {
+                        if (!preserved.contains(tokens.front())) throw Error(ErrorCode::RuntimeFailure, "Unpreserved grammar trigger token");
+                        trigger.type = COMMON_GRAMMAR_TRIGGER_TYPE_TOKEN; trigger.token = tokens.front();
+                    }
+                }
+                params.grammar_triggers.push_back(std::move(trigger));
+            }
+            structuredSampler.reset(common_sampler_init(model_.get(), params));
+            if (!structuredSampler) throw Error(ErrorCode::RuntimeFailure, "Cannot initialize structured sampler");
+            // Prompt history feeds penalties only; grammar receives generated tokens and its upstream prefill.
+            for (const auto token : prompt) common_sampler_accept(structuredSampler.get(), token, false);
+        } else {
         auto params = llama_sampler_chain_default_params();
-        SamplerPtr sampler(llama_sampler_chain_init(params), llama_sampler_free);
+        sampler.reset(llama_sampler_chain_init(params));
+        if (!biases.empty()) llama_sampler_chain_add(sampler.get(), llama_sampler_init_logit_bias(vocabSize, biases.size(), biases.data()));
+        if (options.repetitionContextSize != 0 && (options.repetitionPenalty != 1 || options.presencePenalty != 0 || options.frequencyPenalty != 0))
+            llama_sampler_chain_add(sampler.get(), llama_sampler_init_penalties(vocabSize,
+                options.repetitionContextSize < 0 ? llama_n_ctx(context_.get()) : options.repetitionContextSize,
+                options.repetitionPenalty, options.frequencyPenalty, options.presencePenalty));
         if (options.temperature == 0) llama_sampler_chain_add(sampler.get(), llama_sampler_init_greedy());
         else {
             llama_sampler_chain_add(sampler.get(), llama_sampler_init_top_k(options.topK));
-            llama_sampler_chain_add(sampler.get(), llama_sampler_init_top_p(options.topP, 1));
+            if (options.typicalP != 1) llama_sampler_chain_add(sampler.get(), llama_sampler_init_typical(options.typicalP, options.minKeep));
+            llama_sampler_chain_add(sampler.get(), llama_sampler_init_top_p(options.topP, options.minKeep));
+            if (options.minP > 0) llama_sampler_chain_add(sampler.get(), llama_sampler_init_min_p(options.minP, options.minKeep));
+            if (options.xtcProbability > 0) llama_sampler_chain_add(sampler.get(), llama_sampler_init_xtc(options.xtcProbability, options.xtcThreshold, options.minKeep, options.seed));
             llama_sampler_chain_add(sampler.get(), llama_sampler_init_temp(options.temperature));
             llama_sampler_chain_add(sampler.get(), llama_sampler_init_dist(options.seed));
         }
+        // New sampler per request: restore the full history, including cached prompt tokens.
+        for (const auto token : prompt) llama_sampler_accept(sampler.get(), token);
+        }
         RuntimeResult result{FinishReason::Length, 0, reuse};
         detail::Utf8Stream utf8;
-        const auto* vocab = llama_model_get_vocab(model_.get());
         for (int n = 0; n < options.maxTokens; ++n) {
             cancel.throwIfCancelled();
-            const auto token = llama_sampler_sample(sampler.get(), context_.get(), -1);
+            const auto token = conversation ? common_sampler_sample(structuredSampler.get(), context_.get(), -1)
+                : llama_sampler_sample(sampler.get(), context_.get(), -1);
+            if (conversation) common_sampler_accept(structuredSampler.get(), token, true);
             ++result.generatedTokens;
             if (llama_vocab_is_eog(vocab, token)) { result.finishReason = FinishReason::Stop; break; }
             QByteArray piece(32, '\0');
-            int length = llama_token_to_piece(vocab, token, piece.data(), piece.size(), 0, false);
+            const bool special = preserved.contains(token);
+            int length = llama_token_to_piece(vocab, token, piece.data(), piece.size(), 0, special);
             if (length < 0) {
                 piece.resize(-length);
-                length = llama_token_to_piece(vocab, token, piece.data(), piece.size(), 0, false);
+                length = llama_token_to_piece(vocab, token, piece.data(), piece.size(), 0, special);
             }
             if (length < 0) throw Error(ErrorCode::RuntimeFailure, QStringLiteral("Token decoding failed"));
             piece.resize(length);
@@ -172,10 +261,45 @@ public:
     }
     std::unique_ptr<RuntimeContext> createContext(const CancellationToken& cancel) override
     { cancel.throwIfCancelled(); return std::make_unique<LlamaContext>(model_, spec_, accelerated_); }
+    RuntimeConversationPrompt prepareConversation(const ConversationRequest& request, const CancellationToken& cancel) override
+    {
+        cancel.throwIfCancelled();
+        if (!templates_) templates_ = common_chat_templates_init(model_.get(), spec_.options["chat_template"].toString().toStdString());
+        common_chat_templates_inputs input;
+        input.messages = common_chat_msgs_parse_oaicompat(common_json::parse(QJsonDocument(request.messages).toJson(QJsonDocument::Compact).toStdString()));
+        input.tools = common_chat_tools_parse_oaicompat(common_json::parse(QJsonDocument(request.tools).toJson(QJsonDocument::Compact).toStdString()));
+        input.tool_choice = common_chat_tool_choice_parse_oaicompat(request.toolChoice.toStdString());
+        input.parallel_tool_calls = request.parallelToolCalls;
+        input.reasoning_format = COMMON_REASONING_FORMAT_DEEPSEEK;
+        auto state = std::make_shared<LlamaConversationState>();
+        state->chat = common_chat_templates_apply(templates_.get(), input);
+        state->parser = common_chat_parser_params(state->chat);
+        state->parser.reasoning_format = input.reasoning_format;
+        if (!state->chat.parser.empty()) state->parser.parser.load(state->chat.parser);
+        const auto tokens = common_tokenize(llama_model_get_vocab(model_.get()), state->chat.prompt, true, true);
+        RuntimeConversationPrompt result;
+        result.tokens.reserve(tokens.size());
+        for (const auto token : tokens) result.tokens.append(token);
+        for (const auto& stop : state->chat.additional_stops) result.stop.append(QString::fromStdString(stop));
+        result.state = std::move(state);
+        cancel.throwIfCancelled(); return result;
+    }
+    RuntimeConversationReply parseConversation(const RuntimeConversationPrompt& prompt, const QString& text) override
+    {
+        const auto* state = dynamic_cast<const LlamaConversationState*>(prompt.state.get());
+        if (!state) throw Error(ErrorCode::InvalidArgument, "Missing llama.cpp conversation parser state");
+        const auto parsed = common_chat_parse(text.toStdString(), false, state->parser);
+        RuntimeConversationReply result{QString::fromStdString(parsed.content), QString::fromStdString(parsed.reasoning_content), {}};
+        for (const auto& call : parsed.tool_calls)
+            result.toolCalls.append(QJsonObject{{"id", QString::fromStdString(call.id)}, {"type", "function"},
+                {"function", QJsonObject{{"name", QString::fromStdString(call.name)}, {"arguments", QString::fromStdString(call.arguments)}}}});
+        return result;
+    }
 private:
     ModelPtr model_;
     ModelSpec spec_;
     bool accelerated_;
+    common_chat_templates_ptr templates_;
 };
 #endif
 class LlamaRuntime final : public Runtime {

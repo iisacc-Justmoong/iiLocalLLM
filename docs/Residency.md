@@ -24,7 +24,7 @@ ModelResidencyManager는 모델별 메모리 예약, 마지막 사용 순서, �
 물리 RAM을 탐지하지 못하면 4 GiB를 기준으로 보수적인 자동 예산/수명을 사용한다. 메모리 바이트 설정은 서비스 배포 설정이며 앱의 모델 요청에 backend/device 또는 예산 변경 필드를 두지 않는다.
 
 ```sh
-./build/iiLocalLLMD --models-root "$PWD/build/Models" --socket "$PWD/build/llm.sock" \
+./build/iiLocalLLMD --models-root "$PWD/build/chat/Models" --socket "$PWD/build/llm.sock" \
   --memory-budget-mib 18432 --memory-reserve-mib 512 --max-models 4 --keep-alive 5m
 ```
 

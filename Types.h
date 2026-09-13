@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QtCore/QJsonObject>
+#include <QtCore/QJsonArray>
 #include <QtCore/QList>
 #include <QtCore/QStringList>
 #include <QtCore/qglobal.h>
@@ -74,6 +75,16 @@ struct GenerationOptions {
     int topK = 40;
     quint32 seed = 0;
     QStringList stop;
+    double minP = 0;
+    double typicalP = 1; // llama.cpp only when different from 1.
+    int minKeep = 1;
+    double repetitionPenalty = 1;
+    int repetitionContextSize = 64; // -1 applies to the full prompt and generated history.
+    double presencePenalty = 0;
+    double frequencyPenalty = 0;
+    double xtcProbability = 0;
+    double xtcThreshold = 0.1;
+    QJsonObject logitBias; // Decimal token IDs -> finite additive logit biases.
 };
 struct ChatRequest {
     QString sessionId;
@@ -87,6 +98,18 @@ struct CompletionRequest {
     QList<ChatMessage> messages;
     GenerationOptions options;
     qint64 keepAliveMs = -1;
+};
+// Structured text/tool conversation in OpenAI function-call message format.
+// The caller owns history; contextId optionally reuses a bounded, model-scoped KV cache.
+struct ConversationRequest {
+    QString model;
+    QJsonArray messages;
+    QJsonArray tools;
+    QString toolChoice = QStringLiteral("auto"); // auto, required, none
+    QString contextId;
+    GenerationOptions options;
+    qint64 keepAliveMs = -1;
+    bool parallelToolCalls = true;
 };
 struct Usage {
     int promptTokens = 0;
@@ -102,6 +125,8 @@ struct GenerationResult {
     Usage usage;
     ErrorCode errorCode = ErrorCode::None;
     QString errorMessage;
+    QJsonArray toolCalls; // OpenAI function-call objects; empty for text-only APIs.
+    QString reasoning;
 };
 struct StreamEvent {
     StreamEventKind kind = StreamEventKind::Started;

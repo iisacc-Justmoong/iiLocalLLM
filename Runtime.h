@@ -12,17 +12,38 @@ struct RuntimeResult {
     int generatedTokens = 0;
     int cachedTokens = 0;
 };
+struct IILOCALLLM_EXPORT RuntimePromptState { virtual ~RuntimePromptState() = default; };
+struct RuntimeConversationPrompt {
+    TokenList tokens;
+    QStringList stop;
+    std::shared_ptr<const RuntimePromptState> state;
+};
+struct RuntimeConversationReply {
+    QString text;
+    QString reasoning;
+    QJsonArray toolCalls;
+};
 class IILOCALLLM_EXPORT RuntimeContext {
 public:
     virtual ~RuntimeContext() = default;
     virtual RuntimeResult generate(const TokenList& prompt, const GenerationOptions& options,
         const CancellationToken& cancellation, const TextCallback& onText) = 0;
+    virtual RuntimeResult generateConversation(const RuntimeConversationPrompt&, const GenerationOptions&,
+        const CancellationToken&, const TextCallback&) {
+        throw Error(ErrorCode::RuntimeUnavailable, "Runtime does not support structured conversations");
+    }
 };
 class IILOCALLLM_EXPORT RuntimeModel {
 public:
     virtual ~RuntimeModel() = default;
     virtual TokenList tokenize(const QList<ChatMessage>& messages, const CancellationToken& cancellation) = 0;
     virtual std::unique_ptr<RuntimeContext> createContext(const CancellationToken& cancellation) = 0;
+    virtual RuntimeConversationPrompt prepareConversation(const ConversationRequest&, const CancellationToken&) {
+        throw Error(ErrorCode::RuntimeUnavailable, "Runtime does not support structured conversations");
+    }
+    virtual RuntimeConversationReply parseConversation(const RuntimeConversationPrompt&, const QString&) {
+        throw Error(ErrorCode::RuntimeUnavailable, "Runtime does not support structured conversations");
+    }
 };
 class IILOCALLLM_EXPORT Runtime {
 public:

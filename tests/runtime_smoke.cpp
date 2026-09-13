@@ -94,6 +94,28 @@ int main(int argc, char** argv)
         if (service.session(session).get().messages != historyBeforeCancel || service.stats().get().cachedContexts != 0) return 6;
         const auto resumed = service.chat(request).result.get();
         if (resumed.errorCode != ErrorCode::None || resumed.text.isEmpty() || resumed.usage.cachedTokens != 0) return 7;
+        // A strong positive bias must change the selected token through each real adapter.
+        request.options.maxTokens = 1;
+        request.options.repetitionPenalty = 1.1;
+        request.options.presencePenalty = .1;
+        request.options.frequencyPenalty = .1;
+        request.options.repetitionContextSize = -1;
+        QStringList biased;
+        for (const auto* token : {"42", "43"}) {
+            request.options.logitBias = {{token,100}};
+            const auto result = service.chat(request).result.get();
+            if (result.errorCode != ErrorCode::None || result.text.isEmpty())
+                throw std::runtime_error(("Biased generation failed: " + result.errorMessage).toStdString());
+            biased.append(result.text);
+        }
+        if (biased[0] == biased[1]) throw std::runtime_error("logit_bias did not affect real inference");
+        request.options.logitBias = {};
+        request.options.maxTokens = 3; request.options.temperature = .7;
+        request.options.minP = .05; request.options.minKeep = 2;
+        request.options.xtcProbability = .1;
+        request.options.typicalP = gguf ? .95 : 1;
+        const auto sampled = service.chat(request).result.get();
+        if (sampled.errorCode != ErrorCode::None) throw std::runtime_error(sampled.errorMessage.toStdString());
         std::cout << QJsonDocument(QJsonObject{{QStringLiteral("execution"), executionObject(loaded.execution)}, {QStringLiteral("text"), first.text},
             {QStringLiteral("prompt_tokens"), first.usage.promptTokens}, {QStringLiteral("generated_tokens"), first.usage.generatedTokens},
             {QStringLiteral("second_turn_cached_tokens"), second.usage.cachedTokens}}).toJson().constData();

@@ -2,7 +2,9 @@
 #include "service/Managers.h"
 #include "service/ModelManager.h"
 #include "service/Scheduler.h"
+#include "service/Conversation.h"
 #include <QtCore/QUuid>
+#include <QtCore/QCryptographicHash>
 #include <optional>
 #include <mutex>
 
@@ -22,6 +24,8 @@ void failure(GenerationResult& result, const Error& error)
     result.errorCode = error.code();
     result.errorMessage = QString::fromUtf8(error.what());
     result.finishReason = error.code() == ErrorCode::Cancelled ? FinishReason::Cancelled : FinishReason::Error;
+    result.toolCalls = {}; // A failed/cancelled request never yields executable calls.
+    result.reasoning.clear();
 }
 void finish(const StreamCallback& callback, const GenerationResult& result)
 {
@@ -173,6 +177,73 @@ GenerationHandle Service::chat(ChatRequest request, StreamCallback callback)
 { return d->generate(std::move(request), std::nullopt, std::move(callback)); }
 GenerationHandle Service::complete(CompletionRequest request, StreamCallback callback)
 { return d->generate({}, std::move(request), std::move(callback)); }
+GenerationHandle Service::converse(ConversationRequest request, StreamCallback callback)
+{
+    GenerationHandle handle;
+    handle.requestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto promise = std::make_shared<std::promise<GenerationResult>>();
+    handle.result = promise->get_future().share();
+    const auto token = handle.cancellation;
+    GenerationResult initial; initial.requestId = handle.requestId; initial.sessionId = request.contextId;
+    auto reject = [promise, initial, callback](Error error) mutable {
+        failure(initial, error); finish(callback, initial); promise->set_value(initial);
+    };
+    d->scheduler.enqueue(token, [impl = d.get(), request = std::move(request), callback, promise, token, initial]() mutable {
+        auto result = initial;
+        QString leasedModel, cacheId;
+        auto notify = [&](StreamEvent event) {
+            if (!callback) return;
+            try { callback(event); }
+            catch (...) { throw Error(ErrorCode::ConsumerFailure, "Stream consumer threw an exception"); }
+        };
+        try {
+            token.throwIfCancelled();
+            validateConversationRequest(request, impl->options.maxInputCharacters);
+            const auto record = impl->state->models.resolve(request.model);
+            if (!record.manifest.capabilities.contains("chat")) throw Error(ErrorCode::InvalidArgument, "Model does not declare chat capability");
+            auto& model = impl->state->models.acquire(record.manifest.id, request.keepAliveMs, token);
+            leasedModel = model.spec.id;
+            const auto key = request.contextId.isEmpty() ? result.requestId : request.contextId;
+            cacheId = "conversation:" + leasedModel + ':' + QString::fromLatin1(QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Sha256).toHex());
+            auto prepared = model.runtime->prepareConversation(request, token);
+            if (prepared.tokens.isEmpty() || prepared.tokens.size() > model.spec.contextTokens - request.options.maxTokens)
+                throw Error(ErrorCode::ContextOverflow, "Structured conversation exceeds context; compact its complete tool turns before retrying");
+            result.usage.promptTokens = prepared.tokens.size();
+            auto& context = impl->state->cache.acquire(cacheId, model, token);
+            notify({StreamEventKind::Started, result.requestId, result.sessionId, {}, {}});
+            StopFilter stop(request.options.stop + prepared.stop);
+            QString raw;
+            const auto generated = context.generateConversation(prepared, request.options, token, [&](const QString& text) {
+                token.throwIfCancelled(); raw += stop.push(text);
+                if (raw.size() > impl->options.maxInputCharacters) throw Error(ErrorCode::ResourceLimit, "Structured response exceeds output limit");
+                return !stop.stopped();
+            });
+            token.throwIfCancelled(); raw += stop.finish();
+            if (generated.finishReason != FinishReason::Stop && generated.finishReason != FinishReason::Length)
+                throw Error(ErrorCode::RuntimeFailure, "Runtime returned an invalid terminal status");
+            result.usage.generatedTokens = generated.generatedTokens; result.usage.cachedTokens = generated.cachedTokens;
+            result.finishReason = stop.stopped() ? FinishReason::Stop : generated.finishReason;
+            // A partial tool call must never reach an executor, even if its JSON prefix parses.
+            if (result.finishReason == FinishReason::Length)
+                throw Error(ErrorCode::ProtocolError, "Structured response reached the output limit before a complete turn");
+            auto reply = model.runtime->parseConversation(prepared, raw);
+            validateConversationReply(reply, request);
+            result.text = std::move(reply.text); result.reasoning = std::move(reply.reasoning); result.toolCalls = std::move(reply.toolCalls);
+            if (!result.text.isEmpty()) notify({StreamEventKind::Delta, result.requestId, result.sessionId, result.text, {}});
+            if (stop.stopped()) impl->state->cache.erase(cacheId);
+        } catch (const Error& error) {
+            impl->state->cache.erase(cacheId); failure(result, error);
+        } catch (const std::exception& error) {
+            impl->state->cache.erase(cacheId); failure(result, Error(ErrorCode::RuntimeFailure, QString::fromUtf8(error.what())));
+        } catch (...) {
+            impl->state->cache.erase(cacheId); failure(result, Error(ErrorCode::RuntimeFailure, "Unknown structured runtime failure"));
+        }
+        if (request.contextId.isEmpty()) impl->state->cache.erase(cacheId);
+        if (!leasedModel.isEmpty()) impl->state->models.release(leasedModel);
+        finish(callback, result); promise->set_value(std::move(result));
+    }, std::move(reject));
+    return handle;
+}
 GenerationHandle Service::Impl::generate(ChatRequest request, std::optional<CompletionRequest> completion, StreamCallback callback)
 {
     GenerationHandle handle;

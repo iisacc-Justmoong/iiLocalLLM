@@ -1,0 +1,1714 @@
+[
+  {
+    "provider": "accelerate",
+    "repository": "huggingface/accelerate",
+    "revision": "f13f7c13b64c10b6eb7e2d73171ea1b94c748701",
+    "path": "LICENSE",
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "url": "https://raw.githubusercontent.com/huggingface/accelerate/f13f7c13b64c10b6eb7e2d73171ea1b94c748701/LICENSE"
+  },
+  {
+    "provider": "accelerate",
+    "repository": "huggingface/accelerate",
+    "revision": "f13f7c13b64c10b6eb7e2d73171ea1b94c748701",
+    "path": "src/accelerate/utils/dataclasses.py",
+    "sha256": "9a9f3d6e7092c6232df3195806ae62ed8a26551be59e01a5af8ef6d55eba5587",
+    "url": "https://raw.githubusercontent.com/huggingface/accelerate/f13f7c13b64c10b6eb7e2d73171ea1b94c748701/src/accelerate/utils/dataclasses.py"
+  },
+  {
+    "provider": "deepspeed",
+    "repository": "deepspeedai/DeepSpeed",
+    "revision": "b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba",
+    "path": "LICENSE",
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "url": "https://raw.githubusercontent.com/deepspeedai/DeepSpeed/b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba/LICENSE"
+  },
+  {
+    "provider": "deepspeed",
+    "repository": "deepspeedai/DeepSpeed",
+    "revision": "b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba",
+    "path": "deepspeed/inference/config.py",
+    "sha256": "93e4add84bc66c0911a25fb2e2535e000fbadb569210090865e0444cf9e51770",
+    "url": "https://raw.githubusercontent.com/deepspeedai/DeepSpeed/b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba/deepspeed/inference/config.py"
+  },
+  {
+    "provider": "deepspeed",
+    "repository": "deepspeedai/DeepSpeed",
+    "revision": "b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba",
+    "path": "deepspeed/runtime/activation_checkpointing/config.py",
+    "sha256": "6109211d84fa42bd86265fcabac2d4d29509fab6cb2ca2a3d19a3b2e47999008",
+    "url": "https://raw.githubusercontent.com/deepspeedai/DeepSpeed/b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba/deepspeed/runtime/activation_checkpointing/config.py"
+  },
+  {
+    "provider": "deepspeed",
+    "repository": "deepspeedai/DeepSpeed",
+    "revision": "b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba",
+    "path": "deepspeed/runtime/config.py",
+    "sha256": "239ed3ec68285cefc4ad3fa5afc55f2087a16f0cc286b3b1423dcfc295b7a15e",
+    "url": "https://raw.githubusercontent.com/deepspeedai/DeepSpeed/b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba/deepspeed/runtime/config.py"
+  },
+  {
+    "provider": "deepspeed",
+    "repository": "deepspeedai/DeepSpeed",
+    "revision": "b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba",
+    "path": "deepspeed/runtime/constants.py",
+    "sha256": "0122ea4718b49681d5b8b5ce4c092b98ad5955fb66c94d116274145db6498461",
+    "url": "https://raw.githubusercontent.com/deepspeedai/DeepSpeed/b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba/deepspeed/runtime/constants.py"
+  },
+  {
+    "provider": "deepspeed",
+    "repository": "deepspeedai/DeepSpeed",
+    "revision": "b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba",
+    "path": "deepspeed/runtime/precision_config.py",
+    "sha256": "837fc7800c9dcfdad7c1b22999eab6c65d5e16b7230bf13f044f77ede6ce77ba",
+    "url": "https://raw.githubusercontent.com/deepspeedai/DeepSpeed/b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba/deepspeed/runtime/precision_config.py"
+  },
+  {
+    "provider": "deepspeed",
+    "repository": "deepspeedai/DeepSpeed",
+    "revision": "b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba",
+    "path": "deepspeed/runtime/tensor_parallel/config.py",
+    "sha256": "85a39c41993e42d0ac1ae9892e447453581e262b02f1bbf66c573872a36289bb",
+    "url": "https://raw.githubusercontent.com/deepspeedai/DeepSpeed/b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba/deepspeed/runtime/tensor_parallel/config.py"
+  },
+  {
+    "provider": "deepspeed",
+    "repository": "deepspeedai/DeepSpeed",
+    "revision": "b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba",
+    "path": "deepspeed/runtime/zero/config.py",
+    "sha256": "4e28c1fd688361b7da72b97fccad827f9762f139a82646f4ea619f481741ca1f",
+    "url": "https://raw.githubusercontent.com/deepspeedai/DeepSpeed/b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba/deepspeed/runtime/zero/config.py"
+  },
+  {
+    "provider": "deepspeed",
+    "repository": "deepspeedai/DeepSpeed",
+    "revision": "b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba",
+    "path": "deepspeed/runtime/zero/offload_config.py",
+    "sha256": "3ad8d23fd24a19c62c839267c01c79e67fa45d070f2435c2799563b5788335bb",
+    "url": "https://raw.githubusercontent.com/deepspeedai/DeepSpeed/b5e000c4cd7952b351026c73a9e7bfd8e52ff0ba/deepspeed/runtime/zero/offload_config.py"
+  },
+  {
+    "provider": "llama",
+    "repository": "ggml-org/llama.cpp",
+    "revision": "5202104b59ada9005db079eea43882a2b7bf5802",
+    "path": "LICENSE",
+    "sha256": "94f29bbed6a22c35b992c5c6ebf0e7c92f13b836b90f36f461c9cf2f0f1d010d",
+    "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/5202104b59ada9005db079eea43882a2b7bf5802/LICENSE"
+  },
+  {
+    "provider": "llama",
+    "repository": "ggml-org/llama.cpp",
+    "revision": "5202104b59ada9005db079eea43882a2b7bf5802",
+    "path": "common/common.h",
+    "sha256": "7cfcc6a57122702ea35d04ed20861aef162bd94f55cfbbf9fd23ee3127fe6cb4",
+    "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/5202104b59ada9005db079eea43882a2b7bf5802/common/common.h"
+  },
+  {
+    "provider": "llama",
+    "repository": "ggml-org/llama.cpp",
+    "revision": "5202104b59ada9005db079eea43882a2b7bf5802",
+    "path": "include/llama.h",
+    "sha256": "3d1b18eda626c1b9ecf5bda0798e65b974a8f70f30d56726610633a980cb4160",
+    "url": "https://raw.githubusercontent.com/ggml-org/llama.cpp/5202104b59ada9005db079eea43882a2b7bf5802/include/llama.h"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "LICENSE",
+    "sha256": "85f3989bd8264b6e758ed5efb7c04415c1b63abfa758b920a1c2e6acf8a3fc93",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/LICENSE"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/ContentBlockStyle.ts",
+    "sha256": "6bb02ae065fdef9c16e574651b870693eebdd13bb4f22e21ce57016fed894d26",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/ContentBlockStyle.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/LLMApplyPromptTemplateOpts.ts",
+    "sha256": "1dbcc37ad4bcede4931e433dc48dfbfc2bcf70d0ca955cf834a82e2c7f108d6b",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/LLMApplyPromptTemplateOpts.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/LLMContextReference.ts",
+    "sha256": "d1834330dd78364e098b29a6364619526e479a674d8323e08da8cfe0f0b32b24",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/LLMContextReference.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/LLMErrorDisplayData.ts",
+    "sha256": "75db54e1c40959b62828c52480d0799b0e8be5348562f8a4dc57bff50d1ba0b1",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/LLMErrorDisplayData.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/LLMLoadModelConfig.test.ts",
+    "sha256": "81c3e9efa4968f6205ae95f02254a91b2443e8a4b0e334cb75a7785e59cfb977",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/LLMLoadModelConfig.test.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/LLMLoadModelConfig.ts",
+    "sha256": "e4b3703adf201fa18283eac686cc59a2f4660d1acdeecbd6e1297f1971335ee6",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/LLMLoadModelConfig.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/LLMLoadPromptTemplate.ts",
+    "sha256": "4ebef50bd227f9b40d599257b1d7070304c6157d2066bd23a7f928b2dabe83e8",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/LLMLoadPromptTemplate.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/LLMModelInfo.ts",
+    "sha256": "8eac240c2186e2556c2ca11c0279f756357f85436529870c6317f6976afe2095",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/LLMModelInfo.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/LLMPredictionConfig.ts",
+    "sha256": "e011248336071120a6489693c6cf992936e7bb3d7702ad4daf4c6b1daf908638",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/LLMPredictionConfig.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/LLMPredictionFragment.ts",
+    "sha256": "4858d44a41a8673278e98f18bae4f4ab8f212095a7757679030e258ab858e2e7",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/LLMPredictionFragment.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/LLMPredictionStats.ts",
+    "sha256": "7ef9951e7d13f04d733032dd999cff140b57bc3919a93be013f6c8b8ec33fe36",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/LLMPredictionStats.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/LLMPromptTemplate.ts",
+    "sha256": "fc90a7f6957acf5cd70ea73077f04c1fd04411db2f35ec0208aa56cdb9980d34",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/LLMPromptTemplate.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/LLMStructuredPredictionSetting.ts",
+    "sha256": "34a65d66e95edf67651a4a14eed87c7e1bb73fdfaabc0d1acd38fcf9a57b952f",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/LLMStructuredPredictionSetting.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/LLMToolChoice.ts",
+    "sha256": "95affc0a64130d48c51a854f21a7295c8273b65c2b8ef20086043599c27b2bca",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/LLMToolChoice.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/LLMToolUseSetting.ts",
+    "sha256": "be05376a724f2cae34b092c6120e06c8b72c3800c3cb1176332d81a16ef6b890",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/LLMToolUseSetting.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/PromptProcessingDetails.ts",
+    "sha256": "7d21ab488f4d683b0a53252d9e19bc8a4b8ac7aa3b294b208e96f877e79547ec",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/PromptProcessingDetails.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/TokenSourceIdentifier.ts",
+    "sha256": "586d1c8dc9e7a3bf2bc238e929f8a382e4f02b02d6f4d8a6824ee6a9ed92103b",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/TokenSourceIdentifier.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/processing/PredictionLoopHandlerUpdate.ts",
+    "sha256": "60873f385e4c8649082022657550c0567beaaa18021bd7362cfff7160aa3a760",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/processing/PredictionLoopHandlerUpdate.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/processing/ProcessingRequest.ts",
+    "sha256": "7e2e1398897170f5cf3ad13b3ca8e1c9fb4206b7f28d13f07868e90bf9d35b29",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/processing/ProcessingRequest.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/processing/ProcessingUpdate.ts",
+    "sha256": "1ba19f587ea67a5c6030dccdc0edab789045adfbbc0105bb85992876433e3008",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/processing/ProcessingUpdate.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/processing/Processor.ts",
+    "sha256": "4214288caf736d8b9c5aaad474587aa5600c3baa0ef66186408d3bcb530efac7",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/processing/Processor.ts"
+  },
+  {
+    "provider": "lmstudio",
+    "repository": "lmstudio-ai/lmstudio-js",
+    "revision": "c47dce0d37a3008d3e4c393e40452825a2a9790b",
+    "path": "packages/lms-shared-types/src/llm/processing/PromptPreprocessorUpdate.ts",
+    "sha256": "9f8f0c96b310246568dddaa8be1335903a3e5ef18d67ca3ef2ceec2c5b98f77e",
+    "url": "https://raw.githubusercontent.com/lmstudio-ai/lmstudio-js/c47dce0d37a3008d3e4c393e40452825a2a9790b/packages/lms-shared-types/src/llm/processing/PromptPreprocessorUpdate.ts"
+  },
+  {
+    "provider": "mlx",
+    "repository": "ml-explore/mlx",
+    "revision": "229f5b430df7926743c5b6ac62068cae2ebc8978",
+    "path": "LICENSE",
+    "sha256": "ccfab7ccb2ea306f71531c8ca77bb55507606cd90768b1e32b8b52ab5b48cf01",
+    "url": "https://raw.githubusercontent.com/ml-explore/mlx/229f5b430df7926743c5b6ac62068cae2ebc8978/LICENSE"
+  },
+  {
+    "provider": "mlx",
+    "repository": "ml-explore/mlx",
+    "revision": "229f5b430df7926743c5b6ac62068cae2ebc8978",
+    "path": "python/mlx/optimizers/optimizers.py",
+    "sha256": "25a57fe00ff9ae1fe836cd504506e16d0e9d890112daed05cef0e2bcb95f7714",
+    "url": "https://raw.githubusercontent.com/ml-explore/mlx/229f5b430df7926743c5b6ac62068cae2ebc8978/python/mlx/optimizers/optimizers.py"
+  },
+  {
+    "provider": "mlx",
+    "repository": "ml-explore/mlx",
+    "revision": "229f5b430df7926743c5b6ac62068cae2ebc8978",
+    "path": "python/mlx/optimizers/schedulers.py",
+    "sha256": "4276bf0907e24701bc22464a73620fd30d27bd63eb6c9ccb3168a621c9ecd9ae",
+    "url": "https://raw.githubusercontent.com/ml-explore/mlx/229f5b430df7926743c5b6ac62068cae2ebc8978/python/mlx/optimizers/schedulers.py"
+  },
+  {
+    "provider": "mlx-lm",
+    "repository": "ml-explore/mlx-lm",
+    "revision": "dcbcf786c0cf56f9a12fabe9468c887781431ae2",
+    "path": "LICENSE",
+    "sha256": "ccfab7ccb2ea306f71531c8ca77bb55507606cd90768b1e32b8b52ab5b48cf01",
+    "url": "https://raw.githubusercontent.com/ml-explore/mlx-lm/dcbcf786c0cf56f9a12fabe9468c887781431ae2/LICENSE"
+  },
+  {
+    "provider": "mlx-lm",
+    "repository": "ml-explore/mlx-lm",
+    "revision": "dcbcf786c0cf56f9a12fabe9468c887781431ae2",
+    "path": "mlx_lm/generate.py",
+    "sha256": "4a3bf57f5679dac73791f069268866ab5b9336e58582d436b31133984e4b6971",
+    "url": "https://raw.githubusercontent.com/ml-explore/mlx-lm/dcbcf786c0cf56f9a12fabe9468c887781431ae2/mlx_lm/generate.py"
+  },
+  {
+    "provider": "mlx-lm",
+    "repository": "ml-explore/mlx-lm",
+    "revision": "dcbcf786c0cf56f9a12fabe9468c887781431ae2",
+    "path": "mlx_lm/lora.py",
+    "sha256": "e366eec6ae2f8a72446f1af65faf189a92a01ca509fb0cafb3fa54b89b4291f7",
+    "url": "https://raw.githubusercontent.com/ml-explore/mlx-lm/dcbcf786c0cf56f9a12fabe9468c887781431ae2/mlx_lm/lora.py"
+  },
+  {
+    "provider": "mlx-lm",
+    "repository": "ml-explore/mlx-lm",
+    "revision": "dcbcf786c0cf56f9a12fabe9468c887781431ae2",
+    "path": "mlx_lm/sample_utils.py",
+    "sha256": "c93c1eef794725f9f7ce77b6212f61eb6d0fe17b9cd87c06cec6470ee12b07f2",
+    "url": "https://raw.githubusercontent.com/ml-explore/mlx-lm/dcbcf786c0cf56f9a12fabe9468c887781431ae2/mlx_lm/sample_utils.py"
+  },
+  {
+    "provider": "mlx-lm",
+    "repository": "ml-explore/mlx-lm",
+    "revision": "dcbcf786c0cf56f9a12fabe9468c887781431ae2",
+    "path": "mlx_lm/tuner/datasets.py",
+    "sha256": "dcd675376d68d1813261c8389236b586b16b9a58a5ea80be8eb535bb9d0e9689",
+    "url": "https://raw.githubusercontent.com/ml-explore/mlx-lm/dcbcf786c0cf56f9a12fabe9468c887781431ae2/mlx_lm/tuner/datasets.py"
+  },
+  {
+    "provider": "mlx-lm",
+    "repository": "ml-explore/mlx-lm",
+    "revision": "dcbcf786c0cf56f9a12fabe9468c887781431ae2",
+    "path": "mlx_lm/tuner/trainer.py",
+    "sha256": "0b6027fdb11803e951ceee52c83a81f82daa922ea8c6b7ca6888953461064e8e",
+    "url": "https://raw.githubusercontent.com/ml-explore/mlx-lm/dcbcf786c0cf56f9a12fabe9468c887781431ae2/mlx_lm/tuner/trainer.py"
+  },
+  {
+    "provider": "mlx-lm",
+    "repository": "ml-explore/mlx-lm",
+    "revision": "dcbcf786c0cf56f9a12fabe9468c887781431ae2",
+    "path": "mlx_lm/tuner/utils.py",
+    "sha256": "f59f3c027176a3975fe60e7fbd9f3f38723c27c3f888cf9e591c103f93f68588",
+    "url": "https://raw.githubusercontent.com/ml-explore/mlx-lm/dcbcf786c0cf56f9a12fabe9468c887781431ae2/mlx_lm/tuner/utils.py"
+  },
+  {
+    "provider": "mlx-lm",
+    "repository": "ml-explore/mlx-lm",
+    "revision": "dcbcf786c0cf56f9a12fabe9468c887781431ae2",
+    "path": "mlx_lm/utils.py",
+    "sha256": "4a1af8edd75d461980e9593d1cc37eb26f33f0fc80dacc175e50ca71b6303c8c",
+    "url": "https://raw.githubusercontent.com/ml-explore/mlx-lm/dcbcf786c0cf56f9a12fabe9468c887781431ae2/mlx_lm/utils.py"
+  },
+  {
+    "provider": "ollama",
+    "repository": "ollama/ollama",
+    "revision": "53fed26112817f7c55f664efb9e3f65f06cab7db",
+    "path": "LICENSE",
+    "sha256": "5934ed2ce0d15154bcdb9c85203210abac0da4314af34081e36df4599f90b226",
+    "url": "https://raw.githubusercontent.com/ollama/ollama/53fed26112817f7c55f664efb9e3f65f06cab7db/LICENSE"
+  },
+  {
+    "provider": "ollama",
+    "repository": "ollama/ollama",
+    "revision": "53fed26112817f7c55f664efb9e3f65f06cab7db",
+    "path": "api/types.go",
+    "sha256": "40c2647781a54fd3baedca021d495f3f7f899e217fce9697405e90b7930b9d8e",
+    "url": "https://raw.githubusercontent.com/ollama/ollama/53fed26112817f7c55f664efb9e3f65f06cab7db/api/types.go"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "LICENSE",
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/LICENSE"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/config.py",
+    "sha256": "db319d65d0239f3a113dfe36a83604e00d0d2cc5cddb19ab8a7b989e4742d32c",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/adalora/config.py",
+    "sha256": "f1b2eea2e36c7c69c5ab3a91cde4b851e6ddf40a4a806726c2ee89af23dcdc88",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/adalora/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/adamss/config.py",
+    "sha256": "fb8d79019d96057d6a112fc2e4e29dac4cc32d6fb3cd35d46343c06477f0b531",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/adamss/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/adaption_prompt/config.py",
+    "sha256": "382f51d23b5cf190a412f33853d0c3133afd741635ce7b055162da4ac0b9e6d3",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/adaption_prompt/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/beft/config.py",
+    "sha256": "c654cdbe3e875611af290f6ee8598edb14ca6d3ce36600a8f80d0558e19788f3",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/beft/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/boft/config.py",
+    "sha256": "43696ae819c878ff6a661c57f400b86431b4e508406b2f1a83a2853f1c6174a7",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/boft/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/c3a/config.py",
+    "sha256": "e69eb6d0b48197b87997084d2b2cdd3a06d61cd8dc4bc0e8e6b02e91910650e1",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/c3a/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/cartridge/config.py",
+    "sha256": "419742860a2d3c298bc81ba0b3a0aebacde0c669fa6258315f3308357f5298b5",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/cartridge/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/cpt/config.py",
+    "sha256": "e897a5fbf95e8468bc9c8b80f805e94cfb2921cf35090c331428bdf3550010d2",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/cpt/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/deft/config.py",
+    "sha256": "202e044bbb63b992f01c11975c1986f91ac68ca7f7876d41a88b4c15f6eeaf1b",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/deft/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/delora/config.py",
+    "sha256": "3a52210ff8fc481571cb669fe459b051212021c6586aa61f05c4f0c9dfd986e4",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/delora/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/fourierft/config.py",
+    "sha256": "2aec8e4bfc18092d334db227059f56575fb3d75d5e81e06c6e29e5ed371ba425",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/fourierft/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/frod/config.py",
+    "sha256": "3e11c06acacfb421b59dd9339bf1e865d8cdd8889d718743437d57dd54901b90",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/frod/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/glora/config.py",
+    "sha256": "260e572eed93a75966bf79be4ddbec1c6671975e9d08441488ba429d9d3cf2ae",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/glora/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/gralora/config.py",
+    "sha256": "8f75e0f4b68248f1fee98dedf2f4f00f8534120d33da22e0a0b180cae6ac13e9",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/gralora/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/hira/config.py",
+    "sha256": "58c0b8e3d62e87488cf0155529c7cf04a031144ec0d0649a37bee07d528c6b67",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/hira/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/hra/config.py",
+    "sha256": "f3a3a5a252fdd6d96be2377866fa0fe74cf1c2fd523b9b024a42977e9878b76c",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/hra/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/ia3/config.py",
+    "sha256": "6a576713baf01f25f419d8980c7c318366e171ef561bce0fac5a2d372ac4ddb9",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/ia3/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/lily/config.py",
+    "sha256": "b4cdadc7c01f43470618d666832a0cf47be3207dcb4eedeabbcf0347387ed539",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/lily/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/ln_tuning/config.py",
+    "sha256": "0f92024f151a609add94fdee781c95478dde2d0d6573c432bcb853e2c93eaf91",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/ln_tuning/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/loha/config.py",
+    "sha256": "941ec827f4b37c409c7751cf25ee0912bf3b31b7aeaf2cbd1dc3c842a8521708",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/loha/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/lokr/config.py",
+    "sha256": "cb438c62ef69447984e6753491267f78f1f5b371a4a765333e563b53ab5f6cf7",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/lokr/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/lora/config.py",
+    "sha256": "49042be0a174d515e4459dbb4a084cf934635e47dc29597d70769d0499cae650",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/lora/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/miss/config.py",
+    "sha256": "4811570a6080eb3f2597800aa15c1e626c19de0aa3a178943d9003544787c37e",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/miss/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/multitask_prompt_tuning/config.py",
+    "sha256": "58c8ad51f25d3bebbb18079240c915eb8deea4a094e623a552c1dbe4ef92cc36",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/multitask_prompt_tuning/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/oft/config.py",
+    "sha256": "1d656f804ffed77a935d28917bb47c0dfcc048f34d5daa3213d8bd8a033910fc",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/oft/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/osf/config.py",
+    "sha256": "046e310091ba67cd9a58be46bb8e0f795038198ec688885a8db45ed0ec643d01",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/osf/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/p_tuning/config.py",
+    "sha256": "33380a28e3d0d6e8ade5e0f0e703794e39091d19d0da63d723347ccc87d5f9a7",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/p_tuning/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/peanut/config.py",
+    "sha256": "406694a6fb6bfd880d49f8d577243da29a9ce2c5aa78c86521878d8a94dc9745",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/peanut/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/poly/config.py",
+    "sha256": "a7d8696b5ee9d7a39c2dcba2effc90b6e3f6120d2dbc8a10797952949b1b9cd2",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/poly/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/prefix_tuning/config.py",
+    "sha256": "6a4ab3086cf7132001474f2e8297bc1ebfa4a91fc02bdb4be835beae6da6d9af",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/prefix_tuning/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/prompt_tuning/config.py",
+    "sha256": "cb9b51ecb6e5c25f99eb95485b90c8cec3dadd75c0a1cb188be3a78794d3c977",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/prompt_tuning/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/psoft/config.py",
+    "sha256": "af6bc82d5ac63945908819f56203e6a5306c23522b8e6aa44f361fc364e3b29c",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/psoft/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/pvera/config.py",
+    "sha256": "ab3f1bee9542aa3f9c5bf0d139f607f3b8987bdc896e1814743d5ec839c7bc89",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/pvera/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/randlora/config.py",
+    "sha256": "405cb4ea7bb17073613b22e6878fa82882dbdaf76301de6daeb722b7f4795165",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/randlora/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/road/config.py",
+    "sha256": "cfb08c1b65fdce02f6d26655c88818c1def10fd6a332ffbb9d9768cc0fa7f5f1",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/road/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/shadow/config.py",
+    "sha256": "5455b57bb2ff1257a14815162581c89a0e7fa7a136b8a3e300d731ef5a8c9348",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/shadow/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/shira/config.py",
+    "sha256": "5c43d3fcb2c00ee940be29b51d5bf73f8cf78b4034540d73d34fb79dabfa7f06",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/shira/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/supertuning/config.py",
+    "sha256": "c4d85e35993ddbd0907dc8cf5ac6011ee83dae72264d78bf9c6ac74609ac36a1",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/supertuning/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/tinylora/config.py",
+    "sha256": "3418844e9d91c0c9faa72a04b4bbb8576ac592a32b45da0b146b116c12356c2e",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/tinylora/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/trainable_tokens/config.py",
+    "sha256": "1b7e54fcebd8246a66737e3b0be08333256477b4ca08488de31b560078f8522b",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/trainable_tokens/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/unilora/config.py",
+    "sha256": "769f83ec07062a631284661f303db38474c601bfb03e50b07bf57f8b43b777b6",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/unilora/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/vblora/config.py",
+    "sha256": "a11090183b7841f258ec7330a17b8ccc9457a1a4cb543fda60da1f721d08365d",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/vblora/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/vera/config.py",
+    "sha256": "36cfede1b8f42716a73af45b88d629d6a430884b00ad7ef81cd86be284dc739e",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/vera/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/waveft/config.py",
+    "sha256": "3631e1b15245c7ecab6fb231a00fd484b87f07d32d9e4c4ff7dd7d7897d581c2",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/waveft/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/tuners/xlora/config.py",
+    "sha256": "3e343153cb9c59e0b392c9470685dcb38aa29025cb0ecf8498acb11301325777",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/tuners/xlora/config.py"
+  },
+  {
+    "provider": "peft",
+    "repository": "huggingface/peft",
+    "revision": "0e8d0ae8ab94f189f28b845e293d7452d7892d91",
+    "path": "src/peft/utils/peft_types.py",
+    "sha256": "44c67b60562eec2ccd5f3a18d5c2c6c00bd7752919710e45eeb751a5ebf5633f",
+    "url": "https://raw.githubusercontent.com/huggingface/peft/0e8d0ae8ab94f189f28b845e293d7452d7892d91/src/peft/utils/peft_types.py"
+  },
+  {
+    "provider": "sglang",
+    "repository": "sgl-project/sglang",
+    "revision": "14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6",
+    "path": "LICENSE",
+    "sha256": "1495e1e757ef4d0925a2350563cf5754bb23c51701a8ec4fb3c5cdcbedae6747",
+    "url": "https://raw.githubusercontent.com/sgl-project/sglang/14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6/LICENSE"
+  },
+  {
+    "provider": "sglang",
+    "repository": "sgl-project/sglang",
+    "revision": "14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6",
+    "path": "python/sglang/srt/arg_groups/choices.py",
+    "sha256": "b7a9d27cf221614d8d525229a042eb81d7043ca18deffb4e20a369274c50478b",
+    "url": "https://raw.githubusercontent.com/sgl-project/sglang/14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6/python/sglang/srt/arg_groups/choices.py"
+  },
+  {
+    "provider": "sglang",
+    "repository": "sgl-project/sglang",
+    "revision": "14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6",
+    "path": "python/sglang/srt/arg_groups/fields/__init__.py",
+    "sha256": "b15d3dc73c70ef3be6047b0e5dc4ff1a490c3e587e60e6eadbb347fd65259651",
+    "url": "https://raw.githubusercontent.com/sgl-project/sglang/14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6/python/sglang/srt/arg_groups/fields/__init__.py"
+  },
+  {
+    "provider": "sglang",
+    "repository": "sgl-project/sglang",
+    "revision": "14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6",
+    "path": "python/sglang/srt/arg_groups/fields/device.py",
+    "sha256": "305319002ef14c2e16c58f2b6a75644bfc346ead9efd6aab30c71fa7987b1ad9",
+    "url": "https://raw.githubusercontent.com/sgl-project/sglang/14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6/python/sglang/srt/arg_groups/fields/device.py"
+  },
+  {
+    "provider": "sglang",
+    "repository": "sgl-project/sglang",
+    "revision": "14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6",
+    "path": "python/sglang/srt/arg_groups/fields/disagg.py",
+    "sha256": "3cd59a226ec92dc8890f091b0b8b3d2cb283e9c5d6f1c632f5df9e701e84d8d7",
+    "url": "https://raw.githubusercontent.com/sgl-project/sglang/14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6/python/sglang/srt/arg_groups/fields/disagg.py"
+  },
+  {
+    "provider": "sglang",
+    "repository": "sgl-project/sglang",
+    "revision": "14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6",
+    "path": "python/sglang/srt/arg_groups/fields/exec_.py",
+    "sha256": "2b7de0829d9032b123d26c5cdbeb6ba18fc68e32a0c62b673fd33304b871534d",
+    "url": "https://raw.githubusercontent.com/sgl-project/sglang/14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6/python/sglang/srt/arg_groups/fields/exec_.py"
+  },
+  {
+    "provider": "sglang",
+    "repository": "sgl-project/sglang",
+    "revision": "14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6",
+    "path": "python/sglang/srt/arg_groups/fields/lora.py",
+    "sha256": "4de041b97e0a12b85f0905922e67ae14f0aabac8aaaa87d5d75f7f22cf2517d7",
+    "url": "https://raw.githubusercontent.com/sgl-project/sglang/14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6/python/sglang/srt/arg_groups/fields/lora.py"
+  },
+  {
+    "provider": "sglang",
+    "repository": "sgl-project/sglang",
+    "revision": "14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6",
+    "path": "python/sglang/srt/arg_groups/fields/memory.py",
+    "sha256": "1fcc4885768baceb72fe355cb8f69676abeb8ec5ccd3e00dd7898bb2b9d4ba7f",
+    "url": "https://raw.githubusercontent.com/sgl-project/sglang/14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6/python/sglang/srt/arg_groups/fields/memory.py"
+  },
+  {
+    "provider": "sglang",
+    "repository": "sgl-project/sglang",
+    "revision": "14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6",
+    "path": "python/sglang/srt/arg_groups/fields/mm.py",
+    "sha256": "50b821ee3877d740fcc9121febd47ccf2701fc777968712684525dc938266aec",
+    "url": "https://raw.githubusercontent.com/sgl-project/sglang/14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6/python/sglang/srt/arg_groups/fields/mm.py"
+  },
+  {
+    "provider": "sglang",
+    "repository": "sgl-project/sglang",
+    "revision": "14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6",
+    "path": "python/sglang/srt/arg_groups/fields/model.py",
+    "sha256": "22c9ddb5fb0fe4a8b78aa6d19c2670938c2f3ac52eecc0fd1d3207a71109fcfd",
+    "url": "https://raw.githubusercontent.com/sgl-project/sglang/14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6/python/sglang/srt/arg_groups/fields/model.py"
+  },
+  {
+    "provider": "sglang",
+    "repository": "sgl-project/sglang",
+    "revision": "14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6",
+    "path": "python/sglang/srt/arg_groups/fields/observability.py",
+    "sha256": "8a3bc4f773354a00178911214ab2f9380abc63362dbb3f17c1cc2d5ed2eabee5",
+    "url": "https://raw.githubusercontent.com/sgl-project/sglang/14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6/python/sglang/srt/arg_groups/fields/observability.py"
+  },
+  {
+    "provider": "sglang",
+    "repository": "sgl-project/sglang",
+    "revision": "14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6",
+    "path": "python/sglang/srt/arg_groups/fields/parallel.py",
+    "sha256": "32691d40c3388d0b06c77bb1c3f76f30fadaf6458ae0739c8f13633874e638de",
+    "url": "https://raw.githubusercontent.com/sgl-project/sglang/14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6/python/sglang/srt/arg_groups/fields/parallel.py"
+  },
+  {
+    "provider": "sglang",
+    "repository": "sgl-project/sglang",
+    "revision": "14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6",
+    "path": "python/sglang/srt/arg_groups/fields/schedule.py",
+    "sha256": "a63fd7948a8192adc30b08815d9207f9161ac394d2090eeaefb6d459354a9789",
+    "url": "https://raw.githubusercontent.com/sgl-project/sglang/14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6/python/sglang/srt/arg_groups/fields/schedule.py"
+  },
+  {
+    "provider": "sglang",
+    "repository": "sgl-project/sglang",
+    "revision": "14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6",
+    "path": "python/sglang/srt/arg_groups/fields/serving.py",
+    "sha256": "76aab97c4ac3278bb45630eebad41498dccf75bcbace8ebc3e4a550af227111c",
+    "url": "https://raw.githubusercontent.com/sgl-project/sglang/14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6/python/sglang/srt/arg_groups/fields/serving.py"
+  },
+  {
+    "provider": "sglang",
+    "repository": "sgl-project/sglang",
+    "revision": "14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6",
+    "path": "python/sglang/srt/arg_groups/fields/spec.py",
+    "sha256": "4e02869c9facecf1fcc4decaf6f98ce29c0fc5d23a775dac9c90777a2ff18143",
+    "url": "https://raw.githubusercontent.com/sgl-project/sglang/14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6/python/sglang/srt/arg_groups/fields/spec.py"
+  },
+  {
+    "provider": "sglang",
+    "repository": "sgl-project/sglang",
+    "revision": "14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6",
+    "path": "python/sglang/srt/sampling/sampling_params.py",
+    "sha256": "86410d1596a221a788a96f97fc3514572c92cb2c2e03584f6b7e969e24bc6a91",
+    "url": "https://raw.githubusercontent.com/sgl-project/sglang/14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6/python/sglang/srt/sampling/sampling_params.py"
+  },
+  {
+    "provider": "sglang",
+    "repository": "sgl-project/sglang",
+    "revision": "14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6",
+    "path": "python/sglang/srt/server_args.py",
+    "sha256": "118ebd9aa79757110c52ddd08593f05972c468f4326dc142c33e49a8b2702c65",
+    "url": "https://raw.githubusercontent.com/sgl-project/sglang/14b647cf27d7f2c1a3764841f7d3770ff9f9e7d6/python/sglang/srt/server_args.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "LICENSE",
+    "sha256": "bd018feef8825e88181c84eb7e3aa4eafb8f08a20d9fd6ef948569610c4a3e43",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/LICENSE"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "NOTICE",
+    "sha256": "c2cc7bf0caec7652c2b460a8a470bea1677f241e4ab8e431df34cf17f5a9fec0",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/NOTICE"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/_adafactor.py",
+    "sha256": "20b02a97923f17a426a31b7e7749cf79fdb0c9b8afa3c16ad564a5fbbfa00247",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/_adafactor.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/_muon.py",
+    "sha256": "9b36a3b576352feb2811ef6a21a7918856ee2e9bb70678760897436d40899d0a",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/_muon.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/adadelta.py",
+    "sha256": "7265466c8bb3dddf3c6394a2dbba4850b87e2bc6f2857d4c3dde2f6f750dc868",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/adadelta.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/adagrad.py",
+    "sha256": "e17d16d88f958e19b4c19af1eea77fe4569ea1ed452b6709788978aada7d297e",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/adagrad.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/adam.py",
+    "sha256": "5ecb37579ebbec6cdcf4aa69b394136b98d425144a549d679c6369f9c76146b8",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/adam.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/adamax.py",
+    "sha256": "3aba03aafb43e12ed856ec50e18203d278f3cc57c7df053b57bfaf1821eb71d4",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/adamax.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/adamw.py",
+    "sha256": "b9cbfb1e2112b61d7aa88b0f8e2a777ddae9cca5e348e231256f1e39f06f1d92",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/adamw.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/asgd.py",
+    "sha256": "2a4b1ed194f2220d91ec2123ecc476ff1d664a79c9d18a3e223475d5d0712a0d",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/asgd.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/functional.py",
+    "sha256": "38235b02d47380ce367d98d19a2e8ed82f7095acaf3fecf85fb6db58cf7eb72c",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/functional.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/lbfgs.py",
+    "sha256": "9feb016749bd7b7a6c0233745a6811c6867e27a932313faa62aae107c746eaba",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/lbfgs.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/lr_scheduler.py",
+    "sha256": "86de19442f38e8817ee3283853ef4377565d3b6b936a779ce7f5f599f1312849",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/lr_scheduler.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/nadam.py",
+    "sha256": "639e0dd3dafd8a4d264f6418396780f852f799f2b68c786a240ea3406f75bda3",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/nadam.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/optimizer.py",
+    "sha256": "9bab918443150dd18dbeafc98e44677c40c47dfa570f8d49c08ad79452cf8ce7",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/optimizer.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/radam.py",
+    "sha256": "d8b60f7b22f66cecd87256a86ccf265c90de5f59c3e80fd16f73bdda7f924c68",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/radam.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/rmsprop.py",
+    "sha256": "43cc76cb0426d92a119abd17c6ceea7a6f9d9c865bef04f4913053c13e724b10",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/rmsprop.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/rprop.py",
+    "sha256": "f8cb8a766d7600f7c9b2fb7330cd27c175b1910e042596a63e0e41dbcc636da4",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/rprop.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/sgd.py",
+    "sha256": "a187e9eded4e5b6ac269b8000fe18688b84a8bad53be9daa670f73ab5456fd08",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/sgd.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/sparse_adam.py",
+    "sha256": "aa75a1cfa837113bf393c59570479d83ff9b3053507cf40726dd6cedbb7a3057",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/sparse_adam.py"
+  },
+  {
+    "provider": "torch",
+    "repository": "pytorch/pytorch",
+    "revision": "4d2bd99cd03cda454d98ff8c060c1353743c266f",
+    "path": "torch/optim/swa_utils.py",
+    "sha256": "87865691cd31e740b25c684a2bba1540c8ca5f60685a8b97803e91146796ed36",
+    "url": "https://raw.githubusercontent.com/pytorch/pytorch/4d2bd99cd03cda454d98ff8c060c1353743c266f/torch/optim/swa_utils.py"
+  },
+  {
+    "provider": "transformers",
+    "repository": "huggingface/transformers",
+    "revision": "415e6d2f596ef2bd44fdee4261799200a7fc02bf",
+    "path": "LICENSE",
+    "sha256": "77fd4710def9ec3c0f6225800e0235f15a425abd4a8b03559127fcd782612049",
+    "url": "https://raw.githubusercontent.com/huggingface/transformers/415e6d2f596ef2bd44fdee4261799200a7fc02bf/LICENSE"
+  },
+  {
+    "provider": "transformers",
+    "repository": "huggingface/transformers",
+    "revision": "415e6d2f596ef2bd44fdee4261799200a7fc02bf",
+    "path": "src/transformers/configuration_utils.py",
+    "sha256": "02826ac9e987487b645135d8f1d747f60a7e567d1b8f72327de8514d02b6f15d",
+    "url": "https://raw.githubusercontent.com/huggingface/transformers/415e6d2f596ef2bd44fdee4261799200a7fc02bf/src/transformers/configuration_utils.py"
+  },
+  {
+    "provider": "transformers",
+    "repository": "huggingface/transformers",
+    "revision": "415e6d2f596ef2bd44fdee4261799200a7fc02bf",
+    "path": "src/transformers/generation/configuration_utils.py",
+    "sha256": "605b86a07d08dc6e3ba932e8a90b8afca867eaa29881625b04869c4a1f1f23f8",
+    "url": "https://raw.githubusercontent.com/huggingface/transformers/415e6d2f596ef2bd44fdee4261799200a7fc02bf/src/transformers/generation/configuration_utils.py"
+  },
+  {
+    "provider": "transformers",
+    "repository": "huggingface/transformers",
+    "revision": "415e6d2f596ef2bd44fdee4261799200a7fc02bf",
+    "path": "src/transformers/optimization.py",
+    "sha256": "985f8bef608fa57dd2c01e93869424ad193ffe82f03390f22cfd3d3ca99dad27",
+    "url": "https://raw.githubusercontent.com/huggingface/transformers/415e6d2f596ef2bd44fdee4261799200a7fc02bf/src/transformers/optimization.py"
+  },
+  {
+    "provider": "transformers",
+    "repository": "huggingface/transformers",
+    "revision": "415e6d2f596ef2bd44fdee4261799200a7fc02bf",
+    "path": "src/transformers/trainer_callback.py",
+    "sha256": "a9703b60f3d585627054ed976eca3dbea69fddcfd4eb01b1cc19bff67bccf00a",
+    "url": "https://raw.githubusercontent.com/huggingface/transformers/415e6d2f596ef2bd44fdee4261799200a7fc02bf/src/transformers/trainer_callback.py"
+  },
+  {
+    "provider": "transformers",
+    "repository": "huggingface/transformers",
+    "revision": "415e6d2f596ef2bd44fdee4261799200a7fc02bf",
+    "path": "src/transformers/trainer_utils.py",
+    "sha256": "c302000b28c6a38d728e38fed838eca21ed4430105815a0fddc5eea2e1a16620",
+    "url": "https://raw.githubusercontent.com/huggingface/transformers/415e6d2f596ef2bd44fdee4261799200a7fc02bf/src/transformers/trainer_utils.py"
+  },
+  {
+    "provider": "transformers",
+    "repository": "huggingface/transformers",
+    "revision": "415e6d2f596ef2bd44fdee4261799200a7fc02bf",
+    "path": "src/transformers/training_args.py",
+    "sha256": "a369cc578cff8f86c42a5476568bdbe4f87b2635b0c1e56447ce63ddbfd6548d",
+    "url": "https://raw.githubusercontent.com/huggingface/transformers/415e6d2f596ef2bd44fdee4261799200a7fc02bf/src/transformers/training_args.py"
+  },
+  {
+    "provider": "transformers",
+    "repository": "huggingface/transformers",
+    "revision": "415e6d2f596ef2bd44fdee4261799200a7fc02bf",
+    "path": "src/transformers/training_args_seq2seq.py",
+    "sha256": "0b1d112aabf33007b428d0291dd2369fb8c9bf05f4f48d8db0760fd4c76a711b",
+    "url": "https://raw.githubusercontent.com/huggingface/transformers/415e6d2f596ef2bd44fdee4261799200a7fc02bf/src/transformers/training_args_seq2seq.py"
+  },
+  {
+    "provider": "transformers",
+    "repository": "huggingface/transformers",
+    "revision": "415e6d2f596ef2bd44fdee4261799200a7fc02bf",
+    "path": "src/transformers/utils/generic.py",
+    "sha256": "b60d9ecbbaeadb084134dda4a9b92419d35d22af6bc882e062fd530f4e47a4e1",
+    "url": "https://raw.githubusercontent.com/huggingface/transformers/415e6d2f596ef2bd44fdee4261799200a7fc02bf/src/transformers/utils/generic.py"
+  },
+  {
+    "provider": "transformers",
+    "repository": "huggingface/transformers",
+    "revision": "415e6d2f596ef2bd44fdee4261799200a7fc02bf",
+    "path": "src/transformers/utils/quantization_config.py",
+    "sha256": "c309a8702e91d902d2141ebbdf98a49f74c6040d4ead71ca63d83d28da945830",
+    "url": "https://raw.githubusercontent.com/huggingface/transformers/415e6d2f596ef2bd44fdee4261799200a7fc02bf/src/transformers/utils/quantization_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "LICENSE",
+    "sha256": "1bf614b1fdc40fbd344aa58d00d17d5fd0d252ea333a05be018a38959c8b2998",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/LICENSE"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/a2po/a2po_config.py",
+    "sha256": "99298f13a6368b6db2ae2cad2eef29980ed07d7deb3fbef6ab4de15cc66584c0",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/a2po/a2po_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/async_distillation/async_distillation_config.py",
+    "sha256": "8dea64e8df23e5003b5a9c689355a69f74aff87a2ea5cb11bc0de0c42d719e0a",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/async_distillation/async_distillation_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/async_grpo/async_grpo_config.py",
+    "sha256": "e9f1da8651eac6bef3a857880d39a6de3a9c7ab86b7618614ff19bc1bfd10588",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/async_grpo/async_grpo_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/bco/bco_config.py",
+    "sha256": "452a6fa779685d96e35ceac9fe6b9d2bf020cea5b07d27ce8dd391ae56a42436",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/bco/bco_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/cpo/cpo_config.py",
+    "sha256": "d408fde1ebfff36c5be3c6240ace3197f7796cc2cc4fc3c5dcd6fa3ff0541660",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/cpo/cpo_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/gkd/gkd_config.py",
+    "sha256": "8058905e3e07ee402df3d228b9e52cf5900e3fd917c77017e9a009cb229e12d1",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/gkd/gkd_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/gmpo/gmpo_config.py",
+    "sha256": "81629ce0e8eaa723782a77ffefc1d5845ba3f1041fc3e5b28e67117901fa5bac",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/gmpo/gmpo_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/gold/gold_config.py",
+    "sha256": "b4144e967a04d5364f63927801586206cc881803c444e777e1f622f9196de4be",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/gold/gold_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/iw_opd/iw_opd_config.py",
+    "sha256": "64f909f6d990931d93490bdd5f208f0b27d0eb261a3b9af2cff912a8c570f9a7",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/iw_opd/iw_opd_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/minillm/minillm_config.py",
+    "sha256": "4f7757396183e95603d2d99fc885d649ccbf0ba7c6afa4f9a66ef3803fde3a73",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/minillm/minillm_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/nash_md/nash_md_config.py",
+    "sha256": "e86948fab5b8ba61c2314db2904c0bced446bddf21a47265ce712eecacc0b07e",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/nash_md/nash_md_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/online_dpo/online_dpo_config.py",
+    "sha256": "3fad7159cdeeb2da6eef1040fff37a349c08d079bd1ba31c081bb24a77a65d54",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/online_dpo/online_dpo_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/orpo/orpo_config.py",
+    "sha256": "158acfe0f9def4e50a6c29ccade7db77bca3bd30be41ece60b157d013faacd61",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/orpo/orpo_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/prm/prm_config.py",
+    "sha256": "27c83b6d9c694b4875cd7f4b5ebb48e8b62f6476f79b3b419a17e3c12af85f2c",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/prm/prm_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/sdft/sdft_config.py",
+    "sha256": "cd35b2ffb7257d225b07385ca999a3b926fab9271296a45271379e17d2f7aab7",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/sdft/sdft_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/sdpo/sdpo_config.py",
+    "sha256": "86a66dee8258fc0774282c558ef6fd9ca5c0fa913d3d0577a66f57541782766c",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/sdpo/sdpo_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/server_distillation/server_distillation_config.py",
+    "sha256": "ae6d7eae507c4a7812eaa5d1c45474867790735fbffe57b1e435773f1096233e",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/server_distillation/server_distillation_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/ssd/ssd_config.py",
+    "sha256": "010224d17a9412ec78457ceb91671227ea6571e82bee02206f64c247bef9c6e7",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/ssd/ssd_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/tpo/tpo_config.py",
+    "sha256": "6733972a35eb2efa9d07d3caeed76f242e28eb3d4776f1865a1dc1ea876bbfd4",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/tpo/tpo_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/experimental/xpo/xpo_config.py",
+    "sha256": "856bafd7234c10cf8a045245bfdc7ff31bbe361b14f286e5bea40b2cb17af3e4",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/experimental/xpo/xpo_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/trainer/base_config.py",
+    "sha256": "c03e05babf0903487a3b09acb534d50c929d01b23a8027a464ea14f4a5739d2e",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/trainer/base_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/trainer/distillation_config.py",
+    "sha256": "799044e73ec088227ce9f8cfd9c5623b81070943968ba9e89e7d2ed646368109",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/trainer/distillation_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/trainer/dpo_config.py",
+    "sha256": "c6ef86b3fe1d6f9f4843b2235c0c3bdfaa74c48a6f6b699ac19471ea7a33d51a",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/trainer/dpo_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/trainer/grpo_config.py",
+    "sha256": "767d0b85e60f9f9290d497f1dbf06a8da7cea91ec7dd180dcfb9f066f41296bf",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/trainer/grpo_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/trainer/kto_config.py",
+    "sha256": "8e2e1f0161fa8419453f42fa621aebc330a73a32b503f9f262dca8642e29de90",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/trainer/kto_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/trainer/model_config.py",
+    "sha256": "638e2b5f3609e306ba9f4b5e652d4ab45583bfeb199e1e474785c95dda1edca0",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/trainer/model_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/trainer/reward_config.py",
+    "sha256": "99e11977c30345a6c65e842fe859ae94f805a9b4322d94048ba8bffdf881bfc4",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/trainer/reward_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/trainer/rloo_config.py",
+    "sha256": "196d8b832f7524f791dc471d32bf6618cfa744bdb1cb13e4a26554a356205988",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/trainer/rloo_config.py"
+  },
+  {
+    "provider": "trl",
+    "repository": "huggingface/trl",
+    "revision": "cd2c52876d99b00baa5660328310e940b8360c6c",
+    "path": "trl/trainer/sft_config.py",
+    "sha256": "fe5b8944d218f4e24fd2c4285cebbd908b5a729614ee6f3afa36e72bf1a0227e",
+    "url": "https://raw.githubusercontent.com/huggingface/trl/cd2c52876d99b00baa5660328310e940b8360c6c/trl/trainer/sft_config.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "LICENSE",
+    "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/LICENSE"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/__init__.py",
+    "sha256": "56fb0cb1598d297e4f95a97e5d86dc624145d1532f5faa432b7d2834d7155bd5",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/__init__.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/attention.py",
+    "sha256": "621e6daf1e9c65cfb9dd824bf98aec63b73234c12b011609102d6188eb415483",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/attention.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/cache.py",
+    "sha256": "f1c226ba679c884930dbfcaf41a57248b137a9a20d3ed8e3d3b31752bb484c07",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/cache.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/compilation.py",
+    "sha256": "c9cec5c7200e8e559810ec8c30113ad61dab6780f9f7fb3c116bd0d9b5a43065",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/compilation.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/device.py",
+    "sha256": "7b82eee02ceb5842337451a27a3d5729920c47e25e8f6bf3997f5146f9330a9c",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/device.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/diffusion.py",
+    "sha256": "1fa9fd2478a866098a28a3586b55af2f9738656b7813a55d76539c10dd99fe8d",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/diffusion.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/ec_manager_config.py",
+    "sha256": "418b387dbe7bdf67deddce331c205768a2d42aea37141f59fb02a8a1528e3552",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/ec_manager_config.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/ec_transfer.py",
+    "sha256": "0eabb2c25194676d23c6acf59562672a1dd24415043ac5737d621ce0d681ec70",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/ec_transfer.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/engram.py",
+    "sha256": "34043a22385a041d4e9be8857f64174c990c2ca8308b97b6a952b5ab96c20ee5",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/engram.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/fault_tolerance.py",
+    "sha256": "b166b24373d599fb15ddc575e3061cf0dcb42174d0369d8468008e7ffbb2a4e2",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/fault_tolerance.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/kernel.py",
+    "sha256": "5172d8fa3a17a22366e70c61e58a4bf8a286116bc2f70d9cc5e3771921a3156c",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/kernel.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/kv_events.py",
+    "sha256": "b1dbaee3e6830e381e9157fe3bab0d65c357da88ff7cdf8b1e4b3a4e75c82a87",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/kv_events.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/kv_transfer.py",
+    "sha256": "506fae7a9d7f32cb3646156cf9249a856f6317dff6c4c85db70efd34418c429b",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/kv_transfer.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/load.py",
+    "sha256": "bd6431c22e078362d749a56a2c84145432ebf2605d8bcfa2ac679182d18ed630",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/load.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/lora.py",
+    "sha256": "ed6cf6575f5950f079a62f904caeae93d1a4745dd8c21788b74367883bcd4b08",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/lora.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/mamba.py",
+    "sha256": "2090f791201ca45dd4f1d72b8651268890eb07574b6084721194eb8fdf612c48",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/mamba.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/model.py",
+    "sha256": "f4168b67cc93ce72ff2a6d4c66974223e32fd0f1fab4c05e44bd68a275e18d69",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/model.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/model_arch.py",
+    "sha256": "2babe28329d7b60b4e205f6d72c687f0f66e6535aa2f20411469e5ec362f6b5f",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/model_arch.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/multimodal.py",
+    "sha256": "271911aee151f17f092228cecee82af0713e9a47340ffdf66834ca7638a50d22",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/multimodal.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/observability.py",
+    "sha256": "d57c59ec776477ab0a20e9f2b945bc954d8ea3737c869259480e9aa10dfb9f6d",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/observability.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/offload.py",
+    "sha256": "6f2db3d9a2730588473d5155811690c6241b167a21dcb62fbbd9ebb6386de42c",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/offload.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/parallel.py",
+    "sha256": "f012ace89e3fb730a467f729f602679bc145c49f0d10721811c9d818570e7b2b",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/parallel.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/pooler.py",
+    "sha256": "9f01913dcb7bccbf9b672b16643f18471ae202455992e8afaf0725a17f2b3d08",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/pooler.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/profiler.py",
+    "sha256": "78af917ec2ea2ba3bacda15f58fda9782b8ff82c0b810fd5c9563f4203aa5ba8",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/profiler.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/quantization.py",
+    "sha256": "acffc52f525b39a88efd656f1ed705ce3a1b758298bb0684fac7694776bc10b4",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/quantization.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/reasoning.py",
+    "sha256": "2c4f7bdee48a9fb3d93787c4c32361c2411417cce452cfde86808d8759977861",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/reasoning.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/scheduler.py",
+    "sha256": "822179da62be4bca0619c8590082ae09123f5c4415f9cc2037be673748239edb",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/scheduler.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/speculative.py",
+    "sha256": "4bcbcb8d393427cf0a882fc83a31fb7fd74da886a4566e4aa16173aa194bdcf5",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/speculative.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/speech_to_text.py",
+    "sha256": "bf4a566fbde6a1cec1e209070b739650c3302c12696739c88049cb8f723a4c3f",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/speech_to_text.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/structured_outputs.py",
+    "sha256": "55649776594349b8b4aa3e08fc4c88068366732a486d6fb235079188044aa829",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/structured_outputs.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/utils.py",
+    "sha256": "d035e9e488ba92b6c47a96cf05d9b2a850d53eda8a05115b22ff9af8dbc2fc64",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/utils.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/vllm.py",
+    "sha256": "80349f97efad4f7ac34b563f898d2495d1affbefa29b2c82ccc8d68d36137eb9",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/vllm.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/watermarking.py",
+    "sha256": "30e6620a3cd7529f0736ad55e38bc326a6a78dee4552f0722208400041c94a1f",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/watermarking.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/config/weight_transfer.py",
+    "sha256": "92edd9e5ea90c97a8f3c5f20abf1734a105ee1f3f89e306e7ba87e758f1f767e",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/config/weight_transfer.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/engine/arg_utils.py",
+    "sha256": "ead004ca266419cd25f54a7aefc0e20e1eb046f363b7f5cc977e14f52ee44bb1",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/engine/arg_utils.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/pooling_params.py",
+    "sha256": "347944c7d762dda23393f478bd90db24c6f86a66c163ba5d162b9ee540d71819",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/pooling_params.py"
+  },
+  {
+    "provider": "vllm",
+    "repository": "vllm-project/vllm",
+    "revision": "fa1b3b1922ccb2d7a597925765c4bec7f358d748",
+    "path": "vllm/sampling_params.py",
+    "sha256": "75e0f4b7e6702fd211340b87e6835598c5dce05b30bb2ea0ad834418fd626967",
+    "url": "https://raw.githubusercontent.com/vllm-project/vllm/fa1b3b1922ccb2d7a597925765c4bec7f358d748/vllm/sampling_params.py"
+  }
+]

@@ -1,4 +1,5 @@
 #include "Managers.h"
+#include "Parameters.h"
 #include <QtCore/QFileInfo>
 #include <QtCore/QUuid>
 #include <algorithm>
@@ -170,6 +171,7 @@ PreparedChat PromptEngine::prepare(const SessionSnapshot& session, const ChatReq
     const auto& o = request.options;
     require(!request.prompt.trimmed().isEmpty() && request.prompt.size() <= inputLimit,
             ErrorCode::InvalidArgument, "Prompt is empty or exceeds input limit");
+    validateGenerationOptions(o);
     require(o.maxTokens > 0 && o.maxTokens < model.spec.contextTokens && std::isfinite(o.temperature)
             && o.temperature >= 0 && o.temperature <= 10 && std::isfinite(o.topP) && o.topP > 0
             && o.topP <= 1 && o.topK >= 0 && o.stop.size() <= 16,

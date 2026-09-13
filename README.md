@@ -1,6 +1,8 @@
 # iiLocalLLM
 
-C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.2.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
+C++ 에이전트 하네스를 확장 중이다. 현재 실행 계층은 [AgentHarness.md](docs/AgentHarness.md), 전체 요구사항과 남은 구현은 [HarnessParity.md](docs/HarnessParity.md)에 기록한다. MCP/API 및 앱 전체 호환 완료와 기존 대화 기능 완료는 별도 상태로 관리한다.
+
+C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.3.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
 
 ```text
 C++ Local API / Native IPC / localhost HTTP
@@ -32,11 +34,23 @@ C++ Local API / Native IPC / localhost HTTP
 
 ONNX 등은 위 인터페이스를 구현하여 등록한다. 현재 내장 어댑터는 llama.cpp와 MLX이다. HTTP는 텍스트 Chat Completions 일부 계약을 구현한다. 도구 호출, 멀티모달, 디스크 세션 저장은 제공하지 않는다.
 
+## 상세 제어 객체
+
+추론부터 학습·파인튜닝까지 391개 설정 그룹을 `ParameterCatalog`, `ParameterObject`, `ControlParameters`로 다룬다. 원본 타입·기본값·선택값·제약·설명·상속·소스 커밋/해시를 조회하고 원본 JSON으로 내보낸다. 공통 생성 옵션 16개는 실제 llama.cpp/MLX 요청에 연결된다. 학습 객체는 설정 검증·내보내기를 제공한다. 조사 범위와 실행 지원의 구분, API·CLI 예제는 [Parameters.md](docs/Parameters.md), 공식 소스와 라이선스는 [ParameterSources.md](docs/ParameterSources.md)를 참고한다.
+
+```sh
+./build/iillm parameters trl.GRPOConfig
+./build/iillm parameters peft.LoraConfig docs/examples/lora.json
+./build/iillm run qwen2.5:0.5b "안녕하세요" --options docs/examples/generation.json
+```
+
+0.3.0은 공개 생성 옵션 구조가 바뀌어 ABI를 0.3으로 구분한다. 0.2 소비자는 새 헤더·라이브러리로 다시 빌드한다.
+
 ## 빌드
 
 CMake 3.24 이상, C++20 컴파일러, **Qt 6.8.3** Core/Network가 필요하다. 테스트에는 Qt Test와 Python 3도 사용한다. 헤더와 구현을 함께 배치하며 별도 소스 include 디렉터리를 두지 않는다.
 
-기본 빌드는 대형 추론 엔진을 다운로드하지 않는다. llama.cpp 옵션을 켜면 고정 커밋의 아카이브를 SHA-256으로 검증하고 공유 SDK에 정적으로 링크한다. 모든 빌드 산출물은 build/ 아래에 둔다.
+기본 빌드는 llama.cpp를 포함하므로 GGUF 모델을 바로 실행할 수 있다. 고정 커밋의 아카이브를 SHA-256으로 검증하고 공유 SDK에 정적으로 링크한다. 엔진 없이 서비스 계약만 사용하는 구성은 `-DIILOCALLLM_WITH_LLAMA=OFF`로 선택한다. 모델 가중치는 빌드 중 다운로드하지 않는다. 모든 빌드 산출물은 build/ 아래에 둔다.
 
 ```sh
 mkdir -p build/tmp build/ccache
@@ -120,15 +134,27 @@ int main(int argc, char** argv) {
 
 ```sh
 export IILLM_SOCKET="$PWD/build/llm.sock"
-./build/iiLocalLLMD --models-root "$PWD/build/Models" --socket "$IILLM_SOCKET" --http-port 8080
-# 다른 터미널에서 같은 IILLM_SOCKET으로 접속한다.
-./build/iillm pull qwen3:8b
+./build/iiLocalLLMD --models-root "$PWD/build/chat/Models" --socket "$IILLM_SOCKET" --http-port 8080
+# 다른 터미널에서도 저장소 디렉터리로 이동하고 설정한다.
+export IILLM_SOCKET="$PWD/build/llm.sock"
+./build/iillm pull qwen2.5:0.5b
 ./build/iillm models
-./build/iillm run qwen3:8b
+./build/iillm run qwen2.5:0.5b --system "You are a helpful assistant." --max-tokens 256
 ./build/iillm ps
 ```
 
-`qwen3:8b`는 서비스 registry에서 `model://qwen3-8b-q4`로 해석한다. pull은 서비스가 고정된 공식 GGUF를 다운로드하고 SHA-256 검증 후 설치한다. CLI·GUI·Python·에이전트의 요청은 같은 상주 모델을 재사용한다. 모델이 메모리에 없으면 서비스가 예산과 가용 RAM을 검사하고 유휴 LRU 모델을 내린 뒤 로드한다. 기본 keep_alive는 5분이며 RAM 8 GiB 이하에서는 0이다. `iillm run qwen3:8b --keep-alive 0`으로 요청 직후 해제할 수 있다.
+시작 모델 `qwen2.5:0.5b`는 공식 Qwen2.5-0.5B-Instruct의 Q4_K_M GGUF이며 다운로드 크기는 491,400,032 bytes이다. `model://qwen2.5-0.5b-instruct-q4`로 해석한다. 기존 `qwen3:8b`도 유지한다. pull은 서비스가 고정된 공식 GGUF를 다운로드하고 SHA-256 검증 후 설치한다. 다운로드 후 대화는 인터넷이나 외부 추론 서비스 없이 실행된다.
+
+터미널에서 Enter로 한 턴을 보내고 `/clear`로 system prompt를 유지한 채 대화 이력·KV를 초기화한다. `/bye`, `/exit`, EOF는 종료이며 Ctrl+C는 생성 취소·세션 정리 후 종료한다. `--temperature 0`은 greedy 생성을 선택한다. `--max-tokens`는 답변 길이 상한으로 긴 답변은 잘릴 수 있다. 작은 모델의 답변 품질은 모델 용량에 따른다.
+
+CLI·GUI·Python·에이전트의 요청은 같은 상주 모델을 재사용한다. 모델이 메모리에 없으면 서비스가 예산과 가용 RAM을 검사하고 유휴 LRU 모델을 내린 뒤 로드한다. 기본 keep_alive는 5분이며 RAM 8 GiB 이하에서는 0이다. `iillm run qwen2.5:0.5b --keep-alive 0`으로 요청 직후 해제할 수 있다.
+
+```sh
+./build/iillm run qwen2.5:0.5b "What is 2 + 2?" --temperature 0
+curl -N http://127.0.0.1:8080/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"qwen2.5:0.5b","messages":[{"role":"user","content":"Hello!"}],"stream":true,"max_tokens":128}'
+```
 
 [CLI 사용법](docs/CLI.md), [상주·메모리 정책](docs/Residency.md)에 설치 원본, 설정, 실패·취소 계약을 설명한다. 기존 `iilocal-llm-service` 실행 파일도 유지한다.
 
@@ -141,8 +167,8 @@ export IILLM_SOCKET="$PWD/build/llm.sock"
 ```
 
 ```sh
-./build/iilocal-llm-service --models-root "$PWD/build/Models" --install /absolute/path/qwen-package
-./build/iilocal-llm-service --models-root "$PWD/build/Models" \
+./build/iilocal-llm-service --models-root "$PWD/build/chat/Models" --install /absolute/path/qwen-package
+./build/iilocal-llm-service --models-root "$PWD/build/chat/Models" \
   --config models.json --socket "$PWD/build/llm.sock"
 ```
 
@@ -153,7 +179,7 @@ export IILLM_SOCKET="$PWD/build/llm.sock"
 Native IPC와 HTTP를 같은 서비스에서 동시에 활성화한다. IPC는 macOS/Linux의 Unix Domain Socket과 Windows Named Pipe를 사용한다. HTTP는 127.0.0.1에만 바인딩한다.
 
 ```sh
-./build/iilocal-llm-service --models-root "$PWD/build/Models" \
+./build/iilocal-llm-service --models-root "$PWD/build/chat/Models" \
   --config models.json --socket "$PWD/build/llm.sock" --http-port 8080
 curl http://127.0.0.1:8080/v1/chat/completions \
   -H 'Content-Type: application/json' \
@@ -213,10 +239,10 @@ stop 문자열은 청크 사이 부분 일치를 보관하고 완성되면 출�
 IILOCALLLM_WITH_LLAMA=ON INSTALL_PREFIX="$PWD/build/stage" ./install.sh
 ```
 
-IILOCALLLM_WITH_LLAMA를 생략하면 기존 CMake 선택을 유지하며 새 구성의 기본값은 OFF이다. INSTALL_PREFIX, QT_PREFIX_PATH, CMAKE_PREFIX_PATH로 경로를 설정한다. Qt와 MLX Python 환경은 패키지에 복사하지 않는다.
+IILOCALLLM_WITH_LLAMA를 생략하면 기존 CMake 선택을 유지하며 새 구성의 기본값은 ON이다. 과거 OFF로 구성했던 build/는 `IILOCALLLM_WITH_LLAMA=ON ./install.sh`로 활성화한다. INSTALL_PREFIX, QT_PREFIX_PATH, CMAKE_PREFIX_PATH로 경로를 설정한다. Qt와 MLX Python 환경은 패키지에 복사하지 않는다.
 
 ```cmake
-find_package(iiLocalLLM 0.2.0 CONFIG REQUIRED)
+find_package(iiLocalLLM 0.3.0 CONFIG REQUIRED)
 target_link_libraries(your_app PRIVATE iiLocalLLM::iiLocalLLM)
 ```
 
@@ -227,11 +253,14 @@ target_link_libraries(your_app PRIVATE iiLocalLLM::iiLocalLLM)
 ```sh
 cmake -S . -B build -DIILOCALLLM_WITH_LLAMA=ON \
   -DIILOCALLLM_TEST_GGUF="/absolute/path/test.gguf" \
+  -DIILOCALLLM_TEST_CHAT_GGUF="$PWD/build/chat/Models/qwen2.5-0.5b-instruct-q4/model.gguf" \
   -DIILOCALLLM_TEST_MLX_MODEL="/absolute/path/mlx-model" \
   -DIILOCALLLM_MLX_PYTHON="$PWD/build/mlx-env/bin/python"
 cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
+
+`IILOCALLLM_TEST_CHAT_GGUF`는 위 `pull qwen2.5:0.5b`로 설치한 공식 모델 파일을 지정한다. UNIX의 `iiLocalLLM.chat`은 네트워크 없이 임시 카탈로그에 해당 파일을 해시 검증하여 설치하고, 내장 template으로 실제 대화한다. 터미널의 두 번째 턴 이름 기억·KV 재사용, `/clear`의 이력·KV 초기화와 system prompt 보존, 매 턴 JSON 즉시 출력, CLI/HTTP의 단일 모델 공유, HTTP JSON/SSE 완료까지 검증한다. 가중치는 테스트 실행 전에 준비해야 하며 CTest는 다운로드하지 않는다.
 
 GGUF smoke는 chatml을 명시하여 경량 테스트 모델도 사용한다. 임시 패키지 설치·검증·URI 로드부터 서비스의 자동 장치 선택, 실제 추론·두 번째 턴 KV 재사용·초기화·취소·재생성·제거까지 검증한다. 독립 daemon 테스트는 원본 패키지 경로를 바꾸고 서비스를 재시작하여 카탈로그의 지속성을 확인한다. 별도 어댑터 적합성 테스트가 실제 CPU 추론도 검증한다. 모델 답변 품질이나 모든 아키텍처 호환성 평가는 아니다. 환경과 결과는 [docs/Verification.md](docs/Verification.md)에 기록한다.
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Types.h"
+#include "Parameters.h"
 #include "Hardware.h"
 #include "ModelManifest.h"
 #include "ModelCatalog.h"

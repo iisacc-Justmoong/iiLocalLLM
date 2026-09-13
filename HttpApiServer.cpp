@@ -1,5 +1,6 @@
 #include "third_party/cpp-httplib/httplib.h"
 #include "HttpApiServer.h"
+#include "Parameters.h"
 #include <QtCore/QDateTime>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -61,14 +62,14 @@ bool boolean(const QJsonObject& object, const QString& name, bool fallback = fal
     require(value.isUndefined() || value.isBool(), name + QStringLiteral(" must be a boolean"));
     return value.isUndefined() ? fallback : value.toBool();
 }
-struct ParsedCompletion { CompletionRequest request; bool stream = false; bool includeUsage = false; };
+struct ParsedCompletion { CompletionRequest request; std::optional<ConversationRequest> conversation; bool stream = false; bool includeUsage = false; };
 ParsedCompletion parse(const std::string& body)
 {
     QJsonParseError error;
     const auto document = QJsonDocument::fromJson(QByteArray::fromStdString(body), &error);
     require(error.error == QJsonParseError::NoError && document.isObject(), QStringLiteral("Expected a JSON object"));
     const auto object = document.object();
-    fields(object, {"model", "messages", "stream", "stream_options", "max_tokens", "max_completion_tokens", "temperature", "top_p", "top_k", "seed", "stop", "n", "keep_alive"});
+    fields(object, {"model", "messages", "stream", "stream_options", "max_tokens", "max_completion_tokens", "temperature", "top_p", "top_k", "seed", "stop", "n", "keep_alive", "min_p", "typical_p", "min_keep", "repetition_penalty", "repetition_context_size", "presence_penalty", "frequency_penalty", "xtc_probability", "xtc_threshold", "logit_bias", "tools", "tool_choice", "parallel_tool_calls"});
     ParsedCompletion parsed;
     require(object.value("model").isString(), QStringLiteral("model must be a model:// URI"));
     parsed.request.model = object.value("model").toString();
@@ -77,9 +78,23 @@ ParsedCompletion parse(const std::string& body)
     require(object.value("messages").isArray(), QStringLiteral("messages must be an array"));
     const auto messages = object.value("messages").toArray();
     require(!messages.isEmpty() && messages.size() <= 4096, QStringLiteral("messages must contain 1 to 4096 text messages"));
+    require(!object.contains("tools") || object["tools"].isArray(), "tools must be an array");
+    const auto toolChoice = object.value("tool_choice").toString("auto");
+    require(!object.contains("tool_choice") || (object["tool_choice"].isString()
+        && (toolChoice == "auto" || toolChoice == "none" || toolChoice == "required")), "tool_choice supports auto, none, or required");
+    const auto parallel = boolean(object, "parallel_tool_calls", true);
+    bool structured = !object["tools"].toArray().isEmpty() || toolChoice == "required";
+    for (const auto& value : messages) {
+        const auto m = value.toObject();
+        structured |= m["role"] == "tool" || m.contains("tool_calls") || m.contains("tool_call_id") || m.contains("reasoning_content");
+    }
     for (const auto& value : messages) {
         require(value.isObject(), QStringLiteral("Each message must be an object"));
         const auto message = value.toObject();
+        if (structured) {
+            fields(message, {"role", "content", "tool_calls", "tool_call_id", "reasoning_content", "name"});
+            continue; // Structured protocol validation belongs to Service::converse.
+        }
         fields(message, {"role", "content"});
         require(message.value("role").isString() && message.value("content").isString(), QStringLiteral("Only string role/content messages are supported"));
         const auto role = message.value("role").toString();
@@ -94,24 +109,25 @@ ParsedCompletion parse(const std::string& body)
         parsed.includeUsage = boolean(options, "include_usage");
     }
     require(!object.contains("max_tokens") || !object.contains("max_completion_tokens"), QStringLiteral("Specify one token limit field"));
-    auto& options = parsed.request.options;
-    options.maxTokens = int(number(object, object.contains("max_completion_tokens") ? "max_completion_tokens" : "max_tokens", 256, 1, 1048576, true));
-    options.temperature = number(object, "temperature", 0.7, 0, 2);
-    options.topP = number(object, "top_p", 0.9, 0.000001, 1);
-    options.topK = int(number(object, "top_k", 40, 0, 1000000, true));
-    options.seed = quint32(number(object, "seed", 0, 0, std::numeric_limits<quint32>::max(), true));
+    QJsonObject generation;
+    for (const auto& field : ParameterCatalog::builtin().group("iiLocalLLM.GenerationOptions").parameters)
+        if (object.contains(field.name)) generation.insert(field.name, object.value(field.name));
+    if (object.contains("max_completion_tokens")) generation.insert("max_tokens", object.value("max_completion_tokens"));
+    if (generation.value("stop").isString()) generation.insert("stop", QJsonArray{generation.value("stop")});
+    parsed.request.options = generationOptionsFromJson(generation);
+    require(parsed.request.options.temperature <= 2, QStringLiteral("HTTP temperature must be in [0, 2]"));
     (void)number(object, "n", 1, 1, 1, true);
-    if (object.contains("stop")) {
-        const auto stops = object.value("stop");
-        require(stops.isString() || stops.isArray(), QStringLiteral("stop must be a string or string array"));
-        const auto array = stops.isString() ? QJsonArray{stops} : stops.toArray();
-        require(array.size() <= 16, QStringLiteral("At most 16 stop strings are supported"));
-        for (const auto& stop : array) {
-            require(stop.isString() && !stop.toString().isEmpty() && stop.toString().size() <= 1024, QStringLiteral("Invalid stop string"));
-            options.stop.append(stop.toString());
-        }
+    if (structured) {
+        ConversationRequest conversation;
+        conversation.model = parsed.request.model; conversation.messages = messages; conversation.tools = object["tools"].toArray();
+        conversation.toolChoice = toolChoice; conversation.parallelToolCalls = parallel;
+        conversation.options = parsed.request.options; conversation.keepAliveMs = parsed.request.keepAliveMs;
+        parsed.conversation = std::move(conversation);
     }
     return parsed;
+}
+QString completionReason(const GenerationResult& result) {
+    return result.toolCalls.isEmpty() ? enumName(result.finishReason) : QStringLiteral("tool_calls");
 }
 QJsonObject usage(const Usage& value)
 {
@@ -227,7 +243,7 @@ public:
         const auto created = QDateTime::currentSecsSinceEpoch();
         auto state = std::make_shared<StreamState>();
         const auto limit = options.maxBufferedOutputBytes;
-        state->generation = service.complete(parsed.request, [state, parsed, created, limit](const StreamEvent& event) {
+        const auto onEvent = [state, parsed, created, limit](const StreamEvent& event) {
             std::lock_guard lock(state->mutex);
             if (state->abandoned) return;
             const auto id = QStringLiteral("chatcmpl-") + event.requestId;
@@ -246,9 +262,19 @@ public:
             } else {
                 state->finished = true;
                 state->result = event.result;
+                if (!event.result.toolCalls.isEmpty()) state->output += QJsonDocument(event.result.toolCalls).toJson(QJsonDocument::Compact).size();
+                state->output += event.result.reasoning.toUtf8().size();
                 if (parsed.stream) {
                     if (event.result.errorCode == ErrorCode::None) {
-                        bytes = makeChunk({}, enumName(event.result.finishReason));
+                        if (!event.result.reasoning.isEmpty()) bytes += makeChunk({{"reasoning_content", event.result.reasoning}});
+                        if (!event.result.toolCalls.isEmpty()) {
+                            QJsonArray calls;
+                            for (qsizetype i = 0; i < event.result.toolCalls.size(); ++i) {
+                                auto call = event.result.toolCalls[i].toObject(); call["index"] = i; calls.append(call);
+                            }
+                            bytes += makeChunk({{"tool_calls", calls}});
+                        }
+                        bytes += makeChunk({}, completionReason(event.result));
                         if (parsed.includeUsage) {
                             auto value = envelope(id, parsed.request.model, created, true);
                             value.insert("choices", QJsonArray{}); value.insert("usage", usage(event.result.usage));
@@ -266,7 +292,8 @@ public:
             }
             if (!bytes.isEmpty()) { state->buffered += bytes.size(); state->frames.push_back(std::move(bytes)); }
             state->changed.notify_all();
-        });
+        };
+        state->generation = parsed.conversation ? service.converse(*parsed.conversation, onEvent) : service.complete(parsed.request, onEvent);
         {
             std::lock_guard lock(activeMutex);
             active.push_back(state->generation.cancellation);
@@ -289,8 +316,14 @@ public:
             if (state->finished && (!parsed.stream || !state->started)) {
                 if (state->result.errorCode != ErrorCode::None) throw Error(state->result.errorCode, state->result.errorMessage);
                 auto value = envelope(QStringLiteral("chatcmpl-") + state->result.requestId, parsed.request.model, created, false);
-                value.insert("choices", QJsonArray{QJsonObject{{"index", 0}, {"message", QJsonObject{{"role", "assistant"}, {"content", state->result.text}}},
-                    {"finish_reason", enumName(state->result.finishReason)}}});
+                QJsonObject message{{"role", "assistant"}, {"content", state->result.text}};
+                if (!state->result.toolCalls.isEmpty()) {
+                    message["tool_calls"] = state->result.toolCalls;
+                    if (state->result.text.isEmpty()) message["content"] = QJsonValue::Null;
+                }
+                if (!state->result.reasoning.isEmpty()) message["reasoning_content"] = state->result.reasoning;
+                value.insert("choices", QJsonArray{QJsonObject{{"index", 0}, {"message", message},
+                    {"finish_reason", completionReason(state->result)}}});
                 value.insert("usage", usage(state->result.usage));
                 respond(response, value);
                 return;

@@ -2,10 +2,12 @@
 
 서비스 고유 정책만 직접 구현하고 추론·토큰화·JSON·프로세스·IPC는 기존 라이브러리를 사용한다.
 
+2026-09-14 에이전트 입력/출력 검증에 [jsoncons 1.9.0](https://github.com/danielaparker/jsoncons/releases/tag/v1.9.0)을 추가했다. 2026-08-07 릴리스와 JSON Schema 2020-12 지원을 공식 소스에서 확인했다. 약 1.7 MB 압축 아카이브의 header-only C++ 의존성이며 실행 프로세스·Python·네트워크 서비스는 추가하지 않는다. CMake는 아카이브 SHA-256 `f1017b36e4e034acd5c0f5f616bacf5d7a161d6d3a43ff9ddb73fd8dca4d3cd9`를 고정한다. Boost Software License 1.0 및 포함된 A5HASH의 MIT 고지를 `third_party/jsoncons`와 설치 패키지 licenses에 보존한다. 외부 공개 헤더에는 jsoncons 타입이 없다.
+
 | 의존성 | 도입 이유·규모 | 라이선스·유지보수 |
 | --- | --- | --- |
 | Qt 6.8.3 Core/Network | 기존 Core에 Network 추가. Local Socket, QProcess, QJsonDocument, Unicode 변환, QCryptographicHash, QSaveFile, QLockFile 재사용 | 기존 Qt 설치 조건. 모듈별 LGPL/GPL/상용 배포 조건 적용 |
-| llama.cpp | GGUF, tokenizer, chat template, ggml 장치 검사, CPU/Metal/CUDA/Vulkan, sampler, KV. 선택 빌드, SDK에 정적 링크 | MIT. API 변경을 관리하기 위해 커밋·아카이브 SHA-256 고정 |
+| llama.cpp | GGUF, tokenizer, chat template, ggml 장치 검사, CPU/Metal/CUDA/Vulkan, sampler, KV. 기본 ON이며 명시적 OFF 가능, SDK에 정적 링크 | MIT. API 변경을 관리하기 위해 커밋·아카이브 SHA-256 고정 |
 | MLX / mlx-lm | Apple Silicon, sampler, prompt cache. 별도 Python 환경으로 기본 C++ 의존성 규모 제한 | MIT. 검증 릴리스 mlx 0.32.2 / mlx-lm 0.31.3 |
 | cpp-httplib 0.54.1 | HTTP/1.1 parsing, body 상한, thread pool, chunked streaming, disconnect 검사. 약 767 KiB 단일 헤더를 내부에서 사용 | MIT. 배포 태그와 SHA-256 고정, 원본 고지 설치. TLS·압축 외부 의존성 비활성화 |
 | OS 하드웨어 API | Metal/sysctl, DXGI, sysfs/sysconf. 별도 SDK 라이브러리 배포 없이 OS API를 재사용 | 플랫폼 제공 API. 추가 vendoring 없음 |
@@ -14,7 +16,7 @@
 
 모델 관리에는 기존 Qt의 파일 복사·SHA-256·원자적 파일 저장·프로세스 간 잠금을 재사용한다. 모델 URI, manifest 필드, 설치/로드 수명은 iiLocalLLM의 도메인 계약으로 구현한다. 원격 pull은 이미 링크한 Qt Network의 QNetworkAccessManager를 사용한다. HTTPS/리다이렉트/전송 timeout은 Qt에 맡기고 서비스 고유 registry·별칭·해시 검증·원자적 설치만 구현한다. 추가 Hub SDK, HTTP 다운로드 구현, 데이터베이스를 도입하지 않아 유지보수·라이선스·의존성 규모를 유지한다. 엔진을 링크하지 않는 빌드에서도 ModelCatalog를 사용할 수 있다.
 
-HTTP 도입 전 설치된 Qt HttpServer 6.8.3의 chunked responder와 cpp-httplib를 검토했다. cpp-httplib는 요청 body 상한·고정 thread pool·연결 종료 검사를 공개 API로 제공하므로 HTTP 파서를 직접 구현하지 않고 서비스 future를 연결할 수 있다. Qt HttpServer 모듈을 추가하지 않고 MIT 단일 헤더를 선택했다. 헤더는 third_party/cpp-httplib에 원본 그대로 보관하고 CMake 구성 시 해시를 검사하므로 기본 빌드에 다운로드가 없다. 서비스 고유 JSON 매핑과 SSE 이벤트 조합만 직접 구현했다.
+HTTP 도입 전 설치된 Qt HttpServer 6.8.3의 chunked responder와 cpp-httplib를 검토했다. cpp-httplib는 요청 body 상한·고정 thread pool·연결 종료 검사를 공개 API로 제공하므로 HTTP 파서를 직접 구현하지 않고 서비스 future를 연결할 수 있다. Qt HttpServer 모듈을 추가하지 않고 MIT 단일 헤더를 선택했다. 헤더는 third_party/cpp-httplib에 원본 그대로 보관하고 CMake 구성 시 해시를 검사하므로 HTTP 의존성의 추가 다운로드가 없다. 서비스 고유 JSON 매핑과 SSE 이벤트 조합만 직접 구현했다.
 
 출처 확인일: 2026-09-07. 가중치를 SDK에 포함하거나 자동 설치하지 않으며 모델 라이선스는 별도로 적용한다.
 
@@ -33,3 +35,18 @@ llama.cpp 정적 링크 시 원본 MIT 고지를 설치 패키지의 share/iiLoc
 원격 pull/CLI 도입에는 이미 유지 중인 Qt 6.8.3 Core/Network를 재사용했다. CLI는 추론 SDK를 링크하지 않는다. Qt의 공유 라이브러리 라이선스 조건을 유지하며 추가 Hub 의존성은 없다. [QNetworkAccessManager](https://doc.qt.io/qt-6.8/qnetworkaccessmanager.html)와 [QNetworkRequest의 redirect/transfer timeout](https://doc.qt.io/qt-6.8/qnetworkrequest.html)을 사용한다.
 
 기본 Qwen registry는 [공식 GGUF 저장소의 고정 revision](https://huggingface.co/Qwen/Qwen3-8B-GGUF/tree/7c41481f57cb95916b40956ab2f0b139b296d974)을 참조한다. commit/파일 크기/LFS SHA-256을 공식 API로 확인했으며 실제 가중치는 번들에 포함하지 않는다. 모델 원본의 라이선스는 해당 저장소를 따른다. 사용자가 pull을 실행하기 전 SDK 빌드·설치에서 모델을 다운로드하지 않는다.
+
+2026-09-13 최소 대화용 모델로 [공식 Qwen2.5-0.5B-Instruct-GGUF](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/tree/9217f5db79a29953eb74d5343926648285ec7e67)의 Q4_K_M을 등록했다. 원본 모델 카드는 Apache-2.0을 선언한다. 491,400,032 bytes의 작은 모델로 최초 다운로드·메모리 비용을 낮추고, 기존 llama.cpp 어댑터와 Qt 다운로드 경로를 그대로 사용한다. 추가 런타임·Hub 라이브러리 의존성은 없다. 모델 revision·파일 크기·SHA-256은 공식 API와 대조하며 SDK에 가중치를 재배포하지 않는다. 모델 품질과 모델 계열의 업그레이드는 SDK 추론 인터페이스와 독립적으로 검토한다.
+
+
+## 0.3.0 제어 카탈로그와 MLX 샘플러
+
+2026-09-13 공식 선언을 커밋·SHA-256으로 잠갔으며 [ParameterSources.md](docs/ParameterSources.md)에 13개 프로젝트의 버전·라이선스·규모를 기록했다. 변환한 주석·타입 선언의 고지는 docs/parameter-licenses에 보관하고 설치한다. Transformers/PEFT/TRL/Accelerate/DeepSpeed/vLLM/SGLang은 Apache-2.0, llama.cpp/Ollama/LM Studio/MLX/mlx-lm은 MIT, PyTorch는 원본 BSD 계열 고지와 포함된 NOTICE를 따른다. 학습 프레임워크는 링크·실행 의존성으로 추가하지 않았다. 정적 추출에는 Python 표준 AST를, 객체 처리에는 기존 Qt JSON을 재사용한다.
+
+MLX 0.32.2 + mlx-lm 0.31.3의 min-p 최소 후보 수 실행 오류를 실제 테스트에서 재현했다. 공식 커밋 `dcbcf786c0cf56f9a12fabe9468c887781431ae2`의 수정된 `sample_utils.py`를 변경 없이 `runtimes/mlx_sample_utils.py`에 포함하여 재사용한다. 파일 SHA-256은 `c93c1eef794725f9f7ce77b6212f61eb6d0fe17b9cd87c06cec6470ee12b07f2`이며 CMake에서 확인한다. 유지 중인 MIT 구현의 작은 단일 파일을 사용하며 샘플러 알고리즘을 별도로 재작성하지 않았다. 모델 로딩·생성·캐시는 검증된 기존 mlx-lm 0.31.3 의존성을 유지한다.
+
+## llama.cpp common conversation support
+
+The existing pinned llama.cpp source also supplies the native Jinja chat templates, tool grammar sampling and PEG output parser. No new inference process is introduced. The common static library is linked privately; its cpp-httplib symbols use a separate namespace to avoid collisions with the service HTTP server. OpenSSL downloads, LLGuidance and upstream subprocess support are disabled.
+
+Its bundled nlohmann/json 3.12.0 is MIT licensed. Copyright notices and the MIT text are preserved in `third_party/llama-common/nlohmann-json.LICENSE`; common/base64.hpp is Unlicense (`third_party/llama-common/base64.UNLICENSE`). The existing llama.cpp and cpp-httplib license notices continue to apply.

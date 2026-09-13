@@ -10,6 +10,14 @@
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
+    iiLocalLLM::ParameterObject training("trl.GRPOConfig");
+    training.set("learning_rate", 0.0002);
+    training.set("per_device_train_batch_size", 2);
+    iiLocalLLM::ControlParameters parameters;
+    parameters.set(training);
+    if (iiLocalLLM::ControlParameters::fromJson(parameters.toJson()).toJson() != parameters.toJson()) return 18;
+    const auto generation = iiLocalLLM::generationOptionsFromJson({{"min_p",.05},{"frequency_penalty",.1}});
+    if (generation.minP != .05 || generation.frequencyPenalty != .1) return 19;
     QTemporaryDir storage(QDir::current().filePath(QStringLiteral("installed-api-XXXXXX")));
     if (!storage.isValid()) return 4;
     const auto bundle = storage.filePath(QStringLiteral("bundle"));
@@ -44,16 +52,18 @@ int main(int argc, char** argv)
     if (stats.loadedModels != 0 || stats.cachedContexts != 0) return 1;
     const auto listing = service.installedModels().get();
     if (service.pullModel(uri).result.get().uri != uri) return 15; // Existing installed bundle; no network.
-    try {
-        (void)service.resolveModel("qwen3:8b").get();
-        return 16;
-    } catch (const iiLocalLLM::Error& error) {
-        if (error.code() != iiLocalLLM::ErrorCode::NotFound) return 17; // Bundled alias resolves, model is not installed.
+    for (const auto* alias : {"qwen3:8b", "qwen2.5:0.5b"}) {
+        try {
+            (void)service.resolveModel(alias).get();
+            return 16;
+        } catch (const iiLocalLLM::Error& error) {
+            if (error.code() != iiLocalLLM::ErrorCode::NotFound) return 17; // Bundled alias resolves, model is not installed.
+        }
     }
     if (listing.models.size() != 1 || !listing.issues.isEmpty()
         || service.resolveModel(uri).get().uri != uri || !service.verifyModel(uri).get().valid) return 8;
     try {
-        service.loadModel({QStringLiteral("models/model.gguf")}).get();
+        (void)service.loadModel({QStringLiteral("models/model.gguf")}).get();
         return 9;
     } catch (const iiLocalLLM::Error& error) {
         if (error.code() != iiLocalLLM::ErrorCode::InvalidArgument) return 10;

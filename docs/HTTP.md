@@ -1,6 +1,6 @@
 # Native IPC와 localhost HTTP
 
-LocalIpcServer와 HttpApiServer는 같은 Service를 참조한다. 모델 카탈로그·로드 상태·하드웨어 선택·세션 제한·컨텍스트 예산·FIFO는 서비스에 하나만 존재한다. Native IPC는 macOS/Linux에서 Unix Domain Socket, Windows에서 Named Pipe를 사용한다. HTTP는 127.0.0.1의 TCP 포트에서 외부 프로그램·Python·외부 CLI에 텍스트 Chat Completions를 제공한다.
+LocalIpcServer와 HttpApiServer는 같은 Service를 참조한다. 모델 카탈로그·로드 상태·하드웨어 선택·세션 제한·컨텍스트 예산·FIFO는 서비스에 하나만 존재한다. Native IPC는 macOS/Linux에서 Unix Domain Socket, Windows에서 Named Pipe를 사용한다. HTTP는 127.0.0.1의 TCP 포트에서 외부 프로그램·Python·외부 CLI에 텍스트 및 함수 도구 호출 Chat Completions를 제공한다.
 
 ```text
 생태계 앱/iillm → Native IPC ─┐
@@ -17,7 +17,7 @@ Python/외부 도구 → HTTP API ──┘
 ```
 
 ```sh
-./build/iilocal-llm-service --models-root "$PWD/build/Models" \
+./build/iilocal-llm-service --models-root "$PWD/build/chat/Models" \
   --config models.json --socket "$PWD/build/llm.sock" --http-port 8080
 ```
 
@@ -51,13 +51,13 @@ curl http://127.0.0.1:8080/v1/chat/completions \
   -d '{"model":"model://qwen3-8b-q4","messages":[{"role":"user","content":"Explain KV caching."}],"max_tokens":128}'
 ```
 
-지원 필드는 model, messages, stream, stream_options.include_usage, max_tokens 또는 max_completion_tokens, temperature, top_p, top_k, seed, stop, n, keep_alive이다. model은 정규 model://id 또는 서비스 registry에 등록된 별칭을 허용한다. messages는 1~4096개의 role/content 객체이며 content는 비어 있지 않은 문자열이다. 선택적인 첫 system 이후 user/assistant가 번갈아 나오고 마지막은 user여야 한다. 과거 assistant 응답은 재생성하지 않고 입력 이력으로 전달한다. 전체 입력은 ServiceOptions.maxInputCharacters 제한을 따른다.
+지원 필드는 model, messages, stream, stream_options.include_usage, max_tokens 또는 max_completion_tokens, temperature, top_p, top_k, seed, stop, n, keep_alive, min_p, typical_p, min_keep, repetition_penalty, repetition_context_size, presence_penalty, frequency_penalty, xtc_probability, xtc_threshold, logit_bias, tools, tool_choice, parallel_tool_calls이다. model은 정규 model://id 또는 서비스 registry에 등록된 별칭을 허용한다. 일반 텍스트 messages는 1~4096개의 role/content 객체이며 content는 비어 있지 않은 문자열이다. 선택적인 첫 system 이후 user/assistant가 번갈아 나오고 마지막은 user여야 한다. 과거 assistant 응답은 재생성하지 않고 입력 이력으로 전달한다. 전체 입력은 ServiceOptions.maxInputCharacters 제한을 따른다.
 
 keep_alive는 숫자 초 또는 ms/s/m/h 문자열이며 생략하면 현재/서비스 정책이다. 0은 이 요청 종료 후 모델을 해제하고, 5m은 마지막 사용 후 5분 유지한다. 요청의 성공·취소·오류 후 임시 세션/KV를 정리하고 모델의 lease를 반환한다. [Residency.md](Residency.md)의 메모리 예산과 LRU 정책을 공유한다.
 
 기본 생성 값은 max_tokens=256, temperature=0.7, top_p=0.9, top_k=40, seed=0, n=1, stream=false이다. HTTP temperature는 0~2, top_p는 0보다 크고 1 이하, top_k는 0~1,000,000, seed는 0~2^32-1 정수이다. 토큰 제한은 1~1,048,576 정수이며 실제 로드 컨텍스트보다 작아야 한다. max_tokens와 max_completion_tokens는 함께 지정할 수 없다. n은 1만 지원한다. stop은 문자열 또는 최대 16개의 문자열 배열이며 각 값은 1~1024자이다.
 
-이 API는 OpenAI Chat Completions의 텍스트 요청·응답 형식 중 위 범위를 구현한다. 멀티모달 content, developer/tool 역할, tools/tool_choice, JSON schema 출력, logprobs, reasoning 설정, 여러 choice, 저장·조회 API 등은 지원하지 않는다. 알 수 없는 필드와 runtime/backend/device/path 등은 400으로 거부한다. 이름이 같은 엔드포인트가 전체 OpenAI API를 구현한다는 뜻은 아니다.
+이 API는 OpenAI Chat Completions의 텍스트·함수 호출 요청/응답 형식 중 문서화된 범위를 구현한다. 멀티모달 content, developer 역할, 함수명을 지정하는 tool_choice 객체, strict, JSON schema response_format, logprobs, reasoning 제어 설정, 여러 choice, 저장·조회 API 등은 지원하지 않는다. 알 수 없는 필드와 runtime/backend/device/path 등은 400으로 거부한다. 이름이 같은 엔드포인트가 전체 OpenAI API를 구현한다는 뜻은 아니다.
 
 일반 응답은 다음 형태이다. 토큰 수는 실제 런타임 결과를 사용하며 아래 수치는 형식 예시이다.
 
@@ -74,7 +74,7 @@ keep_alive는 숫자 초 또는 ms/s/m/h 문자열이며 생략하면 현재/서
 
 ## SSE와 취소
 
-`stream: true`는 `text/event-stream`과 HTTP chunked encoding을 사용한다. 각 이벤트는 `data: <JSON>` 뒤에 빈 줄을 붙인다. 처음에는 choices[0].delta.role=assistant, 이후에는 delta.content, 마지막에는 빈 delta와 finish_reason(stop 또는 length)을 보낸다. object는 chat.completion.chunk이며 id/model/created는 응답 내에서 같다. 마지막 마커는 `data: [DONE]`이다. UTF-8 토큰 경계를 HTTP 패킷 경계와 동일하다고 가정하지 않는다.
+`stream: true`는 `text/event-stream`과 HTTP chunked encoding을 사용한다. 각 이벤트는 `data: <JSON>` 뒤에 빈 줄을 붙인다. 처음에는 choices[0].delta.role=assistant, 이후에는 delta.content, 마지막에는 빈 delta와 finish_reason(stop, length 또는 tool_calls)을 보낸다. object는 chat.completion.chunk이며 id/model/created는 응답 내에서 같다. 마지막 마커는 `data: [DONE]`이다. UTF-8 토큰 경계를 HTTP 패킷 경계와 동일하다고 가정하지 않는다.
 
 ```sh
 curl -N http://127.0.0.1:8080/v1/chat/completions \
@@ -84,7 +84,27 @@ curl -N http://127.0.0.1:8080/v1/chat/completions \
 
 include_usage=true이면 일반 청크에는 usage=null을 넣고 종료 마커 전에 choices=[]와 실제 usage를 가진 추가 청크를 보낸다. 헤더 전의 검증·큐 오류는 HTTP 오류 JSON이다. SSE 시작 후 추론 오류·시간 제한·출력 상한은 error 객체와 [DONE]으로 종료한다. 연결이 끊기거나 서버가 닫히면 생성 핸들을 취소하며 더 이상 최종 이벤트 전달을 보장할 수 없다.
 
-HTTP 요청은 Service::complete(CompletionRequest)를 호출한다. Service::chat과 같은 작업 함수·PromptEngine·ContextCacheManager·RuntimeContext::generate를 사용한다. 실행할 때 임시 세션을 만들고 성공·실패·취소 후 worker에서 세션과 KV를 제거한다. 다른 Native IPC 세션의 대화 이력은 수정하지 않는다. 후속 HTTP 요청은 필요한 이력 전체를 messages에 전달한다. 요청 사이의 지속적인 KV 재사용이 필요하면 Native IPC의 명시적 세션 API를 사용한다. 공유 LRU 예산으로 인해 HTTP 요청도 다른 세션의 물리 KV를 eviction할 수 있으며 그 세션의 이력은 유지된다.
+## 함수 도구 호출
+
+`tools`의 각 항목은 `{"type":"function","function":{"name":"...","description":"...","parameters":{...}}}` 형식이다. `tool_choice`는 `auto`(기본), `required`, `none`을 지원하며, `parallel_tool_calls`는 bool(기본 true)이다. `required`에는 하나 이상의 도구가 필요하다. 호출할 도구가 있는 요청 또는 과거 도구 호출/결과가 있는 메시지는 `Service::converse`를 사용한다. 현재 네이티브 llama.cpp에서 지원하며 미지원 런타임은 503을 반환한다.
+
+응답의 `message.tool_calls`에는 `id`, `type:function`, `function.name`, JSON 객체를 문자열로 인코딩한 `function.arguments`가 담긴다. 텍스트가 없으면 content는 null이고 finish_reason은 tool_calls이다. API는 클라이언트의 도구를 자동 실행하지 않는다. 클라이언트가 도구를 실행하고 원래 assistant 메시지와 `{"role":"tool","tool_call_id":"받은 ID","content":"관측 결과"}`를 전체 이력에 붙여 다음 요청을 보낸다. 도구 결과가 모두 오기 전 다음 user/assistant 메시지를 끼워 넣거나 ID를 재사용하면 400으로 거부한다.
+
+SSE에서는 완성·검증된 도구 호출을 `delta.tool_calls` 배열로 보내며 각 호출에 index를 붙인다. 잘린 도구 호출은 반환하지 않는다. 구조화 대화의 텍스트·도구 인자는 아직 토큰 단위로 전달하지 않고 완성된 파싱 결과를 보낸다. 런타임이 분리한 추론 내용은 `reasoning_content`로 반환할 수 있다. 이는 reasoning 예산 등 제어 설정을 구현했다는 뜻이 아니다.
+
+```json
+{
+  "model": "qwen2.5:0.5b",
+  "messages": [{"role":"user","content":"Look up the current document title."}],
+  "tools": [{"type":"function","function":{
+    "name":"current_document","description":"Read the current document title",
+    "parameters":{"type":"object","properties":{},"additionalProperties":false}
+  }}],
+  "tool_choice":"auto", "max_tokens":256
+}
+```
+
+일반 텍스트 HTTP 요청은 Service::complete(CompletionRequest)를 호출한다. Service::chat과 같은 작업 함수·PromptEngine·ContextCacheManager·RuntimeContext::generate를 사용한다. 실행할 때 임시 세션을 만들고 성공·실패·취소 후 worker에서 세션과 KV를 제거한다. 다른 Native IPC 세션의 대화 이력은 수정하지 않는다. 후속 HTTP 요청은 필요한 이력 전체를 messages에 전달한다. 요청 사이의 지속적인 KV 재사용이 필요하면 Native IPC의 명시적 세션 API를 사용한다. 공유 LRU 예산으로 인해 HTTP 요청도 다른 세션의 물리 KV를 eviction할 수 있으며 그 세션의 이력은 유지된다.
 
 ## 오류와 제한
 
@@ -110,3 +130,7 @@ print(result["choices"][0]["message"]["content"])
 ```
 
 출처와 의존성은 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md), 테스트 환경과 실제 결과는 [Verification.md](Verification.md)를 따른다.
+
+생성 제어의 전체 기본값·제약·런타임 지원은 [Parameters.md](Parameters.md)를 따른다. HTTP도 동일한 객체 검증기를 사용하며, 활성 typical_p는 llama.cpp에서만 지원한다. 학습 설정은 대화 요청의 필드가 아니며 별도 ParameterObject로 검증·내보낸다.
+
+도구 요청은 임시 SessionManager 세션을 만들지 않으며 요청별 구조화 컨텍스트를 사용하고 종료 후 해제한다. 앱 내부의 지속 KV 재사용은 C++ ConversationRequest.contextId 또는 agent::Engine 세션을 사용한다.

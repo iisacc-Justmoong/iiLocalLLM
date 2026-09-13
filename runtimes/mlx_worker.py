@@ -62,6 +62,27 @@ def prepare_cache(model, entry, tokens, make_cache, can_trim, trim):
     return cache, count
 
 
+def full_history_processor(prompt, processors, mx, biased_tokens=()):
+    """Restore tokens omitted by prefix caching and chunked prefill before applying penalties."""
+    prefix = None
+
+    def process(history, logits):
+        nonlocal prefix
+        if prefix is None:
+            observed = history.tolist()
+            if not observed or len(observed) > len(prompt) or prompt[-len(observed):] != observed:
+                raise ValueError("Unexpected MLX logits-processor history")
+            if any(token >= logits.shape[-1] for token in biased_tokens):
+                raise ValueError("logit_bias token is outside the vocabulary")
+            prefix = mx.array(prompt[:len(prompt) - len(observed)], dtype=history.dtype)
+        complete = mx.concatenate([prefix, history]) if len(prefix) else history
+        for processor in processors:
+            logits = processor(complete, logits)
+        return logits
+
+    return process
+
+
 class Worker:
     def __init__(self, emit):
         self.emit = emit
@@ -98,7 +119,8 @@ class Worker:
         import mlx.core as mx
         from mlx_lm import stream_generate
         from mlx_lm.models.cache import make_prompt_cache, can_trim_prompt_cache, trim_prompt_cache
-        from mlx_lm.sample_utils import make_sampler
+        # Official pinned sampler revision fixes MLX 0.32 put_along_axis scalar incompatibility.
+        from mlx_sample_utils import make_sampler, make_logits_processors
         tokens = request["tokens"]
         maximum = int(request["max_tokens"])
         if not tokens or maximum < 1 or len(tokens) + maximum > self.context_tokens:
@@ -107,7 +129,35 @@ class Worker:
         cache, reused = prepare_cache(self.model, self.contexts.pop(key, None), tokens,
                                      make_prompt_cache, can_trim_prompt_cache, trim_prompt_cache)
         mx.random.seed(request["seed"])
-        sampler = make_sampler(temp=request["temperature"], top_p=request["top_p"], top_k=request["top_k"])
+        if request.get("typical_p", 1) != 1:
+            raise ValueError("MLX does not support typical_p")
+        sampler_impl = None
+
+        def sampler(logprobs):
+            nonlocal sampler_impl
+            if sampler_impl is None:
+                vocab_size = logprobs.shape[-1]
+                if request.get("min_keep", 1) > vocab_size:
+                    raise ValueError("min_keep exceeds vocabulary size")
+                sampler_impl = make_sampler(temp=request["temperature"], top_p=request["top_p"],
+                    top_k=request["top_k"] if request["top_k"] < vocab_size else 0,
+                    min_p=request.get("min_p", 0), min_tokens_to_keep=request.get("min_keep", 1),
+                    xtc_probability=request.get("xtc_probability", 0), xtc_threshold=request.get("xtc_threshold", .1))
+            return sampler_impl(logprobs)
+
+        context_size = request.get("repetition_context_size", 64)
+        penalties_enabled = context_size != 0
+        if context_size < 0:
+            context_size = self.context_tokens
+        bias = {int(token): value for token, value in request.get("logit_bias", {}).items()}
+        processors = make_logits_processors(logit_bias=bias,
+            repetition_penalty=request.get("repetition_penalty", 1) if penalties_enabled and request.get("repetition_penalty", 1) != 1 else None,
+            repetition_context_size=context_size,
+            presence_penalty=request.get("presence_penalty", 0) if penalties_enabled else None,
+            presence_context_size=context_size,
+            frequency_penalty=request.get("frequency_penalty", 0) if penalties_enabled else None,
+            frequency_context_size=context_size)
+        processors = [full_history_processor(tokens, processors, mx, bias)] if processors else []
         all_tokens = tokens[:]
         last = None
         if self.backend == "cpu":
@@ -115,11 +165,11 @@ class Worker:
             # even with a CPU default device. Keep its inference/sampler/cache, bypass only that wrapper.
             from mlx_lm.generate import generate_step
             steps = generate_step(mx.array(tokens[reused:]), self.model, max_tokens=maximum,
-                                  sampler=sampler, prompt_cache=cache, prefill_step_size=256)
+                                  sampler=sampler, logits_processors=processors, prompt_cache=cache, prefill_step_size=256)
             responses = token_chunks(self.tokenizer, steps, maximum)
         else:
             responses = stream_generate(self.model, self.tokenizer, tokens[reused:], max_tokens=maximum,
-                                        sampler=sampler, prompt_cache=cache, prefill_step_size=256)
+                                        sampler=sampler, logits_processors=processors, prompt_cache=cache, prefill_step_size=256)
         for response in responses:
             last = response
             all_tokens.append(int(response.token))

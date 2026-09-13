@@ -8,6 +8,7 @@ import os
 import pty
 from pathlib import Path
 import re
+import select
 import signal
 import socket
 import subprocess
@@ -121,6 +122,16 @@ def main():
                         return result["result"]
 
             with running() as http_port:
+                groups = json.loads(command("parameters", "--json").stdout)
+                assert any(group["id"] == "trl.GRPOConfig" for group in groups), groups
+                definition = json.loads(command("parameters", "llama.common_params_sampling").stdout)
+                assert any(field["name"] == "samplers" for field in definition["parameters"])
+                config = root / "training.json"
+                config.write_text(json.dumps({"learning_rate": .0002, "per_device_train_batch_size": 2}))
+                validated = json.loads(command("parameters", "transformers.TrainingArguments", str(config)).stdout)
+                assert validated == json.loads(config.read_text()), validated
+                config.write_text('{"learning_rate":"invalid"}')
+                command("parameters", "transformers.TrainingArguments", str(config), ok=False)
                 assert json.loads(command("models", "--json").stdout)["models"] == []
                 assert json.loads(command("ps", "--json").stdout) == []
                 installed = json.loads(command("pull", "qwen3:8b", "--json").stdout)
@@ -137,6 +148,10 @@ def main():
                 assert not list(storage.glob(".pull-*")), "Failed downloads must leave no staging files"
                 command("pull", "model://unknown", ok=False)
                 command("run", "../model.gguf", "hello", ok=False)
+                for temperature in ("-1", "10.1", "nan", "inf", "invalid"):
+                    error = command("run", "qwen3:8b", "hello", f"--temperature={temperature}", ok=False)
+                    assert "temperature must be" in error.stderr, error.stderr
+                assert rpc("stats")["sessions"] == 0
                 cancel = subprocess.Popen([cli, "pull", "slow:model", "--json"], env=environment,
                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
                 try:
@@ -161,6 +176,14 @@ def main():
                     while rpc("stats")["sessions"] == 0:
                         assert interactive.poll() is None and time.monotonic() < deadline
                         time.sleep(0.02)
+                    # /clear is a local command, even when no usable runtime is installed.
+                    os.write(master, b"/clear\n")
+                    cleared = b""
+                    while b"Conversation cleared" not in cleared:
+                        assert interactive.poll() is None and time.monotonic() < deadline, cleared
+                        if select.select([interactive.stderr], [], [], 0.1)[0]:
+                            cleared += os.read(interactive.stderr.fileno(), 4096)
+                    assert rpc("stats")["sessions"] == 1
                     interactive.send_signal(signal.SIGINT)
                     out, err = interactive.communicate(timeout=5)
                     assert interactive.returncode == 130, (out, err, interactive.returncode)
@@ -174,8 +197,13 @@ def main():
                     # TinyStories lacks a template. Host-side configuration is explicit and remembered across eviction.
                     rpc("models.load", {"model": "qwen3:8b", "context_tokens": 512, "options": {"chat_template": "chatml"}})
                     rpc("models.unload", {"model": "qwen3:8b"})
-                    result = json.loads(command("run", "qwen3:8b", "Tell a story about a bird.", "--max-tokens", "12", "--json").stdout)
+                    run_args = ("run", "qwen3:8b", "Tell a story about a bird.", "--max-tokens", "12", "--temperature", "0", "--json")
+                    config.write_text(json.dumps({"min_p": .05, "repetition_penalty": 1.05, "frequency_penalty": .1}))
+                    parameterized = json.loads(command(*run_args, "--options", str(config)).stdout)
+                    assert "error" not in parameterized and parameterized["finish_reason"] in ("stop", "length"), parameterized
+                    result = json.loads(command(*run_args).stdout)
                     assert result["text"] and result["finish_reason"] in ("length", "stop")
+                    assert json.loads(command(*run_args).stdout)["text"] == result["text"], "Greedy CLI generation must be repeatable"
                     residents = json.loads(command("ps", "--json").stdout)
                     assert len(residents) == 1 and residents[0]["model"] == "model://test"
                     assert residents[0]["memory"]["estimated_bytes"] > len(payload)

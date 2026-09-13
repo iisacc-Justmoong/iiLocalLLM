@@ -24,6 +24,10 @@ class FakeContext final : public RuntimeContext {
 public:
     explicit FakeContext(std::shared_ptr<Probe> probe) : p(std::move(probe)) { ++p->contexts; }
     ~FakeContext() override { ++p->destroyed; }
+    RuntimeResult generateConversation(const RuntimeConversationPrompt& prompt, const GenerationOptions& options,
+        const CancellationToken& cancel, const TextCallback& emitText) override {
+        return generate(prompt.tokens, options, cancel, emitText);
+    }
     RuntimeResult generate(const TokenList& prompt, const GenerationOptions&,
                            const CancellationToken& cancel, const TextCallback& emitText) override
     {
@@ -52,6 +56,17 @@ class FakeModel final : public RuntimeModel {
 public:
     explicit FakeModel(std::shared_ptr<Probe> probe) : p(std::move(probe)) {}
     ~FakeModel() override { ++p->unloads; }
+    RuntimeConversationPrompt prepareConversation(const ConversationRequest& request, const CancellationToken&) override {
+        TokenList tokens;
+        for (const auto& message : request.messages)
+            for (const auto ch : message.toObject()["content"].toString()) tokens.append(ch.unicode());
+        tokens.append(3);
+        return {tokens, {}, {}};
+    }
+    RuntimeConversationReply parseConversation(const RuntimeConversationPrompt&, const QString& text) override {
+        const auto reply = QJsonDocument::fromJson(text.toUtf8()).object();
+        return {reply["text"].toString(), {}, reply["tool_calls"].toArray()};
+    }
     TokenList tokenize(const QList<ChatMessage>& messages, const CancellationToken&) override
     {
         TokenList tokens;
@@ -128,6 +143,78 @@ private slots:
         QVERIFY(storage->isValid());
     }
     void cleanup() { storage.reset(); }
+    void structuredConversationPreservesToolsAndModelScopedCache()
+    {
+        auto p = std::make_shared<Probe>(); Service service(options()); setup(service, p, 1024);
+        const QJsonObject call{{"id", "call-1"}, {"type", "function"},
+            {"function", QJsonObject{{"name", "Read"}, {"arguments", "{\"path\":\"a.txt\"}"}}}};
+        p->answer = QString::fromUtf8(QJsonDocument(QJsonObject{{"tool_calls", QJsonArray{call}}}).toJson(QJsonDocument::Compact));
+        ConversationRequest r; r.model = "model://small"; r.contextId = "agent-session"; r.options.maxTokens = 64;
+        r.tools = {QJsonObject{{"type", "function"}, {"function", QJsonObject{{"name", "Read"},
+            {"parameters", QJsonObject{{"type", "object"}}}}}}};
+        r.messages = {QJsonObject{{"role", "user"}, {"content", "Read a.txt"}}};
+        const auto first = service.converse(r).result.get();
+        QCOMPARE(first.errorCode, ErrorCode::None); QCOMPARE(first.toolCalls, QJsonArray{call});
+        QCOMPARE(service.stats().get().sessions, 0); // The durable transcript belongs to the caller.
+        r.messages.append(QJsonObject{{"role", "assistant"}, {"tool_calls", first.toolCalls}});
+        r.messages.append(QJsonObject{{"role", "tool"}, {"tool_call_id", "call-1"}, {"content", "observed"}});
+        p->answer = "{\"text\":\"observed\"}";
+        QString streamed;
+        const auto second = service.converse(r, [&](const StreamEvent& e) {
+            if (e.kind == StreamEventKind::Delta) streamed += e.text;
+        }).result.get();
+        QCOMPARE(second.errorCode, ErrorCode::None); QCOMPARE(second.text, "observed"); QCOMPARE(streamed, second.text);
+        QVERIFY(second.usage.cachedTokens > 0); QCOMPARE(p->contexts.load(), 1);
+        installFixture(service, "other", 1024); (void)service.loadModel({"model://other", 1024}).get();
+        r.model = "model://other";
+        const auto other = service.converse(r).result.get();
+        QCOMPARE(other.errorCode, ErrorCode::None); QCOMPARE(other.usage.cachedTokens, 0); QCOMPARE(p->contexts.load(), 2);
+        r.messages = {QJsonObject{{"role", "user"}, {"content", "Read a.txt"}}};
+        p->answer = QString::fromUtf8(QJsonDocument(QJsonObject{{"text", "visible"}, {"tool_calls", QJsonArray{call}}}).toJson());
+        const auto failed = service.converse(r, [](const StreamEvent& event) {
+            if (event.kind == StreamEventKind::Delta) throw std::runtime_error("consumer failed");
+        }).result.get();
+        QCOMPARE(failed.errorCode, ErrorCode::ConsumerFailure); QVERIFY(failed.toolCalls.isEmpty());
+    }
+    void structuredConversationRejectsBrokenToolProtocol()
+    {
+        auto p = std::make_shared<Probe>(); Service service(options()); setup(service, p);
+        ConversationRequest r; r.model = "model://small"; r.options.maxTokens = 8;
+        r.messages = {QJsonObject{{"role", "tool"}, {"tool_call_id", "orphan"}, {"content", "data"}}};
+        QCOMPARE(service.converse(r).result.get().errorCode, ErrorCode::InvalidArgument);
+        r.messages = {QJsonObject{{"role", "user"}, {"content", "hello"}}}; r.toolChoice = "invalid";
+        QCOMPARE(service.converse(r).result.get().errorCode, ErrorCode::InvalidArgument);
+        r.toolChoice = "required";
+        QCOMPARE(service.converse(r).result.get().errorCode, ErrorCode::InvalidArgument);
+        r.toolChoice = "auto";
+        r.messages.append(QJsonObject{{"role", "assistant"}, {"tool_calls", QJsonArray{
+            QJsonObject{{"id", "pending"}, {"type", "function"}, {"function", QJsonObject{{"name", "Read"}, {"arguments", "{}"}}}}
+        }}});
+        r.messages.append(QJsonObject{{"role", "user"}, {"content", "skip the result"}});
+        QCOMPARE(service.converse(r).result.get().errorCode, ErrorCode::InvalidArgument);
+        QCOMPARE(p->contexts.load(), 0);
+    }
+    void bundledStarterAliasSupportsConversation()
+    {
+        Service service(options());
+        auto probe = std::make_shared<Probe>();
+        service.registerRuntime(std::make_shared<FakeRuntime>(probe)).get();
+        installFixture(service, "qwen2.5-0.5b-instruct-q4");
+        const auto model = service.resolveModel("qwen2.5:0.5b").get();
+        QCOMPARE(model.uri, QStringLiteral("model://qwen2.5-0.5b-instruct-q4"));
+        const auto session = service.createSession("qwen2.5:0.5b", "Be concise.").get();
+        QCOMPARE(service.chat(request(session)).result.get().errorCode, ErrorCode::None);
+        const auto next = service.chat(request(session, "Again.")).result.get();
+        QCOMPARE(next.errorCode, ErrorCode::None);
+        QVERIFY(next.usage.cachedTokens > 0);
+        service.resetSession(session).get();
+        const auto history = service.session(session).get().messages;
+        QCOMPARE(history.size(), 1);
+        QCOMPARE(history.first().role, Role::System);
+        QCOMPARE(history.first().content, QStringLiteral("Be concise."));
+        QCOMPARE(service.chat(request(session)).result.get().usage.cachedTokens, 0);
+        service.closeSession(session).get();
+    }
     void residencyReuseLruAndSessionRestoration()
     {
         auto p = std::make_shared<Probe>();

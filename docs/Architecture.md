@@ -1,5 +1,7 @@
 # 계층과 변경 지점
 
+에이전트 실행 계층은 기존 Service 위에 `agent::Model` 어댑터로 연결한다. 추론 Service와 런타임은 하네스를 참조하지 않는다. 현재 구현 계약은 [AgentHarness.md](AgentHarness.md), 전체 기능 대응 및 미완료 항목은 [HarnessParity.md](HarnessParity.md)에 있다.
+
 Service는 future/stream callback façade이다. 시작 시 읽기 전용 HardwareInfo를 확보하고 내장 런타임을 등록한다. Service::Impl::State가 ModelManager, SessionManager, ContextCacheManager를 소유한다. ModelManager는 ModelRegistry와 ModelResidencyManager를 조합한다. Scheduler worker가 상태 변경을 직렬화한다. 도메인 managers는 UI·IPC·HTTP를 참조하지 않는다. LocalIpcServer와 HttpApiServer는 같은 객체의 공개 Service API만 호출한다. 런타임은 Runtime.h / Hardware.h / Types.h와 하드웨어 탐지 계약에 의존하며 서비스 내부를 참조하지 않는다.
 
 ```text
@@ -44,3 +46,9 @@ FIFO 항목 실행 시 최신 세션을 읽고 상주 모델을 acquire한다. �
 HttpApiServer는 cpp-httplib의 한정된 전송 thread pool에서 요청을 받아 Service future/handle을 기다린다. 서비스 callback은 mutex로 보호한 크기 제한 큐에 SSE 프레임을 넣으며 socket 쓰기는 전송 스레드가 수행한다. 연결 종료·deadline·출력 초과·서버 종료는 생성 취소로 연결한다. LocalIpcServer는 Qt 이벤트 루프에서 비동기 future와 스트림 inbox를 처리한다. 한쪽의 연결 종료가 다른 전송 계층의 요청 핸들을 취소하지 않는다. HTTP의 세부 계약은 [HTTP.md](HTTP.md)에 있다.
 
 ONNX 등은 서비스 호스트에서 Runtime/RuntimeModel/RuntimeContext를 구현하고 registerRuntime으로 등록한다. 사용자 형식의 manifest는 format과 상대 entry_point를 선언하고 어댑터가 ModelSpec.format 및 실제 파일을 확인한다. 앱에는 등록·선택을 위한 IPC 메서드를 노출하지 않는다. 기존 HardwareInfo에 없는 가속 API는 하드웨어 탐지에도 지원을 추가해야 한다. 같은 형식·장치를 여러 런타임이 지원하면 runtime id의 사전 순서를 적용한다. ONNX 어댑터와 디스크 세션 저장은 아직 구현하지 않았다. 장치 정책과 메모리 정보의 의미는 [HardwarePolicy.md](HardwarePolicy.md)를 따른다.
+
+## 파라미터 정의와 실행 경계
+
+`ParameterCatalog`는 Qt resource의 버전 고정 정의를 최초 사용 시 읽어 공유한다. `ParameterObject`는 원본 필드명, unset/null/default 구분과 타입·선언 제약을 관리한다. 여러 설정 객체는 `ControlParameters`로 직렬화한다. upstream 코드를 import하거나 기본값 표현식을 실행하지 않는다.
+
+공통 생성 객체 변환은 Parameters.cpp가 담당하고, Service/IPC/HTTP 및 두 런타임 어댑터가 같은 검증을 사용한다. 실행 바인딩이 없는 제공자 필드는 생성 옵션 변환에서 오류를 반환한다. 수천 개의 설정 정의를 런타임 구현 클래스의 상속으로 연결하지 않고, 독립적인 불변 데이터와 값 객체로 유지한다. 학습·분산 서빙 패키지는 카탈로그 출처이며 C++ 링크 의존성이 아니다.

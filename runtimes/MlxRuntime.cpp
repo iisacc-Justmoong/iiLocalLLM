@@ -1,4 +1,5 @@
 #include "Runtime.h"
+#include "Parameters.h"
 #include "MemoryEstimate.h"
 #include <QtCore/QFile>
 #include <QtCore/QCoreApplication>
@@ -113,14 +114,13 @@ public:
     RuntimeResult generate(const TokenList& prompt, const GenerationOptions& options, const CancellationToken& cancel,
                            const TextCallback& onText) override
     {
+        validateGenerationOptions(options, "mlx");
         worker->start(cancel);
         QJsonArray tokens;
         for (const auto token : prompt) tokens.append(token);
-        const auto result = worker->call({{QStringLiteral("op"), QStringLiteral("generate")},
-            {QStringLiteral("context_id"), id}, {QStringLiteral("tokens"), tokens},
-            {QStringLiteral("max_tokens"), options.maxTokens}, {QStringLiteral("temperature"), options.temperature},
-            {QStringLiteral("top_p"), options.topP}, {QStringLiteral("top_k"), options.topK},
-            {QStringLiteral("seed"), double(options.seed)}}, cancel, onText);
+        auto request = generationOptionsToJson(options);
+        request.insert("op", "generate"); request.insert("context_id", id); request.insert("tokens", tokens);
+        const auto result = worker->call(request, cancel, onText);
         const auto reason = result.value(QStringLiteral("finish_reason")).toString();
         if (reason != QStringLiteral("stop") && reason != QStringLiteral("length"))
             throw Error(ErrorCode::ProtocolError, QStringLiteral("MLX returned an invalid finish reason"));

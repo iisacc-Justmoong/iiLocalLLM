@@ -34,7 +34,7 @@ void download(const QUrl& url, const ModelFile& file, const QString& destination
     request.setMaximumRedirectsAllowed(8);
     request.setTransferTimeout(30000);
     request.setRawHeader("Accept-Encoding", "identity");
-    request.setRawHeader("User-Agent", "iiLocalLLMD/0.2.0");
+    request.setRawHeader("User-Agent", "iiLocalLLMD/0.3.0");
     std::unique_ptr<QNetworkReply> reply(network.get(request));
     reply->setReadBufferSize(1024 * 1024);
     QEventLoop loop;
