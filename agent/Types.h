@@ -1,13 +1,14 @@
 #pragma once
 #include "../Types.h"
 #include <QtCore/QJsonArray>
+#include <optional>
 
 namespace iiLocalLLM::agent {
 
 enum class MessageRole { User, Assistant, Tool };
 enum class RunStatus { Completed, Cancelled, TurnLimit, Failed };
 enum class EventKind { Started, ModelDelta, Message, ToolStarted, ToolProgress, ToolFinished,
-    PermissionRequested, Hook, Finished, InstructionsLoaded };
+    PermissionRequested, Hook, Finished, InstructionsLoaded, CompactionStarted, CompactionProgress, Compacted };
 struct ToolCall {
     QString id;
     QString name;
@@ -51,6 +52,7 @@ struct ToolContext {
     QString artifactsDirectory;
     CancellationToken cancellation;
     std::function<void(const QJsonObject&)> progress;
+    quint64 contextRevision = 0; // Read-before-edit observations expire after compaction.
 };
 struct ModelRequest {
     QString model;
@@ -59,6 +61,7 @@ struct ModelRequest {
     QList<ToolDefinition> tools;
     GenerationOptions generation;
     QString contextId;
+    bool summarizing = false; // Tools are disabled; the supplied system prompt defines the summary task.
 };
 struct ModelReply {
     QString text;
@@ -71,6 +74,19 @@ public:
     // May be invoked concurrently by distinct runs. Must cooperate with cancellation.
     virtual ModelReply generate(const ModelRequest&, const CancellationToken&,
         const std::function<bool(const QString&)>& onDelta) = 0;
+    // Return native template/tokenizer counts, or nullopt if this adapter cannot measure.
+    virtual std::optional<ContextBudget> measure(const ModelRequest&, const CancellationToken&) { return std::nullopt; }
+};
+struct Compaction {
+    QString id;
+    QString previousId;
+    QString atMessageId; // Raw transcript tail when the checkpoint was committed.
+    QString throughMessageId; // Covered raw prefix; empty for a micro-only checkpoint.
+    QString summary;
+    QString retainedUserMessageId; // Exact latest input, when covered by the summary.
+    QStringList clearedToolMessageIds; // Cumulative replacements in the retained suffix.
+    qint64 inputTokensBefore = 0;
+    qint64 inputTokensAfter = 0;
 };
 struct Session {
     QString id;
@@ -78,6 +94,7 @@ struct Session {
     QString systemPrompt;
     QString workingDirectory;
     QList<Message> messages;
+    QList<Compaction> compactions;
 };
 struct RunRequest {
     QString sessionId;
@@ -91,6 +108,14 @@ struct RunUsage {
     qint64 generatedTokens = 0;
     qint64 cachedTokens = 0;
     qint64 droppedMessages = 0;
+    qint64 summaryPromptTokens = 0;
+    qint64 summaryGeneratedTokens = 0;
+    int compactions = 0;
+};
+struct CompactRequest {
+    QString sessionId;
+    GenerationOptions generation;
+    QString instructions;
 };
 struct RunResult {
     QString runId;
@@ -125,6 +150,10 @@ IILOCALLLM_EXPORT QJsonObject toJson(const ToolDefinition&);
 IILOCALLLM_EXPORT QJsonObject toJson(const Message&);
 IILOCALLLM_EXPORT QJsonObject toJson(const RunResult&);
 IILOCALLLM_EXPORT QJsonObject toJson(const Event&);
+IILOCALLLM_EXPORT QJsonObject toJson(const Compaction&);
+IILOCALLLM_EXPORT Compaction compactionFromJson(const QJsonObject&);
+// Reconstructs only the model-visible view. Session.messages always contains the original records.
+IILOCALLLM_EXPORT QList<Message> modelMessages(const Session&);
 IILOCALLLM_EXPORT Message messageFromJson(const QJsonObject&);
 IILOCALLLM_EXPORT ModelReply replyFromJson(const QJsonObject&);
 // Rejects duplicate IDs and unmatched/interleaved results. Pending calls are allowed only at the tail.

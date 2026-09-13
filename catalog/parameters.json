@@ -9924,8 +9924,8 @@
             "revision": "0.3.0",
             "path": "Types.h",
             "url": "iiLocalLLM:Types.h",
-            "sha256": "5b7b01b84b5dcfd6ad5b243fb6cc459d6b7b64cdde4fb6a5ede2fc0a894122ae",
-            "line": 72
+            "sha256": "4bbc41379d79a34a9667d3522228ba34f7d5faa68af2994b0d0e69a1b0ab564b",
+            "line": 77
           },
           "native_bindings": [
             "llama.cpp",
@@ -9950,8 +9950,8 @@
             "revision": "0.3.0",
             "path": "Types.h",
             "url": "iiLocalLLM:Types.h",
-            "sha256": "5b7b01b84b5dcfd6ad5b243fb6cc459d6b7b64cdde4fb6a5ede2fc0a894122ae",
-            "line": 73
+            "sha256": "4bbc41379d79a34a9667d3522228ba34f7d5faa68af2994b0d0e69a1b0ab564b",
+            "line": 78
           },
           "native_bindings": [
             "llama.cpp",
@@ -9976,8 +9976,8 @@
             "revision": "0.3.0",
             "path": "Types.h",
             "url": "iiLocalLLM:Types.h",
-            "sha256": "5b7b01b84b5dcfd6ad5b243fb6cc459d6b7b64cdde4fb6a5ede2fc0a894122ae",
-            "line": 74
+            "sha256": "4bbc41379d79a34a9667d3522228ba34f7d5faa68af2994b0d0e69a1b0ab564b",
+            "line": 79
           },
           "native_bindings": [
             "llama.cpp",
@@ -10002,8 +10002,8 @@
             "revision": "0.3.0",
             "path": "Types.h",
             "url": "iiLocalLLM:Types.h",
-            "sha256": "5b7b01b84b5dcfd6ad5b243fb6cc459d6b7b64cdde4fb6a5ede2fc0a894122ae",
-            "line": 75
+            "sha256": "4bbc41379d79a34a9667d3522228ba34f7d5faa68af2994b0d0e69a1b0ab564b",
+            "line": 80
           },
           "native_bindings": [
             "llama.cpp",
@@ -10028,8 +10028,8 @@
             "revision": "0.3.0",
             "path": "Types.h",
             "url": "iiLocalLLM:Types.h",
-            "sha256": "5b7b01b84b5dcfd6ad5b243fb6cc459d6b7b64cdde4fb6a5ede2fc0a894122ae",
-            "line": 76
+            "sha256": "4bbc41379d79a34a9667d3522228ba34f7d5faa68af2994b0d0e69a1b0ab564b",
+            "line": 81
           },
           "native_bindings": [
             "llama.cpp",
@@ -10058,8 +10058,8 @@
             "revision": "0.3.0",
             "path": "Types.h",
             "url": "iiLocalLLM:Types.h",
-            "sha256": "5b7b01b84b5dcfd6ad5b243fb6cc459d6b7b64cdde4fb6a5ede2fc0a894122ae",
-            "line": 77
+            "sha256": "4bbc41379d79a34a9667d3522228ba34f7d5faa68af2994b0d0e69a1b0ab564b",
+            "line": 82
           },
           "native_bindings": [
             "llama.cpp",
@@ -10084,8 +10084,8 @@
             "revision": "0.3.0",
             "path": "Types.h",
             "url": "iiLocalLLM:Types.h",
-            "sha256": "5b7b01b84b5dcfd6ad5b243fb6cc459d6b7b64cdde4fb6a5ede2fc0a894122ae",
-            "line": 78
+            "sha256": "4bbc41379d79a34a9667d3522228ba34f7d5faa68af2994b0d0e69a1b0ab564b",
+            "line": 83
           },
           "native_bindings": [
             "llama.cpp",
@@ -10110,8 +10110,8 @@
             "revision": "0.3.0",
             "path": "Types.h",
             "url": "iiLocalLLM:Types.h",
-            "sha256": "5b7b01b84b5dcfd6ad5b243fb6cc459d6b7b64cdde4fb6a5ede2fc0a894122ae",
-            "line": 79
+            "sha256": "4bbc41379d79a34a9667d3522228ba34f7d5faa68af2994b0d0e69a1b0ab564b",
+            "line": 84
           },
           "native_bindings": [
             "llama.cpp"
@@ -10135,8 +10135,8 @@
             "revision": "0.3.0",
             "path": "Types.h",
             "url": "iiLocalLLM:Types.h",
-            "sha256": "5b7b01b84b5dcfd6ad5b243fb6cc459d6b7b64cdde4fb6a5ede2fc0a894122ae",
-            "line": 80
+            "sha256": "4bbc41379d79a34a9667d3522228ba34f7d5faa68af2994b0d0e69a1b0ab564b",
+            "line": 85
           },
           "native_bindings": [
             "llama.cpp",
@@ -10161,8 +10161,8 @@
             "revision": "0.3.0",
             "path": "Types.h",
             "url": "iiLocalLLM:Types.h",
-            "sha256": "5b7b01b84b5dcfd6ad5b243fb6cc459d6b7b64cdde4fb6a5ede2fc0a894122ae",
-            "line": 81
+            "sha256": "4bbc41379d79a34a9667d3522228ba34f7d5faa68af2994b0d0e69a1b0ab564b",
+            "line": 86
           },
           "native_bindings": [
             "llama.cpp",
@@ -10187,8 +10187,8 @@
             "revision": "0.3.0",
             "path": "Types.h",
             "url": "iiLocalLLM:Types.h",
-            "sha256": "5b7b01b84b5dcfd6ad5b243fb6cc459d6b7b64cdde4fb6a5ede2fc0a894122ae",
-            "line": 82
+            "sha256": "4bbc41379d79a34a9667d3522228ba34f7d5faa68af2994b0d0e69a1b0ab564b",
+            "line": 87
           },
           "native_bindings": [
             "llama.cpp",
@@ -10213,8 +10213,8 @@
             "revision": "0.3.0",
             "path": "Types.h",
             "url": "iiLocalLLM:Types.h",
-            "sha256": "5b7b01b84b5dcfd6ad5b243fb6cc459d6b7b64cdde4fb6a5ede2fc0a894122ae",
-            "line": 83
+            "sha256": "4bbc41379d79a34a9667d3522228ba34f7d5faa68af2994b0d0e69a1b0ab564b",
+            "line": 88
           },
           "native_bindings": [
             "llama.cpp",
@@ -10239,8 +10239,8 @@
             "revision": "0.3.0",
             "path": "Types.h",
             "url": "iiLocalLLM:Types.h",
-            "sha256": "5b7b01b84b5dcfd6ad5b243fb6cc459d6b7b64cdde4fb6a5ede2fc0a894122ae",
-            "line": 84
+            "sha256": "4bbc41379d79a34a9667d3522228ba34f7d5faa68af2994b0d0e69a1b0ab564b",
+            "line": 89
           },
           "native_bindings": [
             "llama.cpp",
@@ -10265,8 +10265,8 @@
             "revision": "0.3.0",
             "path": "Types.h",
             "url": "iiLocalLLM:Types.h",
-            "sha256": "5b7b01b84b5dcfd6ad5b243fb6cc459d6b7b64cdde4fb6a5ede2fc0a894122ae",
-            "line": 85
+            "sha256": "4bbc41379d79a34a9667d3522228ba34f7d5faa68af2994b0d0e69a1b0ab564b",
+            "line": 90
           },
           "native_bindings": [
             "llama.cpp",
@@ -10291,8 +10291,8 @@
             "revision": "0.3.0",
             "path": "Types.h",
             "url": "iiLocalLLM:Types.h",
-            "sha256": "5b7b01b84b5dcfd6ad5b243fb6cc459d6b7b64cdde4fb6a5ede2fc0a894122ae",
-            "line": 86
+            "sha256": "4bbc41379d79a34a9667d3522228ba34f7d5faa68af2994b0d0e69a1b0ab564b",
+            "line": 91
           },
           "native_bindings": [
             "llama.cpp",
@@ -10320,8 +10320,8 @@
             "revision": "0.3.0",
             "path": "Types.h",
             "url": "iiLocalLLM:Types.h",
-            "sha256": "5b7b01b84b5dcfd6ad5b243fb6cc459d6b7b64cdde4fb6a5ede2fc0a894122ae",
-            "line": 87
+            "sha256": "4bbc41379d79a34a9667d3522228ba34f7d5faa68af2994b0d0e69a1b0ab564b",
+            "line": 92
           },
           "native_bindings": [
             "llama.cpp",
@@ -10336,7 +10336,7 @@
         "revision": "0.3.0",
         "path": "Types.h",
         "url": "iiLocalLLM:Types.h",
-        "sha256": "5b7b01b84b5dcfd6ad5b243fb6cc459d6b7b64cdde4fb6a5ede2fc0a894122ae"
+        "sha256": "4bbc41379d79a34a9667d3522228ba34f7d5faa68af2994b0d0e69a1b0ab564b"
       }
     },
     {

@@ -2,6 +2,7 @@
 #include "Tools.h"
 #include "SessionStore.h"
 #include "ProjectContext.h"
+#include "Compaction.h"
 #include "../Service.h"
 
 namespace iiLocalLLM::agent {
@@ -15,6 +16,7 @@ struct EngineOptions {
     QList<Hook> hooks;
     PermissionCallback permission;
     ProjectContextOptions projectContext;
+    CompactionOptions compaction;
 };
 class IILOCALLLM_EXPORT Engine {
 public:
@@ -30,7 +32,9 @@ public:
     Session forkSession(const QString& id, const QString& throughMessageId = {});
     ProjectContext context(const QString& sessionId, const QStringList& targetPaths = {}, const CancellationToken& = {}) const;
     RunHandle run(RunRequest, EventCallback = {});
+    RunHandle compact(CompactRequest, EventCallback = {});
 private:
+    RunHandle submit(RunRequest, EventCallback, bool compactOnly, QString instructions = {});
     class Impl;
     std::unique_ptr<Impl> d;
 };
@@ -40,6 +44,7 @@ class IILOCALLLM_EXPORT ServiceModel final : public Model {
 public:
     explicit ServiceModel(Service& service);
     ModelReply generate(const ModelRequest&, const CancellationToken&, const TextCallback&) override;
+    std::optional<ContextBudget> measure(const ModelRequest&, const CancellationToken&) override;
 private:
     Service& service_;
 };

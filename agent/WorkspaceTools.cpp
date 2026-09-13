@@ -45,7 +45,7 @@ public:
     struct ReadState { QByteArray digest; bool complete; };
     std::mutex mutex;
     QHash<QString, ReadState> reads;
-    QString key(const ToolContext& c, const QString& path) const { return c.sessionId + QChar(0) + path; }
+    QString key(const ToolContext& c, const QString& path) const { return c.sessionId + QChar(0) + QString::number(c.contextRevision) + QChar(0) + path; }
     QString resolve(QString path, const ToolContext& c, bool write = false) const {
         require(c.workingDirectory.isEmpty() || QFileInfo(c.workingDirectory).canonicalFilePath() == root,
             "Tool registry belongs to a different workspace");

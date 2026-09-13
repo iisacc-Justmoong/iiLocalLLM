@@ -55,6 +55,11 @@ struct ChatMessage {
     bool operator==(const ChatMessage&) const = default;
 };
 using TokenList = QList<qint32>;
+// Exact prepared prompt size and the currently loaded model's context capacity.
+struct ContextBudget {
+    qint64 inputTokens = 0;
+    int contextTokens = 0;
+};
 struct ModelSpec {
     QString id;
     QString path;

@@ -138,3 +138,7 @@ status는 현재 프로세스에서 진행 중인 요청만 조회한다. 완료
 0.5.0부터 고정 workspace 안의 CLAUDE.md·AGENTS.md·`.claude/rules`를 매 모델 호출 전에 읽는다. `context_paths`는 최대 128개 문자열이며 작업 루트 안의 파일 경로다. 아직 생성하지 않은 파일도 지정할 수 있다. `agent.context.get`에 지정한 경로는 조회에만 사용하고, `agent.run`에 지정한 경로는 세션에 기록하여 이어지는 실행과 분기에 유지한다. 다른 앱의 세션 조회는 기존과 같이 거부한다. 호스트만 `--agent-no-project-context`로 자동 로딩을 끄거나 `--agent-context-exclude PATTERN`을 반복해 제외 패턴을 설정할 수 있다. RPC로 루트·제외·상한을 변경할 수 없다.
 
 변경된 스냅샷은 `instructions_loaded` 이벤트로 경로·해시·패턴을 알린다. 이벤트에는 지침 본문을 넣지 않는다. 본문은 인증된 조회 결과와 모델 입력에만 포함한다. 자동 지침은 파일의 직접 읽기 이력이나 수정 권한을 만들지 않는다. 상세 범위·순서·상한·미구현 항목은 [ProjectContext.md](ProjectContext.md)를 참조한다.
+
+## 수동 대화 압축 (0.6.0)
+
+`agent.sessions.compact`는 `session_id`, 선택적 `instructions`, `options`를 받는다. 기존 실행과 동일한 인증·세션 독점·큐·요청 기한·상태 조회·취소를 사용하며 `RunResult`를 반환한다. 성공 시 `turns`는 0, `text`는 요약이다. `compaction_started`, `compaction_progress`, `compacted` 이벤트를 기존 스트림으로 전달한다. `agent.sessions.get`에는 원본 메시지 페이지와 `compaction_count`, 최근 `compaction`이 포함된다. `agent.info.auto_compact_enabled`로 호스트 설정을 확인한다. 자동 압축은 기본 켜짐이며 `--agent-no-auto-compact`로 끌 수 있다. 자세한 예산·영속성·실패 계약은 [Compaction.md](Compaction.md)를 따른다.

@@ -1,5 +1,35 @@
 # 구현 검증 기록
 
+## 2026-09-14 네이티브 예산·대화 압축 (0.6.0)
+
+C++ Service의 실제 템플릿·토크나이저 측정, 자동 도구 결과 축소, 여러 묶음의 로컬 모델 요약, 원본 JSONL 보존 체크포인트, 재개·분기, 원문 조회 및 C++/API/MCP 수동 압축을 연결했다. Apple M1 Max / Qt 6.8.3에서 검증했으며 새 런타임 의존성은 없다. 전체 하네스 및 Society·Dreamscapes 제품 앱 통합 완료를 의미하지 않는다.
+
+| 구분 | 관측 결과 |
+|---|---|
+| Release 빌드 | 전체 타깃 성공. 최종 전체 Release·대상 sanitizer 빌드 성공·경고 없음 |
+| 전체 CTest | **32/33 통과**, 112.13초. `iiLocalLLM.agent_local_inference`의 소형 모델 원문 답변 검사 1개 실패 |
+| 추가 변경 검증 | 반환값 경고 정리 후 Service 1/1, 수동 압축 HTTP/native/CLI 검사 2/2 통과. 최종 전체 실행은 중복 요약·즉시 모델 해제 회귀 검사도 포함 |
+| ASAN/UBSAN | **9/9 통과**, 18.75초. 압축·프로젝트 지침·에이전트·Service·HTTP·API·native transport·MCP stdio·MCP server |
+| 설치 소비자 | fresh CMake 구성에서 **8/8 통과**, 17.05초. 공개 압축/체크포인트 ABI와 실제 로컬 요약·재개 포함 |
+| 로딩·CLI | 실제 `build/compaction-stage/lib/libiiLocalLLM.0.6.0.dylib` 로딩 확인. iillm은 Qt Core/Network 링크이며 iiLocalLLM/llama/ggml 링크 없음 |
+| API 전송 | 소스 daemon에서 14개 수락 검사 통과. 수동 압축의 인증·빈 세션 보존을 HTTP/native IPC/얇은 CLI에서 확인; 프로젝트 지침·실제 Read·재시작·분기 경로 포함 |
+| 실제 Qwen 요약 | 창 4,096토큰, 원본 사전 측정 11,186토큰, 요약 4회·생성 136토큰. 저장된 최종 입력 1,378토큰. 원본 13개 메시지 보존, 요약문과 재개 응답에서 임의 식별자 일치 |
+| ABI·저장 | SDK/SOVERSION 0.6.0/0.6. JSONL v2, v1 읽기 및 첫 압축 시 원자적 헤더 이행, 후속 체크포인트 append/flush |
+
+원본 사전 측정은 원문 조회 도구를 추가하기 전의 입력이며, 체크포인트의 최종 측정은 그 도구 스키마를 포함한다. 실제 Qwen 검사는 하나의 임의 식별자 유지와 재개를 검증한다. 모든 사실의 충실성을 증명하지 않는다. 설치 소비자에서도 같은 검사에 통과했다.
+
+최초 실제 요약 검사는 11,186토큰을 1,394토큰으로 줄이고 재개 응답에서 식별자를 반환했지만, 요약문 자체는 식별자를 누락해 실패했다. 각 요약 단계에 최신 사용자 요청 원문을 다시 제공하도록 보강한 뒤 새 임의 식별자로 통과했다. 최초 실패 로그는 `build/compaction-native-initial-result.log`와 `build/compaction-native-initial-runtime.log`에 보존했다. 테스트 기준을 완화하거나 모델 답변을 상수로 대체하지 않았다.
+
+최종 전체 회귀의 실패는 `agent_local_inference`의 임의 파일 값 `LOCAL_fcbfcb5686bc`다. 원문이 Tool 메시지에 정확히 기록됐지만 모델은 `This is a secret message.`라고 답했다. 이 실행의 `compactions`는 0이다. 같은 입력·프롬프트·모델로 이전 `build/context-stage/lib/libiiLocalLLM.0.5.0.dylib`를 실제 로드한 비교에서도 같은 답변과 토큰 수(prompt 730, generated 39)가 재현됐다. 기존 소형 모델 원문 재현 문제이며 새 압축 경로에서 생긴 실패로 표시하지 않는다. 비교 소스·결과·실제 로더 기록은 `build/compaction-baseline/compare.cpp`, `build/compaction-baseline-result.log`, `build/compaction-baseline-loader.log`다.
+
+이전 전체 실행도 32/33(148.49초)이었고 당시에는 `chat`의 HTTP 원문 답변 검사가 실패했다. 이후 재실행은 중복 요약과 모델 즉시 해제 시 임시 상태 수명을 수정했기 때문에 수행했다. 원문 답변 검사 기준은 바꾸지 않았으며 최초 HTTP 실패는 `build/compaction-release-tests.log`에 보존했다. 최종 전체 실행의 `chat`, `agent_mcp_inference`, `mcp_server_inference`, `compaction_inference`는 통과했다.
+
+최종 설치본의 별도 API 추론 검사에서도 원문 `LOCAL_ad9466c9dc39`가 Tool 기록에는 정확히 남았지만, 모델 답변은 `LOCAL_ad94669d939`로 일부 문자를 바꿔 전체 수락 검사가 실패했다(`compactions=0`). 로그는 `build/compaction-final-installed-api.log`다. 설치 소비자 8/8 통과와 이 API 모델 정확성 실패를 구분한다. 실제 모델이 없는 전송 전용 검사 11/11도 통과했다(`build/compaction-final-installed-transport-result.json`). 인증·수동 압축 진입·빈 세션 보존·지침 조회·재시작·분기를 검증했다.
+
+TDD에서 네이티브 측정 1건, 체크포인트 보존·검증·v1 이행 3건, 실행 연결 3건, 수동 API 메서드 미구현 실패를 먼저 확인했다. 최종 압축 단위 검사는 자동 micro/summary, 원문 조회, 여러 요약 묶음, 최신 입력 보존, 취소·차단·잘못된 출력·진전 없는 요약의 롤백, 구형 모델 어댑터, 큰 입력, 읽기 revision, 손상 기록·분기를 검증한다. 마지막 검토에서는 이미 요약한 prefix만 다시 요약하는 불필요한 추론과 keep_alive=0에서 프롬프트 임시 상태보다 모델이 먼저 해제되는 순서를 각각 재현했다. 경계 전진 검사와 소멸 범위 조정 후 두 회귀 검사도 통과했다. 실제 잘못된 메모리 접근을 유발하기 전에 probe로 수명을 검사했으며, 최종 ASAN/UBSAN에서는 오류가 관측되지 않았다.
+
+재현 소스는 `tests/compaction_tests.cpp`, `tests/compaction_runtime_smoke.cpp`, `tests/service_tests.cpp`, `tests/agent_api_tests.cpp`, `tests/agent_api_smoke.py`, `tests/mcp_server_tests.cpp`, `tests/consumer/compaction.cpp`다. 증거는 `build/compaction-final-release-tests.log`, `build/compaction-final-LastTest.log`, `build/compaction-final-sanitizer-tests.log`, `build/compaction-final-consumer-tests.log`, `build/compaction-native-result.log`, `build/compaction-api-source-result.json`, `build/compaction-final-installed-loader.log`, `build/compaction-cli-linkage.log`, `build/compaction-verification.json`에 보관한다. 설치는 Workspace 안의 별도 stage이며 전역 설치나 제품 앱 재배포를 뜻하지 않는다.
+
 ## 2026-09-14 프로젝트 지침·경로별 컨텍스트 (0.5.0)
 
 Apple M1 Max / Qt 6.8.3에서 C++ 프로젝트 지침 로더를 실제 Engine 입력에 연결했다. CLAUDE.md·AGENTS.md, Markdown import, YAML 경로 규칙, 중복·순환·루트 경계·상한, 매 모델 호출 전 갱신, 인증된 HTTP/native IPC 조회, MCP 실행 경로를 검증했다. MD4C 0.5.3·LibYAML 0.2.5를 private C object로 포함하며 원본 해시와 라이선스를 고정했다. 전체 하네스 완료나 제품 앱 연동 완료를 뜻하지 않는다.

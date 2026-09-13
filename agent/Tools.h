@@ -55,7 +55,7 @@ private:
     PermissionMode mode_;
     QList<PermissionRule> rules_;
 };
-enum class HookKind { BeforeModel, AfterModel, BeforeTool, AfterTool, Stop };
+enum class HookKind { BeforeModel, AfterModel, BeforeTool, AfterTool, Stop, BeforeCompact, AfterCompact };
 struct HookInput {
     HookKind kind;
     QString sessionId;

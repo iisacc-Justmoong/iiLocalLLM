@@ -47,7 +47,7 @@ QStringList contextPaths(const QJsonObject& parameters, int limit) {
     return paths;
 }
 QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.sessions.list", "agent.sessions.get",
-    "agent.sessions.fork", "agent.context.get", "agent.run", "agent.cancel", "agent.status"}; }
+    "agent.sessions.fork", "agent.sessions.compact", "agent.context.get", "agent.run", "agent.cancel", "agent.status"}; }
 QJsonObject sessionObject(const Session& s, int offset = 0, int limit = 0) {
     require(offset <= s.messages.size(), "Message offset exceeds the session length");
     QJsonArray messages;
@@ -55,6 +55,8 @@ QJsonObject sessionObject(const Session& s, int offset = 0, int limit = 0) {
     for (auto n = offset; n < end; ++n) messages.append(toJson(s.messages[n]));
     QJsonObject value{{"session_id", s.id}, {"model", s.model}, {"system", s.systemPrompt},
         {"working_directory", s.workingDirectory}, {"message_count", s.messages.size()}, {"messages", messages}};
+    value["compaction_count"] = s.compactions.size();
+    if (!s.compactions.isEmpty()) value["compaction"] = toJson(s.compactions.last());
     if (end < s.messages.size()) value["next_offset"] = end;
     return value;
 }
@@ -132,7 +134,7 @@ public:
         if (method == "agent.info") {
             fields(p, {}); QJsonArray names; for (const auto& name : methods()) names.append(name);
             return QJsonObject{{"protocol", "iisacc.agent/1"}, {"client_id", client->id}, {"methods", names}, {"max_turns", options.maxTurns},
-                {"working_directory", options.workingDirectory}, {"project_context_enabled", options.engine.projectContext.enabled}};
+                {"working_directory", options.workingDirectory}, {"project_context_enabled", options.engine.projectContext.enabled}, {"auto_compact_enabled", options.engine.compaction.automatic}};
         }
         if (method == "agent.sessions.create") {
             fields(p, {"model", "system"}); const auto model = text(p, "model"), prompt = text(p, "system", false);
@@ -166,18 +168,23 @@ public:
             auto result = sessionObject(client->engine->forkSession(original.id, text(p, "through_message_id", false)));
             result["parent_session_id"] = original.id; return result;
         }
-        fields(p, {"session_id", "prompt", "options", "max_turns", "context_paths"}); const auto original = session(client, p);
-        RunRequest request{original.id, text(p, "prompt"), generationOptionsFromJson(object(p, "options")), integer(p, "max_turns", options.maxTurns, 1, options.maxTurns)};
+        const bool compactOnly = method == "agent.sessions.compact";
+        if (compactOnly) fields(p, {"session_id", "instructions", "options"});
+        else fields(p, {"session_id", "prompt", "options", "max_turns", "context_paths"});
+        const auto original = session(client, p);
+        RunRequest request{original.id, compactOnly ? QString() : text(p, "prompt"), generationOptionsFromJson(object(p, "options")), integer(p, "max_turns", options.maxTurns, 1, options.maxTurns)};
         request.contextPaths = contextPaths(p, options.engine.projectContext.maxTargetPaths);
         job->token.throwIfCancelled();
         require(Clock::now() < job->deadline, "Agent API request deadline exceeded", ErrorCode::Timeout);
         quint64 sequence = 0;
-        auto handle = client->engine->run(std::move(request), [&](const Event& event) {
+        auto observe = [&](const Event& event) {
             auto value = toJson(event); value["sequence"] = double(++sequence);
             require(sequence <= 200000 && QJsonDocument(value).toJson(QJsonDocument::Compact).size() <= options.maxResultBytes,
                 "Agent API event exceeds limit", ErrorCode::ResourceLimit);
             if (callback) callback(value);
-        });
+        };
+        auto handle = compactOnly ? client->engine->compact({original.id, request.generation, text(p, "instructions", false)}, observe)
+                                  : client->engine->run(std::move(request), observe);
         bool timedOut = false;
         while (handle.result.wait_for(10ms) != std::future_status::ready) {
             timedOut |= Clock::now() >= job->deadline;

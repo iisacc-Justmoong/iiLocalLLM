@@ -7,6 +7,7 @@ public:
     ~SessionLease();
     const Session& session() const;
     void append(Message message);
+    void compact(Compaction checkpoint);
     QString artifactsDirectory() const;
 private:
     friend class SessionStore;

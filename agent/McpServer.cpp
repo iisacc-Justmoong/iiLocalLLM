@@ -74,24 +74,35 @@ public:
             {"properties", QJsonObject{{"run_id", QJsonObject{{"type", "string"}}}, {"session_id", QJsonObject{{"type", "string"}}},
                 {"text", QJsonObject{{"type", "string"}}}, {"status", QJsonObject{{"type", "string"}}},
                 {"turns", QJsonObject{{"type", "integer"}}}, {"usage", QJsonObject{{"type", "object"}}}}}};
-        run.execute = [self](const QJsonObject& args, const ToolContext& context) {
+        auto executeAgent = [self](const QJsonObject& args, const ToolContext& context, bool compactOnly) {
             auto conversation = self->conversation(context.sessionId);
             std::unique_lock lock(conversation->mutex, std::defer_lock); acquire(lock, context.cancellation);
+            if (compactOnly && conversation->id.isEmpty()) throw Error(ErrorCode::NotFound, "This MCP connection has no conversation to compact");
             if (conversation->id.isEmpty() || args["new_session"].toBool())
                 conversation->id = self->options.engine->createSession(self->options.model, self->options.workingDirectory, self->options.systemPrompt).id;
             RunRequest request{conversation->id, args["prompt"].toString(), self->options.generation, args["max_turns"].toInt(self->options.maxAgentTurns)};
             for (const auto& path : args["context_paths"].toArray()) request.contextPaths.append(path.toString());
             int progress = 0;
-            auto handle = self->options.engine->run(request, [&](const Event& event) {
+            auto observe = [&](const Event& event) {
                 if (context.progress) context.progress({{"progress", ++progress}, {"message", enumName(event.kind)},
                     {"_meta", QJsonObject{{"iisacc/agentEvent", toJson(event)}}}});
-            });
+            };
+            auto handle = compactOnly ? self->options.engine->compact({conversation->id, self->options.generation, args["instructions"].toString()}, observe)
+                                      : self->options.engine->run(request, observe);
             while (handle.result.wait_for(10ms) != std::future_status::ready)
                 if (context.cancellation.isCancelled()) handle.cancel();
             const auto result = handle.result.get(); context.cancellation.throwIfCancelled();
             return ToolResult{result.text.isEmpty() ? result.errorMessage : result.text, toJson(result), result.status != RunStatus::Completed};
         };
-        frozen->add(std::move(run));
+        run.execute = [executeAgent](const auto& args, const auto& context) { return executeAgent(args, context, false); };
+        Tool compact;
+        compact.definition.name = "iiLocalLLM.agent.compact";
+        compact.definition.description = "Summarize this connection's existing conversation, preserving original records and recent turns.";
+        compact.definition.inputSchema = {{"type", "object"}, {"additionalProperties", false}, {"properties", QJsonObject{
+            {"instructions", QJsonObject{{"type", "string"}, {"maxLength", 1048576}}}}}};
+        compact.definition.outputSchema = run.definition.outputSchema;
+        compact.execute = [executeAgent](const auto& args, const auto& context) { return executeAgent(args, context, true); };
+        frozen->add(std::move(run)); frozen->add(std::move(compact));
         Tool session;
         session.definition = {"iiLocalLLM.agent.session", "Inspect only this MCP connection's local agent conversation.",
             {{"type", "object"}, {"additionalProperties", false}, {"properties", QJsonObject{{"include_messages", QJsonObject{{"type", "boolean"}}}}}}, {}, true, true};
@@ -101,7 +112,8 @@ public:
             QJsonObject value{{"session_id", conversation->id}, {"model", self->options.model}, {"message_count", 0}};
             if (!conversation->id.isEmpty()) {
                 const auto session = self->options.engine->session(conversation->id);
-                value["message_count"] = session.messages.size();
+                value["message_count"] = session.messages.size(); value["compaction_count"] = session.compactions.size();
+                if (!session.compactions.isEmpty()) value["compaction"] = toJson(session.compactions.last());
                 if (args["include_messages"].toBool()) { QJsonArray messages; for (const auto& m : session.messages) messages.append(toJson(m)); value["messages"] = messages; }
             }
             return ToolResult{QString::fromUtf8(QJsonDocument(value).toJson(QJsonDocument::Compact)), value};

@@ -32,7 +32,7 @@ struct StdioOptions {
     int maxListItems = 10000;
 };
 struct ClientOptions {
-    QJsonObject implementation{{"name", "iiLocalLLM"}, {"version", "0.5.0"}};
+    QJsonObject implementation{{"name", "iiLocalLLM"}, {"version", "0.6.0"}};
     QStringList protocolVersions{"2025-11-25", "2025-06-18", "2025-03-26"};
     QJsonArray roots;
     // Optional host-owned handlers. Capability objects must match the handlers.

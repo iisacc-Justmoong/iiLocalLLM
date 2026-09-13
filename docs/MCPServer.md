@@ -86,3 +86,7 @@ stdio는 응답이 없는 유휴 상태에도 출력 파이프의 연결 종료�
 분석 참조는 Exhen/claude-code-2.1.88의 c8cd253554319f32ff64ff7000636199f720c9bc에서 entrypoints/mcp.ts의 도구 공개·stdio 경로다. 독립 C++ 구현의 기준은 공식 [수명 규격](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle), [stdio 전송](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports), [도구 규격](https://modelcontextprotocol.io/specification/2025-11-25/server/tools), [2025-03 배열 규칙](https://modelcontextprotocol.io/specification/2025-03-26/basic), [2025-06 변경 기록](https://modelcontextprotocol.io/specification/2025-06-18/changelog)이다.
 
 프로젝트 지침은 0.5.0부터 내부 Engine에서 매 모델 호출 전에 조합한다. `context_paths`는 최대 128개 파일 경로이며 해당 연결의 세션에만 유지한다. 경로별 규칙을 첫 호출 전에 적용하려면 이 값을 지정한다. `instructions_loaded` 이벤트는 기존 agent progress metadata로 전달한다. 상세 계약은 [ProjectContext.md](ProjectContext.md)에 있다.
+
+## 수동 대화 압축 (0.6.0)
+
+Engine을 설정한 서버는 `iiLocalLLM.agent.compact`를 제공한다. 선택적 `instructions`만 받으며 현재 MCP 연결의 기존 대화를 요약한다. 다른 session_id나 new_session을 받지 않는다. 같은 연결의 `iiLocalLLM.agent.session`에 압축 수와 최근 체크포인트가 나타난다. 실행·취소·진행·정책 경로는 agent.run과 같다. 원본 기록과 자동 압축의 계약은 [Compaction.md](Compaction.md)에 있다.

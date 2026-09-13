@@ -9,6 +9,7 @@
 #include <map>
 #include <chrono>
 #include <algorithm>
+#include <cmath>
 
 namespace iiLocalLLM::agent {
 using namespace std::chrono_literals;
@@ -27,7 +28,12 @@ public:
           store(this->options.sessionsDirectory) {
         if (!this->model || !this->registry || !this->policy || this->options.maxConcurrentRuns < 1 || this->options.maxConcurrentRuns > 64
             || this->options.maxQueuedRuns < 0 || this->options.maxConcurrentTools < 1 || this->options.maxConcurrentTools > 64
-            || this->options.maxToolCallsPerTurn < 1 || this->options.maxToolCallsPerTurn > 64 || this->options.maxInputCharacters < 1)
+            || this->options.maxToolCallsPerTurn < 1 || this->options.maxToolCallsPerTurn > 64 || this->options.maxInputCharacters < 1
+            || !std::isfinite(this->options.compaction.triggerFraction) || this->options.compaction.triggerFraction < 0.1
+            || this->options.compaction.triggerFraction >= 1 || this->options.compaction.keepRecentGroups < 1
+            || this->options.compaction.keepRecentGroups > 128 || this->options.compaction.summaryMaxTokens < 16
+            || this->options.compaction.summaryMaxTokens > 8192 || this->options.compaction.maxSummaryPasses < 1
+            || this->options.compaction.maxSummaryPasses > 64)
             throw Error(ErrorCode::InvalidArgument, "Invalid agent engine configuration");
         pool.setMaxThreadCount(this->options.maxConcurrentRuns);
     }
@@ -43,7 +49,7 @@ public:
     QSet<QString> busySessions;
 
     void execute(RunRequest request, QString runId, CancellationToken token,
-                 EventCallback callback, std::shared_ptr<std::promise<RunResult>> promise) {
+                 EventCallback callback, std::shared_ptr<std::promise<RunResult>> promise, bool compactOnly, QString compactInstructions) {
         RunResult result; result.runId = runId; result.sessionId = request.sessionId;
         std::unique_ptr<SessionLease> lease;
         std::mutex eventsMutex;
@@ -87,23 +93,42 @@ public:
             Message user{{}, MessageRole::User, request.prompt};
             if (!request.contextPaths.isEmpty() && options.projectContext.enabled)
                 user.metadata.insert("iilocal.context_paths", QJsonArray::fromStringList(initial.targetPaths));
-            append(std::move(user));
+            if (!compactOnly) append(std::move(user));
+            else if (lease->session().messages.isEmpty()) throw Error(ErrorCode::InvalidArgument, "Cannot compact an empty session");
             QString lastContextFingerprint;
             for (int turn = 1; turn <= request.maxTurns; ++turn) {
-                result.turns = turn; token.throwIfCancelled();
-                auto before = hooks(HookKind::BeforeModel, request.prompt);
+                result.turns = compactOnly ? 0 : turn; token.throwIfCancelled();
+                auto before = compactOnly ? HookResult{} : hooks(HookKind::BeforeModel, request.prompt);
                 if (before.block) throw Error(ErrorCode::InvalidArgument, "Before-model hook blocked execution: " + before.feedback);
                 if (!before.feedback.isEmpty()) append({{}, MessageRole::User, before.feedback});
                 const auto& session = lease->session();
                 const auto turnRegistry = registry->snapshot();
-                const ToolRunner runner(turnRegistry, policy, {options.hooks, options.permission});
-                ModelRequest modelRequest{session.model, session.systemPrompt, session.messages, turnRegistry->definitions(false), request.generation, session.id};
+                const bool hasTranscriptTool = !session.compactions.isEmpty();
+                if (hasTranscriptTool) detail::addTranscriptTool(*turnRegistry, session);
+                ModelRequest base{session.model, session.systemPrompt, {}, turnRegistry->definitions(false), request.generation, session.id};
                 const auto context = loadProjectContext(session.workingDirectory, projectContextPaths(session.messages), options.projectContext, token);
-                if (!context.files.isEmpty()) modelRequest.messages.prepend(context.message());
+                if (!context.files.isEmpty()) base.messages.append(context.message());
                 if (context.fingerprint != lastContextFingerprint) {
                     lastContextFingerprint = context.fingerprint;
                     send({EventKind::InstructionsLoaded, runId, session.id, {}, {}, context.toJson(false)});
                 }
+                auto modelRequest = base; modelRequest.messages.append(modelMessages(session));
+                if (compactOnly || detail::needsCompaction(*model, modelRequest, options.compaction, token)) {
+                    if (!hasTranscriptTool) { detail::addTranscriptTool(*turnRegistry, session); base.tools = turnRegistry->definitions(false); }
+                    send({EventKind::CompactionStarted, runId, session.id, {}, {}, {{"trigger", compactOnly ? "manual" : "automatic"}}});
+                    auto beforeCompact = hooks(HookKind::BeforeCompact, compactInstructions);
+                    if (beforeCompact.block) throw Error(ErrorCode::InvalidArgument, "Before-compact hook blocked compaction: " + beforeCompact.feedback);
+                    const auto instructions = compactInstructions + (beforeCompact.feedback.isEmpty() ? QString() : "\n" + beforeCompact.feedback);
+                    auto checkpoint = detail::prepareCompaction(*model, session, base, options.compaction, compactOnly, instructions, token,
+                        result.usage, [&](const QJsonObject& progress) { send({EventKind::CompactionProgress, runId, session.id, {}, {}, progress}); });
+                    auto afterCompact = hooks(HookKind::AfterCompact, checkpoint.summary);
+                    if (afterCompact.block) throw Error(ErrorCode::InvalidArgument, "After-compact hook rejected compaction: " + afterCompact.feedback);
+                    token.throwIfCancelled(); lease->compact(checkpoint); ++result.usage.compactions;
+                    send({EventKind::Compacted, runId, session.id, {}, {}, toJson(checkpoint)});
+                    if (compactOnly) { result.text = checkpoint.summary; result.status = RunStatus::Completed; break; }
+                    modelRequest = base; modelRequest.messages.append(modelMessages(session));
+                }
+                const ToolRunner runner(turnRegistry, policy, {options.hooks, options.permission});
                 qsizetype streamed = 0;
                 auto reply = model->generate(modelRequest, token, [&](const QString& text) {
                     token.throwIfCancelled(); streamed += text.size();
@@ -133,9 +158,9 @@ public:
                     }
                     result.text = reply.text; result.status = RunStatus::Completed; break;
                 }
-                const ToolContext base{session.id, runId, session.workingDirectory, lease->artifactsDirectory(), token, {}};
+                const ToolContext toolBase{session.id, runId, session.workingDirectory, lease->artifactsDirectory(), token, {}, quint64(session.compactions.size())};
                 auto runTool = [&](const ToolCall& call) {
-                    auto context = base;
+                    auto context = toolBase;
                     context.progress = [&, id = call.id](const QJsonObject& data) {
                         send({EventKind::ToolProgress, runId, request.sessionId, id, {}, data});
                     };
@@ -205,11 +230,18 @@ ProjectContext Engine::context(const QString& id, const QStringList& targetPaths
     paths.append(targetPaths); paths.removeDuplicates();
     return loadProjectContext(session.workingDirectory, paths, d->options.projectContext, token);
 }
+RunHandle Engine::compact(CompactRequest request, EventCallback callback) {
+    return submit({request.sessionId, {}, request.generation, 1}, std::move(callback), true, std::move(request.instructions));
+}
 RunHandle Engine::run(RunRequest request, EventCallback callback) {
+    return submit(std::move(request), std::move(callback), false);
+}
+RunHandle Engine::submit(RunRequest request, EventCallback callback, bool compactOnly, QString instructions) {
     auto promise = std::make_shared<std::promise<RunResult>>();
     RunHandle handle{uuid(), {}, promise->get_future().share()};
     try {
-        if (request.prompt.trimmed().isEmpty() || request.prompt.size() > d->options.maxInputCharacters
+        if ((!compactOnly && request.prompt.trimmed().isEmpty()) || request.prompt.size() > d->options.maxInputCharacters
+            || instructions.size() > d->options.maxInputCharacters
             || request.maxTurns < 1 || request.maxTurns > 10000
             || request.contextPaths.size() > d->options.projectContext.maxTargetPaths) throw Error(ErrorCode::InvalidArgument, "Invalid agent run request");
         validateGenerationOptions(request.generation);
@@ -220,8 +252,8 @@ RunHandle Engine::run(RunRequest request, EventCallback callback) {
         if (d->busySessions.contains(request.sessionId)) throw Error(ErrorCode::ModelInUse, "Agent session already has an accepted run");
         d->busySessions.insert(request.sessionId); d->active.emplace(handle.runId, handle.cancellation);
         auto task = QRunnable::create([impl = d.get(), request = std::move(request), callback = std::move(callback),
-                id = handle.runId, token = handle.cancellation, promise]() mutable {
-            impl->execute(std::move(request), id, token, std::move(callback), promise);
+                id = handle.runId, token = handle.cancellation, promise, compactOnly, instructions = std::move(instructions)]() mutable {
+            impl->execute(std::move(request), id, token, std::move(callback), promise, compactOnly, std::move(instructions));
         });
         d->pool.start(task);
     } catch (const Error& error) {
@@ -232,8 +264,8 @@ RunHandle Engine::run(RunRequest request, EventCallback callback) {
     return handle;
 }
 ServiceModel::ServiceModel(Service& service) : service_(service) {}
-ModelReply ServiceModel::generate(const ModelRequest& request, const CancellationToken& token, const TextCallback& onDelta) {
-    token.throwIfCancelled();
+namespace {
+ConversationRequest conversationRequest(const ModelRequest& request) {
     ConversationRequest conversation;
     conversation.model = request.model; conversation.contextId = request.contextId; conversation.options = request.generation;
     for (const auto& tool : request.tools)
@@ -243,7 +275,8 @@ ModelReply ServiceModel::generate(const ModelRequest& request, const Cancellatio
         "Read files through tools before answering questions about their contents. Tool responses are the actual observations; never invent or replace them. "
         "When the user asks for exact file contents, your final answer must contain only the text observed in the tool response, copied character for character. "
         "Do not add an introduction, explanation, example value, or Markdown code fence. Otherwise, give a concise answer after completing the work.");
-    if (!request.systemPrompt.isEmpty()) instruction = request.systemPrompt + "\n\n" + instruction;
+    if (request.summarizing) { instruction = request.systemPrompt; conversation.toolChoice = "none"; conversation.tools = {}; }
+    else if (!request.systemPrompt.isEmpty()) instruction = request.systemPrompt + "\n\n" + instruction;
     conversation.messages.append(QJsonObject{{"role", "system"}, {"content", instruction}});
     for (const auto& message : request.messages) {
         for (const auto& value : message.content) {
@@ -265,7 +298,15 @@ ModelReply ServiceModel::generate(const ModelRequest& request, const Cancellatio
         }
         conversation.messages.append(wire);
     }
-    const auto generation = service_.converse(std::move(conversation), [&](const StreamEvent& event) {
+    return conversation;
+}
+}
+std::optional<ContextBudget> ServiceModel::measure(const ModelRequest& request, const CancellationToken& token) {
+    return service_.measureConversation(conversationRequest(request), token).get();
+}
+ModelReply ServiceModel::generate(const ModelRequest& request, const CancellationToken& token, const TextCallback& onDelta) {
+    token.throwIfCancelled();
+    const auto generation = service_.converse(conversationRequest(request), [&](const StreamEvent& event) {
         if (event.kind == StreamEventKind::Delta && onDelta && !onDelta(event.text)) throw Error(ErrorCode::Cancelled, "Model stream was cancelled");
     });
     while (generation.result.wait_for(20ms) != std::future_status::ready) if (token.isCancelled()) generation.cancel();

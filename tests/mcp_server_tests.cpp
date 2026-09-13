@@ -47,8 +47,15 @@ QJsonObject call(m::ServerSession& s, int id, QString name, QJsonObject args = {
 }
 class HistoryModel final : public a::Model {
 public:
+    std::optional<ContextBudget> measure(const a::ModelRequest& r, const CancellationToken&) override {
+        qint64 count = 100 + r.systemPrompt.size() + r.tools.size() * 40;
+        for (const auto& message : r.messages) count += message.text.size() + 10;
+        return ContextBudget{count, 16384};
+    }
     a::ModelReply generate(const a::ModelRequest& r, const CancellationToken& token, const TextCallback&) override {
-        token.throwIfCancelled(); QStringList history;
+        token.throwIfCancelled();
+        if (r.summarizing) return {"MCP conversation summary with preserved source observations", {}, {100, 10, 0, 0}};
+        QStringList history;
         for (const auto& m : r.messages) if (m.role == a::MessageRole::User) history.append(m.text);
         return {history.join('|'), {}, {}};
     }
@@ -179,6 +186,25 @@ private slots:
         QVERIFY(call(s, 3, "write")["isError"].toBool());
         QVERIFY(call(s, 4, "value", {{"extra", true}})["isError"].toBool());
         s.receive(request(5, "tools/call", {{"name", "missing"}})); QCOMPARE(next(s)["error"].toObject()["code"].toInt(), -32602);
+    }
+    void manualCompactionIsConnectionBound() {
+        QTemporaryDir root; auto registry = std::make_shared<a::ToolRegistry>();
+        a::EngineOptions engineConfig; engineConfig.sessionsDirectory = root.filePath("sessions");
+        auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
+        auto engine = std::make_shared<a::Engine>(std::make_shared<HistoryModel>(), registry, policy, engineConfig);
+        a::McpServerOptions config; config.workingDirectory = root.path(); config.engine = engine; config.model = "fixture";
+        const auto serverOptions = a::mcpServerOptions(registry, policy, config);
+        m::ServerSession first(serverOptions), second(serverOptions); initialize(first); initialize(second);
+        call(first, 2, "iiLocalLLM.agent.run", {{"prompt", QString(1000, 'a')}});
+        call(first, 3, "iiLocalLLM.agent.run", {{"prompt", QString(1000, 'b')}});
+        call(first, 4, "iiLocalLLM.agent.run", {{"prompt", "Continue the task"}});
+        const auto compacted = call(first, 5, "iiLocalLLM.agent.compact", {{"instructions", "Preserve unfinished work"}});
+        QVERIFY(!compacted.value("isError").toBool());
+        QCOMPARE(compacted.value("structuredContent").toObject().value("usage").toObject().value("compactions").toInt(), 1);
+        const auto state = call(first, 6, "iiLocalLLM.agent.session").value("structuredContent").toObject();
+        QCOMPARE(state.value("message_count").toInt(), 6); QCOMPARE(state.value("compaction_count").toInt(), 1);
+        QVERIFY(call(second, 2, "iiLocalLLM.agent.compact").value("isError").toBool());
+        QVERIFY(call(second, 3, "iiLocalLLM.agent.compact", {{"session_id", state.value("session_id")}}).value("isError").toBool());
     }
     void localAgentConversationsAreIsolated() {
         QTemporaryDir root;

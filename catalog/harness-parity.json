@@ -88,9 +88,12 @@
         "agent/Api.cpp",
         "tests/context_tests.cpp",
         "tests/agent_api_smoke.py",
-        "docs/ProjectContext.md"
+        "docs/ProjectContext.md",
+        "agent/Compaction.cpp",
+        "tests/compaction_tests.cpp",
+        "docs/Compaction.md"
       ],
-      "remaining": "Workspace-bounded CLAUDE/AGENTS discovery, Markdown imports, scoped YAML rules, fresh prompt composition and authenticated inspection implemented. Managed/user/external sources, full glob/worktree compatibility, general attachments, summarization, microcompact and instruction cache remain."
+      "remaining": "Native prompt measurement, micro compaction, bounded rolling summaries and project instructions implemented. Managed/user instructions, attachments, session memory, reactive overflow recovery and server cache edits remain."
     },
     {
       "id": "memory",
@@ -107,9 +110,12 @@
         "tests/agent_tests.cpp",
         "agent/Api.cpp",
         "tests/agent_api_tests.cpp",
-        "tests/agent_api_smoke.py"
+        "tests/agent_api_smoke.py",
+        "agent/Compaction.cpp",
+        "tests/compaction_tests.cpp",
+        "docs/Compaction.md"
       ],
-      "remaining": "Locked JSONL resume, interrupted-result reconciliation and basic transcript fork implemented; artifact cloning, persistent fork ancestry, compaction boundaries and filesystem rewind remain."
+      "remaining": "Original JSONL messages, versioned compaction checkpoints, resume and complete-boundary forks implemented. Artifact cloning, file rewind and full lineage management remain."
     },
     {
       "id": "subagents",
@@ -168,7 +174,10 @@
         "tests/mcp_server_smoke.py",
         "tests/mcp_server_transport.py",
         "tests/consumer/mcp_server.cpp",
-        "docs/MCPServer.md"
+        "docs/MCPServer.md",
+        "agent/Compaction.cpp",
+        "tests/compaction_tests.cpp",
+        "docs/Compaction.md"
       ],
       "remaining": "C++ per-connection sessions, POSIX stdio, app ToolRegistry export and local agent tools implemented. Streamable HTTP/SSE, OAuth, Windows stdio, task lifecycle and actual iisacc app endpoints remain."
     },
@@ -190,7 +199,10 @@
         "tests/agent_api_tests.cpp",
         "tests/agent_transport_tests.cpp",
         "tests/agent_api_smoke.py",
-        "tests/consumer/api.cpp"
+        "tests/consumer/api.cpp",
+        "agent/Compaction.cpp",
+        "tests/compaction_tests.cpp",
+        "docs/Compaction.md"
       ],
       "remaining": "Authenticated HTTP/native IPC agent sessions, attached runs, ordered events, cancellation and thin CLI implemented; durable background jobs, idempotent response replay, live permission mediation and actual iisacc product integration remain."
     },
@@ -219,9 +231,12 @@
       "evidence": [
         "agent/Tools.cpp",
         "agent/Engine.cpp",
-        "tests/agent_tests.cpp"
+        "tests/agent_tests.cpp",
+        "agent/Compaction.cpp",
+        "tests/compaction_tests.cpp",
+        "docs/Compaction.md"
       ],
-      "remaining": "C++ model/tool/stop callbacks and argument revalidation implemented; full lifecycle and external hook runners remain."
+      "remaining": "C++ model/tool/stop and before/after compaction callbacks implemented. Full lifecycle and external hook runners remain."
     },
     {
       "id": "tasks",
@@ -282,7 +297,12 @@
         "tests/mcp_official_smoke.cpp",
         "docs/Verification.md",
         "tools/mcp_main.cpp",
-        "tests/consumer/mcp_server.cpp"
+        "tests/consumer/mcp_server.cpp",
+        "agent/Compaction.cpp",
+        "tests/compaction_tests.cpp",
+        "docs/Compaction.md",
+        "tests/consumer/compaction.cpp",
+        "tests/compaction_runtime_smoke.cpp"
       ],
       "remaining": "Public MCP client/server headers and a POSIX MCP executable are installed and tested through fresh C++ consumers. Complete app integration and platform qualification remain."
     },

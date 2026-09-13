@@ -35,6 +35,9 @@ public:
     GenerationHandle complete(CompletionRequest request, StreamCallback onEvent = {});
     // Native tool template/grammar/parser lane. Never coerces tool results into user text.
     GenerationHandle converse(ConversationRequest request, StreamCallback onEvent = {});
+    // Uses the same native template/tokenizer as converse, without allocating a KV context or generating.
+    // Reports over-budget prompts too; request syntax and host input limits still apply.
+    std::future<ContextBudget> measureConversation(ConversationRequest request, CancellationToken cancellation = {});
 private:
     class Impl;
     std::unique_ptr<Impl> d;

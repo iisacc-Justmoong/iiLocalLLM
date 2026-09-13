@@ -145,12 +145,25 @@ def main():
         evidence["checks"].append("private_credentials_required")
         with daemon() as port:
             assert http(port, "agent.info", auth="wrong")[0] == 401
-            assert cli("agent.info")["client_id"] == "society"
+            info = cli("agent.info")
+            assert info["client_id"] == "society"
+            assert "agent.sessions.compact" in info["methods"] and info["auto_compact_enabled"] is True
             session = cli("agent.sessions.create", {"model": model})["session_id"]
             assert native("agent.sessions.get", {"session_id": session})[-1]["result"]["session_id"] == session
             assert http(port, "agent.sessions.get", {"session_id": session}, auth=other)[0] == 404
             assert http(port, "agent.sessions.list", auth=other)[1]["result"]["sessions"] == []
             evidence["checks"] += ["http_native_cli_session_identity", "cross_app_isolation"]
+            compact = {"session_id": session, "instructions": "Preserve the current task"}
+            assert http(port, "agent.sessions.compact", compact, auth=other)[0] == 404
+            # An empty session is rejected by the Engine after authenticated dispatch,
+            # without trying to load the deliberately absent no-model fixture.
+            status, frames = http(port, "agent.sessions.compact", compact, stream=True)
+            assert status == 200 and frames[-1]["result"]["error_code"] == "invalid_argument", frames
+            assert native("agent.sessions.compact", compact)[-1]["result"]["error_code"] == "invalid_argument"
+            assert cli("agent.sessions.compact", compact)["error_code"] == "invalid_argument"
+            original = cli("agent.sessions.get", {"session_id": session})
+            assert original["message_count"] == 0 and original["compaction_count"] == 0
+            evidence["checks"] += ["compaction_http_native_cli_dispatch", "compaction_app_isolation", "empty_compaction_preserves_session"]
             scope = {"session_id": session, "context_paths": ["src/future.cpp"]}
             context = cli("agent.context.get", scope)
             assert len(context["files"]) == 2, context

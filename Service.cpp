@@ -177,6 +177,36 @@ GenerationHandle Service::chat(ChatRequest request, StreamCallback callback)
 { return d->generate(std::move(request), std::nullopt, std::move(callback)); }
 GenerationHandle Service::complete(CompletionRequest request, StreamCallback callback)
 { return d->generate({}, std::move(request), std::move(callback)); }
+std::future<ContextBudget> Service::measureConversation(ConversationRequest request, CancellationToken token)
+{
+    auto promise = std::make_shared<std::promise<ContextBudget>>();
+    auto future = promise->get_future();
+    d->scheduler.enqueue(token, [impl = d.get(), request = std::move(request), token, promise] {
+        QString acquired;
+        try {
+            token.throwIfCancelled();
+            validateConversationRequest(request, impl->options.maxInputCharacters);
+            auto& state = *impl->state;
+            const auto record = state.models.resolve(request.model);
+            if (!record.manifest.capabilities.contains("chat"))
+                throw Error(ErrorCode::RuntimeUnavailable, "Model does not support structured chat");
+            auto& model = state.models.acquire(record.manifest.id, request.keepAliveMs, token);
+            acquired = model.spec.id;
+            ContextBudget budget;
+            {
+                const auto prepared = model.runtime->prepareConversation(request, token);
+                token.throwIfCancelled();
+                budget = {prepared.tokens.size(), model.spec.contextTokens};
+            } // Prompt state may borrow model resources; destroy it before keep_alive=0 can unload the model.
+            state.models.release(acquired); acquired.clear();
+            promise->set_value(budget);
+        } catch (...) {
+            if (!acquired.isEmpty()) impl->state->models.release(acquired);
+            promise->set_exception(std::current_exception());
+        }
+    }, [promise](Error error) { promise->set_exception(std::make_exception_ptr(error)); });
+    return future;
+}
 GenerationHandle Service::converse(ConversationRequest request, StreamCallback callback)
 {
     GenerationHandle handle;

@@ -58,3 +58,5 @@
 출처: https://github.com/danielaparker/jsoncons/releases/tag/v1.9.0 , https://modelcontextprotocol.io/docs/2026-07-28/sdk , https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle
 
 0.5.0은 workspace 지침·Markdown import·YAML 경로 규칙·실제 모델 입력 조합과 인증된 API 조회를 추가한다. MCP 실행도 `context_paths`를 지원한다. [ProjectContext.md](ProjectContext.md)에 대응 범위를 기록하며 managed/user 지침·첨부·요약·microcompact·캐시는 남아 있다.
+
+0.6.0은 실제 네이티브 예산 측정, 오래된 도구 결과 축소, 여러 묶음의 로컬 모델 요약, 원본 보존 체크포인트·재개·분기, 원문 조회 도구, 압축 훅 및 API/MCP 수동 호출을 추가한다. [Compaction.md](Compaction.md)에 정확한 범위와 실패 계약을 기록한다. 세션 메모리·첨부 재주입·reactive overflow 복구·서버 캐시 편집 및 전체 앱 연동은 남아 있으므로 context/sessions는 partial을 유지한다.

@@ -15,9 +15,18 @@ using namespace std::chrono_literals;
 
 struct Probe {
     std::atomic<int> loads{0}, unloads{0}, contexts{0}, destroyed{0}, active{0}, peak{0};
+    std::atomic<int> preparedDestroyedAfterUnload{0};
     quint64 memoryBytes = 128 * 1024 * 1024;
     std::atomic<bool> started{false}, release{true}, fail{false};
     QString answer = QStringLiteral("가나다");
+};
+class FakePromptState final : public RuntimePromptState {
+public:
+    explicit FakePromptState(std::shared_ptr<Probe> probe) : p(std::move(probe)), unloaded(p->unloads.load()) {}
+    ~FakePromptState() override { if (p->unloads.load() > unloaded) ++p->preparedDestroyedAfterUnload; }
+private:
+    std::shared_ptr<Probe> p;
+    int unloaded;
 };
 
 class FakeContext final : public RuntimeContext {
@@ -61,7 +70,7 @@ public:
         for (const auto& message : request.messages)
             for (const auto ch : message.toObject()["content"].toString()) tokens.append(ch.unicode());
         tokens.append(3);
-        return {tokens, {}, {}};
+        return {tokens, {}, std::make_shared<FakePromptState>(p)};
     }
     RuntimeConversationReply parseConversation(const RuntimeConversationPrompt&, const QString& text) override {
         const auto reply = QJsonDocument::fromJson(text.toUtf8()).object();
@@ -143,6 +152,27 @@ private slots:
         QVERIFY(storage->isValid());
     }
     void cleanup() { storage.reset(); }
+    void conversationBudgetUsesTokenizerWithoutGeneration()
+    {
+        auto p = std::make_shared<Probe>(); Service service(options()); setup(service, p, 128);
+        ConversationRequest r; r.model = "model://small"; r.options.maxTokens = 8;
+        r.messages = {QJsonObject{{"role", "user"}, {"content", QString(200, QChar(0xac00))}}};
+        const auto budget = service.measureConversation(r).get();
+        QCOMPARE(budget.inputTokens, 201); QCOMPARE(budget.contextTokens, 128);
+        QCOMPARE(p->contexts.load(), 0); QVERIFY(!p->started.load());
+        CancellationToken cancelled; cancelled.cancel();
+        try { (void)service.measureConversation(r, cancelled).get(); QFAIL("Cancelled measurement succeeded"); }
+        catch (const Error& e) { QCOMPARE(e.code(), ErrorCode::Cancelled); }
+        r.messages.append(QJsonObject{{"role", "tool"}, {"tool_call_id", "orphan"}, {"content", "bad"}});
+        QVERIFY_THROWS_EXCEPTION(Error, (void)service.measureConversation(r).get());
+        service.unloadModel("model://small").get(); // Measurement released its residency lease.
+        QCOMPARE(p->unloads.load(), 1);
+        r.messages.removeLast(); r.keepAliveMs = 0;
+        (void)service.measureConversation(r).get();
+        (void)service.stats().get(); // Wait until all preparation temporaries have been destroyed.
+        QCOMPARE(p->unloads.load(), 2);
+        QCOMPARE(p->preparedDestroyedAfterUnload.load(), 0);
+    }
     void structuredConversationPreservesToolsAndModelScopedCache()
     {
         auto p = std::make_shared<Probe>(); Service service(options()); setup(service, p, 1024);
@@ -286,8 +316,8 @@ private slots:
         QCOMPARE(service.installedModels().get().models.size(), 1);
         QVERIFY(!service.resolveModel(QStringLiteral("model://small")).get().loaded);
         QVERIFY(service.verifyModel(QStringLiteral("model://small")).get().valid);
-        QVERIFY_THROWS_EXCEPTION(Error, service.loadModel({"/model.test"}).get());
-        QVERIFY_THROWS_EXCEPTION(Error, service.loadModel({"model://small", 129}).get());
+        QVERIFY_THROWS_EXCEPTION(Error, (void)service.loadModel({"/model.test"}).get());
+        QVERIFY_THROWS_EXCEPTION(Error, (void)service.loadModel({"model://small", 129}).get());
         auto loaded = service.loadModel({"model://small"}).get();
         QCOMPARE(loaded.contextTokens, 128);
         QVERIFY(service.installedModels().get().models.first().loaded);
@@ -299,7 +329,7 @@ private slots:
         QFile file(QDir(opts.modelsDirectory).filePath(QStringLiteral("small/model.test")));
         QVERIFY(file.open(QIODevice::WriteOnly)); QCOMPARE(file.write("changed"), qint64(7)); file.close();
         QVERIFY(!service.verifyModel(QStringLiteral("model://small")).get().valid);
-        QVERIFY_THROWS_EXCEPTION(Error, service.loadModel({"model://small"}).get());
+        QVERIFY_THROWS_EXCEPTION(Error, (void)service.loadModel({"model://small"}).get());
         QCOMPARE(p->loads.load(), 1); // Corrupt installed bytes never reach a runtime.
         service.removeModel(QStringLiteral("model://small")).get();
         QVERIFY(service.installedModels().get().models.isEmpty());
@@ -311,7 +341,7 @@ private slots:
         service.registerRuntime(std::make_shared<FakeRuntime>(p)).get();
         installFixture(service, QStringLiteral("text-only"), 128, {"text-generation"});
         (void)service.loadModel({"model://text-only"}).get();
-        QVERIFY_THROWS_EXCEPTION(Error, service.createSession(QStringLiteral("model://text-only")).get());
+        QVERIFY_THROWS_EXCEPTION(Error, (void)service.createSession(QStringLiteral("model://text-only")).get());
         QCOMPARE(service.stats().get().sessions, 0);
     }
     void ipcOwnsExecutionChoice()

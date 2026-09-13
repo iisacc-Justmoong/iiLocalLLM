@@ -32,7 +32,9 @@ QString enumName(EventKind v) {
         case EventKind::Message: return "message"; case EventKind::ToolStarted: return "tool_started";
         case EventKind::ToolProgress: return "tool_progress"; case EventKind::ToolFinished: return "tool_finished";
         case EventKind::PermissionRequested: return "permission_requested"; case EventKind::Hook: return "hook";
-        case EventKind::Finished: return "finished"; case EventKind::InstructionsLoaded: return "instructions_loaded"; }
+        case EventKind::Finished: return "finished"; case EventKind::InstructionsLoaded: return "instructions_loaded";
+        case EventKind::CompactionStarted: return "compaction_started"; case EventKind::CompactionProgress: return "compaction_progress";
+        case EventKind::Compacted: return "compacted"; }
     return "unknown";
 }
 QJsonObject toJson(const ToolCall& c) { return {{"id", c.id}, {"name", c.name}, {"arguments", c.arguments}}; }
@@ -54,7 +56,8 @@ QJsonObject toJson(const Message& m) {
 QJsonObject toJson(const RunResult& r) {
     return {{"run_id", r.runId}, {"session_id", r.sessionId}, {"text", r.text}, {"status", enumName(r.status)},
         {"turns", r.turns}, {"usage", QJsonObject{{"prompt_tokens", r.usage.promptTokens}, {"generated_tokens", r.usage.generatedTokens},
-            {"cached_tokens", r.usage.cachedTokens}, {"dropped_messages", r.usage.droppedMessages}}},
+            {"cached_tokens", r.usage.cachedTokens}, {"dropped_messages", r.usage.droppedMessages}, {"summary_prompt_tokens", r.usage.summaryPromptTokens},
+            {"summary_generated_tokens", r.usage.summaryGeneratedTokens}, {"compactions", r.usage.compactions}}},
         {"error_code", iiLocalLLM::enumName(r.errorCode)}, {"error_message", r.errorMessage}};
 }
 QJsonObject toJson(const Event& e) {

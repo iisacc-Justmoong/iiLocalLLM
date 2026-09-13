@@ -80,3 +80,7 @@ MCP 서버는 [MCPServer.md](MCPServer.md)의 C++ ToolRegistry 공개와 연결�
 ## 프로젝트 지침과 입력 조합 (0.5.0)
 
 `EngineOptions.projectContext`의 기본 동작은 세션 작업 폴더 안의 CLAUDE.md·AGENTS.md·경로별 규칙을 불러오는 것이다. `Engine::context()`로 현재 조합을 조회하며 `RunRequest.contextPaths`로 시작 시 적용할 파일 경로를 지정한다. `Read`·`Write`·`Edit`이 실제 관측한 workspace 경로도 다음 모델 호출부터 적용한다. 조합된 지침은 host system prompt를 바꾸지 않는 임시 User 메시지이며 원본 transcript에 중복 저장하지 않는다. 자세한 계약과 기준 소스 대비 차이는 [ProjectContext.md](ProjectContext.md)에 있다. `EngineOptions`·`RunRequest` ABI 변경으로 0.5 헤더를 사용하는 앱은 0.5 라이브러리에 링크해야 한다.
+
+## 대화 압축 (0.6.0)
+
+매 모델 호출 전 네이티브 입력 예산을 확인하고 오래된 도구 결과 축소·대화 요약을 수행한다. `Engine::compact()`는 수동 요약을 같은 실행 큐에 제출한다. 원본 메시지와 별도 압축 체크포인트를 저장하고 재개·분기 시 모델 뷰만 복원한다. `Session`·`ToolContext`·`RunUsage`·`Model` 인터페이스는 0.6 ABI를 사용한다. 옵션·저장 형식·원문 조회·훅·검증 한계는 [Compaction.md](Compaction.md)에 있다.

@@ -13,12 +13,20 @@ const QString firstToken(48, 'a'), secondToken(48, 'b');
 class Model final : public a::Model {
 public:
     std::atomic_bool waiting = false, cancelled = false;
+    bool budgets = false, waitForSummary = false;
+    std::optional<ContextBudget> measure(const a::ModelRequest& request, const CancellationToken& token) override {
+        token.throwIfCancelled(); if (!budgets) return std::nullopt;
+        qint64 count = 100 + request.systemPrompt.size() + request.tools.size() * 40;
+        for (const auto& m : request.messages) count += m.text.size() + 10;
+        return ContextBudget{count, 16384};
+    }
     a::ModelReply generate(const a::ModelRequest& request, const CancellationToken& token, const TextCallback& delta) override {
-        if (request.messages.last().text == "wait") {
+        if (request.messages.last().text == "wait" || (request.summarizing && waitForSummary)) {
             waiting = true;
             while (!token.isCancelled()) std::this_thread::sleep_for(1ms);
             cancelled = true; token.throwIfCancelled();
         }
+        if (request.summarizing) return {"API summary preserves the earlier request and observed response.", {}, {100, 12, 0, 0}};
         QStringList values;
         for (const auto& m : request.messages) if (m.role == a::MessageRole::User) values.append(m.text);
         const auto text = values.join('|'); if (delta) delta(text);
@@ -43,6 +51,31 @@ template<class F> void error(F fn, ErrorCode expected) {
 class AgentApiTests : public QObject {
     Q_OBJECT
 private slots:
+    void manualCompactionUsesAuthenticatedRunLifecycle() {
+        QTemporaryDir root; auto o = options(root); auto model = std::make_shared<Model>(); model->budgets = true;
+        a::Api api(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), o);
+        const auto id = call(api, "agent.sessions.create", {{"model", "fixture"}}).value("session_id");
+        call(api, "agent.run", {{"session_id", id}, {"prompt", QString(1000, 'a')}});
+        call(api, "agent.run", {{"session_id", id}, {"prompt", QString(1000, 'b')}});
+        call(api, "agent.run", {{"session_id", id}, {"prompt", "current input"}});
+        const QJsonObject p{{"session_id", id}, {"instructions", "Keep pending work and source IDs"}};
+        error([&] { call(api, "agent.sessions.compact", p, secondToken); }, ErrorCode::NotFound);
+        model->waitForSummary = true;
+        auto pending = api.dispatch("agent.sessions.compact", p, firstToken);
+        QTRY_VERIFY_WITH_TIMEOUT(model->waiting.load(), 3000);
+        QCOMPARE(call(api, "agent.status", {{"request_id", pending.requestId}}).value("state").toString(), "running");
+        call(api, "agent.cancel", {{"request_id", pending.requestId}});
+        QCOMPARE(pending.result.get().toObject().value("status").toString(), "cancelled");
+        QCOMPARE(call(api, "agent.sessions.get", {{"session_id", id}}).value("compaction_count").toInt(-1), 0);
+        model->waitForSummary = false;
+        const auto result = call(api, "agent.sessions.compact", p);
+        QCOMPARE(result.value("status").toString(), "completed"); QCOMPARE(result.value("turns").toInt(-1), 0);
+        QCOMPARE(result.value("usage").toObject().value("compactions").toInt(), 1);
+        const auto session = call(api, "agent.sessions.get", {{"session_id", id}});
+        QCOMPARE(session.value("message_count").toInt(), 6); QCOMPARE(session.value("compaction_count").toInt(), 1);
+        QVERIFY(!session.value("compaction").toObject().value("summary").toString().isEmpty());
+        error([&] { call(api, "agent.sessions.compact", {{"session_id", id}, {"workspace", root.path()}}); }, ErrorCode::InvalidArgument);
+    }
     void projectContextIsAuthenticatedAndWorkspaceBound() {
         QTemporaryDir root; auto o = options(root); auto model = std::make_shared<Model>();
         auto put = [](const QString& path, const QByteArray& text) { QDir().mkpath(QFileInfo(path).absolutePath()); QFile f(path); QVERIFY(f.open(QIODevice::WriteOnly)); QCOMPARE(f.write(text), text.size()); };
