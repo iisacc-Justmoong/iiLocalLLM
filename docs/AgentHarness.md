@@ -1,6 +1,6 @@
 # C++ 에이전트 실행 계층
 
-전체 목표와 미완료 영역은 [HarnessParity.md](HarnessParity.md) 및 `catalog/harness-parity.json`에서 추적한다. 이 문서는 현재 추가한 네이티브 실행 계층의 실제 계약을 설명한다. 기존 daemon의 HTTP에는 모델의 함수 도구 호출을 연결했다. 에이전트 실행/세션 관리 IPC·HTTP 메서드와 MCP 전체 호환은 아직 미완료이다.
+전체 목표와 미완료 영역은 [HarnessParity.md](HarnessParity.md) 및 `catalog/harness-parity.json`에서 추적한다. 이 문서는 현재 추가한 네이티브 실행 계층의 실제 계약을 설명한다. 기존 daemon의 HTTP에는 모델의 함수 도구 호출을 연결했다. C++ stdio MCP 클라이언트와 도구 어댑터는 [MCP.md](MCP.md), 외부에서 앱 도구와 로컬 에이전트를 호출하는 서버는 [MCPServer.md](MCPServer.md)에 설명한다. 에이전트 실행/세션 관리 IPC·HTTP 메서드와 MCP 전체 호환은 아직 미완료이다.
 
 ## 계층
 
@@ -11,6 +11,8 @@
 ## 모델과 도구
 
 Model은 대화·도구 정의·생성 옵션을 받고 ModelReply를 반환한다. 스트림과 취소는 별도 콜백/토큰이다. Model 구현은 서로 다른 실행에서 동시에 호출될 수 있다. 모델이 생성한 도구 ID가 없으면 호스트가 부여하며, 중복·재사용 ID 또는 잘못된 결과 연결은 실행 전에 거부한다.
+
+ServiceModel의 기본 지침은 파일 내용을 도구로 확인하고 관측값을 예문으로 치환하지 않도록 요구한다. 사용자가 정확한 원문을 요구할 때에는 관측한 텍스트를 문자 그대로 반환하도록 명시한다. 이는 모델에 주는 지침이며 출력 형식이나 답변 정확도를 강제하는 검증기는 아니다. 실제 소형 모델이 지침을 어긴 사례, 입력·캐시 대조와 수정 후 수락 시험은 Verification.md에 기록한다.
 
 현재 `ServiceModel`은 `Service::converse`의 구조화 대화 API를 사용한다. `ConversationRequest`는 OpenAI function-call 형식의 텍스트 메시지·도구 정의와 `auto/required/none` toolChoice를 받는다. llama.cpp에 고정된 upstream common의 Jinja 채팅 템플릿, 도구 문법 샘플러, PEG 응답 파서를 사용하며 도구 결과를 user 메시지로 바꾸지 않는다. 미지원 런타임은 RuntimeUnavailable을 반환한다. MLX 네이티브 도구 호출은 아직 미완료이다.
 
@@ -61,7 +63,7 @@ auto handle = engine.run({session.id, "Read the project and explain it"}, onEven
 // UI 스레드에서 future.get()을 호출하지 않는다.
 ```
 
-앱은 ToolRegistry::add로 자체 기능을 등록할 수 있다. metadata의 app_id 같은 식별자는 앱의 도구 출처를 표현하며 인증을 대신하지 않는다. 실제 앱별 연동, 발견 및 MCP/API 전송은 대응표에서 별도 검증한다.
+앱은 ToolRegistry::add로 자체 기능을 등록할 수 있다. metadata의 app_id 같은 식별자는 앱의 도구 출처를 표현하며 인증을 대신하지 않는다. mcpTools는 외부 stdio MCP 도구를 같은 registry에 연결한다. content·metadata는 세션과 이벤트에 보존하고 structuredContent는 data의 출력 스키마를 검증한다. 실제 앱별 연동, 자동 발견 및 남은 MCP/API 전송은 대응표에서 별도 검증한다.
 
 Service는 ServiceModel과 Engine보다 오래 살아야 한다. Engine 파괴는 수락한 실행을 취소하고 작업 스레드를 join한다. 이벤트·모델·도구 콜백에서 Engine을 파괴하거나 자신의 future를 기다리지 않는다. Qt UI를 갱신할 때는 앱이 자신의 UI 스레드로 이벤트를 전달한다.
 
@@ -70,3 +72,5 @@ Service는 ServiceModel과 Engine보다 오래 살아야 한다. Engine 파괴�
 `iiLocalLLM.agent`는 스키마·정책·훅 재검증·세션 잠금/복원·도구 반복·취소·병렬 실행·턴 제한·파일 변경 감지·셸 제한을 검사한다. `iiLocalLLM.agent_local_inference`는 실제 Qwen GGUF가 Read를 선택하고, 프롬프트에 없는 임의의 파일 값을 최종 답변에 반환하는지 확인한다. 설치된 패키지의 `iiLocalLLM.installed_agent_consumer`는 외부 C++ 프로그램에서 앱 도구·모델·세션 ABI를 검증한다. 각각의 실행 결과는 Verification.md에 별도 기록한다.
 
 Native ServiceModel의 도구 오류는 tool 역할의 `Tool error:` 결과로 전달한다. 기본 llama.cpp 로그에서는 생성 토큰을 포함하는 debug 메시지를 내보내지 않는다. 모든 CTest 임시 디렉터리는 build/tmp 아래에 생성한다.
+
+MCP 서버는 [MCPServer.md](MCPServer.md)의 C++ ToolRegistry 공개와 연결별 로컬 에이전트 실행을 제공한다. 파일 읽기 이력·권한·동시 실행 경계를 유지한다. HTTP 서버·인증·앱 자동 발견·실제 제품 연동은 전체 대응표에 남아 있다.

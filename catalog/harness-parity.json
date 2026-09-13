@@ -114,20 +114,51 @@
     {
       "id": "mcp_client",
       "requirement": "stdio·Streamable HTTP·legacy SSE·초기화·버전/기능 협상·재연결·인증",
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "mcp/Client.cpp",
+        "tests/mcp_tests.cpp",
+        "tests/mcp_official_smoke.cpp",
+        "tests/agent_runtime_smoke.cpp",
+        "docs/MCP.md",
+        "mcp/BatchReplies.h",
+        "mcp/Server.cpp",
+        "tests/mcp_server_tests.cpp"
+      ],
+      "remaining": "C++ stdio initialization, 2025 protocol negotiation, bounded concurrent JSON-RPC, progress/cancellation and process teardown implemented. Streamable HTTP, legacy SSE, authentication, reconnect and 2026-07-28 remain."
     },
     {
       "id": "mcp_features",
       "requirement": "도구·리소스·프롬프트·roots·sampling·elicitation·진행/취소·구독·tasks",
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "mcp/Client.cpp",
+        "agent/McpTools.cpp",
+        "tests/mcp_tests.cpp",
+        "tests/mcp_official_smoke.cpp",
+        "docs/MCP.md",
+        "mcp/BatchReplies.h",
+        "mcp/Server.cpp",
+        "tests/mcp_server_tests.cpp"
+      ],
+      "remaining": "Tools, resources/templates, prompts, roots, subscriptions and host-owned reverse-request callbacks implemented. Full sampling/elicitation schema and UI contracts, tasks, automatic notification refresh and broad protocol conformance remain."
     },
     {
       "id": "mcp_server",
       "requirement": "iiLocalLLM 및 앱 기능을 MCP로 제공·세션 격리·권한·동시성·구조화 결과",
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "mcp/Server.cpp",
+        "mcp/StdioServer.cpp",
+        "agent/McpServer.cpp",
+        "tools/mcp_main.cpp",
+        "tests/mcp_server_tests.cpp",
+        "tests/mcp_server_smoke.py",
+        "tests/mcp_server_transport.py",
+        "tests/consumer/mcp_server.cpp",
+        "docs/MCPServer.md"
+      ],
+      "remaining": "C++ per-connection sessions, POSIX stdio, app ToolRegistry export and local agent tools implemented. Streamable HTTP/SSE, OAuth, Windows stdio, task lifecycle and actual iisacc app endpoints remain."
     },
     {
       "id": "api",
@@ -140,7 +171,7 @@
         "tests/http_tests.cpp",
         "tests/chat_smoke.py"
       ],
-      "remaining": "C++ structured conversation and HTTP/SSE function-call roundtrip implemented; agent run/session endpoints and native IPC harness methods remain."
+      "remaining": "C++ structured conversation, HTTP/SSE function-call roundtrip and MCP agent run/session tools implemented; HTTP agent run/session endpoints and native IPC harness methods remain."
     },
     {
       "id": "discovery",
@@ -225,9 +256,14 @@
       "status": "partial",
       "evidence": [
         "CMakeLists.txt",
-        "tests/consumer/agent.cpp"
+        "tests/consumer/agent.cpp",
+        "tests/consumer/CMakeLists.txt",
+        "tests/mcp_official_smoke.cpp",
+        "docs/Verification.md",
+        "tools/mcp_main.cpp",
+        "tests/consumer/mcp_server.cpp"
       ],
-      "remaining": "Agent public headers and installed C++ consumer added; complete app integration and platform qualification remain."
+      "remaining": "Public MCP client/server headers and a POSIX MCP executable are installed and tested through fresh C++ consumers. Complete app integration and platform qualification remain."
     },
     {
       "id": "conditional",

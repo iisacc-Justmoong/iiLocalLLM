@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 project(iiLocalLLMConsumer LANGUAGES CXX)
 
-find_package(iiLocalLLM 0.3.0 CONFIG REQUIRED)
+find_package(iiLocalLLM 0.4.0 CONFIG REQUIRED)
 add_executable(iiLocalLLMConsumer ../hello_world.cpp)
 target_link_libraries(iiLocalLLMConsumer PRIVATE iiLocalLLM::iiLocalLLM)
 set_target_properties(iiLocalLLMConsumer PROPERTIES CXX_EXTENSIONS OFF)
@@ -13,6 +13,15 @@ add_test(NAME iiLocalLLM.installed_service_consumer COMMAND iiLocalLLMServiceCon
 add_executable(iiLocalLLMAgentConsumer agent.cpp)
 target_link_libraries(iiLocalLLMAgentConsumer PRIVATE iiLocalLLM::iiLocalLLM)
 add_test(NAME iiLocalLLM.installed_agent_consumer COMMAND iiLocalLLMAgentConsumer)
+add_executable(iiLocalLLMMcpServerConsumer mcp_server.cpp)
+target_link_libraries(iiLocalLLMMcpServerConsumer PRIVATE iiLocalLLM::iiLocalLLM)
+add_test(NAME iiLocalLLM.installed_mcp_server_consumer COMMAND iiLocalLLMMcpServerConsumer)
+if(IILOCALLLM_TEST_MCP_PYTHON)
+    add_executable(iiLocalLLMMcpConsumer ../mcp_official_smoke.cpp)
+    target_link_libraries(iiLocalLLMMcpConsumer PRIVATE iiLocalLLM::iiLocalLLM)
+    add_test(NAME iiLocalLLM.installed_mcp_consumer COMMAND iiLocalLLMMcpConsumer
+        "${IILOCALLLM_TEST_MCP_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/../mcp_official_server.py")
+endif()
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tmp")
 get_property(_consumer_tests DIRECTORY PROPERTY TESTS)
 set_tests_properties(${_consumer_tests} PROPERTIES ENVIRONMENT_MODIFICATION

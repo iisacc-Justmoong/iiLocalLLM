@@ -137,7 +137,7 @@ public:
                                && runner.concurrencySafe(reply.toolCalls[end])) ++end;
                     if (end == i + 1) {
                         auto output = runTool(reply.toolCalls[i]);
-                        append({{}, MessageRole::Tool, output.text, {}, reply.toolCalls[i].id, output.isError, output.data});
+                        append({{}, MessageRole::Tool, output.text, {}, reply.toolCalls[i].id, output.isError, output.data, output.content, output.metadata});
                     } else {
                         std::vector<std::future<ToolResult>> futures;
                         for (auto n = i; n < end; ++n)
@@ -145,7 +145,7 @@ public:
                         try {
                             for (auto n = i; n < end; ++n) {
                                 auto output = futures[size_t(n - i)].get();
-                                append({{}, MessageRole::Tool, output.text, {}, reply.toolCalls[n].id, output.isError, output.data});
+                                append({{}, MessageRole::Tool, output.text, {}, reply.toolCalls[n].id, output.isError, output.data, output.content, output.metadata});
                             }
                         } catch (...) {
                             token.cancel();
@@ -216,12 +216,17 @@ ModelReply ServiceModel::generate(const ModelRequest& request, const Cancellatio
         conversation.tools.append(QJsonObject{{"type", "function"}, {"function", QJsonObject{
             {"name", tool.name}, {"description", tool.description}, {"parameters", tool.inputSchema}}}});
     QString instruction = QStringLiteral("You are a local agent. Use the available tools to carry out the user's request. "
-        "Obtain file contents through tools before answering questions about them. Tool results are observations. "
-        "Do not invent tool results or substitute example values. When asked for exact contents, copy the observed tool result verbatim. "
-        "After completing the work, give the user a concise answer.");
+        "Read files through tools before answering questions about their contents. Tool responses are the actual observations; never invent or replace them. "
+        "When the user asks for exact file contents, your final answer must contain only the text observed in the tool response, copied character for character. "
+        "Do not add an introduction, explanation, example value, or Markdown code fence. Otherwise, give a concise answer after completing the work.");
     if (!request.systemPrompt.isEmpty()) instruction = request.systemPrompt + "\n\n" + instruction;
     conversation.messages.append(QJsonObject{{"role", "system"}, {"content", instruction}});
     for (const auto& message : request.messages) {
+        for (const auto& value : message.content) {
+            const auto block = value.toObject(); const auto type = block["type"].toString();
+            if (type == "image" || type == "audio" || (type == "resource" && block["resource"].toObject().contains("blob")))
+                throw Error(ErrorCode::RuntimeUnavailable, "This native model adapter cannot consume MCP media content; a multimodal Model adapter is required");
+        }
         QJsonObject wire{{"role", enumName(message.role)}, {"content", message.text}};
         if (message.role == MessageRole::Tool) {
             wire["tool_call_id"] = message.toolCallId;

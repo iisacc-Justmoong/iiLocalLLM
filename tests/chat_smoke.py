@@ -21,6 +21,7 @@ def main():
     alias = "qwen2.5:0.5b"
     manifest = next(item["manifest"] for item in registry["models"] if alias in item["aliases"])
     evidence = {}
+    request, observed = {}, None
     with tempfile.TemporaryDirectory(prefix="chat-", dir=Path.cwd()) as directory:
         root = Path(directory)
         endpoint = root / "llm.sock"
@@ -145,9 +146,9 @@ def main():
                 request = {"model": alias, "temperature": 0, "max_tokens": 512,
                     "messages": [{"role": "system", "content":
                         "You are a local agent. Use the available tools to carry out the user's request. "
-                        "Obtain file contents through tools before answering questions about them. Tool results are observations. "
-                        "Do not invent tool results or substitute example values. When asked for exact contents, copy the observed tool result verbatim. "
-                        "After completing the work, give the user a concise answer."},
+                        "Read files through tools before answering questions about their contents. Tool responses are the actual observations; never invent or replace them. "
+                        "When the user asks for exact file contents, your final answer must contain only the text observed in the tool response, copied character for character. "
+                        "Do not add an introduction, explanation, example value, or Markdown code fence. Otherwise, give a concise answer after completing the work."},
                         {"role": "user", "content": "Use the Read tool to read secret.txt. Then return the exact file contents as your final answer. Do not guess."}],
                     "tools": [{"type": "function", "function": {"name": "Read",
                         "description": "Read a UTF-8 file (up to 1 MiB). Read the full file before editing it.",
@@ -186,6 +187,10 @@ def main():
                 evidence["http_json_and_sse"] = text
                 evidence["shared_model_loads"] = stats["model_loads"]
             except BaseException:
+                # Preserve the exact synthetic transcript when real-model output
+                # fails, rather than losing it with the temporary workspace.
+                print(json.dumps({"last_http_request": request, "last_http_response": observed,
+                                  "completed_evidence": evidence}, ensure_ascii=False), file=sys.stderr)
                 print((root / "daemon.log").read_text(errors="replace")[-6000:], file=sys.stderr)
                 raise
             finally:

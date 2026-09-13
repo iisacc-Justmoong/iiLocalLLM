@@ -1,5 +1,53 @@
 # 구현 검증 기록
 
+## 2026-09-14 C++ MCP 서버·앱 브리지·로컬 에이전트 제공
+
+Apple M1 Max / Qt 6.8.3에서 0.4.0의 `mcp::ServerSession`, POSIX `serveStdio`, `agent::mcpServerOptions`와 `iillm-mcp`를 검증했다. 외부 MCP 클라이언트가 앱 도구와 연결별 로컬 에이전트를 실행하는 범위다. 전체 하네스 및 실제 Society/Dreamscapes 연결 완료를 뜻하지 않는다.
+
+| 검증 | 관측 결과 |
+|---|---|
+| 최종 Release 빌드·전체 CTest | **26/26 통과**, 113.72초. GGUF Metal/CPU, MLX Metal/CPU, CLI·HTTP와 MCP 실제 추론 포함. 최종 빌드 경고 없음 |
+| C++ 프로토콜 시험 | 클라이언트 QTest 20 passed, 서버 QTest 15 passed(각 초기화·정리 포함). 연결 격리, 초기화·기능 협상, 진행·취소·시간 제한, 역방향 요청, 목록 스냅샷, 리소스 구독, 구형 배열 및 용량 오류 검사 |
+| 앱 도구 브리지 | 실제 스키마·권한·원본 콘텐츠, 연결 간 파일 읽기 이력 격리, 병렬 읽기/배타 쓰기, 로컬 대화 격리·새 대화 생성 검증 |
+| 실제 stdio 실행 파일 | 독립 바이트 단위 peer로 UTF-8 분할, 잘못된 입력 복구, 버전별 배열 처리, 배열 내 취소, EOF·큰 입력·끊어진 stdout 종료 검사 |
+| 공식 SDK 교차 검증 | Python MCP SDK **1.26.0**과 양방향 검증. 실제 파일 읽기·쓰기, 기본 거부와 명시 허용, 스키마·경로 제한, Bash와 자식 프로세스 취소 및 이후 연결 사용 통과 |
+| 실제 모델을 제공하는 MCP 서버 | 공식 클라이언트 → C++ 서버 → Qwen2.5 0.5B Q4_K_M → Read → 최종 답변. **2턴·41 생성 토큰·진행 알림 9개**, 임의 파일 값 및 도구 호출/결과 ID·영속 transcript 확인 |
+| ASan + UBSan | 최종 Debug·llama 비활성화 빌드에서 에이전트·MCP 클라이언트·서버·stdio **4/4 통과**, 12.71초 |
+| 새 설치 패키지 | `build/mcp-server-stage`의 공개 패키지만 사용해 별도 소비자를 구성·빌드. **5/5 통과**, 28.61초 |
+| 설치본 실행·로딩 | DYLD/QT/QML 경로 override를 제거했다. 로더에서 `build/mcp-server-stage/lib/libiiLocalLLM.0.4.0.dylib` 확인. 설치된 `iillm-mcp`도 공식 클라이언트의 파일/취소 시험 및 별도 임의 값으로 실제 모델 2턴 실행 통과 |
+| CLI 링크 경계 | 설치된 iillm은 Qt Core/Network 및 시스템 라이브러리만 링크. 별도 iillm-mcp 실행 파일은 의도대로 SDK를 링크 |
+
+최초 서버·브리지 테스트는 아직 없는 공개 심볼 때문에 링크 실패했다. 구현 후 stdio 시험은 macOS에서 유휴 출력 파이프의 종료를 감지하지 못하는 문제를 드러냈다. 실제 `poll` 실험에서 events=0은 종료를 보고하지 않고 POLLOUT은 POLLHUP을 반환하는 것을 확인했다. 별도 즉시 상태 확인으로 고치고 쓰기 시 SIGPIPE 차단 범위를 제한했다. 구형 배열의 큰 응답이 오류로 바뀔 때 배열에서 이탈하던 결함도 실패 테스트를 먼저 추가한 뒤 수정했다.
+
+검증 중 소형 Qwen이 파일을 읽고도 관측값 대신 예문을 답한 실패를 보존했다. 실패한 C++ 에이전트 대화에서 실제 런타임의 토큰을 복원하자 도구 결과가 그대로 포함되어 있었다. 같은 입력은 **CPU/Metal 각각 새 컨텍스트와 KV 재사용 모두** 같은 잘못된 답을 생성했다. ServiceModel의 지침을 원문 관측값의 문자 단위 복사로 명확히 하고, 실제 실패 문자열과 새 무작위 문자열을 별도 세션에서 읽는 회귀 시험을 추가했다. 수정 전 고정 사례가 실패하고 수정 후 두 사례 및 최종 전체 시험이 통과했다. HTTP 시험에도 같은 지침과 실패 시 입력·응답 보존을 적용했다. 관측값은 초기 프롬프트·도구 스키마에 넣지 않았고, 최종 답변에서 실제 값을 확인하는 조건도 유지했다. 이 결과는 모든 모델의 응답 정확도나 부가 문구 없는 출력 형식을 보증하지 않는다.
+
+첫 전체 실행은 23/26, 두 번째는 25/26이었다. 첫 실행에서 공식 Python 서버 연결의 시간 초과도 한 번 관측했다. 같은 제한으로 개별 및 최종 재검증은 통과했고 오류에 메서드 이름을 추가했지만, 최초 지연 원인은 확정하지 못했다. 제한을 늘리거나 원래 실패 기록을 덮어쓰지 않았다.
+
+증거는 `build/mcp-server-final-build.log`, `build/mcp-server-final-tests.log`, `build/mcp-server-final-LastTest.log`, `build/mcp-server-sanitizer-tests.log`, `build/mcp-server-consumer-tests.log`, `build/mcp-server-installed-load.log`, `build/mcp-server-installed-official-result.json`, `build/mcp-server-installed-native-result.json`과 `build/mcp-server-verification.json`이다. 실패·수정 대조는 `build/mcp-server-full-first-failure*.log`, `build/mcp-server-full-second-failure*.log`, `build/mcp-server-batch-regression-red.log`, `build/model-observation-regression-{red,green}.log`, `build/model-observation-{cpu,metal}.json`, `build/model-observation-exact-metal.json`에 보존했다.
+
+설치는 Workspace 내부 검증용 prefix다. 기본 SDK 경로 갱신·제품 앱 재배포·Windows/Linux 실행은 이 검증에 포함하지 않는다. Streamable HTTP·legacy SSE·OAuth, 전체 sampling/elicitation·tasks, 2026-07-28 규격, 실제 iisacc 앱 발견·인증·연동은 [HarnessParity.md](HarnessParity.md)의 미완료 항목으로 유지한다. 재현 명령과 공개 계약은 [MCPServer.md](MCPServer.md)에 기록한다.
+
+## 2026-09-14 C++ MCP stdio 클라이언트와 외부 도구 실행
+
+아래는 서버 구현 전 클라이언트 단계의 기록이다. 0.4.0의 `mcp::StdioClient`와 `agent::mcpTools`를 Apple M1 Max / Qt 6.8.3에서 검증했다. 외부 서버 프로세스를 실행해 도구·자료·프롬프트를 사용하고 기존 C++ 에이전트에 도구를 연결하는 범위다. 당시 MCP 서버 제공, HTTP 전송·인증, 자동 앱 발견과 실제 iisacc 제품 연동은 미완료였다. 이후 서버 검증은 위 절을 참조한다.
+
+| 검증 | 관측 결과 |
+|---|---|
+| 당시 전체 Release 빌드·CTest | **22/22 통과**, 81.51초. 기존 GGUF Metal/CPU·MLX Metal/CPU 추론 및 새 MCP 시험 포함 |
+| 독립 stdio peer | 17개 동작 사례 통과(QTest 초기화·정리 포함 19 passed). UTF-8 분할, 응답 순서 역전, 협상, 역방향 요청·재진입·취소, 진행 콜백 실패, 잘못된 프레임, 목록 중복·페이지 전체 용량 제한, 큐·종료 및 세션 보존 검사 |
+| 공식 SDK 교차 검증 | 별도 Python MCP SDK **1.26.0** 서버와 초기화, 도구·리소스·프롬프트 조회, 구조화 결과, 진행 알림 2개, 역방향 roots 요청 통과. 공식 SDK는 시험용 환경에만 설치 |
+| 실제 로컬 모델 → MCP 도구 → 답변 | Qwen2.5 0.5B Q4_K_M이 `mcp__fixture__read_secret`를 호출하고 프롬프트에 없는 임의 파일 값을 최종 답변으로 반환. 실제 토큰 생성, 최소 2턴, 진행 알림 및 도구 호출/결과 정합성 확인 |
+| AddressSanitizer + UndefinedBehaviorSanitizer | Debug·llama 비활성화 빌드에서 에이전트와 MCP **2/2 통과**, 7.36초 |
+| 새 설치 패키지 소비자 | `build/mcp-stage`로 설치한 공개 패키지에서 독립 소비자를 다시 빌드해 **4/4 통과**, 25.40초. 기존 API·서비스·에이전트와 공식 MCP 서버 교차 검증 포함 |
+| 설치본 실제 로딩 | DYLD/QT/QML 경로 환경변수를 제거하고 실행. 동적 로더 기록에서 `build/mcp-stage/lib/libiiLocalLLM.0.4.0.dylib` 확인 |
+| CLI 링크 경계 | 설치된 iillm은 Qt Core/Network·시스템 라이브러리에만 연결. iiLocalLLM·llama·ggml 링크 없음 |
+
+새 테스트의 최초 링크 실패를 확인한 뒤 구현했다. 독립 peer는 동시 요청에서 클라이언트가 누락된 `_meta`를 `null`로 삽입하는 오류를 드러냈다. 클라이언트의 JSON 조회 방식을 수정했으며 peer의 입력 허용 범위를 넓히지 않았다. 이후 위 회귀 시험 전체가 통과했다.
+
+공개 `Message`·`ToolResult`에 원본 content·metadata를 추가해 ABI를 **0.4**로 구분했다. 기존 소비자는 새 헤더·라이브러리로 다시 빌드해야 한다. 기존 JSONL 메시지는 계속 읽는다. 네이티브 모델이 지원하지 않는 이미지·음성·blob은 명시적으로 실패하며, 세션 레코드의 4 MiB 한도를 넘는 콘텐츠를 별도 artifact로 옮기는 기능은 미구현이다. 상세 계약은 [MCP.md](MCP.md)에 기록한다.
+
+재현 명령은 `cmake --build build --parallel`과 `ctest --test-dir build --output-on-failure`다. 공식 SDK·실제 모델 시험은 MCP.md의 선택 설정이 필요하다. 증거는 `build/mcp-final-build.log`, `build/mcp-final-tests.log`, `build/mcp-final-LastTest.log`, `build/mcp-sanitizer-tests.log`, `build/mcp-consumer-tests.log`, `build/mcp-installed-load.log`, `build/mcp-final-inference-events.json`, `build/mcp-verification.json`에 보존했다. 설치 검증은 Workspace 내 별도 경로이며 기본 SDK 설치·실제 앱 재배포·커밋·푸시 결과를 포함하지 않는다.
+
 ## 2026-09-14 C++ 에이전트 실행 및 네이티브 도구 호출
 
 Apple M1 Max / Qt 6.8.3 / Release 빌드에서 `agent::Engine`, 도구 스키마·권한·훅, JSONL 세션 복구, llama.cpp 구조화 대화와 외부 HTTP 함수 호출을 검증했다. 전체 하네스 완료와 iisacc 제품 실제 연동을 뜻하지 않는다. 미완료 영역은 [HarnessParity.md](HarnessParity.md)에 유지한다.

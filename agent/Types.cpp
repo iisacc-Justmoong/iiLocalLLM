@@ -45,8 +45,11 @@ QJsonObject toJson(const ToolDefinition& t) {
 }
 QJsonObject toJson(const Message& m) {
     QJsonArray calls; for (const auto& c : m.toolCalls) calls.append(toJson(c));
-    return {{"id", m.id}, {"role", enumName(m.role)}, {"text", m.text}, {"tool_calls", calls},
+    QJsonObject value{{"id", m.id}, {"role", enumName(m.role)}, {"text", m.text}, {"tool_calls", calls},
         {"tool_call_id", m.toolCallId}, {"is_error", m.isError}, {"data", m.data}};
+    if (!m.content.isEmpty()) value["content"] = m.content;
+    if (!m.metadata.isEmpty()) value["metadata"] = m.metadata;
+    return value;
 }
 QJsonObject toJson(const RunResult& r) {
     return {{"run_id", r.runId}, {"session_id", r.sessionId}, {"text", r.text}, {"status", enumName(r.status)},
@@ -78,10 +81,13 @@ Message messageFromJson(const QJsonObject& o) {
     require(o["id"].isString() && !o["id"].toString().isEmpty(), "Missing message ID");
     require(o["text"].isString() && o["tool_calls"].isArray() && o["tool_call_id"].isString()
         && o["is_error"].isBool() && o["data"].isObject(), "Invalid transcript message fields");
+    require((!o.contains("content") || o["content"].isArray()) && (!o.contains("metadata") || o["metadata"].isObject()),
+        "Invalid transcript content or metadata");
     const auto role = o["role"].toString();
     require(role == "user" || role == "assistant" || role == "tool", "Invalid transcript role");
     Message m{o["id"].toString(), role == "user" ? MessageRole::User : role == "assistant" ? MessageRole::Assistant : MessageRole::Tool,
-        o["text"].toString(), {}, o["tool_call_id"].toString(), o["is_error"].toBool(), o["data"].toObject()};
+        o["text"].toString(), {}, o["tool_call_id"].toString(), o["is_error"].toBool(), o["data"].toObject(),
+        o["content"].toArray(), o["metadata"].toObject()};
     for (const auto& v : o["tool_calls"].toArray()) {
         require(v.isObject() && v.toObject().contains("id"), "Invalid transcript tool call");
         m.toolCalls.append(callFromJson(v.toObject()));

@@ -22,6 +22,8 @@ struct Message {
     QString toolCallId;
     bool isError = false;
     QJsonObject data;
+    QJsonArray content;
+    QJsonObject metadata;
     bool operator==(const Message&) const = default;
 };
 struct ToolDefinition {
@@ -39,6 +41,8 @@ struct ToolResult {
     QString text;
     QJsonObject data;
     bool isError = false;
+    QJsonArray content;
+    QJsonObject metadata;
 };
 struct ToolContext {
     QString sessionId;

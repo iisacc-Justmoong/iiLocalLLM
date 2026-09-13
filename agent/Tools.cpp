@@ -154,7 +154,8 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& context, const Even
             throw Error(ErrorCode::StorageFailure, "Cannot persist large tool output");
         result.text = result.text.left(options_.maxResultCharacters) + "\nFull output: " + path;
     }
-    event(callback, EventKind::ToolFinished, context, call, result.text, {{"is_error", result.isError}, {"result", result.data}});
+    event(callback, EventKind::ToolFinished, context, call, result.text, {{"is_error", result.isError}, {"result", result.data},
+        {"content", result.content}, {"metadata", result.metadata}});
     return result;
 }
 }

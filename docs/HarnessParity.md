@@ -21,9 +21,9 @@
 | sessions | JSONL 영속 기록·resume/fork·압축 경계·파일 rewind | partial |
 | subagents | 전문 에이전트·부모 컨텍스트 fork·모델/도구/권한 범위·백그라운드 알림 | pending |
 | teams | 동일 프로세스/별도 프로세스 팀·mailbox·작업·권한 전달·worktree | pending |
-| mcp_client | stdio·Streamable HTTP·legacy SSE·초기화·버전/기능 협상·재연결·인증 | pending |
-| mcp_features | 도구·리소스·프롬프트·roots·sampling·elicitation·진행/취소·구독·tasks | pending |
-| mcp_server | iiLocalLLM 및 앱 기능을 MCP로 제공·세션 격리·권한·동시성·구조화 결과 | pending |
+| mcp_client | stdio·Streamable HTTP·legacy SSE·초기화·버전/기능 협상·재연결·인증 | partial |
+| mcp_features | 도구·리소스·프롬프트·roots·sampling·elicitation·진행/취소·구독·tasks | partial |
+| mcp_server | iiLocalLLM 및 앱 기능을 MCP로 제공·세션 격리·권한·동시성·구조화 결과 | partial |
 | api | C++ SDK·기존 native IPC·HTTP/SSE 에이전트 API·OpenAI 도구 호환 | partial |
 | discovery | 앱 manifest·MCP/API 자동 인식·기능 협상·tool search·지연 공개 | pending |
 | skills | SKILL.md·메타데이터·인라인/fork 실행·허용 도구·검색·설치 | pending |
@@ -41,6 +41,8 @@
 | conditional | 분석본의 내부/조건부 기능: 실제 구현 확보 범위와 iiLocalLLM 대응을 개별 검증 | pending |
 
 ## 현재 구현 순서
+
+0.4.0에서 C++ stdio 클라이언트, 도구·리소스·프롬프트, roots, 진행·취소, 호스트 요청 콜백 및 에이전트 어댑터를 추가했다. 프로토콜 버전 2025-11-25/2025-06-18/2025-03-26을 지원하며, C++ 내장/POSIX stdio 서버와 연결별 로컬 에이전트 실행도 제공한다. HTTP/SSE·인증·자동 앱 발견과 최신 규격은 남아 있다. 2025-03 배열 수신·응답 결합을 양쪽에 구현했다. 계약과 교차 검증 절차는 [MCP.md](MCP.md)와 [MCPServer.md](MCPServer.md)에 기록한다.
 
 1. C++ 대화/도구/권한/취소 계약, JSON Schema 검증, JSONL 복원, 기존 로컬 추론 연결을 종단까지 구현한다.
 2. 같은 실행 계층에 MCP client/server와 IPC/HTTP/CLI를 연결한다.

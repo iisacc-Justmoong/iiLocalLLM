@@ -1,0 +1,86 @@
+# C++ MCP 서버와 앱 도구 제공
+
+`mcp::ServerSession`은 연결별 JSON-RPC 상태를 제공하고 `mcp::serveStdio`는 POSIX stdin/stdout 전송을 연결한다. `agent::mcpServerOptions`는 앱이 등록한 ToolRegistry를 기존 스키마·권한·훅을 유지하면서 MCP 도구로 공개한다. 배포 실행 파일은 `iillm-mcp`다. 생산 경로는 C++·Qt이며 공식 Python MCP SDK는 독립 교차 검증에만 사용한다.
+
+MCP 서버 전체 요구사항 중 stdio와 C++ 내장 경로를 구현한 단계다. Streamable HTTP·legacy SSE·OAuth, tasks, logging/completion 전용 API, 앱 자동 발견과 실제 Society/Dreamscapes 제품 연결은 남아 있다. Windows에서도 ServerSession을 내장할 수 있지만 이번 stdio 어댑터는 POSIX 전용이며 Windows 전송·실기기는 아직 검증하지 않았다.
+
+## 실행 파일
+
+```sh
+build/iillm-mcp --workspace /absolute/project
+build/iillm-mcp --workspace /absolute/project --allow Write --allow Edit
+build/iillm-mcp --workspace /absolute/project --allow Bash
+```
+
+기본으로 Read·Glob·Grep을 허용한다. Write·Edit·Bash 등은 실행 파일의 `--allow` 설정으로 공개 실행 권한을 부여한다. MCP 클라이언트의 요청 인자로 이 설정을 바꿀 수 없다. 파일 도구의 기존 읽기 이력·변경 감지·작업 폴더 제한을 적용하며 Bash는 OS 샌드박스가 아니다. stdout에는 JSON-RPC만 기록하고 진단은 stderr로 보낸다. 모델 옵션을 생략하면 모델을 로드하지 않고 파일 도구만 제공한다.
+
+설치된 로컬 모델을 사용하는 에이전트를 함께 제공하려면 다음과 같이 시작한다.
+
+```sh
+build/iillm-mcp --workspace /absolute/project \
+  --models /absolute/Models --model model://qwen2.5-0.5b \
+  --sessions /absolute/sessions --context 4096 --max-tokens 512
+```
+
+모델 URI는 실제 설치 카탈로그의 ID를 사용한다. `--model`은 iiLocalLLM.agent.run 실행을 활성화하며 내부 에이전트의 파일·셸 도구는 같은 허용 규칙을 따른다. 모델은 첫 추론 때 기존 Service의 상주 정책으로 로드된다. 이 실행 파일은 Service를 소유하는 독립 프로세스이므로 이미 다른 daemon이 소유한 동일 모델 카탈로그의 잠금을 공유하거나 탈취하지 않는다. 여러 연결에서 하나의 모델 서비스를 공유하려면 아래 C++ 내장 방식으로 하나의 Engine을 사용한다. 기존 iillm CLI의 Core/Network 전용 링크 경계는 유지한다.
+
+`--sessions` 기본값은 작업 폴더의 `.iilocal-llm/sessions`, `--artifacts`는 `.iilocal-llm/artifacts`다. `--request-timeout`은 밀리초 단위이며 기본 60초다. `--temperature`, `--context`, `--max-tokens`는 호스트 시작 설정이다. MCP 요청의 파라미터는 아래 도구 계약에 한정한다.
+
+| 도구 | 입력 | 동작 |
+|---|---|---|
+| iiLocalLLM.agent.run | prompt, 선택 new_session·max_turns | 해당 MCP 연결의 로컬 대화에서 에이전트 실행. 상태·텍스트·턴·사용량·실행/세션 ID를 structuredContent로 반환 |
+| iiLocalLLM.agent.session | 선택 include_messages | 해당 연결의 대화 ID·모델·메시지 수, 선택 transcript 반환. 다른 세션 ID를 입력받지 않음 |
+
+에이전트 이벤트는 요청의 progressToken이 있을 때 증가하는 progress와 `_meta["iisacc/agentEvent"]`로 전달한다. 클라이언트 취소는 MCP 요청 → Engine RunHandle → 실제 추론·도구로 전파한다. 완료·실패 후 도구 결과는 기존 JSONL 복구 계약을 따른다. 연결 종료 시 연결과 대화 사이의 메모리 매핑을 제거하고 영속 transcript는 보존한다. 다른 연결의 기존 대화를 자동으로 재개하지 않는다. 인증된 재개·fork API는 아직 남아 있다.
+
+## 앱에 내장
+
+```cpp
+#include <agent/McpServer.h>
+
+auto registry = std::make_shared<iiLocalLLM::agent::ToolRegistry>();
+// 앱이 구현한 Tool을 registry->add(...)로 등록한다.
+auto policy = std::make_shared<iiLocalLLM::agent::RulePolicy>();
+iiLocalLLM::agent::McpServerOptions bridge;
+bridge.workingDirectory = workspace;
+bridge.appId = "com.iisacc.example";
+auto options = iiLocalLLM::agent::mcpServerOptions(registry, policy, bridge);
+iiLocalLLM::mcp::serveStdio(options);
+```
+
+QCoreApplication을 만든 프로세스에서 호출한다. 선택적으로 bridge.engine·model·generation을 지정하면 로컬 에이전트 도구도 공개한다. Engine의 내부 ToolRegistry와 외부 공개 도구 집합은 분리되어 iiLocalLLM.agent.run의 자기 재귀를 만들지 않는다. ServiceModel이 참조하는 Service는 Engine과 서버보다 오래 살아 있어야 한다. 실제 앱이 제공한 도구만 등록하며 appId는 원격 MCP 도구 정의의 `_meta["iisacc/appId"]`에 들어간다. 이 태그는 인증을 대신하지 않는다.
+
+일반 앱 전송은 연결마다 ServerSession을 하나 만든다. 개별 JSON 객체는 receive, 구형 배열은 receiveBatch로 전달하고 takeMessages에서 객체 또는 배열 응답을 가져간다. 전송은 이 JSON 값을 직렬화한다. 메서드 호출은 스레드 안전하지만 생성·close·파괴는 UI 스레드 밖에서 수행한다. 핸들러 및 onClosed 콜백 안에서 해당 세션을 종료하거나 파괴하지 않는다.
+
+하위 mcp 계층은 agent를 참조하지 않는다. 앱 도구 어댑터가 상위에서 두 계층을 연결한다. 실행마다 정의·검증기·핸들러를 함께 스냅샷으로 가져온다. 같은 bridge를 사용하는 연결들은 동시 실행이 안전한 도구를 함께 실행하고 나머지는 배타적으로 실행한다. ToolRunner의 입력별 동시 실행 분류와 입력을 바꾸는 훅도 적용한다. 앱이 별도 경로에서 같은 자원을 수정한다면 해당 앱의 도구 구현에서도 동시 변경 계약을 지켜야 한다.
+
+## 저수준 서버 계약
+
+ServerOptions.lists에 tools/list·resources/list·resources/templates/list·prompts/list의 전체 목록 콜백을 지정한다. handlers에는 tools/call·resources/read·prompts/get 및 명시적인 추가 요청 핸들러를 지정한다. 지원 기능은 실제 등록된 콜백에서 계산하며 초기화 결과에 광고한다. 도구 목록/호출, 프롬프트 목록/조회 쌍이 불완전하면 생성 시 실패한다. 앱 도구 스키마·권한 검증은 agent 어댑터가 수행한다. 저수준 handlers를 직접 사용하는 호스트는 자신의 도메인 입력·출력 및 접근 권한을 검증해야 한다.
+
+목록은 전체 결과의 이름 중복·항목·용량을 검증한 뒤 페이지로 나눈다. 페이지 커서는 해당 연결과 메서드에 묶인 일회용 값이며 다음 페이지가 소비될 때 교체된다. 원래 목록이 바뀌어도 진행 중인 페이지의 내용은 유지한다. 커서는 기본 60초 후 만료한다. 목록을 바꾼 호스트는 notify로 list_changed를 보낸다.
+
+resources/subscribe 핸들러는 호스트가 해당 URI의 구독을 허용하는지 검증한다. 성공한 구독은 연결별로 기록하고 resources/updated 알림을 해당 구독이 있을 때만 전달한다. unsubscribe는 구독을 해제하며 선택 핸들러를 통해 호스트에 반영할 수 있다. 업데이트 알림 자체가 자료를 읽거나 실행하지 않는다.
+
+핸들러는 ServerRequestContext의 연결 ID·요청 ID·클라이언트 정보·기능·프로토콜 버전·취소 토큰을 받는다. requestClient는 살아 있는 부모 요청에 묶여 roots/list·sampling/createMessage·elicitation/create·ping을 전송한다. 기능을 협상하지 않았거나 해당 버전에서 불가능한 요청은 거부한다. 응답·취소·시간 초과·종료를 구분하며 자동 재실행하지 않는다. sampling/elicitation의 상세 모델·UI 처리는 호스트 책임이며 전체 적합성 검증과 task 연계는 남아 있다. 수신 알림은 takeNotifications로 호스트에 데이터로 전달한다.
+
+협상 버전은 2025-11-25·2025-06-18·2025-03-26이다. 2025-03-26에서 요구하는 JSON-RPC 배열 수신과 응답 결합을 양쪽 전송에 적용한다. 큰 결과를 한도 오류로 바꿀 때에도 해당 오류를 원래 배열 안에 유지한다. 이후 버전에서는 배열 프레임을 거부한다. 구형 서버 응답의 structuredContent·resource_link는 텍스트로 전달하고 outputSchema 광고를 생략한다. 최신 2026-07-28 규격은 아직 지원 목록에 없다.
+
+| 한도 | 기본값 |
+|---|---:|
+| 실행 중 요청 / 대기 요청 | 8 / 32 |
+| 역방향 요청 | 8 |
+| 프레임 / 출력 대기열 / 목록 스냅샷 전체 용량 | 8 MiB / 16 MiB / 16 MiB |
+| 목록 페이지 / 전체 항목 / 활성 커서 | 64 / 10,000 / 8 |
+| 알림·구독 / 한 배열의 항목 | 128 / 128 |
+| 연결 내 고유 요청 ID | 100,000 |
+
+요청 ID를 재사용하면 연결을 종료한다. 입력·출력·대기열 상한 및 비정상 전송을 무시하고 계속 실행하지 않는다. 클라이언트 취소는 응답을 생략하고, 서버 시간 초과는 오류를 반환한다. 취소된 핸들러가 종료할 때까지 실행 슬롯을 점유하므로 호스트 핸들러는 취소 토큰에 협력해야 한다. 종료는 모든 수락된 핸들러를 취소하고 합류한 다음 onClosed를 호출한다. 이미 완료한 파일 변경을 취소가 되돌리는 것은 아니다.
+
+stdio는 응답이 없는 유휴 상태에도 출력 파이프의 연결 종료를 확인한다. 쓰기 가능 상태를 기다리며 반복 실행하지 않도록 즉시 상태 확인과 입력 대기를 분리하며, SIGPIPE 차단은 실제 write 호출의 스레드·구간에 한정한다.
+
+## 검증
+
+기본 CTest mcp_server는 독립 연결, 초기화, 용량, 취소·역방향 요청, 목록·구독·구형 배열, 스키마·정책, 실행 순서·파일 읽기 상태·대화 격리를 검사한다. 공식 SDK 1.26.0을 설정하면 mcp_server_official이 실제 실행 파일의 파일 읽기·허용/거부·입력 검증·경로 제한과 Bash 및 자식 프로세스 취소를 확인한다. Qwen fixture를 설정하면 mcp_server_inference가 외부 MCP 클라이언트 → C++ 서버 → 실제 로컬 모델 → Read → 최종 답변·transcript·진행 알림을 검증한다. 관측 결과와 설치 소비자 증거는 Verification.md에 별도로 기록한다.
+
+분석 참조는 Exhen/claude-code-2.1.88의 c8cd253554319f32ff64ff7000636199f720c9bc에서 entrypoints/mcp.ts의 도구 공개·stdio 경로다. 독립 C++ 구현의 기준은 공식 [수명 규격](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle), [stdio 전송](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports), [도구 규격](https://modelcontextprotocol.io/specification/2025-11-25/server/tools), [2025-03 배열 규칙](https://modelcontextprotocol.io/specification/2025-03-26/basic), [2025-06 변경 기록](https://modelcontextprotocol.io/specification/2025-06-18/changelog)이다.
