@@ -87,3 +87,5 @@ pull은 현재 모델 설치/생성과 같은 FIFO에서 실행되므로 긴 다
 0.15.0은 C++ 서브에이전트와 `agent.agents.run/output/stop/list`, 대응 MCP·CLI 경로를 추가한다. 소유권·취소·분기·재개와 설정 계약은 [Subagents.md](Subagents.md)를 따른다.
 
 0.16.0의 `agent.agents.profiles`(MCP: `iiLocalLLM.agent.agents.profiles`, CLI: `agent agents profiles SESSION`)는 프로파일 메타데이터·출처·가려진 정의·오류를 반환한다. C++ 호스트는 `Subagents::attach`로 현재 프로파일을 각 턴에 연결한다. 독립 데몬과 MCP 서버의 `--agent-profiles FILE`·`--no-agent-profiles`, 모델 사용 범위와 훅 계약은 [AgentProfiles.md](AgentProfiles.md)를 따른다.
+
+0.17.0에서는 `context: fork` 스킬을 같은 API·MCP·CLI 호출로 별도 자식에서 실행한다. 직접 호출은 자식 결과를 반환하고 모델의 `Skill` 호출은 후속 부모 턴에 결과를 전달한다. 본문 분리·권한·모델·사용량·큐 입력과 참조 차이는 [Skills.md](Skills.md)의 별도 자식 실행 계약을 따른다.

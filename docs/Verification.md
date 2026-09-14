@@ -1,5 +1,31 @@
 # 구현 검증 기록
 
+## 2026-09-15 C++ 스킬의 별도 자식 실행 (0.17.0)
+
+`context: fork` 스킬을 사용자 직접 호출과 모델의 `Skill` 도구 호출에 연결했다. 선택한 에이전트 프로파일·호스트 모델 별칭을 사용하고, 부모 세션에서 한 번 치환한 본문을 부모 이력 없이 자식 대화에 저장한다. 직접 호출은 자식의 결과·상태·사용량을 부모 호출 ID로 반환한다. 모델 호출은 자식 결과를 도구 관측으로 받고 후속 턴을 진행한다. 부모 권한, 자식 도구 범위, 취소·기한·턴 한도와 자식 훅을 유지한다. 세부 계약과 참조 차이는 [Skills.md](Skills.md)에 기록한다.
+
+| 검증 경계 | 결과 |
+|---|---|
+| Release 전체 검사, inference 라벨 제외 | 직렬 42/42, 80.94초 |
+| AddressSanitizer·UndefinedBehaviorSanitizer, llama 비활성 | 40/40, 81.10초; 런타임 오류 보고 없음 |
+| 새 설치 소비자, 별도 build 및 설치 헤더·라이브러리 | 14/14, 7.30초 |
+| Qwen3 8B: HTTP 직접·IPC CLI 직접·모델 Skill 도구 | 소스 3/3, 설치본 3/3 |
+| Qwen2.5 0.5B: 공식 MCP SDK 1.26.0 stdio·HTTP | 소스 2/2, 설치본 2/2 |
+| 설치 파일과 실제 로딩 경로 | 공개 헤더 37개·문서·catalog 일치, 0.17 라이브러리 로딩 확인 |
+| CLI 의존성·버전 | iillm에 iiLocalLLM/llama/ggml 링크 없음; CLI·데몬·MCP 실행기 모두 0.17.0 |
+
+C++ 회귀 검사는 부모 모델 호출 생략·이력 격리, 부모 ID로 인자 치환, 본문 출처 저장, 프로파일의 background 지정에도 동기 반환, 결과·사용량 전달, 도구 범위·부모 Deny 유지, 에이전트 fallback·허가되지 않은 모델 거부, 직접 호출 중 큐 입력 보존, SubagentStop의 추가 턴 요구, 취소·기한·실패·턴 한도, 관찰자 실패와 재시작 후 자동 재실행 방지, fork 실행기 없는 호스트의 명시적 미지원 처리를 검증한다. API는 앱 인증 경계, MCP는 연결별 대화 경계와 같은 스킬 실행 경로를 검사한다.
+
+8B 검증은 매 경로마다 새로운 예측 불가능한 파일 값을 생성하고 자식의 실제 `Read` 호출·도구 결과·최종 답변을 대조했다. 각 경로에서 자식 Read 1회가 관측되었다. 부모 기록에 스킬 본문을 자동 주입하지 않았고, 직접 호출에는 부모 도구 호출이 없으며 모델 경로에는 Skill 1회가 있었다. 자식 파일 SHA-256·별칭 모델·부모 ID 치환을 확인하고 다른 앱 토큰의 접근은 404로 거부했다. 같은 실행에서 기존 파일 프로파일의 직접 실행·백그라운드 재개·프롬프트 고정도 통과했다. 두 데몬은 종료 코드 0이다.
+
+0.5B MCP 검증도 임의 파일 값을 자식에서 실제로 읽고 최종 응답과 대조한다. 부모에는 호출·응답 두 메시지만 추가되며, 자식에는 이전 부모·다른 자식의 관측 값이 포함되지 않는 것을 검사했다. 각 전송에서 기존 인라인 스킬·일반 위임·백그라운드 재개 검사도 함께 통과했다. 이 기록은 로컬 테스트 호스트의 API/MCP 호환성 증거이며 실제 Society·Dreamscapes UI나 물리 디바이스 검증을 포함하지 않는다.
+
+테스트를 먼저 추가했을 때 `SkillInfo`의 executionContext/agent/model 필드 부재로 컴파일이 실패한 기록은 `build/skill-fork-red.log`에 있다. 첫 8B HTTP 검사는 테스트 코드가 세션 생성에 `system_prompt`를 전송하여 `invalid_argument`로 거부되었다. API의 필드 `system`으로 수정한 후 최종 검사를 통과했다. 최초 로그·JSON·데몬 로그는 `build/skill-fork-*-initial.*`에 보존한다.
+
+설치 경로는 `build/skill-fork-stage`, 소비자는 `build/skill-fork-consumer/build`이다. 라이브러리 SHA-256은 `b49862f794440b0998ee4f7774f840e80682b6ed83672af16be5a749e42bfc20`, Mach-O UUID는 `F3F44868-B10A-32BE-B603-3D8F7F017A51`로 소스 빌드와 설치본이 일치한다. 검사는 `DYLD_LIBRARY_PATH`·`DYLD_FRAMEWORK_PATH`·`DYLD_FALLBACK_LIBRARY_PATH`·`LIBRARY_PATH`를 제거한 환경에서 수행했다. 전체 실행 명령·결과와 아티팩트 경로는 `build/skill-fork-verification.json`, 개별 JUnit·모델 보고서는 `build/skill-fork-*`에 있다. 이 파일들은 로컬 검증 산출물이다.
+
+생산 실행기는 C++이며 신규 Python 런타임 의존성을 추가하지 않았다. ABI는 0.17이므로 소비자는 공개 헤더와 라이브러리를 함께 갱신하고 다시 빌드해야 한다. 스킬의 allowed-tools 권한 추가, effort, KAIROS 예약 fork, 외부 훅, 플러그인·원격 스킬, 전체 하네스의 나머지 기능은 계속 미완료이며 skills/subagents 상태는 **partial**이다.
+
 ## 2026-09-15 파일 기반 에이전트 프로파일과 자식 훅 (0.16.0)
 
 관리·실행 시 JSON/C++·프로젝트·사용자·플러그인 디렉터리·내장 정의의 프로파일 계층을 C++ 실행기에 연결했다. `Subagents::attach`는 현재 프로파일을 각 모델 턴에 반영하며, 자식 기록에는 선택한 프롬프트와 출처·파일 SHA-256을 고정한다. 호스트 모델 별칭/허용 목록, 재개 시 범위 교집합, 초기 프롬프트, 백그라운드 지정, 스킬 사전 로딩과 SubagentStart/SubagentStop 콜백을 제공한다. `agent.agents.profiles`, MCP `iiLocalLLM.agent.agents.profiles`, CLI `agent agents profiles SESSION`이 같은 구현을 사용한다. 세부 계약과 참조 차이는 [AgentProfiles.md](AgentProfiles.md)에 있다. 전체 하네스·서브에이전트·훅 영역은 **partial**이다.

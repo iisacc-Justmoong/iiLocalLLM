@@ -162,7 +162,7 @@ private slots:
     }
     void unsupportedExecutionPropertiesFailExplicitly() {
         QTemporaryDir d;
-        for (const auto& feature : {QByteArray("context: fork"), QByteArray("allowed-tools: [Bash]"), QByteArray("hooks: {}"), QByteArray("paths: ['src/**']"), QByteArray("model: another-model"), QByteArray("future-execution: true")}) {
+        for (const auto& feature : {QByteArray("context: unknown"), QByteArray("allowed-tools: [Bash]"), QByteArray("hooks: {}"), QByteArray("paths: ['src/**']"), QByteArray("model: another-model"), QByteArray("future-execution: true")}) {
             put(skillPath(d), "---\ndescription: Special skill\n" + feature + "\n---\nBody");
             const auto c = a::discoverSkills(d.path()); QVERIFY(!c.skills[0].unsupportedFeatures.isEmpty());
             QVERIFY(c.message().text.isEmpty());

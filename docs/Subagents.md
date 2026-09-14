@@ -51,7 +51,7 @@ auto parent = engine.createSession("model://local-model", options.workingDirecto
 auto result = engine.runSubagentTool(parent.id, "Agent", {{"prompt", "Read input.txt and report its contents."}});
 ```
 
-`EngineOptions::additionalTools`는 기존 레지스트리의 변경을 유지하면서 각 모델 턴에 호스트 도구를 합친다. `toolFilter`는 도구 검색 전후에 적용한다. 추가 도구 이름 충돌은 실패한다. `ToolContext::sessionSnapshot`은 해당 도구 묶음의 불변 부모 스냅샷이다. 구조체 레이아웃이 바뀌어 ABI는 **0.16**이며 공개 헤더와 라이브러리를 함께 갱신해 소비자를 다시 빌드한다.
+`EngineOptions::additionalTools`는 기존 레지스트리의 변경을 유지하면서 각 모델 턴에 호스트 도구를 합친다. `toolFilter`는 도구 검색 전후에 적용한다. 추가 도구 이름 충돌은 실패한다. `ToolContext::sessionSnapshot`은 해당 도구 묶음의 불변 부모 스냅샷이다. 구조체 레이아웃이 바뀌어 ABI는 **0.17**이며 공개 헤더와 라이브러리를 함께 갱신해 소비자를 다시 빌드한다.
 
 인증 API는 `agent.agents.run`, `.output`, `.stop`, `.list`, `.profiles`를 제공한다. 모두 부모 `session_id`를 받으며 다른 필드는 대응 도구와 같다. 응답은 기존 `{text, result, is_error}` 계약을 사용한다. C++ `ApiOptions::subagentsEnabled`는 기본 false이고 독립 데몬은 에이전트 API 설정 시 기본으로 켠다. `--agent-no-subagents`로 끌 수 있다. 자식 상태 디렉터리는 인증된 클라이언트마다 분리하고 외부 요청에서 지정하지 못하게 한다. 실행 중 조회·중단은 별도 제어 작업 풀을 사용한다.
 
@@ -75,4 +75,6 @@ iillm --auth-file /data/private/token agent agents output PARENT_SESSION output.
 
 참조의 조건부 implicit fork는 타입 생략 시 부모 프롬프트·컨텍스트를 이어받고 백그라운드로 강제 전환한다. iiLocalLLM은 `fork_context`와 `run_in_background`를 명시적으로 구분한다. 참조의 재개 실행 경로와 iiLocalLLM의 `Agent.resume` 필드도 동일한 wire schema라고 주장하지 않는다.
 
-내장 전문 역할 전체와 조건부 선택, 스킬의 `context: fork`, 에이전트 파일의 외부 훅 실행, 추가 MCP 서버·메모리, 실행 도중 자동 백그라운드 전환, 팀·SendMessage·mailbox, worktree·remote 격리, 공통 TaskOutput/TaskStop으로의 통합, 전체 trace·비용 집계와 광범위한 실제 앱 작업 검증은 남아 있다. 실제 모델 결과와 실패 기록은 [Verification.md](Verification.md)에 분리해 기록한다.
+내장 전문 역할 전체와 조건부 선택, 에이전트 파일의 외부 훅 실행, 추가 MCP 서버·메모리, 실행 도중 자동 백그라운드 전환, 팀·SendMessage·mailbox, worktree·remote 격리, 공통 TaskOutput/TaskStop으로의 통합, 전체 trace·비용 집계와 광범위한 실제 앱 작업 검증은 남아 있다. 실제 모델 결과와 실패 기록은 [Verification.md](Verification.md)에 분리해 기록한다.
+
+0.17.0은 `Subagents::runSkill`과 `attach`의 fork 콜백으로 스킬을 별도 자식에서 실행한다. `Agent.fork_context`는 부모 대화 복사이고 스킬 `context: fork`는 부모 이력 없이 스킬 본문을 실행하는 경로이다. 구체적인 결과·제한은 [Skills.md](Skills.md)를 따른다.

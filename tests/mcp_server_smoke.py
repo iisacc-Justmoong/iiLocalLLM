@@ -292,9 +292,27 @@ async def native(binary, root, weights, http=False):
             assert sum(call["name"] == "Read" for call in child_calls) >= 2
             assert all(any(m["role"] == "tool" and code in m["text"] for m in child_messages) for code in (child_secret, resumed_secret))
             assert {call["id"] for call in child_calls} == {m["tool_call_id"] for m in child_messages if m["role"] == "tool"}
+            fork_secret = "FORK_" + secrets.token_hex(8)
+            (workspace / "fork.txt").write_text(fork_secret)
+            (skill_dir / "SKILL.md").write_text("---\ndescription: Inspect in a child\ncontext: fork\nagent: reader\ndisable-model-invocation: true\n---\n"
+                "FORK_PRIVATE_BODY parent=${CLAUDE_SESSION_ID}. Use Read to read $0 and return its exact contents. Do not guess.\n")
+            forked = await session.call_tool("iiLocalLLM.agent.run", {"skill": "inspect", "skill_arguments": "fork.txt", "max_turns": 4}, progress_callback=progress)
+            fork_run = forked.structuredContent
+            assert not forked.isError and fork_run["status"] == "completed" and fork_secret in fork_run["text"], forked
+            assert fork_run["session_id"] == saved["session_id"]
+            fork_parent = (await session.call_tool("iiLocalLLM.agent.session", {"include_messages": True})).structuredContent
+            assert len(fork_parent["messages"]) == len(messages) + 2
+            assert not any("FORK_PRIVATE_BODY" in m["text"] for m in fork_parent["messages"])
+            execution = fork_parent["messages"][-1]["metadata"]["iilocal.skill_fork"]
+            fork_path = private_state / "subagents/sessions" / execution["session_id"] / "transcript.jsonl"
+            fork_messages = [r["message"] for r in map(json.loads, fork_path.read_text().splitlines()) if r["type"] == "message"]
+            assert any("parent=" + saved["session_id"] in m["text"] for m in fork_messages)
+            assert any(c["name"] == "Read" for m in fork_messages for c in m["tool_calls"])
+            assert any(m["role"] == "tool" and fork_secret in m["text"] for m in fork_messages)
+            assert all(code not in m["text"] for m in fork_messages for code in (secret, child_secret, resumed_secret))
     assert list((private_state / "sessions").glob("**/*.jsonl")), "Agent transcript was not persisted"
     return {"official_sdk": version("mcp"), "transport": "http" if http else "stdio", "native_model": "Qwen2.5 0.5B Q4_K_M", "run": run,
-            "progress": updates, "transcript": saved, "unpredictable_file_value_verified": True,
+            "progress": updates, "transcript": saved, "unpredictable_file_value_verified": True, "skill_fork": {"run": fork_run, "execution": execution, "actual_read_verified": True},
             "subagent": {"foreground": child, "resumed": resumed, "actual_read_calls": sum(c["name"] == "Read" for c in child_calls), "notification_count": 1}}
 
 

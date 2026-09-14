@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(iiLocalLLM VERSION 0.16.0 LANGUAGES CXX)
+project(iiLocalLLM VERSION 0.17.0 LANGUAGES CXX)
 
 if(PROJECT_IS_TOP_LEVEL AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     if(DEFINED ENV{HOME})
@@ -209,6 +209,11 @@ if(BUILD_TESTING)
     target_link_libraries(iiLocalLLMSkillTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
     set_target_properties(iiLocalLLMSkillTests PROPERTIES AUTOMOC ON)
     add_test(NAME iiLocalLLM.skills COMMAND iiLocalLLMSkillTests)
+
+    add_executable(iiLocalLLMSkillForkTests tests/skill_fork_tests.cpp)
+    target_link_libraries(iiLocalLLMSkillForkTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
+    set_target_properties(iiLocalLLMSkillForkTests PROPERTIES AUTOMOC ON)
+    add_test(NAME iiLocalLLM.skill_fork COMMAND iiLocalLLMSkillForkTests)
     set_tests_properties(iiLocalLLM.skills PROPERTIES TIMEOUT 60)
     add_executable(iiLocalLLMAgentProfileTests tests/agent_profiles_tests.cpp)
     target_link_libraries(iiLocalLLMAgentProfileTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
@@ -318,6 +323,11 @@ if(BUILD_TESTING)
                 "${IILOCALLLM_TEST_AGENT_CATALOG}" "${IILOCALLLM_TEST_AGENT_MODEL}"
                 --report "${CMAKE_CURRENT_BINARY_DIR}/agent-profiles-api-inference.json")
             set_tests_properties(iiLocalLLM.agent_profiles_api_inference PROPERTIES TIMEOUT 600 LABELS "inference")
+            add_test(NAME iiLocalLLM.skill_fork_api_inference COMMAND "${Python3_EXECUTABLE}" -B
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/agent_profile_wire.py" "$<TARGET_FILE:iiLocalLLMD>" "$<TARGET_FILE:iillm>"
+                "${IILOCALLLM_TEST_AGENT_CATALOG}" "${IILOCALLLM_TEST_AGENT_MODEL}" --skill-forks
+                --report "${CMAKE_CURRENT_BINARY_DIR}/skill-fork-api-inference.json")
+            set_tests_properties(iiLocalLLM.skill_fork_api_inference PROPERTIES TIMEOUT 900 LABELS "inference")
         endif()
         if(IILOCALLLM_WITH_LLAMA AND (IILOCALLLM_TEST_CHAT_GGUF OR IILOCALLLM_TEST_AGENT_CATALOG))
             add_executable(iiLocalLLMTaskRuntimeSmoke tests/task_runtime_smoke.cpp)

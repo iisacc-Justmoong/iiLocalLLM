@@ -17,6 +17,8 @@ struct IILOCALLLM_EXPORT SkillInfo {
     QString path, directory, sha256;
     QStringList argumentNames, unsupportedFeatures;
     bool disableModelInvocation = false, userInvocable = true;
+    QString executionContext = "inline";
+    QString agent, model; // Fork target; model aliases must be authorized by the host.
     QJsonObject toJson() const;
 };
 struct IILOCALLLM_EXPORT SkillCatalog {
@@ -26,6 +28,17 @@ struct IILOCALLLM_EXPORT SkillCatalog {
     Message message() const; // Metadata only, eligible model-invocable skills only.
 };
 enum class SkillInvocationSource { User, Model };
+struct SkillForkRequest {
+    Message prompt; // Already expanded in the calling session; never reread by the executor.
+    GenerationOptions generation;
+    int maxTurns = 32; // Further bounded by the child profile and host.
+    QStringList contextPaths;
+};
+struct SkillForkResult {
+    RunResult result;
+    QJsonObject execution; // Child identity and final public execution record.
+};
+using SkillForkExecutor = std::function<SkillForkResult(const SkillForkRequest&, const ToolContext&)>;
 // Fresh, bounded discovery. Bodies are read for validation but never included in the catalog.
 // No ancestor/home scan, shell execution, network access or permission grants.
 IILOCALLLM_EXPORT SkillCatalog discoverSkills(const QString& workingDirectory,

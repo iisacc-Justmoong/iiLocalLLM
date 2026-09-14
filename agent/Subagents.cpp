@@ -28,7 +28,7 @@ bool nested(const QString& path,const QString& root) { return path==root || path
 bool terminal(const QString& s) { return s!="running" && s!="queued"; }
 QJsonObject publicState(const QJsonObject& state) {
     QJsonObject result;
-    for(const auto& key:{"agentId","agent_type","session_id","model","status","description","finished","retrieval_status","tool_uses","duration_ms","result","error","delivery_error","notification_id"})
+    for(const auto& key:{"agentId","agent_type","session_id","model","status","description","finished","retrieval_status","tool_uses","duration_ms","result","error","delivery_error","notification_id","skill"})
         if(state.contains(key))result.insert(key,state[key]);
     return result;
 }
@@ -92,7 +92,7 @@ public:
     mutable std::mutex mutex;
     mutable std::condition_variable changed;
     bool stopping=false;
-    struct Job { QJsonObject state; CancellationToken token; bool done=true; };
+    struct Job { QJsonObject state; CancellationToken token; bool done=true; bool awaitingForeground=false; RunResult outcome; };
     std::map<QString,std::shared_ptr<Job>> jobs;
     static QString rootPath(QString path,const QString& workspace) {
         require(!path.trimmed().isEmpty() && !QFileInfo(path).isSymLink() && QDir().mkpath(path),"Cannot create subagent state",ErrorCode::StorageFailure);
@@ -124,6 +124,7 @@ public:
                 &&!i.value().trimmed().isEmpty()&&i.value().size()<=256&&!i.value().contains(QChar::Null),"Invalid subagent model alias");
         // Additional tools include the parent's orchestration owner. Children get
         // a fresh engine and a scoped snapshot of the underlying tool registry.
+        parent.forkedSkill = {}; // Children cannot recursively delegate through Skill.
         parent.additionalTools.removeIf([](const Tool& t){return t.definition.name=="Agent"||t.definition.metadata["source"]=="builtin.subagent";});
         if(parent.additionalToolsProvider) parent.additionalToolsProvider=[provider=std::move(parent.additionalToolsProvider)]{
             auto tools=provider();tools.removeIf([](const Tool& t){return t.definition.name=="Agent"||t.definition.metadata["source"]=="builtin.subagent";});return tools;
@@ -271,7 +272,9 @@ public:
                 std::lock_guard lock(mutex);job->state["notification_id"]=queued["input"].toObject()["id"];write(*job);
             }
         } catch(const std::exception& error) {std::lock_guard lock(mutex);job->state["delivery_error"]=QString::fromUtf8(error.what());}
-        {std::lock_guard lock(mutex);job->done=true;}changed.notify_all();
+        {std::lock_guard lock(mutex);
+            if(job->state.contains("delivery_error")) {result.status=RunStatus::Failed;result.errorCode=ErrorCode::StorageFailure;result.errorMessage=job->state["delivery_error"].toString();}
+            job->outcome=std::move(result);job->done=true;}changed.notify_all();
     }
 };
 Subagents::Subagents(std::shared_ptr<Model> m,std::shared_ptr<ToolRegistry> r,std::shared_ptr<const PermissionPolicy> p,EngineOptions e,SubagentOptions o)
@@ -279,6 +282,20 @@ Subagents::Subagents(std::shared_ptr<Model> m,std::shared_ptr<ToolRegistry> r,st
 Subagents::~Subagents(){close();}
 void Subagents::close(){ {std::lock_guard lock(d->mutex);d->stopping=true;for(const auto& [_,job]:d->jobs) if(!job->done)job->token.cancel();}d->pool.waitForDone(); }
 ToolResult Subagents::run(const ToolContext& context,const QJsonObject& args) {
+    return runImpl(context,args,nullptr,nullptr);
+}
+SkillForkResult Subagents::runSkill(const SkillForkRequest& request,const ToolContext& context) {
+    const auto& prompt=request.prompt;const auto metadata=prompt.metadata["iilocal.skill"].toObject();
+    require(prompt.role==MessageRole::User && prompt.toolCalls.isEmpty() && prompt.toolCallId.isEmpty()
+        && metadata["format_version"]==1 && metadata["context"]=="fork" && metadata["unsupported_features"].toArray().isEmpty(),"Invalid forked skill snapshot");
+    require(request.maxTurns>=1 && request.maxTurns<=10000,"Invalid forked skill turn limit");
+    QJsonObject args{{"prompt",prompt.text},{"description","Skill: "+metadata["name"].toString()}};
+    if(!metadata["agent"].toString().isEmpty())args["subagent_type"]=metadata["agent"];
+    const auto model=metadata["model"].toString();
+    if(!model.isEmpty())args["model"]=model=="inherit"&&context.sessionSnapshot?context.sessionSnapshot->model:model;
+    SkillForkResult result;const auto output=runImpl(context,args,&request,&result.result);result.execution=output.data;return result;
+}
+ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args,const SkillForkRequest* skill,RunResult* outcome) {
     context.cancellation.throwIfCancelled();
     const QSet<QString> fields{"prompt","description","subagent_type","model","run_in_background","resume","fork_context","max_turns"};
     for(auto it=args.begin();it!=args.end();++it) require(fields.contains(it.key()),"Unknown subagent argument: "+it.key());
@@ -299,10 +316,15 @@ ToolResult Subagents::run(const ToolContext& context,const QJsonObject& args) {
         request.prompt=args["prompt"].toString();request.maxTurns=args["max_turns"].toInt(cap);
         require(definition.unsupportedFeatures.isEmpty()&&definition.permissionMode!="auto","Unsupported agent profile execution features: "+definition.unsupportedFeatures.join(", "),ErrorCode::RuntimeUnavailable);
         checkProfile(definition);background|=definition.background;
+        if(skill) background=false; // Forked commands synchronously return the observed result.
         if(resume.isEmpty()&&!definition.initialPrompt.isEmpty()) request.prompt=definition.initialPrompt+"\n\n"+request.prompt;
         if(fork) request.prompt="You are the delegated child. The earlier conversation belongs to the parent. Work directly on the task below with your available tools and report your own observed result.\n\n"+request.prompt;
         require(request.prompt.size()<=d->parent.maxInputCharacters,"Expanded subagent prompt exceeds input limit",ErrorCode::ResourceLimit);
         request.generation=d->options.generation;
+        if(skill) {
+            request.generation=skill->generation;request.maxTurns=std::min(request.maxTurns,skill->maxTurns);
+            request.contextPaths=skill->contextPaths;request.promptMetadata=skill->prompt.metadata;
+        }
     };
     {
         std::lock_guard lock(d->mutex);require(!d->stopping,"Subagent host is closing",ErrorCode::ShuttingDown);
@@ -310,12 +332,29 @@ ToolResult Subagents::run(const ToolContext& context,const QJsonObject& args) {
         require(active<d->options.maxConcurrent,"Subagent concurrency limit reached",ErrorCode::QueueFull);
         if(!resume.isEmpty()) {
             require(!fork&&!args.contains("subagent_type")&&!args.contains("model"),"Resume cannot replace context, profile or model");
-            job=d->owned(context.sessionId,resume);require(job->done,"Subagent is already active",ErrorCode::ModelInUse);
+            job=d->owned(context.sessionId,resume);require(job->done&&!job->awaitingForeground,"Subagent is already active or returning its result",ErrorCode::ModelInUse);
             definition=catalog.find(job->state["agent_type"].toString());request.sessionId=job->state["session_id"].toString();
             configureRequest();
         } else {
             require(int(d->jobs.size())<d->options.maxRecords,"Subagent record limit reached",ErrorCode::ResourceLimit);
-            definition=catalog.find(args["subagent_type"].toString("general-purpose"));job=std::make_shared<Impl::Job>();
+            QString selected=args["subagent_type"].toString("general-purpose");
+            if(skill) {
+                const auto exists=[&](const QString& name) {
+                    for(const auto& p:catalog.profiles)if(p.name==name)return true;
+                    // A malformed higher-priority profile must not silently fall back.
+                    for(const auto& v:catalog.failedFiles) {
+                        const auto f=v.toObject();
+                        require(f["name"]!=name && QFileInfo(f["path"].toString()).completeBaseName()!=name,
+                            "Requested skill agent profile is invalid: "+name,ErrorCode::RuntimeUnavailable);
+                    }
+                    return false;
+                };
+                if(!exists(selected)) {
+                    selected="general-purpose";
+                    if(!exists(selected)) {require(!catalog.profiles.isEmpty(),"No agent is available for forked skill",ErrorCode::RuntimeUnavailable);selected=catalog.profiles.first().name;}
+                }
+            }
+            definition=catalog.find(selected);job=std::make_shared<Impl::Job>();
             configureRequest();
             const auto requestedModel=args["model"].toString(definition.model.isEmpty()?parent.model:definition.model);
             const auto model=d->options.modelAliases.value(requestedModel,requestedModel);
@@ -338,6 +377,7 @@ ToolResult Subagents::run(const ToolContext& context,const QJsonObject& args) {
             });request.sessionId=child.id;
             job->state={{"schema","iisacc.subagent/1"},{"agentId","agent-"+uuid()},{"parent_session_id",parent.id},{"session_id",child.id},
                 {"agent_type",definition.name},{"profile",profileJson(definition)},{"model",model},{"fork_context",fork},{"created_at",QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}};
+            if(skill)job->state["skill"]=skill->prompt.metadata["iilocal.skill"];
         }
         const auto model=job->state["model"].toString();require(d->modelAllowed(model,parent.model,definition),"Resumed subagent model is no longer authorized");
         Impl::Job accepted;accepted.state=job->state;
@@ -352,6 +392,7 @@ ToolResult Subagents::run(const ToolContext& context,const QJsonObject& args) {
             throw;
         }
         job->state=std::move(accepted.state);job->token=background?CancellationToken{}:CancellationToken::linkedTo(context.cancellation);job->done=false;
+        job->awaitingForeground=!background;
         id=job->state["agentId"].toString();d->jobs[id]=job;
         d->pool.start(QRunnable::create([impl=d.get(),job,request,definition,progress=background?std::function<void(const QJsonObject&)>{}:context.progress]{impl->execute(job,request,definition,progress);}));
     }
@@ -359,7 +400,9 @@ ToolResult Subagents::run(const ToolContext& context,const QJsonObject& args) {
     // A foreground progress callback borrows its parent's event lifetime. Keep
     // waiting after requesting cancellation until the cooperative worker joins.
     QJsonObject result;
-    do {result=output(parent.id,id,true,1000);} while(!result["finished"].toBool());
+    {std::unique_lock lock(d->mutex);d->changed.wait(lock,[&]{return job->done;});
+        result=job->state;result["finished"]=true;result["retrieval_status"]="success";
+        if(outcome)*outcome=job->outcome;job->awaitingForeground=false;}
     const auto response=result["result"].toObject()["text"].toString();
     const auto text=result["status"]=="completed" ? "Child agent completed. The final response is already available below; use it directly without polling AgentOutput for this completed invocation.\n\n"+response
         : "Child agent ended with status "+result["status"].toString()+".\n"+response;
@@ -387,6 +430,7 @@ QList<Tool> Subagents::tools(std::shared_ptr<Subagents> owner) {return makeTools
 void Subagents::attach(EngineOptions& options,std::shared_ptr<Subagents> owner) {
     require(bool(owner),"Missing subagent owner");
     options.additionalTools.append(makeTools(owner,false));
+    options.forkedSkill=[owner](const SkillForkRequest& request,const ToolContext& context){return owner->runSkill(request,context);};
     options.additionalToolsProvider=[owner,previous=options.additionalToolsProvider]{
         auto tools=previous?previous():QList<Tool>{};auto live=makeTools(owner,true);
         live.removeIf([](const Tool& t){return t.definition.name!="Agent";});tools.append(live);return tools;

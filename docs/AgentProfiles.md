@@ -92,10 +92,10 @@ Stop은 모델이 최종 답변을 반환할 때 실행한다. 차단하면 피�
 
 인증 API `agent.agents.profiles`는 `session_id`를 받으며 다른 앱의 대화 ID를 거부한다. MCP `iiLocalLLM.agent.agents.profiles`는 해당 연결의 대화를 사용하고 별도 인자를 받지 않는다. CLI는 `iillm --auth-file TOKEN agent agents profiles SESSION`이다. 응답의 `{text, result, is_error}` 또는 MCP `structuredContent/isError` 계약은 기존과 같다.
 
-공개 구조체·SessionStore 서명이 바뀌어 ABI는 **0.16**이다. 소비자는 헤더와 라이브러리를 함께 갱신하고 다시 빌드해야 한다. 검사·설치 소비자·실제 모델 결과는 [Verification.md](Verification.md)에 기록한다.
+공개 구조체·SessionStore 서명이 바뀌어 ABI는 **0.17**이다. 소비자는 헤더와 라이브러리를 함께 갱신하고 다시 빌드해야 한다. 검사·설치 소비자·실제 모델 결과는 [Verification.md](Verification.md)에 기록한다.
 
 ## 참조와 남은 범위
 
 분석 기준은 `c8cd253554319f32ff64ff7000636199f720c9bc`의 [loadAgentsDir.ts](https://github.com/Exhen/claude-code-2.1.88/blob/c8cd253554319f32ff64ff7000636199f720c9bc/source/src/tools/AgentTool/loadAgentsDir.ts), [markdownConfigLoader.ts](https://github.com/Exhen/claude-code-2.1.88/blob/c8cd253554319f32ff64ff7000636199f720c9bc/source/src/utils/markdownConfigLoader.ts), [runAgent.ts](https://github.com/Exhen/claude-code-2.1.88/blob/c8cd253554319f32ff64ff7000636199f720c9bc/source/src/tools/AgentTool/runAgent.ts)이다. 공개 미러의 구현을 관찰한 것이며 원본 배포본의 진위나 활성화된 서버 설정 전체를 증명하지 않는다.
 
-스킬 `context: fork`는 선택한 자식에 스킬 본문을 전달하는 별도 실행 경로이며 현재의 스킬 사전 로딩·`Agent.fork_context`와 구별된다. 이 실행 경로, 전체 내장 역할과 조건부 선택, 플러그인 네임스페이스와 생명주기, 에이전트별 MCP·메모리·외부 훅·worktree·remote·팀 통신은 계속 구현해야 한다.
+스킬 `context: fork`는 선택한 자식에 스킬 본문을 전달하는 별도 실행 경로이며 현재의 스킬 사전 로딩·`Agent.fork_context`와 구별된다. 이 경로는 0.17.0에 구현되었다([Skills.md](Skills.md)). 전체 내장 역할과 조건부 선택, 플러그인 네임스페이스와 생명주기, 에이전트별 MCP·메모리·외부 훅·worktree·remote·팀 통신은 계속 구현해야 한다.

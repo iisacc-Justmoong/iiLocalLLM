@@ -29,6 +29,7 @@ public:
     Subagents(const Subagents&) = delete;
     Subagents& operator=(const Subagents&) = delete;
     ToolResult run(const ToolContext&, const QJsonObject&);
+    SkillForkResult runSkill(const SkillForkRequest&, const ToolContext&);
     QJsonObject output(const QString& parentSessionId, const QString& agentId,
         bool block = false, int timeoutMs = 30000, const CancellationToken& = {}) const;
     QJsonObject stop(const QString& parentSessionId, const QString& agentId, const CancellationToken& = {});
@@ -45,5 +46,6 @@ private:
     class Impl;
     std::unique_ptr<Impl> d;
     static QList<Tool> makeTools(std::shared_ptr<Subagents>, bool includeAgent);
+    ToolResult runImpl(const ToolContext&, const QJsonObject&, const SkillForkRequest*, RunResult*);
 };
 }

@@ -107,6 +107,7 @@ struct RunRequest {
     QStringList contextPaths; // Explicit workspace paths whose instructions apply before the first model call.
     QString skill; // Optional direct user invocation; prompt may be empty when set.
     QString skillArguments;
+    QJsonObject promptMetadata; // Trusted C++ host provenance, never accepted from API/IPC/MCP input.
 };
 struct RunUsage {
     qint64 promptTokens = 0;

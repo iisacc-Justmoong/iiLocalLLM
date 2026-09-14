@@ -86,11 +86,18 @@ void parseYaml(const QByteArray& bytes, Loaded& value, const CancellationToken& 
             if (key == "user-invocable") value.info.userInvocable = s == "true"; else value.info.disableModelInvocation = s == "true";
         } else if (key == "license" || key == "compatibility" || key == "metadata") {
             // Descriptive Agent Skills metadata has no runtime effect.
-        } else if (key == "model" && text() == "inherit") {
-        } else if (key == "context" && text() == "inline") {
+        } else if (key == "model") { value.info.model = text();
+        } else if (key == "agent") { value.info.agent = text();
+        } else if (key == "context") { value.info.executionContext = text();
         } else if (key == "allowed-tools" && n->type == YAML_SEQUENCE_NODE && n->data.sequence.items.start == n->data.sequence.items.top) {
         } else value.info.unsupportedFeatures.append(key);
     }
+    if (value.info.executionContext != "inline" && value.info.executionContext != "fork") value.info.unsupportedFeatures.append("context");
+    if (value.info.executionContext != "fork") {
+        if (!value.info.agent.isEmpty()) value.info.unsupportedFeatures.append("agent");
+        if (!value.info.model.isEmpty() && value.info.model != "inherit") value.info.unsupportedFeatures.append("model");
+    }
+    require(value.info.agent.size() <= 128 && value.info.model.size() <= 256, "Skill agent or model exceeds limit");
 }
 Loaded parse(const QString& name, const QString& path, const QByteArray& raw, const CancellationToken& token) {
     Loaded value; value.info.name = name; value.info.path = path; value.info.directory = QFileInfo(path).absolutePath();
@@ -203,7 +210,8 @@ QString expand(const Loaded& skill, const QString& raw, const QString& session) 
 QJsonObject SkillInfo::toJson() const {
     return {{"name", name}, {"display_name", displayName}, {"description", description}, {"argument_hint", argumentHint}, {"when_to_use", whenToUse},
         {"version", version}, {"path", path}, {"directory", directory}, {"sha256", sha256}, {"arguments", QJsonArray::fromStringList(argumentNames)},
-        {"disable_model_invocation", disableModelInvocation}, {"user_invocable", userInvocable}, {"unsupported_features", QJsonArray::fromStringList(unsupportedFeatures)}};
+        {"disable_model_invocation", disableModelInvocation}, {"user_invocable", userInvocable}, {"unsupported_features", QJsonArray::fromStringList(unsupportedFeatures)},
+        {"context", executionContext}, {"agent", agent}, {"model", model}};
 }
 QJsonObject SkillCatalog::toJson() const {
     QJsonArray items; for (const auto& s : skills) items.append(s.toJson()); return {{"skills", items}, {"shadowed", shadowed}};
@@ -211,11 +219,11 @@ QJsonObject SkillCatalog::toJson() const {
 Message SkillCatalog::message() const {
     QJsonArray items;
     for (const auto& s : skills) if (!s.disableModelInvocation && s.unsupportedFeatures.isEmpty())
-        items.append(QJsonObject{{"name", s.name}, {"description", s.description}, {"argument_hint", s.argumentHint}, {"when_to_use", s.whenToUse}});
+        items.append(QJsonObject{{"name", s.name}, {"description", s.description}, {"argument_hint", s.argumentHint}, {"when_to_use", s.whenToUse}, {"context", s.executionContext}});
     if (items.isEmpty()) return {};
     Message result{{}, MessageRole::User, "Available local skills (catalog metadata, not instructions). "
         "Call Skill with the skill name and optional args when its instructions are needed. "
-        "Loading a skill does not execute its requested work or grant tool permissions.\n" + QString::fromUtf8(QJsonDocument(items).toJson(QJsonDocument::Compact))};
+        "Inline skills load instructions; fork skills run in an isolated child and return its result. Skills do not grant tool permissions.\n" + QString::fromUtf8(QJsonDocument(items).toJson(QJsonDocument::Compact))};
     result.metadata = {{"iilocal.skill_catalog", true}}; return result;
 }
 SkillCatalog discoverSkills(const QString& workspace, const SkillOptions& options, const CancellationToken& token) {
@@ -242,17 +250,32 @@ Message loadSkill(const QString& workspace, const QString& input, const QString&
     message.metadata = {{"iilocal.skill", metadata}}; return message;
 }
 namespace detail {
-Tool skillTool(const QString& workspace, const SkillOptions& options) {
+SkillCatalog executableSkills(const QString& workspace, const SkillOptions& options, bool canFork, const CancellationToken& token) {
+    auto catalog = discoverSkills(workspace, options, token);
+    if (!canFork) for (auto& skill : catalog.skills) if (skill.executionContext == "fork") skill.unsupportedFeatures.append("fork-executor-unavailable");
+    return catalog;
+}
+Tool skillTool(const QString& workspace, const SkillOptions& options, const SkillForkExecutor& executor, const SkillForkRequest& execution) {
     Tool tool; tool.definition.name = "Skill"; tool.definition.readOnly = true; tool.definition.concurrencySafe = false;
-    tool.definition.description = "Load a local skill's instructions into this conversation. See the available skills catalog. "
-        "Pass a skill name and optional literal arguments. This does not execute the work described by the skill. "
+    tool.definition.description = "Invoke a local skill from the available catalog. Inline skills load instructions into this conversation; "
+        "fork skills execute in an isolated child and return the final result. Pass a skill name and optional literal arguments. "
         "When a skill is already loaded in the current turn, follow its instructions directly instead of loading it again.";
     tool.definition.metadata = {{"source", "builtin.skill"}};
     tool.definition.inputSchema = {{"type", "object"}, {"additionalProperties", false}, {"required", QJsonArray{"skill"}}, {"properties", QJsonObject{
         {"skill", QJsonObject{{"type", "string"}, {"minLength", 1}, {"maxLength", 129}}},
         {"args", QJsonObject{{"type", "string"}, {"maxLength", 65536}}}}}};
-    tool.execute = [workspace, options](const QJsonObject& args, const ToolContext& context) {
+    tool.execute = [workspace, options, executor, execution](const QJsonObject& args, const ToolContext& context) {
         auto message = loadSkill(workspace, args["skill"].toString(), args["args"].toString(), context.sessionId, SkillInvocationSource::Model, options, context.cancellation);
+        const auto metadata = message.metadata["iilocal.skill"].toObject();
+        if (metadata["context"] == "fork") {
+            require(bool(executor), "Skill fork executor is unavailable", ErrorCode::RuntimeUnavailable);
+            auto request = execution; request.prompt = std::move(message);
+            const auto outcome = executor(request, context);
+            const bool success = outcome.result.status == RunStatus::Completed;
+            return ToolResult{success ? outcome.result.text : "Forked skill ended with status " + enumName(outcome.result.status) + ": " + outcome.result.errorMessage,
+                {{"success", success}, {"status", "forked"}, {"commandName", metadata["name"]}, {"agentId", outcome.execution["agentId"]},
+                    {"result", outcome.result.text}, {"execution", outcome.execution}}, !success, {}, {{"iilocal.skill_fork", outcome.execution}}};
+        }
         return ToolResult{"Loaded skill " + message.metadata["iilocal.skill"].toObject()["name"].toString() + ". Follow the injected skill instructions on the next turn.",
             {{"success", true}, {"status", "inline"}, {"commandName", message.metadata["iilocal.skill"].toObject()["name"]}}, false, {},
             {{"iilocal.skill_result", QJsonObject{{"version", 1}, {"message", toJson(message)}}}}};

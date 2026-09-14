@@ -109,12 +109,18 @@ private slots:
         QCOMPARE(state["agentId"],id);
     }
     void skillCatalogAndInvocationUseTheConnectionConversation() {
+        for(bool fork:{false,true}) {
         QTemporaryDir root; const auto path = root.filePath(".claude/skills/inspect"); QVERIFY(QDir().mkpath(path));
         QFile file(path + "/SKILL.md"); QVERIFY(file.open(QIODevice::WriteOnly));
-        file.write("---\ndescription: Inspect\ndisable-model-invocation: true\n---\nMCP_SKILL $ARGUMENTS"); file.close();
+        file.write(QByteArray("---\ndescription: Inspect\ndisable-model-invocation: true\n")+(fork?"context: fork\n":"")+"---\nMCP_SKILL $ARGUMENTS"); file.close();
         auto registry = std::make_shared<a::ToolRegistry>(); auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
         a::EngineOptions eo; eo.sessionsDirectory = root.filePath("sessions");
-        auto engine = std::make_shared<a::Engine>(std::make_shared<HistoryModel>(), registry, policy, eo);
+        auto model=std::make_shared<HistoryModel>();std::shared_ptr<a::Subagents> agents;QTemporaryDir children;
+        if(fork) {
+            a::SubagentOptions so;so.workingDirectory=root.path();so.stateDirectory=children.filePath("state");
+            agents=std::make_shared<a::Subagents>(model,registry,policy,eo,so);a::Subagents::attach(eo,agents);
+        }
+        auto engine = std::make_shared<a::Engine>(model, registry, policy, eo);
         a::McpServerOptions config; config.workingDirectory = root.path(); config.engine = engine; config.model = "fixture";
         const auto options = a::mcpServerOptions(registry, policy, config);
         m::ServerSession first(options), second(options); initialize(first); initialize(second);
@@ -126,6 +132,12 @@ private slots:
         QVERIFY(!other["structuredContent"].toObject()["text"].toString().contains("private args"));
         QVERIFY(call(first, 4, "iiLocalLLM.agent.run", {{"skill", "missing"}})["isError"].toBool());
         QVERIFY(call(first, 5, "iiLocalLLM.agent.inputs.run", {{"skill", "inspect"}})["isError"].toBool());
+        if(fork) {
+            const auto state=call(first,6,"iiLocalLLM.agent.session",{{"include_messages",true}})["structuredContent"].toObject();
+            QCOMPARE(state["messages"].toArray().size(),2);
+            const auto jobs=call(first,7,"iiLocalLLM.agent.agents.list")["structuredContent"].toObject()["agents"].toArray();QCOMPARE(jobs.size(),1);
+        }
+        }
     }
     void urgentInputBypassesTheRunningConversationLock() {
         QTemporaryDir root; auto registry = std::make_shared<a::ToolRegistry>();

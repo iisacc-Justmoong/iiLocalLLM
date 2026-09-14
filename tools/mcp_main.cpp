@@ -18,7 +18,7 @@
 namespace { volatile std::sig_atomic_t interrupted = 0; void interrupt(int) { interrupted = 1; } }
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.16.0");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.17.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},

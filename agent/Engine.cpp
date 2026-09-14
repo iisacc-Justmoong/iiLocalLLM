@@ -211,19 +211,40 @@ public:
             auto paths = projectContextPaths(lease->session().messages); paths.append(request.contextPaths); paths.removeDuplicates();
             const auto initial = loadProjectContext(lease->session().workingDirectory, paths, options.projectContext, token);
             Message user{{}, MessageRole::User, request.prompt};
+            user.metadata = request.promptMetadata;
+            bool forkedSkill = false;
             if (!request.skill.isEmpty()) {
                 user = loadSkill(lease->session().workingDirectory, request.skill, request.skillArguments,
                     request.sessionId, SkillInvocationSource::User, options.skills, token);
                 if (!request.prompt.isEmpty()) user.text += "\n\nAdditional user request:\n" + request.prompt;
                 if (user.text.size() > options.maxInputCharacters) throw Error(ErrorCode::ResourceLimit, "Expanded skill exceeds engine input limit");
+                forkedSkill = user.metadata["iilocal.skill"].toObject()["context"] == "fork";
+                if (forkedSkill && !options.forkedSkill) throw Error(ErrorCode::RuntimeUnavailable, "Skill fork executor is unavailable");
             }
             if (!request.contextPaths.isEmpty() && options.projectContext.enabled)
                 user.metadata.insert("iilocal.context_paths", QJsonArray::fromStringList(initial.targetPaths));
-            if (!compactOnly && !queuedOnly) append(std::move(user));
+            if (forkedSkill) {
+                // A direct command returns its child result without a parent model turn.
+                // Queued input remains pending for the next parent run.
+                { std::lock_guard lock(mutex); active.at(runId).acceptsInput = false; }
+                Message invocation{{}, MessageRole::User, "/" + request.skill + (request.skillArguments.isEmpty() ? QString() : " " + request.skillArguments)};
+                if (!request.prompt.isEmpty()) invocation.text += "\n\n" + request.prompt;
+                invocation.metadata = user.metadata; append(std::move(invocation));
+                const auto& session = lease->session();
+                ToolContext context{session.id, runId, session.workingDirectory, lease->artifactsDirectory(), runToken, {},
+                    quint64(session.compactions.size()), std::make_shared<Session>(session)};
+                context.progress = [&](const QJsonObject& data) { send({EventKind::ToolProgress, runId, request.sessionId, {}, {}, data}); };
+                const auto outcome = options.forkedSkill({std::move(user), request.generation, request.maxTurns, request.contextPaths}, context);
+                result = outcome.result; result.runId = runId; result.sessionId = request.sessionId;
+                Message response{{}, MessageRole::Assistant, result.text}; response.isError = result.status != RunStatus::Completed;
+                response.metadata = {{"iilocal.skill_fork", outcome.execution}};
+                if (response.isError && response.text.isEmpty()) response.text = result.errorMessage.isEmpty() ? enumName(result.status) : result.errorMessage;
+                append(std::move(response));
+            } else if (!compactOnly && !queuedOnly) append(std::move(user));
             else if (compactOnly && lease->session().messages.isEmpty()) throw Error(ErrorCode::InvalidArgument, "Cannot compact an empty session");
             QString lastContextFingerprint;
             bool allowLater = queuedOnly;
-            for (int turn = 1; turn <= request.maxTurns; ++turn) {
+            for (int turn = 1; !forkedSkill && turn <= request.maxTurns; ++turn) {
                 result.turns = compactOnly ? 0 : turn; runToken.throwIfCancelled(); token = beginOperation(runId, runToken);
                 try {
                 if (!compactOnly) {
@@ -237,9 +258,10 @@ public:
                 const auto& session = lease->session();
                 const auto turnRegistry = registry->snapshot();
                 for (const auto& tool : additionalTools()) turnRegistry->add(tool);
-                const auto skillCatalog = discoverSkills(session.workingDirectory, options.skills, token);
+                const auto skillCatalog = detail::executableSkills(session.workingDirectory, options.skills, bool(options.forkedSkill), token);
                 const auto skillContext = skillCatalog.message();
-                if (!skillContext.text.isEmpty()) turnRegistry->add(detail::skillTool(session.workingDirectory, options.skills));
+                if (!skillContext.text.isEmpty()) turnRegistry->add(detail::skillTool(session.workingDirectory, options.skills, options.forkedSkill,
+                    {{}, request.generation, request.maxTurns, request.contextPaths}));
                 for (auto tool : taskToolsFor(session.id, runId, send)) turnRegistry->add(std::move(tool));
                 const bool hasTranscriptTool = !session.compactions.isEmpty();
                 if (hasTranscriptTool) detail::addTranscriptTool(*turnRegistry, session);
@@ -356,7 +378,7 @@ public:
                     send({EventKind::Interrupted, runId, request.sessionId, {}, "Superseded by urgent queued input", {}});
                 }
             }
-            if (result.status != RunStatus::Completed) result.status = RunStatus::TurnLimit;
+            if (!forkedSkill && result.status != RunStatus::Completed) result.status = RunStatus::TurnLimit;
         } catch (const Error& error) { failure(result, error); }
         catch (const std::exception& error) { failure(result, Error(ErrorCode::RuntimeFailure, QString::fromUtf8(error.what()))); }
         catch (...) { failure(result, Error(ErrorCode::RuntimeFailure, "Unknown agent failure")); }
@@ -456,7 +478,7 @@ ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJ
 }
 Session Engine::sessionMetadata(const QString& id) const { return d->store.metadata(id); }
 SkillCatalog Engine::skills(const QString& id, const CancellationToken& token) const {
-    return discoverSkills(d->store.metadata(id).workingDirectory, d->options.skills, token);
+    return detail::executableSkills(d->store.metadata(id).workingDirectory, d->options.skills, bool(d->options.forkedSkill), token);
 }
 ToolResult Engine::runTaskTool(const QString& id, const QString& name, const QJsonObject& args,
     const CancellationToken& token, const EventCallback& callback) const {

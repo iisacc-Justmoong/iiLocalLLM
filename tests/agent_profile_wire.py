@@ -1,4 +1,4 @@
-"""Qualify file profiles through the actual daemon HTTP API and thin IPC CLI."""
+"""Qualify file profiles and isolated skills through the daemon API and thin IPC CLI."""
 import argparse
 import hashlib
 from http.client import HTTPConnection
@@ -19,6 +19,7 @@ def main():
     parser.add_argument("catalog", type=Path)
     parser.add_argument("model")
     parser.add_argument("--report", type=Path)
+    parser.add_argument("--skill-forks", action="store_true")
     args = parser.parse_args()
     daemon, cli, catalog = (p.resolve() for p in (args.daemon, args.cli, args.catalog))
     report = {"daemon": str(daemon), "cli": str(cli), "model": args.model, "passed": False}
@@ -129,6 +130,56 @@ def main():
                 record = transcript.parent.parent.parent / (child["agentId"] + ".json")
                 saved = json.loads(record.read_text())
                 assert saved["profile"]["sha256"] == reader["sha256"] and saved["model"] == args.model
+                if args.skill_forks:
+                    profile.write_text(original)
+                    fork_path = workspace / ".claude/skills/fork-inspect/SKILL.md"
+                    fork_path.parent.mkdir(parents=True)
+                    fork_path.write_text("---\ndescription: Read evidence using a separate reader agent\ncontext: fork\nagent: reader\nmodel: reader-model\n---\n"
+                        "PRIVATE_FORK_INSTRUCTIONS parent=${CLAUDE_SESSION_ID}. Use Read to read $0 now. Return its exact current contents. Never guess.\n")
+                    fork_results = []
+                    report["skill_forks"] = fork_results
+                    for route in ("http", "cli", "model-tool"):
+                        owner = rpc("agent.sessions.create", {"model": args.model, "system": "Use the specifically requested tool to complete the task."})["session_id"]
+                        secret = "FORK_" + secrets.token_hex(8)
+                        (workspace / "fork.txt").write_text(secret)
+                        params = {"session_id": owner, "skill": "fork-inspect", "skill_arguments": "fork.txt", "max_turns": 6,
+                            "options": {"temperature": 0, "max_tokens": 2048}}
+                        if route == "cli":
+                            command_file = private("fork-request", json.dumps({k: v for k, v in params.items() if k != "session_id"}))
+                            proc = subprocess.run([str(cli), "--socket", str(endpoint), "--auth-file", str(auth), "agent", "skills", "run", owner, str(command_file)],
+                                env=env, capture_output=True, text=True, timeout=180)
+                            assert proc.returncode == 0, proc.stderr
+                            run = json.loads(proc.stdout)
+                        else:
+                            if route == "model-tool":
+                                params.pop("skill"); params.pop("skill_arguments")
+                                params["prompt"] = "Call the Skill tool with skill=\"fork-inspect\" and args=\"fork.txt\". Return the child result."
+                            run = rpc("agent.run", params)
+                        report["active_fork"] = {"route": route, "run": run}
+                        assert run["status"] == "completed" and secret in run["text"] and run["session_id"] == owner, run
+                        parent_state = rpc("agent.sessions.get", {"session_id": owner})
+                        parent_messages = parent_state["messages"]
+                        assert not any("PRIVATE_FORK_INSTRUCTIONS" in m["text"] for m in parent_messages)
+                        parent_calls = [c for m in parent_messages for c in m["tool_calls"]]
+                        assert [c["name"] for c in parent_calls] == (["Skill"] if route == "model-tool" else []), parent_calls
+                        jobs = rpc("agent.agents.list", {"session_id": owner})["result"]["agents"]
+                        assert len(jobs) == 1 and jobs[0]["finished"], jobs
+                        child_id = jobs[0]["agentId"]
+                        child_state = rpc("agent.agents.output", {"session_id": owner, "agent_id": child_id})["result"]
+                        assert child_state["status"] == "completed" and child_state["model"] == args.model, child_state
+                        private_record = state / hashlib.sha256(b"society").hexdigest() / "subagents" / (child_id + ".json")
+                        record = json.loads(private_record.read_text())
+                        assert not record["background"] and not record["fork_context"] and "notification_id" not in record
+                        assert record["skill"]["sha256"] == hashlib.sha256(fork_path.read_bytes()).hexdigest()
+                        child_path = private_record.parent / "sessions" / jobs[0]["session_id"] / "transcript.jsonl"
+                        child_messages = [r["message"] for r in map(json.loads, child_path.read_text().splitlines()) if r["type"] == "message"]
+                        loaded = [m for m in child_messages if m.get("metadata", {}).get("iilocal.skill", {}).get("context") == "fork"]
+                        assert len(loaded) == 1 and "parent=" + owner in loaded[0]["text"]
+                        fork_reads = [c for m in child_messages for c in m["tool_calls"] if c["name"] == "Read"]
+                        assert fork_reads and any(m["role"] == "tool" and secret in m["text"] for m in child_messages)
+                        rpc("agent.run", {"session_id": owner, "skill": "fork-inspect"}, bearer=foreign, expected=404)
+                        fork_results.append({"route": route, "run": run, "child": child_state, "actual_reads": len(fork_reads), "isolated": True})
+                    report.pop("active_fork", None)
                 report.update(passed=True, profile=reader, skill_preloaded_once=True, model_alias_resolved=True,
                     source_hash_frozen_on_resume=True, cross_app_isolation=True, observed_reads=len(reads), seconds=round(time.monotonic()-started, 3))
             finally:

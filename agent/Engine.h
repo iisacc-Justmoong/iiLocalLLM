@@ -31,6 +31,7 @@ struct EngineOptions {
     // Invoked outside engine locks, before each model turn and native dispatch.
     // May add live host definitions; duplicates with any other source are errors.
     std::function<QList<Tool>()> additionalToolsProvider;
+    SkillForkExecutor forkedSkill; // Synchronous child execution, supplied by Subagents::attach().
 };
 class IILOCALLLM_EXPORT Engine {
 public:
