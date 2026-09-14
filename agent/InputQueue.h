@@ -21,6 +21,15 @@ public:
     // replay this callback; the transcript must deduplicate the stable ID.
     int deliver(const QString& sessionId, bool includeLater, int limit,
         const std::function<void(const QJsonObject&)>& persist, const CancellationToken& = {}) const;
+    // Preparation runs outside queue.lock, so it may inspect/enqueue/remove input.
+    // A separate delivery lock serializes consumers; prepare must not re-enter deliver.
+    // Persist returns false to end the batch after acknowledging this item.
+    // Withdrawn inputs are skipped before persist. Prepared external effects can
+    // repeat after a crash; persist must still deduplicate the stable input ID.
+    int deliver(const QString& sessionId, bool includeLater, int limit,
+        const std::function<QJsonObject(const QJsonObject&)>& prepare,
+        const std::function<bool(const QJsonObject&,const QJsonObject&)>& persist,
+        const CancellationToken& = {}) const;
 private:
     QString directory_;
     InputQueueOptions options_;

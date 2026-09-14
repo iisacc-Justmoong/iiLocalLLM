@@ -42,6 +42,8 @@ QString eventName(const HookInput& input) {
     case HookKind::SubagentStop:return "SubagentStop";
     case HookKind::BeforeModel:return "BeforeModel";
     case HookKind::AfterModel:return "AfterModel";
+    case HookKind::UserPromptSubmit:return "UserPromptSubmit";
+    case HookKind::SessionStart:return "SessionStart";
     }
     throw Error(ErrorCode::InvalidArgument,"Unknown hook event");
 }
@@ -50,6 +52,7 @@ void merge(HookResult& target,const HookResult& value) {
     if(!value.stopReason.isEmpty())target.stopReason=value.stopReason;
     if(!value.feedback.isEmpty()) {if(!target.feedback.isEmpty())target.feedback+='\n';target.feedback+=value.feedback;}
     if(value.updatedArguments)target.updatedArguments=value.updatedArguments;
+    if(value.initialUserMessage)target.initialUserMessage=value.initialUserMessage;
     if(value.permission) {
         auto priority=[](PermissionBehavior b){return b==PermissionBehavior::Deny?3:b==PermissionBehavior::Ask?2:1;};
         if(!target.permission||priority(value.permission->behavior)>=priority(target.permission->behavior))target.permission=value.permission;
@@ -68,7 +71,7 @@ HookResult response(const QJsonObject& object,const QString& event,bool& suppres
         if(behavior=="passthrough")return;
         result.permission=PermissionDecision{behavior=="allow"?PermissionBehavior::Allow:behavior=="ask"?PermissionBehavior::Ask:PermissionBehavior::Deny,reason};
         result.block=behavior=="deny";
-        if(result.block)result.feedback=reason.isEmpty()?QString("Blocked by command hook"):reason;
+        if(result.block&&event!="SessionStart")result.feedback=reason.isEmpty()?QString("Blocked by command hook"):reason;
     };
     if(object.contains("decision")) {
         const auto decision=string(object["decision"]);require(decision=="approve"||decision=="block","Invalid hook decision");
@@ -78,11 +81,13 @@ HookResult response(const QJsonObject& object,const QString& event,bool& suppres
         require(object["hookSpecificOutput"].isObject(),"hookSpecificOutput must be an object");const auto specific=object["hookSpecificOutput"].toObject();
         require(specific["hookEventName"]==event,"Hook output event does not match input event");
         const bool pre=event=="PreToolUse";
-        keys(specific,pre?QStringList{"hookEventName","permissionDecision","permissionDecisionReason","updatedInput","additionalContext"}
-                         :QStringList{"hookEventName","additionalContext"});
+        auto known=pre?QStringList{"hookEventName","permissionDecision","permissionDecisionReason","updatedInput","additionalContext"}
+                      :QStringList{"hookEventName","additionalContext"};
+        if(event=="SessionStart")known.append("initialUserMessage");keys(specific,known);
         if(specific.contains("permissionDecision"))permission(string(specific["permissionDecision"]),specific.contains("permissionDecisionReason")?string(specific["permissionDecisionReason"]):object["reason"].toString());
         if(specific.contains("updatedInput")) {require(specific["updatedInput"].isObject(),"Hook updatedInput must be an object");if(!result.block)result.updatedArguments=specific["updatedInput"].toObject();}
         if(specific.contains("additionalContext")) {const auto value=string(specific["additionalContext"]);if(!result.feedback.isEmpty())result.feedback+='\n';result.feedback+=value;}
+        if(specific.contains("initialUserMessage"))result.initialUserMessage=string(specific["initialUserMessage"]);
     }
     if(object.contains("systemMessage"))result.diagnostics.append(QJsonObject{{"system_message",object["systemMessage"]}});
     return result;
@@ -104,7 +109,7 @@ public:
         require(!options.workingDirectory.isEmpty()&&QFileInfo(options.workingDirectory).isDir(),"Command hook workspace must exist");
         permits.release(options.maxConcurrentProcesses);keys(settings,{"hooks"});
         require(settings["hooks"].isObject(),"Command hook settings require a hooks object");
-        const QStringList events{"PreToolUse","PostToolUse","PostToolUseFailure","Stop","PreCompact","PostCompact","TaskCreated","TaskCompleted","SubagentStart","SubagentStop","BeforeModel","AfterModel"};
+        const QStringList events{"PreToolUse","PostToolUse","PostToolUseFailure","Stop","PreCompact","PostCompact","TaskCreated","TaskCompleted","SubagentStart","SubagentStop","BeforeModel","AfterModel","UserPromptSubmit","SessionStart"};
         const auto hooks=settings["hooks"].toObject();
         for(auto i=hooks.begin();i!=hooks.end();++i) {
             require(events.contains(i.key()),"Unsupported command hook event: "+i.key(),ErrorCode::RuntimeUnavailable);
@@ -142,6 +147,7 @@ public:
         QString query=input.call.name;
         if(event=="SubagentStart"||event=="SubagentStop")query=input.context["agent_type"].toString();
         if(event=="PreCompact"||event=="PostCompact")query=input.context["trigger"].toString();
+        if(event=="SessionStart")query=input.context["source"].toString();
         if(!entry.matcher.isEmpty()&&entry.matcher!="*") {
             if(entry.literal) {if(!entry.matcher.split('|').contains(query))return false;}
             else if(!entry.regex.match(query).hasMatch())return false;
@@ -175,8 +181,8 @@ public:
             const auto trimmed=stdoutBytes.trimmed();QJsonParseError error;QJsonDocument document;
             if(trimmed.startsWith('{'))document=QJsonDocument::fromJson(trimmed,&error);
             if(document.isObject()&&error.error==QJsonParseError::NoError)result=response(document.object(),event,suppress);
-            else if(outcome.code==2) {result.block=true;result.feedback=stderrText.isEmpty()?QString("Blocked by command hook"):stderrText;}
-            else if(outcome.code==0&&(event=="BeforeModel"||event=="PreCompact"))result.feedback=stdoutText.trimmed();
+            else if(outcome.code==2&&event!="SessionStart") {result.block=true;result.feedback=stderrText.isEmpty()?QString("Blocked by command hook"):stderrText;}
+            else if(outcome.code==0&&QStringList{"BeforeModel","PreCompact","UserPromptSubmit","SessionStart"}.contains(event))result.feedback=stdoutText.trimmed();
             diagnostic["outcome"]=result.block?"blocked":outcome.code==0?"success":"non_blocking_error";
             if(!suppress)diagnostic["stdout"]=stdoutText.left(4096);diagnostic["stderr"]=stderrText.left(4096);
         } catch(const Error& error) {
@@ -205,6 +211,7 @@ public:
         }
         if(event=="Stop"||event=="SubagentStop") {body["last_assistant_message"]=input.text;if(!body.contains("stop_hook_active"))body["stop_hook_active"]=false;}
         if(input.kind==HookKind::BeforeModel)body["prompt"]=input.text;
+        if(input.kind==HookKind::UserPromptSubmit)body["prompt"]=input.text;
         if(input.kind==HookKind::AfterModel)body["response"]=input.text;
         if(input.kind==HookKind::BeforeCompact)body["custom_instructions"]=input.text;
         if(input.kind==HookKind::AfterCompact)body["compact_summary"]=input.text;

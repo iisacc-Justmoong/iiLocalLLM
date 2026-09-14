@@ -62,8 +62,10 @@ public:
         require(!QFileInfo(QDir(path).filePath("queue.lock")).isSymLink(), "Input queue lock is a symlink", ErrorCode::StorageFailure);
         return path;
     }
-    LockedState(const QString& root, const QString& id, InputQueueOptions o, const CancellationToken& token)
-        : path(sessionPath(root, id)), session(id), lock(QDir(path).filePath("queue.lock")), options(o) {
+    LockedState(const QString& root, const QString& id, InputQueueOptions o, const CancellationToken& token,
+        const QString& lockName = "queue.lock")
+        : path(sessionPath(root, id)), session(id), lock(QDir(path).filePath(lockName)), options(o) {
+        require(!QFileInfo(QDir(path).filePath(lockName)).isSymLink(),"Input queue lock is a symlink",ErrorCode::StorageFailure);
         token.throwIfCancelled(); lock.setStaleLockTime(0); const auto start = std::chrono::steady_clock::now();
         while (!lock.tryLock(0)) {
             token.throwIfCancelled(); require(lock.error() == QLockFile::LockFailedError, "Cannot lock input queue", ErrorCode::StorageFailure);
@@ -149,17 +151,33 @@ QJsonObject InputQueue::remove(const QString& id, const QString& inputId, const 
 }
 int InputQueue::deliver(const QString& id, bool includeLater, int limit,
     const std::function<void(const QJsonObject&)>& persist, const CancellationToken& token) const {
-    require(bool(persist) && limit >= 1 && limit <= 256, "Invalid input delivery request"); LockedState file(directory_, id, options_, token);
-    auto state = file.read(); int delivered = 0; QString kind;
-    for (const auto& input : state.ordered()) {
-        if ((!includeLater && priority(input) == 2) || delivered == limit) break;
+    require(bool(persist),"Invalid input delivery callback");
+    return deliver(id,includeLater,limit,[](const QJsonObject&){return QJsonObject{};},
+        [&](const QJsonObject& input,const QJsonObject&){persist(input);return true;},token);
+}
+int InputQueue::deliver(const QString& id,bool includeLater,int limit,
+    const std::function<QJsonObject(const QJsonObject&)>& prepare,
+    const std::function<bool(const QJsonObject&,const QJsonObject&)>& persist,const CancellationToken& token) const {
+    require(bool(prepare)&&bool(persist)&&limit>=1&&limit<=256,"Invalid input delivery request");
+    LockedState delivery(directory_,id,options_,token,"delivery.lock");
+    QList<QJsonObject> selected;
+    {LockedState file(directory_,id,options_,token);selected=file.read().ordered();}
+    int delivered=0,attempted=0;QString kind;
+    for(const auto& input:selected) {
+        if ((!includeLater && priority(input) == 2) || attempted == limit) break;
         if (kind.isEmpty()) kind = input["kind"].toString();
         if (input["kind"] != kind) continue;
-        token.throwIfCancelled(); persist(input);
+        ++attempted;token.throwIfCancelled();const auto prepared=prepare(input);token.throwIfCancelled();
+        LockedState file(directory_,id,options_,token);auto state=file.read();
+        const auto current=std::find_if(state.inputs.begin(),state.inputs.end(),[&](const auto& item){return item["id"]==input["id"];});
+        if(current==state.inputs.end())continue;
+        require(*current==input,"Queued input changed during preparation",ErrorCode::ProtocolError);
+        token.throwIfCancelled();const auto proceed=persist(input,prepared);
         state.inputs.removeIf([&](const auto& item) { return item["id"] == input["id"]; });
         // After persistence the acknowledgement is not cancelled midway; a failed
         // write leaves the durable input pending for ID-based transcript recovery.
         file.write(state, {}); ++delivered;
+        if(!proceed)break;
     }
     return delivered;
 }

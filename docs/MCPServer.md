@@ -132,3 +132,5 @@ Engine과 모델을 설정하면 `iiLocalLLM.agent.inputs.enqueue/list/remove/ru
 0.18.0의 스킬 allowed-tools와 인자 권한 규칙은 [Permissions.md](Permissions.md)를 따른다. API·IPC·MCP 입력은 allowed_tools/prompt_metadata 같은 호스트 전용 권한·출처 필드를 받지 않는다. 모델 Skill의 PermissionRequested 이벤트에는 고정된 permission_preview가 있다. 원격 권한 응답 중개는 아직 지원하지 않는다.
 
 0.21.0의 `--hooks FILE`은 직접 tools/call과 선택적 네이티브 에이전트에 C++ 명령 훅을 연결한다. tools/list의 `_meta["iisacc/hooksEnabled"]`로 활성 여부를 표시하고 progressToken이 있으면 `notifications/progress`의 `_meta["iisacc/agentEvent"]`에 hook 진단을 전달한다. 호스트 설정은 API로 변경할 수 없다. [CommandHooks.md](CommandHooks.md)를 참조한다.
+
+0.22의 네이티브 에이전트 run/inputs.run도 UserPromptSubmit·SessionStart를 사용한다. 차단·중단은 isError=true와 structuredContent의 RunResult로 반환하고 progressToken이 있으면 기존 hook 진단을 보낸다. 직접 Write 같은 도구 호출은 세션 활성화나 사용자 입력 제출로 간주하지 않는다. 새 연결은 기존 대화를 자동 재개하지 않는다. [InputLifecycle.md](InputLifecycle.md)를 따른다.

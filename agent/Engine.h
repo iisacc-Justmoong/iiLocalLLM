@@ -32,6 +32,7 @@ struct EngineOptions {
     // May add live host definitions; duplicates with any other source are errors.
     std::function<QList<Tool>()> additionalToolsProvider;
     SkillForkExecutor forkedSkill; // Synchronous child execution, supplied by Subagents::attach().
+    bool sessionStartHooks = true; // Main conversations; delegated engines use SubagentStart instead.
 };
 class IILOCALLLM_EXPORT Engine {
 public:

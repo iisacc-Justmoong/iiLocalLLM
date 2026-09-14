@@ -98,3 +98,5 @@ MCP `iiLocalLLM.agent.compact`는 현재 연결의 기존 대화만 요약한다
 - 실제 모델의 정확한 요약·응답 여부는 별도 추론 테스트로 검증한다. 전체 하네스 호환 완료를 의미하지 않는다.
 
 이 기능을 도입한 버전은 공개 구조체와 Model 가상 인터페이스 변경을 반영한 SDK/SOVERSION 0.6.0/0.6이다. 현재 버전은 README를 참조하고 새 헤더와 라이브러리로 함께 다시 빌드한다. 테스트 및 설치 검증 결과는 Verification.md에 기록한다.
+
+0.22의 모델 문맥은 UserPromptSubmit에서 차단한 원본 입력을 제외하고 허용한 추가 문맥을 원래 메시지 ID의 복사본에 합친다. 요약 입력과 최신 사용자 입력 선택도 같은 판정을 사용하며 SessionStart 문맥을 최신 사용자 지시로 고정하지 않는다. 압축 체크포인트 저장 뒤 SessionStart(source=compact)를 실행한다. 이 훅이나 저장이 실패해도 이미 저장한 체크포인트는 유지되므로 재시도 전 현재 세션을 확인한다. [InputLifecycle.md](InputLifecycle.md)를 참조한다.

@@ -92,3 +92,5 @@
 0.20.0은 추가 작업 디렉터리를 C++ 파일 도구·Bash 리다이렉션·자식 정책·CLI·API·MCP에 연결한다. 출처별 canonical 바인딩과 비공개 호스트 파일 보호를 포함한다. 원격 디렉터리 변경·추가 instruction 로딩·전체 검색/BashSecurity는 남아 있으며 전체 목표는 partial이다. [WorkingDirectories.md](WorkingDirectories.md)를 참조한다.
 
 0.21.0은 명시적 호스트 설정을 받는 데스크톱 POSIX C++ 명령 훅을 추가한다. 도구·모델·Stop·압축·Task·Subagent 콜백, JSON 입력/결과·차단·중단·입력 변경·일회 권한·병렬/once·취소를 API/CLI/MCP에 연결한다. HTTP/prompt/agent/async 훅, 나머지 생명주기와 스킬·에이전트·플러그인 설정 병합은 남아 있어 hooks 및 전체 목표는 partial이다. [CommandHooks.md](CommandHooks.md)를 따른다.
+
+0.22.0은 C++ UserPromptSubmit·SessionStart, 원본 판정 보존·모델 문맥 제외, 큐 준비/확인 분리·재진입·취소·확인 실패 복구, 사용자 스킬과 내부 자식 지시 구분을 API/CLI/MCP에 연결한다. SessionEnd·clear·watchPaths·PermissionRequest/Denied 및 나머지 훅 실행기와 전체 앱 검증은 남아 있다. hooks와 전체 목표는 partial이며 [InputLifecycle.md](InputLifecycle.md)를 따른다.

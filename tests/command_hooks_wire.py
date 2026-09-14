@@ -61,6 +61,24 @@ if event == "PreToolUse":
     if value["tool_input"]["path"] == "rewrite.txt":
         result["updatedInput"] = {"path": "rewritten.txt", "content": "REWRITTEN"}
     print(json.dumps({"hookSpecificOutput": result}))
+elif event == "SessionStart":
+    initial = root / "initial.txt"
+    fields = {"hookEventName": event, "additionalContext": "SESSION_START_CONTEXT"}
+    if initial.exists():
+        fields["initialUserMessage"] = initial.read_text()
+    print(json.dumps({"continue": False, "decision": "block", "reason": "IGNORED_START_ERROR",
+        "hookSpecificOutput": fields}))
+elif event == "UserPromptSubmit":
+    if "BLOCK_USER_PROMPT" in value["prompt"]:
+        print("USER_PROMPT_DENIED", file=sys.stderr)
+        sys.exit(2)
+    if "STOP_USER_PROMPT" in value["prompt"]:
+        print(json.dumps({"continue": False, "stopReason": "USER_PROMPT_STOPPED"}))
+    else:
+        context = "USER_PROMPT_CONTEXT"
+        if "WRITE_FROM_HOOK_CONTEXT" in value["prompt"]:
+            context = (root / "dynamic-context.txt").read_text()
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "additionalContext": context}}))
 elif event == "TaskCreated" and (root / "task-block").exists():
     print("TASK_BLOCK", file=sys.stderr)
     sys.exit(2)
@@ -70,14 +88,14 @@ elif event == "Stop" and (root / "stop").exists():
         command = shlex.join([sys.executable, "-B", script])
         settings = {"hooks": {event: [{"matcher": "Write" if "ToolUse" in event else "*",
             "hooks": [{"type": "command", "command": command, "timeout": 10}]}]
-            for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure", "TaskCreated", "TaskCompleted", "Stop")}}
+            for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure", "TaskCreated", "TaskCompleted", "Stop", "SessionStart", "UserPromptSubmit")}}
         hooks = private("hooks", settings)
         common_daemon = [daemon, "--socket", str(root / "s"), "--http-port", "0", "--models-root", str(root / "models"),
             "--agent-workspace", str(workspace), "--agent-state", str(root / "api-state"), "--agent-credentials", credentials,
             "--agent-no-apps", "--agent-no-background", "--agent-no-skills", "--agent-no-subagents", "--no-agent-profiles"]
         common_mcp = [mcp, "--workspace", str(workspace), "--no-apps", "--no-background", "--no-agent-profiles"]
         invalid = 0
-        for value in ([], {}, {"hooks": {"SessionStart": []}}, {"hooks": {"PreToolUse": [{"hooks": [{"type": "http"}]}]}},
+        for value in ([], {}, {"hooks": {"SessionEnd": []}}, {"hooks": {"PreToolUse": [{"hooks": [{"type": "http"}]}]}},
                       {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "true", "async": True}]}]}},
                       {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": 1}]}]}}):
             bad = private("invalid", value)
@@ -179,6 +197,37 @@ elif event == "Stop" and (root / "stop").exists():
             completed = rpc("agent.tasks.update", {"session_id": owner, "taskId": task["result"]["task"]["id"], "status": "completed"})
             assert not completed["is_error"], completed
             report["api"] = {"hooks_enabled": True, "cli_matches": True, "authentication": True, "task_commit_veto": True, "task_completed": True}
+            for prompt, expected in (("BLOCK_USER_PROMPT", "failed"), ("STOP_USER_PROMPT", "cancelled")):
+                outcome = rpc("agent.run", {"session_id": owner, "prompt": prompt})
+                assert outcome["status"] == expected and outcome["usage"]["generated_tokens"] == 0, outcome
+                assert "USER_PROMPT_" in outcome["error_message"], outcome
+            queued = rpc("agent.inputs.enqueue", {"session_id": owner, "text": "BLOCK_USER_PROMPT queued"})["input"]
+            outcome = rpc("agent.inputs.run", {"session_id": owner})
+            assert outcome["status"] == "failed" and "USER_PROMPT_DENIED" in outcome["error_message"], outcome
+            assert rpc("agent.inputs.list", {"session_id": owner})["count"] == 0
+            history = rpc("agent.sessions.get", {"session_id": owner})["messages"]
+            records = [m for m in history if m.get("metadata", {}).get("iilocal.user_prompt_hook")]
+            assert [m["metadata"]["iilocal.user_prompt_hook"]["disposition"] for m in records] == ["blocked", "stopped", "blocked"], records
+            assert records[-1]["id"] == queued["id"] and not any(m["tool_calls"] for m in history)
+            rpc("agent.run", {"session_id": owner, "prompt": "BLOCK_USER_PROMPT", "userPrompt": False}, expected=400)
+            parameters = private("cli-run", {"session_id": owner, "prompt": "BLOCK_USER_PROMPT from CLI"})
+            cli_run = subprocess.run([cli, "--socket", str(root / "s"), "--auth-file", auth, "rpc", "agent.run", parameters],
+                env=env, text=True, capture_output=True, timeout=15)
+            cli_outcome = json.loads(cli_run.stdout)
+            assert cli_outcome["status"] == "failed" and "USER_PROMPT_DENIED" in cli_outcome["error_message"], cli_run
+            report["api_input_lifecycle"] = {"direct_block": True, "direct_stop": True, "queued_acknowledgement": True,
+                "saved_dispositions": True, "remote_bypass_rejected": True, "cli_block": True}
+            (root / "initial.txt").write_text("BLOCK_USER_PROMPT initial message")
+            initial_owner = rpc("agent.sessions.create", {"model": args.model})["session_id"]
+            outcome = rpc("agent.run", {"session_id": initial_owner, "prompt": "Wait for initial host context"})
+            assert outcome["status"] == "failed" and "USER_PROMPT_DENIED" in outcome["error_message"], outcome
+            assert outcome["usage"]["generated_tokens"] == 0
+            initial_history = rpc("agent.sessions.get", {"session_id": initial_owner})["messages"]
+            initial_inputs = [m for m in initial_history if m.get("metadata", {}).get("iilocal.input")]
+            assert len(initial_inputs) == 1 and initial_inputs[0]["text"] == "BLOCK_USER_PROMPT initial message", initial_history
+            assert rpc("agent.inputs.list", {"session_id": initial_owner})["count"] == 0
+            (root / "initial.txt").unlink()
+            report["api_input_lifecycle"]["initial_user_message_uses_queue_and_prompt_hook"] = True
             if args.catalog:
                 results = []
                 for allowed in (True, False):
@@ -191,6 +240,10 @@ elif event == "Stop" and (root / "stop").exists():
                         "max_turns": 4, "options": {"temperature": 0, "max_tokens": 1024}})
                     assert outcome["status"] == "completed", outcome
                     history = rpc("agent.sessions.get", {"session_id": session})["messages"]
+                    prompt_records = [m for m in history if m.get("metadata", {}).get("iilocal.user_prompt_hook")]
+                    assert len(prompt_records) == 1 and prompt_records[0]["metadata"]["iilocal.user_prompt_hook"]["context"] == "USER_PROMPT_CONTEXT", history
+                    starts = [m for m in history if m.get("metadata", {}).get("iilocal.session_start")]
+                    assert len(starts) == 1 and starts[0]["text"] == "SESSION_START_CONTEXT", starts
                     calls = [c for m in history for c in m["tool_calls"] if c["name"] == "Write"]
                     tool_results = [m for m in history if m["role"] == "tool" and m["tool_call_id"] in {c["id"] for c in calls}]
                     assert calls and len(calls) == len(tool_results), history
@@ -207,8 +260,27 @@ elif event == "Stop" and (root / "stop").exists():
                 assert stopped["status"] == "cancelled" and "HOST_STOP" in json.dumps(stopped), stopped
                 (root / "stop").unlink()
                 report["model_results"] = results; report["model_stop"] = stopped
+                session = rpc("agent.sessions.create", {"model": args.model})["session_id"]
+                content = "CONTEXT_" + secrets.token_hex(16)
+                (root / "dynamic-context.txt").write_text('Write path="hook-context.txt", content="' + content + '". Do not add a newline.')
+                outcome = rpc("agent.run", {"session_id": session,
+                    "prompt": "WRITE_FROM_HOOK_CONTEXT: Use the host-provided UserPromptSubmit context to call Write once with its exact path and content, then return DONE.",
+                    "max_turns": 4, "options": {"temperature": 0, "max_tokens": 1024}})
+                assert outcome["status"] == "completed" and (workspace / "hook-context.txt").read_text() == content, outcome
+                report["model_input_context"] = {"passed": True, "outcome": outcome, "content": content}
 
-        mcp_flags = ["--hooks", hooks, "--permission-settings", policy]
+        with server("api-resume", common_daemon + ["--agent-hooks", hooks, "--agent-permission-settings", policy],
+                    r"iiLocalLLM HTTP: http://127\.0\.0\.1:(\d+)") as match:
+            port = int(match[1])
+            outcome = rpc("agent.run", {"session_id": owner, "prompt": "BLOCK_USER_PROMPT after resume"})
+            assert outcome["status"] == "failed" and "USER_PROMPT_DENIED" in outcome["error_message"], outcome
+            events = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]
+            sources = [e["source"] for e in events if e["hook_event_name"] == "SessionStart" and e["session_id"] == owner]
+            assert sources == ["startup", "resume"], sources
+            report["api_input_lifecycle"]["activation_resume_once"] = True
+
+        mcp_flags = ["--hooks", hooks, "--permission-settings", policy, "--model", args.model, "--models", str(root / "models"),
+                     "--no-subagents", "--no-skills", "--allow", "iiLocalLLM.agent.inputs.*"]
         with server("mcp", common_mcp + mcp_flags + ["--http-port", "0", "--credentials", credentials, "--state", str(root / "mcp-state")],
                     r'\{"endpoint":"([^"\n]+)"\}') as match:
             url = urlsplit(match[1])
@@ -220,13 +292,21 @@ elif event == "Stop" and (root / "stop").exists():
             listed = post(url.port, "/mcp", {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, session=identity)[1]
             assert all(t["_meta"]["iisacc/hooksEnabled"] for t in listed["result"]["tools"])
 
-            def call(path, content="VALUE"):
+            def call_tool(name, arguments):
                 status, data, _, frames = post(url.port, "/mcp", {"jsonrpc": "2.0", "id": secrets.token_hex(8), "method": "tools/call",
-                    "params": {"name": "Write", "arguments": {"path": path, "content": content}, "_meta": {"progressToken": "hooks-test"}}}, session=identity)
+                    "params": {"name": name, "arguments": arguments, "_meta": {"progressToken": "hooks-test"}}}, session=identity)
                 assert status == 200, data
                 progress = [f for f in frames if f.get("method") == "notifications/progress"]
                 assert any(f["params"].get("_meta", {}).get("iisacc/agentEvent", {}).get("event") == "hook" for f in progress), frames
                 return data["result"]
+
+            def call(path, content="VALUE"):
+                return call_tool("Write", {"path": path, "content": content})
+
+            for prompt, expected in (("BLOCK_USER_PROMPT MCP", "failed"), ("STOP_USER_PROMPT MCP", "cancelled")):
+                outcome = call_tool("iiLocalLLM.agent.run", {"prompt": prompt})
+                assert outcome["isError"] and outcome["structuredContent"]["status"] == expected, outcome
+                assert "USER_PROMPT_" in outcome["structuredContent"]["error_message"], outcome
 
             assert not call("rewrite.txt").get("isError")
             assert not (workspace / "rewrite.txt").exists() and (workspace / "rewritten.txt").read_text() == "REWRITTEN"
@@ -239,7 +319,8 @@ elif event == "Stop" and (root / "stop").exists():
             assert not call("frozen.txt").get("isError") and (workspace / "frozen.txt").read_text() == "VALUE"
             Path(hooks).write_text(json.dumps(settings))
             assert post(url.port, "/mcp", initialize, other, identity)[0] == 404
-            report["mcp_http"] = {"rewrite": True, "deny_ask_precedence": True, "block": True, "hook_progress": True, "frozen_config": True}
+            report["mcp_http"] = {"rewrite": True, "deny_ask_precedence": True, "block": True, "hook_progress": True,
+                "frozen_config": True, "user_prompt_block_stop": True}
 
         if args.official_stdio:
             from mcp import ClientSession, StdioServerParameters
@@ -250,13 +331,16 @@ elif event == "Stop" and (root / "stop").exists():
                 async with stdio_client(parameters) as (reader, writer):
                     async with ClientSession(reader, writer) as session:
                         await session.initialize()
+                        for prompt in ("BLOCK_USER_PROMPT STDIO", "STOP_USER_PROMPT STDIO"):
+                            denied = await session.call_tool("iiLocalLLM.agent.run", {"prompt": prompt})
+                            assert denied.isError and "USER_PROMPT_" in denied.structuredContent["error_message"], denied
                         result = await session.call_tool("Write", {"path": "stdio.txt", "content": "OFFICIAL"})
                         assert not result.isError and (workspace / "stdio.txt").read_text() == "OFFICIAL"
                         (root / "block").touch()
                         result = await session.call_tool("Write", {"path": "stdio-blocked.txt", "content": "NO"})
                         assert result.isError and not (workspace / "stdio-blocked.txt").exists()
                         (root / "block").unlink()
-                report["official_mcp_stdio"] = {"write": True, "block": True}
+                report["official_mcp_stdio"] = {"write": True, "block": True, "user_prompt_block_stop": True}
 
             asyncio.run(official())
         events = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]

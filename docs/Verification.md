@@ -1,5 +1,38 @@
 # 구현 검증 기록
 
+## 2026-09-15 C++ 사용자 입력·세션 시작 (0.22.0)
+
+UserPromptSubmit과 SessionStart를 직접 입력·사용자 스킬·입력 큐·활성화·재개·압축에 연결했다. 차단·중단 판정을 원본에 저장하고 일반 모델 문맥에서의 적용을 구분한다. 큐의 준비와 저장/확인을 분리하여 콜백의 큐 조회·추가·철회, 긴급 입력 취소와 저장 후 확인 실패 복구를 지원한다. 기존 Qt/C++ 실행기를 사용하며 새 생산 의존성은 없다. [InputLifecycle.md](InputLifecycle.md)에 상세 계약과 남은 범위를 기록한다.
+
+| 검증 경계 | 최종 관측 |
+|---|---|
+| Release 전체, inference 라벨 제외 | 52/52, 75.23초 |
+| ASan·UBSan, llama 비활성 Debug | 50/50, 100.66초; 계측 오류 보고 없음 |
+| 별도 설치 소비자 | 20/20, 16.22초 |
+| 실제 Qwen3 8B | 소스·설치본 각각 허용 Write·도구 차단·Stop 중단·훅 문맥의 임의 값으로 Write 통과 |
+| API·IPC CLI·MCP HTTP·공식 SDK stdio | 소스·설치본에서 사용자 입력 차단/중단과 명령 진단, 기존 도구 권한·인증 경계 통과 |
+| API 입력/세션 생명주기 | 큐 확인·원본 판정·초기 입력의 큐/제출 훅 적용·최초 활성화 1회·호스트 재시작 resume 확인 |
+| 잘못된 호스트 설정 | 소스·설치본 각각 16개 모델 초기화 전 거부 |
+| 설치/ABI | 공개 헤더 40개·문서·카탈로그·라이선스 일치, 0.22 설치 경로 로딩 |
+
+TDD 최초 실행은 새 생명주기 검사 4개가 실패했다(`input-lifecycle-red.log`). 준비/저장 분리 뒤 Release 큐 경로에서 임시 QJsonObject의 QJsonValueRef 수명으로 충돌하는 문제를 재현했고 value()로 값을 소유하도록 수정했다(`input-lifecycle-target.log`). 해당 충돌은 초기 ASan 단독 실행에서는 재현되지 않았다. 최종 Release·ASan 전체 결과로 수정 후 동작을 따로 확인했다. 압축 fixture의 짧은 대화는 요약 안내문보다 작아 정상적으로 축소를 거부했으므로 충분한 기존 이력을 제공하도록 고쳤다.
+
+관련 검사 8개 묶음은 15.72초에 통과했다. 그 뒤 최초 Release 전체는 52/52, 103.30초에 통과했으나 최종 검토에서 SessionStart 초기 입력이 더 작은 Engine 상한을 우회하는 문제를 찾았다. 32자 상한에 33자 초기 입력을 넣는 실패를 먼저 재현하고, 게시 전에 maxInputCharacters를 검사하도록 수정했다(`input-lifecycle-limit-red.log`). 이전 전체 로그는 `input-lifecycle-release-before-limit.log/xml`에 보존했다. 모든 빌드 종료 뒤 현재 최종본의 전체 검사를 직렬로 다시 통과했다. C·C++ ASan/UBSan은 malloc_context_size=0 및 halt_on_error=1:print_stacktrace=1 조건이다.
+
+상한 수정 뒤 최초 전체 실행은 51/52, 77.39초였으며 discovery_mcp_stdio의 자식 프로세스가 dyld Allocator.cpp allocated() assertion으로 종료됐다. 같은 바이너리의 단독 재실행은 통과했다. 실패 로그/JUnit은 input-lifecycle-release-dyld-failure에 보존했고 이후 최종 전체 실행을 별도로 확인했다. 로더 오류의 원인을 수정했다고 주장하지 않는다.
+
+C++ 검사는 원문 차단/중단의 차이, 차단된 경로의 지침 제외, 저장한 입력 판정의 재사용, 8개 혼합 소비자의 중복 없는 전달, 준비 중 게시/철회/취소, 긴급 입력 후 재준비, 입력 확인 뒤 배치 중단, 사용자 스킬의 원래 slash 인자, 자식의 SubagentStart와 주 대화 시작 구분, 활성화/재개/압축과 분기를 검사한다. 자식·압축 검사는 결정적인 Model 대역이며 실제 모델 전체 자식 워크플로 검증과 구분한다.
+
+실제 명령 wire 검사는 API에서 차단/중단의 generated_tokens=0, 원본 disposition, 큐 확인, 원격 userPrompt 우회 거부, CLI 차단 결과를 확인했다. SessionStart의 continue:false와 block reason은 거부권/모델 문맥으로 적용하지 않고 additionalContext만 저장했다. initialUserMessage는 큐로 전달하여 다시 UserPromptSubmit에서 차단·확인했으며, 호스트 재시작 후 동일 세션은 startup→resume 각 1회를 기록했다. MCP HTTP와 공식 Python SDK 1.26.0 stdio도 입력 차단/중단을 구조화 오류로 받았다. 이 경로는 실제 모델 생성 이전에 끝나며 아래 추론 실행과 구분한다.
+
+Qwen3의 허용/거부 Write 호출 수는 소스 1/1, 설치본 1/1이다. call ID와 도구 결과, 허용된 파일 바이트와 차단된 파일 부재를 대조했다. 추가로 사용자 프롬프트에 없는 임의 문자열을 UserPromptSubmit의 추가 문맥으로만 제공하고 실제 Write의 파일 바이트가 일치하는지 확인했다. 모델 응답 뒤 HOST_STOP 중단도 각각 통과했다.
+
+모델은 Qwen3 8B Q4_K_M, 5,027,783,488바이트, SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`이다. 가중치 해시를 다시 확인했다. 컨텍스트 8192·temperature 0·최대 출력 1024(Stop은 64), enable_thinking=false, tool_grammar=false 조건이다. 무결성 검증을 포함한 API 시작은 소스 53.317초·설치본 53.611초이다. 이 결과로 다른 모델·플랫폼이나 장기 부하를 검증했다고 간주하지 않는다.
+
+설치 prefix는 `build/input-lifecycle-stage`, 소비자는 `build/input-lifecycle-consumer/build`이다. 소스/설치 라이브러리 SHA-256 `079f1b245b9b5594861325c8643d6cde5d1284648243c4f46b5d65d71addb0fe`, Mach-O UUID `223D1222-A030-3DA9-A017-95167581F64E`가 일치한다. CLI·daemon·MCP 버전은 0.22.0이며 실제 설치 라이브러리 로딩과 얇은 CLI의 추론 라이브러리 비연결을 확인했다. daemon/MCP의 CMake 설치 RPATH 변경을 복사본에 적용하여 바이트를 대조하고 공개 헤더·문서·카탈로그·라이선스 및 내부 C 심볼 비공개를 검사했다.
+
+최종 증거는 `build/input-lifecycle-verification.json`, `input-lifecycle-linkage.json`, 소스·설치 native JSON과 각 log/JUnit이다. 원격 커밋/푸시는 `input-lifecycle-publication.json`에 별도 기록한다. SessionEnd·clear·watchPaths·PermissionRequest/Denied, 나머지 훅 실행기·전체 설정 병합·앱/플랫폼 검증은 남아 있어 전체 목표는 partial이다. iPhone 제외 지시와 기존 사용자 daemon을 유지하며 이 SDK 단계에서 Society·Dreamscapes를 다시 패키징하지 않았다.
+
 ## 2026-09-15 C++ 외부 명령 훅 (0.21.0)
 
 명시적 호스트 설정의 command 훅을 도구·모델·Stop·압축·Task·Subagent 콜백에 연결했다. JSON stdin, 입력 재검증, 호출 한 번의 권한 후보, 차단·중단, 병렬 실행·세션별 once, 취소·프로세스 정리·진단을 C++로 구현했다. daemon의 `--agent-hooks`, MCP의 `--hooks` 및 API·IPC CLI 조회/이벤트를 지원한다. 새 생산 의존성 없이 Qt Core와 기존 실행기를 재사용하며 Python은 검증에만 사용한다. [CommandHooks.md](CommandHooks.md)에 지원 범위와 참조 차이를 기록한다.

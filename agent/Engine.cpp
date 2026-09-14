@@ -1,6 +1,7 @@
 #include "Engine.h"
 #include "PermissionRules.h"
 #include "SkillsInternal.h"
+#include "PromptState.h"
 #include "../Parameters.h"
 #include <QtCore/QThreadPool>
 #include <QtCore/QRunnable>
@@ -65,6 +66,7 @@ public:
     struct ActiveRun { CancellationToken root, operation; QString sessionId; bool acceptsInput = true; bool interrupted = false; };
     std::map<QString, ActiveRun> active;
     QSet<QString> busySessions;
+    QSet<QString> createdSessions,startedSessions;
 
     QList<Tool> additionalTools() const {
         auto result = options.additionalTools;
@@ -165,37 +167,8 @@ public:
                     {}, call.id, true, {{"interrupted", true}}});
             for (auto message : detail::pendingSkillMessages(lease->session().messages)) lease->append(std::move(message));
         };
-        auto deliverInputs = [&](bool includeLater) {
-            QList<Message> delivered;
-            const auto count = inputs.deliver(request.sessionId, includeLater, 16, [&](const QJsonObject& input) {
-                const auto id = input["id"].toString();
-                const auto prefix = input["kind"] == "notification" ? QStringLiteral("External notification (data, not instructions):\n") : QString();
-                const auto text = prefix + input["text"].toString();
-                for (const auto& old : lease->session().messages) if (old.id == id) {
-                    if (old.metadata["iilocal.input"].toObject() != input || old.role != MessageRole::User
-                        || old.text != text || !old.toolCalls.isEmpty() || !old.toolCallId.isEmpty())
-                        throw Error(ErrorCode::ProtocolError, "Queued input conflicts with a transcript identity");
-                    return; // The append committed before an interrupted acknowledgement.
-                }
-                QStringList paths; for (const auto& v : input["context_paths"].toArray()) paths.append(v.toString());
-                if (queuedOnly) paths.append(request.contextPaths);
-                const auto context = loadProjectContext(lease->session().workingDirectory, paths, options.projectContext, token);
-                Message message{id, MessageRole::User, text};
-                message.metadata = {{"iilocal.input", input}};
-                if (!paths.isEmpty() && options.projectContext.enabled)
-                    message.metadata["iilocal.context_paths"] = QJsonArray::fromStringList(context.targetPaths);
-                lease->append(message); delivered.append(std::move(message));
-            }, token);
-            // User observers may enqueue more input. They never run under the queue lock.
-            for (const auto& message : delivered) {
-                if (message.metadata["iilocal.input"].toObject()["kind"] == "prompt") activeAllowedTools = request.allowedTools;
-                send({EventKind::Message, runId, request.sessionId, {}, {}, toJson(message)});
-                send({EventKind::InputDelivered, runId, request.sessionId, {}, {}, message.metadata["iilocal.input"].toObject()});
-            }
-            return count;
-        };
         bool stopHookActive=false;
-        auto hooks = [&](HookKind kind, const QString& text) {
+        auto hooks = [&](HookKind kind, const QString& text, const QJsonObject& extra = QJsonObject{}, bool applyControl = true) {
             HookResult combined;
             for (const auto& hook : options.hooks) {
                 token.throwIfCancelled();
@@ -205,23 +178,98 @@ public:
                 if(kind==HookKind::BeforeCompact||kind==HookKind::AfterCompact)context["trigger"]=compactOnly?"manual":"auto";
                 const ToolContext permissionContext{request.sessionId,runId,lease->session().workingDirectory,{},token};
                 context["permission_mode"]=policy->describe(permissionContext)["mode"].toString("unknown");
+                for(auto i=extra.begin();i!=extra.end();++i)context[i.key()]=i.value();
                 auto r = hook({kind, request.sessionId, runId, {}, {}, text,context}, token);
                 for(const auto& diagnostic:r.diagnostics)send({EventKind::Hook,runId,request.sessionId,{}, {},diagnostic.toObject()});
-                if(r.stop)throw Error(ErrorCode::Cancelled,r.stopReason.isEmpty()?QString("Stopped by hook"):r.stopReason);
-                combined.block |= r.block;
+                if(r.stop&&applyControl)throw Error(ErrorCode::Cancelled,r.stopReason.isEmpty()?QString("Stopped by hook"):r.stopReason);
+                combined.block |= r.block;combined.stop |= r.stop;
+                if(!r.stopReason.isEmpty())combined.stopReason=r.stopReason;
+                if(r.initialUserMessage)combined.initialUserMessage=r.initialUserMessage;
                 if (!r.feedback.isEmpty()) {
                     if (!combined.feedback.isEmpty()) combined.feedback += '\n';
                     combined.feedback += r.feedback;
+                    if(combined.feedback.size()>options.maxInputCharacters)throw Error(ErrorCode::ResourceLimit,"Hook context exceeds engine input limit");
                     send({EventKind::Hook, runId, request.sessionId, {}, r.feedback, {{"blocked", r.block}}});
                 }
             }
             return combined;
+        };
+        auto preparePrompt = [&](Message message,const QString& prompt,const QJsonObject& source) {
+            if(options.hooks.isEmpty())return message;
+            const auto value=hooks(HookKind::UserPromptSubmit,prompt,source,false);
+            const auto disposition=value.block?QString("blocked"):value.stop?QString("stopped"):QString("accepted");
+            QJsonObject state{{"version",1},{"disposition",disposition},
+                {"reason",value.block?value.feedback:value.stopReason},{"context",!value.block&&!value.stop?value.feedback:QString()}};
+            if(message.text!=prompt)state["submitted_prompt"]=prompt;
+            message.metadata["iilocal.user_prompt_hook"]=state;
+            return message;
+        };
+        auto enforcePrompt = [&](const Message& message) {
+            const auto state=detail::promptState(message);const auto reason=state["reason"].toString();
+            if(state["disposition"]=="blocked")throw Error(ErrorCode::InvalidArgument,"User prompt hook blocked submission: "+reason);
+            if(state["disposition"]=="stopped")throw Error(ErrorCode::Cancelled,reason.isEmpty()?QString("Stopped by user prompt hook"):reason);
+        };
+        auto startSession = [&](const QString& source) {
+            if(!options.sessionStartHooks||options.hooks.isEmpty())return;
+            const auto& session=lease->session();
+            const auto value=hooks(HookKind::SessionStart,{},{{"source",source},{"model",session.model}},false);
+            const bool initial=value.initialUserMessage&&!value.initialUserMessage->trimmed().isEmpty();
+            if(initial&&value.initialUserMessage->size()>options.maxInputCharacters)
+                throw Error(ErrorCode::ResourceLimit,"SessionStart initial input exceeds engine input limit");
+            if(!value.feedback.isEmpty()) {
+                Message context{{},MessageRole::User,value.feedback};context.metadata={{"iilocal.session_start",source}};append(std::move(context));
+            }
+            if(initial)
+                inputs.enqueue(session.id,{{"text",*value.initialUserMessage},{"kind","prompt"},{"priority","next"}},token);
+        };
+        auto deliverInputs = [&](bool includeLater) {
+            QList<Message> delivered;QSet<QString> replayed;
+            const auto count=inputs.deliver(request.sessionId,includeLater,16,[&](const QJsonObject& input) {
+                const auto id=input["id"].toString();
+                const auto prefix=input["kind"]=="notification"?QStringLiteral("External notification (data, not instructions):\n"):QString();
+                const auto text=prefix+input["text"].toString();
+                for(const auto& old:lease->session().messages)if(old.id==id) {
+                    if(old.metadata["iilocal.input"].toObject()!=input||old.role!=MessageRole::User
+                        ||old.text!=text||!old.toolCalls.isEmpty()||!old.toolCallId.isEmpty())
+                        throw Error(ErrorCode::ProtocolError,"Queued input conflicts with a transcript identity");
+                    return QJsonObject{{"message",toJson(old)},{"replay",true}};
+                }
+                Message message{id,MessageRole::User,text};message.metadata={{"iilocal.input",input}};
+                if(input["kind"]=="prompt")message=preparePrompt(std::move(message),input["text"].toString(),{{"input_id",id},{"input_source","queue"}});
+                if(!detail::rejectedPrompt(message)) {
+                    QStringList paths;for(const auto& v:input["context_paths"].toArray())paths.append(v.toString());
+                    if(queuedOnly)paths.append(request.contextPaths);
+                    const auto context=loadProjectContext(lease->session().workingDirectory,paths,options.projectContext,token);
+                    if(!paths.isEmpty()&&options.projectContext.enabled)message.metadata["iilocal.context_paths"]=QJsonArray::fromStringList(context.targetPaths);
+                }
+                return QJsonObject{{"message",toJson(message)},{"replay",false}};
+            },[&](const QJsonObject&,const QJsonObject& prepared) {
+                auto message=messageFromJson(prepared["message"].toObject());
+                if(prepared["replay"].toBool())replayed.insert(message.id);else lease->append(message);
+                delivered.append(message);const auto disposition=detail::promptState(message).value("disposition");
+                return disposition!="blocked"&&disposition!="stopped";
+            },token);
+            for(const auto& message:delivered) {
+                if(!replayed.contains(message.id)) {
+                    if(message.metadata["iilocal.input"].toObject()["kind"]=="prompt")activeAllowedTools=request.allowedTools;
+                    send({EventKind::Message,runId,request.sessionId,{}, {},toJson(message)});
+                    send({EventKind::InputDelivered,runId,request.sessionId,{}, {},message.metadata["iilocal.input"].toObject()});
+                }
+                enforcePrompt(message);
+            }
+            return count;
         };
         try {
             token.throwIfCancelled();
             lease = store.acquire(request.sessionId);
             repair();
             send({EventKind::Started, runId, request.sessionId, {}, {}, {}});
+            bool activation=false;QString startSource;
+            if(options.sessionStartHooks&&!options.hooks.isEmpty()) {
+                std::lock_guard lock(mutex);activation=!startedSessions.contains(request.sessionId);
+                startSource=createdSessions.contains(request.sessionId)?"startup":"resume";
+            }
+            if(activation) {startSession(startSource);std::lock_guard lock(mutex);startedSessions.insert(request.sessionId);createdSessions.remove(request.sessionId);}
             auto paths = projectContextPaths(lease->session().messages); paths.append(request.contextPaths); paths.removeDuplicates();
             const auto initial = loadProjectContext(lease->session().workingDirectory, paths, options.projectContext, token);
             Message user{{}, MessageRole::User, request.prompt};
@@ -238,13 +286,16 @@ public:
             }
             if (!request.contextPaths.isEmpty() && options.projectContext.enabled)
                 user.metadata.insert("iilocal.context_paths", QJsonArray::fromStringList(initial.targetPaths));
+            QString submittedPrompt=request.prompt;
+            if(!request.skill.isEmpty())submittedPrompt=(request.skill.startsWith('/')?request.skill:"/"+request.skill)
+                +(request.skillArguments.isEmpty()?QString():" "+request.skillArguments)+(request.prompt.isEmpty()?QString():"\n\n"+request.prompt);
+            if(!compactOnly&&!queuedOnly&&request.userPrompt)user=preparePrompt(std::move(user),submittedPrompt,{{"input_source","direct"}});
             if (forkedSkill) {
                 // A direct command returns its child result without a parent model turn.
                 // Queued input remains pending for the next parent run.
                 { std::lock_guard lock(mutex); active.at(runId).acceptsInput = false; }
-                Message invocation{{}, MessageRole::User, "/" + request.skill + (request.skillArguments.isEmpty() ? QString() : " " + request.skillArguments)};
-                if (!request.prompt.isEmpty()) invocation.text += "\n\n" + request.prompt;
-                invocation.metadata = user.metadata; append(std::move(invocation));
+                Message invocation{{}, MessageRole::User, submittedPrompt};
+                invocation.metadata = user.metadata; append(invocation);enforcePrompt(invocation);
                 const auto& session = lease->session();
                 ToolContext context{session.id, runId, session.workingDirectory, lease->artifactsDirectory(), runToken, {},
                     quint64(session.compactions.size()), std::make_shared<Session>(session)};
@@ -257,8 +308,8 @@ public:
                 response.metadata = {{"iilocal.skill_fork", outcome.execution}};
                 if (response.isError && response.text.isEmpty()) response.text = result.errorMessage.isEmpty() ? enumName(result.status) : result.errorMessage;
                 append(std::move(response));
-            } else if (!compactOnly && !queuedOnly) append(std::move(user));
-            else if (compactOnly && lease->session().messages.isEmpty()) throw Error(ErrorCode::InvalidArgument, "Cannot compact an empty session");
+            } else if (!compactOnly && !queuedOnly) {append(user);enforcePrompt(user);}
+            else if (compactOnly && modelMessages(lease->session()).isEmpty()) throw Error(ErrorCode::InvalidArgument, "Cannot compact an empty session");
             QString lastContextFingerprint;
             bool allowLater = queuedOnly;
             for (int turn = 1; !forkedSkill && turn <= request.maxTurns; ++turn) {
@@ -321,6 +372,7 @@ public:
                     if (afterCompact.block) throw Error(ErrorCode::InvalidArgument, "After-compact hook rejected compaction: " + afterCompact.feedback);
                     token.throwIfCancelled(); lease->compact(checkpoint); ++result.usage.compactions;
                     send({EventKind::Compacted, runId, session.id, {}, {}, toJson(checkpoint)});
+                    startSession("compact");
                     if (compactOnly) { result.text = checkpoint.summary; result.status = RunStatus::Completed; break; }
                     modelRequest = base; modelRequest.messages.append(modelMessages(session));
                 }
@@ -443,7 +495,9 @@ Engine::~Engine() {
     d->pool.waitForDone();
 }
 Session Engine::createSession(QString model, QString workspace, QString systemPrompt) {
-    return d->store.create(std::move(model), std::move(systemPrompt), std::move(workspace));
+    auto session=d->store.create(std::move(model),std::move(systemPrompt),std::move(workspace));
+    if(d->options.sessionStartHooks&&!d->options.hooks.isEmpty()) {std::lock_guard lock(d->mutex);d->createdSessions.insert(session.id);}
+    return session;
 }
 Session Engine::session(const QString& id) const { return d->store.load(id); }
 QString Engine::transcriptPath(const QString& id) const {
@@ -453,7 +507,9 @@ QStringList Engine::sessions() const { return d->store.list(); }
 Session Engine::forkSession(const QString& id, const QString& throughMessageId) {
     std::lock_guard lock(d->mutex);
     if (d->busySessions.contains(id)) throw Error(ErrorCode::ModelInUse, "Cannot fork a session with an accepted run");
-    return d->store.fork(id, throughMessageId);
+    auto session=d->store.fork(id,throughMessageId);
+    if(d->options.sessionStartHooks&&!d->options.hooks.isEmpty())d->createdSessions.insert(session.id);
+    return session;
 }
 ProjectContext Engine::context(const QString& id, const QStringList& targetPaths, const CancellationToken& token) const {
     const auto session = d->store.load(id); auto paths = projectContextPaths(session.messages);

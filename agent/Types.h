@@ -112,6 +112,7 @@ struct RunRequest {
     QString skillArguments;
     QJsonObject promptMetadata; // Trusted C++ host provenance, never accepted from API/IPC/MCP input.
     QStringList allowedTools; // Trusted host/child invocation grants; expires at the end of this run.
+    bool userPrompt = true; // C++ host provenance. Internal delegated instructions are not user submissions.
 };
 struct RunUsage {
     qint64 promptTokens = 0;

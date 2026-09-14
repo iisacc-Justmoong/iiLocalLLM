@@ -10,7 +10,7 @@
 
 `queuedInputs`는 우선순위 순으로 페이지 조회하고, `removeInput`은 아직 큐에 남은 입력을 제거한다. 이미 전달된 입력이나 now가 이미 일으킨 취소를 되돌리는 기능은 아니다. 원본 대화는 재개·압축 후에도 보존하며 fork는 대화 기록만 복사하고 부모의 미전달 입력은 가져가지 않는다. 알림 텍스트는 외부 데이터라는 표시와 함께 모델에 전달한다.
 
-유휴 상태의 큐는 `runQueued`로 시작한다. `RunRequest.prompt`는 비우고 모델·워크스페이스는 저장된 대화에서 사용한다. 생성 옵션·최대 턴은 기존 run 계약을 따른다. 입력 없는 호출은 거절한다. 실행 종료와 경합해 남은 입력 또는 턴 한도로 남은 입력은 큐 조회 후 다시 시작할 수 있다. 자동 유휴 기동, 셸 완료 알림 생산, 첨부·slash/bash 모드·서브에이전트 수신자와 Sleep 깨우기는 별도 미구현 항목이다. 입력별 UserPromptSubmit 훅도 아직 제공하지 않는다. 기존 BeforeModel 훅의 text는 RunRequest.prompt이며 runQueued에서는 빈 값이다. 개별 큐 입력은 InputDelivered 이벤트와 세션 메시지에 보존된다. 전체 하네스 대응 상태는 partial이다.
+유휴 상태의 큐는 `runQueued`로 시작한다. `RunRequest.prompt`는 비우고 모델·워크스페이스는 저장된 대화에서 사용한다. 생성 옵션·최대 턴은 기존 run 계약을 따른다. 입력 없는 호출은 거절한다. 실행 종료와 경합해 남은 입력 또는 턴 한도로 남은 입력은 큐 조회 후 다시 시작할 수 있다. 자동 유휴 기동, 셸 완료 알림 생산, 첨부·slash/bash 모드·서브에이전트 수신자와 Sleep 깨우기는 별도 미구현 항목이다. 0.22부터 입력별 UserPromptSubmit 훅을 제공하며 [InputLifecycle.md](InputLifecycle.md)의 차단·중단·추가 문맥 계약을 적용한다. 기존 BeforeModel 훅의 text는 RunRequest.prompt이며 runQueued에서는 빈 값이다. 개별 큐 입력은 InputDelivered 이벤트와 세션 메시지에 보존된다. 전체 하네스 대응 상태는 partial이다.
 
 기본 상한은 대화당 256개, 입력당 65,536 UTF-16 코드 단위, 상태 8 MiB, 잠금 대기 5초이다. 호스트는 상태 경로를 도구가 조작할 워크스페이스와 분리해야 한다. 인증 API는 이 분리를 강제하지만 일반 Engine과 MCP stdio의 기본 경로는 호스트가 구성한다. 대화의 지침·경로 규칙은 전달 시 다시 확인한다. 큐의 존재·입력 전달은 모델이 작업을 성공적으로 완료했다는 증거가 아니다.
 
@@ -35,3 +35,5 @@ Engine을 설정한 MCP 서버는 같은 네 동작을 `iiLocalLLM.agent.inputs.
 ## 검증 범위
 
 `tests/input_queue_tests.cpp`는 우선순위와 종류 분리, 스레드·프로세스 간 게시, transcript 게시 후 확인 실패 복구, 중복 ID 충돌, 실행 중 next/now, later 경계, 명시적 취소·턴 한도 뒤 보존, 이벤트 콜백 재입력과 손상·symlink 저장 거절을 검사한다. API·MCP 단위 검사는 실행 중 별도 요청의 긴급 입력과 앱·연결 격리를 확인한다. `tests/input_queue_runtime_smoke.cpp`는 고정 Qwen3 8B에서 실제 Read 후 next 입력, 실행 중인 셸의 PID·준비 파일 확인 뒤 now 입력, 셸 종료와 후속 Read의 미리 알 수 없는 파일 값을 검사한다. 공식 MCP Python SDK는 전송 검사에만 사용한다. 전체·단독·설치본 결과는 [Verification.md](Verification.md)에서 구분한다.
+
+0.22의 prepare/persist 오버로드는 외부 준비 콜백을 queue.lock 밖에서 실행하고 별도 delivery.lock으로 소비자를 직렬화한다. 기존 persist 오버로드도 같은 소비자 잠금을 사용한다. 철회된 입력은 준비 뒤 저장하지 않으며 persist=false는 현재 항목의 확인 후 배치를 끝낸다. 새로 게시한 입력은 다음 배치에서 선택한다. 훅의 외부 효과와 원본/큐 저장은 단일 트랜잭션이 아니다. 입력 판정이 이미 transcript에 저장되어 있으면 재시도에서 훅을 다시 실행하지 않는다.

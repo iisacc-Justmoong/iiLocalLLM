@@ -1,4 +1,5 @@
 #include "ProjectContext.h"
+#include "PromptState.h"
 #include "ContextFile.h"
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
@@ -334,6 +335,7 @@ ProjectContext loadProjectContext(const QString& workingDirectory, const QString
 QStringList projectContextPaths(const QList<Message>& messages) {
     QStringList result;
     for (const auto& message : messages) {
+        if (detail::rejectedPrompt(message)) continue;
         if (message.role != MessageRole::User && message.role != MessageRole::Tool) continue;
         for (const auto& value : message.metadata.value("iilocal.context_paths").toArray()) if (value.isString()) result.append(value.toString());
     }

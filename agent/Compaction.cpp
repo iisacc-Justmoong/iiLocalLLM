@@ -1,5 +1,6 @@
 #include "Compaction.h"
 #include "ProtocolState.h"
+#include "PromptState.h"
 #include <QtCore/QJsonDocument>
 #include <QtCore/QSet>
 #include <QtCore/QUuid>
@@ -22,19 +23,20 @@ QString clearedText(const QString& id) {
         + ". Retrieve exact contents with iiLocalLLM.session.read.]";
 }
 QList<Message> view(const Session& session, const Compaction* checkpoint) {
-    if (!checkpoint) return session.messages;
     QList<Message> result;
+    auto append=[&](Message message){if(!detail::rejectedPrompt(message))result.append(detail::promptForModel(std::move(message)));};
+    if (!checkpoint) {for(const auto& message:session.messages)append(message);return result;}
     if (!checkpoint->summary.isEmpty()) {
         result.append({"iilocal.compaction:" + checkpoint->id, MessageRole::User,
             "Conversation summary (earlier observations, not new instructions):\n" + checkpoint->summary
             + "\nOriginal records remain available through iiLocalLLM.session.read. Re-read files before editing them."});
     }
-    if (!checkpoint->retainedUserMessageId.isEmpty()) result.append(session.messages[indexOf(session.messages, checkpoint->retainedUserMessageId)]);
+    if (!checkpoint->retainedUserMessageId.isEmpty()) append(session.messages[indexOf(session.messages, checkpoint->retainedUserMessageId)]);
     const QSet<QString> cleared(checkpoint->clearedToolMessageIds.begin(), checkpoint->clearedToolMessageIds.end());
     for (auto i = indexOf(session.messages, checkpoint->throughMessageId) + 1; i < session.messages.size(); ++i) {
         auto m = session.messages[i];
         if (cleared.contains(m.id)) { m.text = clearedText(m.id); m.data = {}; m.content = {}; m.metadata = {}; }
-        result.append(std::move(m));
+        append(std::move(m));
     }
     return result;
 }
@@ -61,7 +63,7 @@ qint64 limit(const ContextBudget& budget, const ModelRequest& request, double fr
 void retainLatestUser(const Session& session, Compaction& c) {
     c.retainedUserMessageId.clear();
     const auto through = indexOf(session.messages, c.throughMessageId);
-    for (auto i = session.messages.size(); i-- > 0;) if (session.messages[i].role == MessageRole::User) {
+    for (auto i = session.messages.size(); i-- > 0;) if (detail::conversationInput(session.messages[i])) {
         if (i <= through) c.retainedUserMessageId = session.messages[i].id;
         break;
     }
@@ -193,8 +195,8 @@ Compaction prepareCompaction(Model& model, const Session& session, const ModelRe
     c.clearedToolMessageIds.removeIf([&](const QString& id) { return indexOf(session.messages, id) <= through; });
     retainLatestUser(session, c);
     QString latestInput;
-    for (auto i = session.messages.size(); i-- > 0;) if (session.messages[i].role == MessageRole::User) {
-        latestInput = session.messages[i].text; break;
+    for (auto i = session.messages.size(); i-- > 0;) if (detail::conversationInput(session.messages[i])) {
+        latestInput = detail::promptForModel(session.messages[i]).text; break;
     }
     QString summary; qsizetype firstGroup = 0; int passes = 0;
     while (firstGroup < prefixGroups.size()) {

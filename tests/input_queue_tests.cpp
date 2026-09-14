@@ -20,6 +20,63 @@ public:
 class InputQueueTests : public QObject {
     Q_OBJECT
 private slots:
+    void preparationCanInspectPublishAndWithdrawWithoutHoldingQueueLock() {
+        QTemporaryDir root;a::InputQueue queue(root.path(),{8,128,8192,200});
+        const auto first=queue.enqueue("one",{{"text","first"}})["input"].toObject();
+        const auto withdrawn=queue.enqueue("one",{{"text","withdrawn"}})["input"].toObject();
+        QStringList prepared,committed;
+        const auto count=queue.deliver("one",true,16,[&](const QJsonObject& input) {
+            const auto text=input["text"].toString();prepared.append(text);
+            if(text=="first") {
+                if(queue.snapshot("one")["count"].toInt()!=2)throw std::runtime_error("Unexpected snapshot");
+                queue.enqueue("one",{{"text","published during preparation"}});
+            } else queue.remove("one",withdrawn["id"].toString());
+            return QJsonObject{{"prepared",text.toUpper()}};
+        },[&](const QJsonObject& input,const QJsonObject& result) {
+            if(input["id"]!=first["id"])throw std::runtime_error("Withdrawn input was committed");
+            committed.append(result["prepared"].toString());
+            return true;
+        });
+        QCOMPARE(count,1);QCOMPARE(prepared,(QStringList{"first","withdrawn"}));QCOMPARE(committed,(QStringList{"FIRST"}));
+        QCOMPARE(queue.snapshot("one")["inputs"].toArray()[0].toObject()["text"].toString(),QString("published during preparation"));
+    }
+    void preparationFailureAndCancellationLeaveTheInputPending() {
+        QTemporaryDir root;a::InputQueue queue(root.path());queue.enqueue("one",{{"text","original"}});int commits=0;
+        auto persist=[&](const QJsonObject&,const QJsonObject&){++commits;return true;};
+        QVERIFY_THROWS_EXCEPTION(Error,queue.deliver("one",true,16,[](const QJsonObject&)->QJsonObject {
+            throw Error(ErrorCode::RuntimeFailure,"prepare failed");
+        },persist));
+        CancellationToken token;
+        QVERIFY_THROWS_EXCEPTION(Error,queue.deliver("one",true,16,[&](const QJsonObject&){token.cancel();return QJsonObject{};},persist,token));
+        QCOMPARE(commits,0);QCOMPARE(queue.snapshot("one")["count"].toInt(),1);
+    }
+    void preparedRejectionAcknowledgesOnlyTheCurrentItem() {
+        QTemporaryDir root;a::InputQueue queue(root.path());
+        queue.enqueue("one",{{"text","rejected"}});queue.enqueue("one",{{"text","next"}});
+        QStringList prepared,committed;
+        QCOMPARE(queue.deliver("one",true,16,[&](const QJsonObject& input) {
+            prepared.append(input["text"].toString());return QJsonObject{};
+        },[&](const QJsonObject& input,const QJsonObject&) {
+            committed.append(input["text"].toString());return false;
+        }),1);
+        QCOMPARE(prepared,(QStringList{"rejected"}));QCOMPARE(committed,prepared);
+        QCOMPARE(queue.snapshot("one")["inputs"].toArray()[0].toObject()["text"],"next");
+    }
+    void preparedAndLegacyConsumersShareTheDeliveryLock() {
+        QTemporaryDir root;a::InputQueue queue(root.path());
+        for(int n=0;n<32;++n)queue.enqueue("one",{{"text",QString::number(n)}});
+        std::mutex mutex;QStringList committed;std::vector<std::future<int>> workers;
+        for(int n=0;n<8;++n)workers.push_back(std::async(std::launch::async,[&,n] {
+            a::InputQueue consumer(root.path());
+            auto persist=[&](const QJsonObject& input){std::lock_guard lock(mutex);committed.append(input["id"].toString());};
+            if(n%2)return consumer.deliver("one",true,4,persist);
+            return consumer.deliver("one",true,4,[](const QJsonObject&){std::this_thread::sleep_for(2ms);return QJsonObject{};},
+                [&](const QJsonObject& input,const QJsonObject&){persist(input);return true;});
+        }));
+        int count=0;for(auto& worker:workers)count+=worker.get();
+        QCOMPARE(count,32);QCOMPARE(committed.size(),32);committed.removeDuplicates();QCOMPARE(committed.size(),32);
+        QCOMPARE(queue.snapshot("one")["count"].toInt(),0);
+    }
     void orderedPersistentAndBounded() {
         QTemporaryDir root; a::InputQueue queue(root.path(), {4, 128, 4096, 1000});
         const auto later = queue.enqueue("one", {{"text", "notice"}, {"kind", "notification"}})["input"].toObject();
@@ -75,7 +132,8 @@ private slots:
     void interruptedAcknowledgementDoesNotDuplicateTheTranscript() {
         QTemporaryDir root; auto model = std::make_shared<QueueModel>(); int calls = 0;
         model->action = [&](const a::ModelRequest& r, const auto&) { ++calls; return a::ModelReply{r.messages.last().text}; };
-        a::EngineOptions o; o.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions o; o.sessionsDirectory = root.filePath("sessions");int submitted=0;
+        o.hooks.append([&](const a::HookInput& input,const CancellationToken&){submitted+=input.kind==a::HookKind::UserPromptSubmit;return a::HookResult{};});
         auto engine = std::make_unique<a::Engine>(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), o);
         const auto id = engine->createSession("fixture", root.path()).id;
         const auto queued = engine->enqueueInput(id, {{"text", "persist once"}})["input"].toObject();
@@ -90,6 +148,7 @@ private slots:
         engine = std::make_unique<a::Engine>(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), o);
         QCOMPARE(engine->runQueued({id, {}}).result.get().status, a::RunStatus::Completed);
         QCOMPARE(calls, 1); const auto messages = engine->session(id).messages;
+        QCOMPARE(submitted,0);
         QCOMPARE(messages.size(), 2); QCOMPARE(messages.first().id, queued["id"].toString());
         QCOMPARE(engine->queuedInputs(id)["count"].toInt(), 0);
     }

@@ -34,6 +34,30 @@ std::shared_ptr<a::ToolRegistry> files(const QString& root) {
 class CommandHooksTests final:public QObject {
     Q_OBJECT
 private slots:
+    void inputAndSessionLifecyclePayloadsPreserveContextAndControlBoundaries() {
+        QTemporaryDir work;a::CommandHookOptions options;options.workingDirectory=work.path();
+        const auto response=output({{"decision","block"},{"reason","IGNORED_START_REASON"},{"continue",false},
+            {"hookSpecificOutput",QJsonObject{{"hookEventName","SessionStart"},{"additionalContext","START_CONTEXT"},{"initialUserMessage","INITIAL_PROMPT"}}}});
+        a::CommandHooks start(config("SessionStart","cat > start.json; "+response,"startup|compact"),options);
+        a::HookInput input{a::HookKind::SessionStart,"session","run",{}, {},{},{{"source","resume"},{"model","model://fixture"}}};
+        QVERIFY(start.callback()(input,{}).diagnostics.isEmpty());
+        input.context["source"]="startup";const auto result=start.callback()(input,{});
+        QCOMPARE(result.feedback,"START_CONTEXT");QVERIFY(result.initialUserMessage);QCOMPARE(*result.initialUserMessage,"INITIAL_PROMPT");
+        QFile saved(work.filePath("start.json"));QVERIFY(saved.open(QIODevice::ReadOnly));const auto body=QJsonDocument::fromJson(saved.readAll()).object();
+        QCOMPARE(body["source"],"startup");QCOMPARE(body["model"],"model://fixture");QCOMPARE(body["hook_event_name"],"SessionStart");
+        a::CommandHooks failed(config("SessionStart","printf 'START_ERROR' >&2; exit 2"),options);
+        const auto error=failed.callback()(input,{});QVERIFY(!error.block);QVERIFY(error.feedback.isEmpty());
+        QCOMPARE(error.diagnostics.last().toObject()["outcome"],"non_blocking_error");
+        a::CommandHooks plain(config("UserPromptSubmit","cat > prompt.json; printf 'PROMPT_CONTEXT'"),options);
+        input.kind=a::HookKind::UserPromptSubmit;input.text="/inspect 'two words'\n$(touch INJECTED)";
+        QCOMPARE(plain.callback()(input,{}).feedback,"PROMPT_CONTEXT");
+        QFile prompt(work.filePath("prompt.json"));QVERIFY(prompt.open(QIODevice::ReadOnly));
+        QCOMPARE(QJsonDocument::fromJson(prompt.readAll()).object()["prompt"],input.text);QVERIFY(!QFileInfo::exists(work.filePath("INJECTED")));
+        a::CommandHooks denied(config("UserPromptSubmit","printf 'PROMPT_DENIED' >&2; exit 2"),options);
+        const auto blocked=denied.callback()(input,{});QVERIFY(blocked.block);QCOMPARE(blocked.feedback,"PROMPT_DENIED");
+        a::CommandHooks stopped(config("UserPromptSubmit",output({{"continue",false},{"stopReason","PROMPT_STOPPED"}})),options);
+        const auto stop=stopped.callback()(input,{});QVERIFY(stop.stop);QVERIFY(!stop.block);QCOMPARE(stop.stopReason,"PROMPT_STOPPED");
+    }
     void receivesJsonOnStdinAndDoesNotInterpolateToolInput() {
         QTemporaryDir work;a::CommandHookOptions options;options.workingDirectory=work.path();
         const auto command="IFS= read -r payload; printf '%s' \"$payload\" > received.json; printf '%s' \"$CLAUDE_PROJECT_DIR\" > project.txt";
@@ -121,7 +145,7 @@ private slots:
         auto wrong=pre("allow");wrong["hookSpecificOutput"]=QJsonObject{{"hookEventName","Stop"},{"permissionDecision","allow"}};
         a::CommandHooks invalid(config("PreToolUse",output(wrong)),options);
         const auto failed=invalid.callback()(input,{});QVERIFY(!failed.permission);QCOMPARE(failed.diagnostics.last().toObject()["outcome"].toString(),QString("non_blocking_error"));
-        QVERIFY_THROWS_EXCEPTION(Error,a::CommandHooks(config("SessionStart","exit 0"),options));
+        QVERIFY_THROWS_EXCEPTION(Error,a::CommandHooks(config("SessionEnd","exit 0"),options));
         QVERIFY_THROWS_EXCEPTION(Error,a::CommandHooks(config("PreToolUse","exit 0","["),options));
         QVERIFY_THROWS_EXCEPTION(Error,a::CommandHooks(commands("PreToolUse",{QJsonObject{{"type","command"},{"command","exit 0"},{"async",true}}}),options));
     }

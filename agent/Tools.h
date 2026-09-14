@@ -70,7 +70,7 @@ private:
     QList<PermissionRule> rules_;
 };
 enum class HookKind { BeforeModel, AfterModel, BeforeTool, AfterTool, Stop, BeforeCompact, AfterCompact,
-    TaskCreated, TaskCompleted, SubagentStart, SubagentStop }; // Task lifecycle callbacks veto before the transaction commits.
+    TaskCreated, TaskCompleted, SubagentStart, SubagentStop, UserPromptSubmit, SessionStart }; // Task lifecycle callbacks veto before the transaction commits.
 struct HookInput {
     HookKind kind;
     QString sessionId;
@@ -88,6 +88,7 @@ struct HookResult {
     bool stop = false; // Stop the current run, distinct from requesting another Stop-hook turn.
     QString stopReason;
     QJsonArray diagnostics;
+    std::optional<QString> initialUserMessage; // SessionStart schedules this through the normal prompt input queue.
 };
 using Hook = std::function<HookResult(const HookInput&, const CancellationToken&)>;
 using PermissionCallback = std::function<bool(const ToolCall&, const PermissionDecision&, const ToolContext&)>;

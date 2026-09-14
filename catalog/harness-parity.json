@@ -14,7 +14,10 @@
         "tests/reasoning_runtime_smoke.cpp",
         "tests/service_tests.cpp",
         "tests/task_runtime_smoke.cpp",
-        "docs/NativeThinking.md"
+        "docs/NativeThinking.md",
+        "agent/PromptState.h",
+        "tests/input_lifecycle_tests.cpp",
+        "docs/InputLifecycle.md"
       ],
       "remaining": "Bounded run/tool loop, cancellation, paired results and interruption repair implemented; block streaming and cost budgets remain."
     },
@@ -121,7 +124,10 @@
         "docs/ProjectContext.md",
         "agent/Compaction.cpp",
         "tests/compaction_tests.cpp",
-        "docs/Compaction.md"
+        "docs/Compaction.md",
+        "agent/PromptState.h",
+        "tests/input_lifecycle_tests.cpp",
+        "docs/InputLifecycle.md"
       ],
       "remaining": "Native prompt measurement, micro compaction, bounded rolling summaries and project instructions implemented. Managed/user instructions, attachments, session memory, reactive overflow recovery and server cache edits remain."
     },
@@ -143,7 +149,10 @@
         "tests/agent_api_smoke.py",
         "agent/Compaction.cpp",
         "tests/compaction_tests.cpp",
-        "docs/Compaction.md"
+        "docs/Compaction.md",
+        "agent/PromptState.h",
+        "tests/input_lifecycle_tests.cpp",
+        "docs/InputLifecycle.md"
       ],
       "remaining": "Original JSONL messages, versioned compaction checkpoints, resume and complete-boundary forks implemented. Artifact cloning, file rewind and full lineage management remain."
     },
@@ -382,9 +391,12 @@
         "tools/CommandHookConfig.h",
         "tests/command_hooks_tests.cpp",
         "tests/command_hooks_wire.py",
-        "docs/CommandHooks.md"
+        "docs/CommandHooks.md",
+        "agent/PromptState.h",
+        "tests/input_lifecycle_tests.cpp",
+        "docs/InputLifecycle.md"
       ],
-      "remaining": "C++ model/tool/stop/compaction, pre-commit TaskCreated/TaskCompleted and SubagentStart/SubagentStop callbacks are implemented. Version 0.21 adds explicit host-configured desktop POSIX command hooks, JSON stdin and output, updatedInput, invocation-only permission candidates under existing host rules, stop/cancel diagnostics, bounded parallelism, process-local per-session once, process cleanup and API/CLI/MCP integration. Start precedes child Engine.run and has no runId yet. Full lifecycle, HTTP/prompt/agent/async runners, updated MCP output, durable once state, agent/skill/plugin hooks merging and cross-platform/real-app qualification remain. See CommandHooks.md for deliberate differences from the reference."
+      "remaining": "C++ model/tool/stop/compaction, pre-commit TaskCreated/TaskCompleted and SubagentStart/SubagentStop callbacks are implemented. Version 0.21 adds explicit host-configured desktop POSIX command hooks, JSON stdin and output, updatedInput, invocation-only permission candidates under existing host rules, stop/cancel diagnostics, bounded parallelism, process-local per-session once, process cleanup and API/CLI/MCP integration. Start precedes child Engine.run and has no runId yet. Full lifecycle, HTTP/prompt/agent/async runners, updated MCP output, durable once state, agent/skill/plugin hooks merging and cross-platform/real-app qualification remain. See CommandHooks.md for deliberate differences from the reference. Version 0.22 adds UserPromptSubmit for direct/queued user prompts and user skills, stable transcript dispositions, block-vs-stop context handling and SessionStart activation/resume/compact with initial queued messages. SessionEnd, clear, watchPaths and PermissionRequest/Denied remain; Stop and arbitrary tool denials do not substitute for these events. See InputLifecycle.md."
     },
     {
       "id": "tasks",
@@ -417,9 +429,12 @@
         "docs/InputQueue.md",
         "agent/Subagents.cpp",
         "tests/subagent_tests.cpp",
-        "docs/Subagents.md"
+        "docs/Subagents.md",
+        "agent/PromptState.h",
+        "tests/input_lifecycle_tests.cpp",
+        "docs/InputLifecycle.md"
       ],
-      "remaining": "Persistent planning tasks/todos, background Bash, delegated child execution/completion notifications and durable prompt/notification queues with now/next/later and explicit idle start are implemented through C++/API/CLI/MCP. Per-input UserPromptSubmit hooks, automatic idle wakeup, shell completion notifications, media/slash/bash modes, addressed agent input, Sleep wakeup, plan transitions, teams/mailbox and crash-consistent subagent notification delivery remain. Native qualification and model failures are reported separately in Verification.md."
+      "remaining": "Persistent planning tasks/todos, background Bash, delegated child execution/completion notifications and durable prompt/notification queues with now/next/later and explicit idle start are implemented through C++/API/CLI/MCP. Automatic idle wakeup, shell completion notifications, media/slash/bash modes, addressed agent input, Sleep wakeup, plan transitions, teams/mailbox and crash-consistent subagent notification delivery remain. Native qualification and model failures are reported separately in Verification.md."
     },
     {
       "id": "git",
@@ -519,7 +534,10 @@
         "agent/ShellTasks.h",
         "tests/consumer/shells.cpp",
         "tests/shell_runtime_smoke.cpp",
-        "docs/BackgroundTasks.md"
+        "docs/BackgroundTasks.md",
+        "agent/PromptState.h",
+        "tests/input_lifecycle_tests.cpp",
+        "docs/InputLifecycle.md"
       ],
       "remaining": "Public MCP client/server headers and a POSIX MCP executable are installed and tested through fresh C++ consumers. Complete app integration and platform qualification remain."
     },
