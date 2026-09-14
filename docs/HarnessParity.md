@@ -90,3 +90,5 @@
 0.19.0은 파일 기반 권한 설정의 계층·관리 규칙·출처 경로·실시간 반영·호스트 설정과 인증 조회를 구현했다. settings와 permissions는 partial이다. 추가 디렉터리·외부 관리 공급자·일반 환경 설정·마이그레이션·자동 분류·OS 샌드박스는 남아 있다. [PermissionSettings.md](PermissionSettings.md)가 현재 계약이다.
 
 0.20.0은 추가 작업 디렉터리를 C++ 파일 도구·Bash 리다이렉션·자식 정책·CLI·API·MCP에 연결한다. 출처별 canonical 바인딩과 비공개 호스트 파일 보호를 포함한다. 원격 디렉터리 변경·추가 instruction 로딩·전체 검색/BashSecurity는 남아 있으며 전체 목표는 partial이다. [WorkingDirectories.md](WorkingDirectories.md)를 참조한다.
+
+0.21.0은 명시적 호스트 설정을 받는 데스크톱 POSIX C++ 명령 훅을 추가한다. 도구·모델·Stop·압축·Task·Subagent 콜백, JSON 입력/결과·차단·중단·입력 변경·일회 권한·병렬/once·취소를 API/CLI/MCP에 연결한다. HTTP/prompt/agent/async 훅, 나머지 생명주기와 스킬·에이전트·플러그인 설정 병합은 남아 있어 hooks 및 전체 목표는 partial이다. [CommandHooks.md](CommandHooks.md)를 따른다.

@@ -157,7 +157,8 @@ public:
                 {"working_directory", options.workingDirectory}, {"project_context_enabled", options.engine.projectContext.enabled},
                 {"auto_compact_enabled", options.engine.compaction.automatic}, {"tool_search_enabled", options.engine.toolSearch.enabled},
                 {"task_tools_enabled", client->engine->taskToolsEnabled()}, {"background_tasks_enabled", client->engine->backgroundTasksEnabled()},
-                {"input_queue_enabled", true}, {"skills_enabled", options.engine.skills.enabled}, {"subagents_enabled", options.subagentsEnabled}};
+                {"input_queue_enabled", true}, {"skills_enabled", options.engine.skills.enabled}, {"subagents_enabled", options.subagentsEnabled},
+                {"hooks_enabled",!options.engine.hooks.isEmpty()}};
         }
         static const QMap<QString, QString> agentMethods{{"agent.agents.run", "Agent"}, {"agent.agents.output", "AgentOutput"},
             {"agent.agents.stop", "AgentStop"}, {"agent.agents.list", "AgentList"}, {"agent.agents.profiles", "AgentProfiles"}};

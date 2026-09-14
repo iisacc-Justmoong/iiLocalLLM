@@ -83,7 +83,8 @@ public:
     QList<Tool> taskToolsFor(const QString& sessionId, const QString& runId, EventCallback send = {}) const {
         if (!tasks) return {};
         return agent::taskTools(tasks, sessionId, options.taskToolsDeferred,
-            [hooks = options.hooks, sessionId, runId, send](const TaskChange& change, const CancellationToken& token) {
+            [hooks = options.hooks, sessionId, runId, send,
+                transcript=QDir(options.sessionsDirectory).filePath(sessionId+"/transcript.jsonl")](const TaskChange& change, const CancellationToken& token) {
                 std::optional<HookKind> kind;
                 if (change.operation == "TaskCreate") kind = HookKind::TaskCreated;
                 else if (change.after["status"] == "completed" && change.before["status"] != "completed") kind = HookKind::TaskCompleted;
@@ -91,7 +92,10 @@ public:
                 const auto text = QString::fromUtf8(QJsonDocument(change.after).toJson(QJsonDocument::Compact));
                 for (const auto& hook : hooks) {
                     token.throwIfCancelled();
-                    const auto r = hook({*kind, sessionId, runId, {{}, change.operation, change.after}, {text, change.after}, text}, token);
+                    const auto r = hook({*kind, sessionId, runId, {{}, change.operation, change.after}, {text, change.after}, text,
+                        {{"transcript_path",transcript}}}, token);
+                    if(send)for(const auto& diagnostic:r.diagnostics)send({EventKind::Hook,runId,sessionId,{}, {},diagnostic.toObject()});
+                    if(r.stop)throw Error(ErrorCode::Cancelled,r.stopReason.isEmpty()?QString("Stopped by hook"):r.stopReason);
                     if (send && (!r.feedback.isEmpty() || r.block))
                         send({EventKind::Hook, runId, sessionId, {}, r.feedback, {{"blocked", r.block}, {"task_id", change.after["id"]}}});
                     if (r.block) throw Error(ErrorCode::InvalidArgument, "Task lifecycle hook blocked publication: " + r.feedback);
@@ -195,8 +199,15 @@ public:
             HookResult combined;
             for (const auto& hook : options.hooks) {
                 token.throwIfCancelled();
-                auto r = hook({kind, request.sessionId, runId, {}, {}, text,
-                    kind==HookKind::Stop?QJsonObject{{"stop_hook_active",stopHookActive}}:QJsonObject{}}, token);
+                QJsonObject context{{"cwd",lease->session().workingDirectory},
+                    {"transcript_path",QDir(options.sessionsDirectory).filePath(request.sessionId+"/transcript.jsonl")}};
+                if(kind==HookKind::Stop)context["stop_hook_active"]=stopHookActive;
+                if(kind==HookKind::BeforeCompact||kind==HookKind::AfterCompact)context["trigger"]=compactOnly?"manual":"auto";
+                const ToolContext permissionContext{request.sessionId,runId,lease->session().workingDirectory,{},token};
+                context["permission_mode"]=policy->describe(permissionContext)["mode"].toString("unknown");
+                auto r = hook({kind, request.sessionId, runId, {}, {}, text,context}, token);
+                for(const auto& diagnostic:r.diagnostics)send({EventKind::Hook,runId,request.sessionId,{}, {},diagnostic.toObject()});
+                if(r.stop)throw Error(ErrorCode::Cancelled,r.stopReason.isEmpty()?QString("Stopped by hook"):r.stopReason);
                 combined.block |= r.block;
                 if (!r.feedback.isEmpty()) {
                     if (!combined.feedback.isEmpty()) combined.feedback += '\n';
@@ -237,6 +248,7 @@ public:
                 const auto& session = lease->session();
                 ToolContext context{session.id, runId, session.workingDirectory, lease->artifactsDirectory(), runToken, {},
                     quint64(session.compactions.size()), std::make_shared<Session>(session)};
+                context.transcriptPath=QDir(options.sessionsDirectory).filePath(session.id+"/transcript.jsonl");
                 context.allowedTools = activeAllowedTools;
                 context.progress = [&](const QJsonObject& data) { send({EventKind::ToolProgress, runId, request.sessionId, {}, {}, data}); };
                 const auto outcome = options.forkedSkill({std::move(user), request.generation, request.maxTurns, request.contextPaths}, context);
@@ -348,7 +360,8 @@ public:
                     }
                     result.text = reply.text; result.status = RunStatus::Completed; break;
                 }
-                const ToolContext toolBase{session.id, runId, session.workingDirectory, lease->artifactsDirectory(), token, {}, quint64(session.compactions.size()), std::make_shared<Session>(session)};
+                ToolContext toolBase{session.id, runId, session.workingDirectory, lease->artifactsDirectory(), token, {}, quint64(session.compactions.size()), std::make_shared<Session>(session)};
+                toolBase.transcriptPath=QDir(options.sessionsDirectory).filePath(session.id+"/transcript.jsonl");
                 auto runTool = [&](const ToolCall& call) {
                     auto context = toolBase;
                     context.allowedTools = activeAllowedTools;
@@ -433,6 +446,9 @@ Session Engine::createSession(QString model, QString workspace, QString systemPr
     return d->store.create(std::move(model), std::move(systemPrompt), std::move(workspace));
 }
 Session Engine::session(const QString& id) const { return d->store.load(id); }
+QString Engine::transcriptPath(const QString& id) const {
+    (void)d->store.metadata(id);return QDir(d->options.sessionsDirectory).filePath(id+"/transcript.jsonl");
+}
 QStringList Engine::sessions() const { return d->store.list(); }
 Session Engine::forkSession(const QString& id, const QString& throughMessageId) {
     std::lock_guard lock(d->mutex);
@@ -485,6 +501,7 @@ ToolResult Engine::runSubagentTool(const QString& id, const QString& name, const
     const auto tools = name == "Agent" ? d->additionalTools() : d->options.additionalTools;
     for (const auto& t : tools) if (t.definition.metadata["source"] == "builtin.subagent") registry->add(t);
     ToolContext context{id, uuid(), session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), token};
+    context.transcriptPath=transcriptPath(id);
     context.sessionSnapshot = std::make_shared<Session>(session);
     const auto callId = uuid();
     context.progress = [callback, id, runId = context.runId, callId](const QJsonObject& data) {
@@ -502,6 +519,7 @@ ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJ
     if (definition.metadata["source"] != (name == "Bash" ? "builtin.shell" : "builtin.shell.control"))
         throw Error(ErrorCode::InvalidArgument, "Shell control must refer to the host's native tool");
     ToolContext context{id, uuid(), session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), token};
+    context.transcriptPath=transcriptPath(id);
     const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission});
     return runner.run({uuid(), name, args}, context, callback);
 }
@@ -522,6 +540,7 @@ ToolResult Engine::runTaskTool(const QString& id, const QString& name, const QJs
     auto registry = std::make_shared<ToolRegistry>(); const auto runId = uuid();
     for (auto tool : d->taskToolsFor(id, runId, callback)) registry->add(std::move(tool));
     ToolContext context{id, runId, session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), token};
+    context.transcriptPath=transcriptPath(id);
     const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission});
     return runner.run({uuid(), name, args}, context, callback);
 }

@@ -156,27 +156,47 @@ bool ToolRunner::concurrencySafe(const ToolCall& call) const {
 ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, const EventCallback& callback) const {
     auto context=suppliedContext;
     ToolResult result;
+    QJsonObject hookContext;
+    auto hookEvents=[&](const HookResult& value) {
+        for(const auto& diagnostic:value.diagnostics)event(callback,EventKind::Hook,context,call,{},diagnostic.toObject());
+        if(value.stop)throw Error(ErrorCode::Cancelled,value.stopReason.isEmpty()?QString("Stopped by hook"):value.stopReason);
+    };
+    QString beforeFeedback;
     try {
         context.cancellation.throwIfCancelled();
         const auto entry = registry_->resolve(call.name);
         const auto& tool = entry->tool;
         entry->validateInput(call.arguments);
         if (tool.validate) tool.validate(call.arguments, context);
+        if(!options_.hooks.isEmpty()) {
+            hookContext={{"cwd",context.workingDirectory},{"permission_mode",policy_->describe(context)["mode"].toString("unknown")}};
+            hookContext["transcript_path"]=context.transcriptPath;
+        }
+        std::optional<PermissionDecision> hookPermission;
         for (const auto& hook : options_.hooks) {
             context.cancellation.throwIfCancelled();
-            const auto r = hook({HookKind::BeforeTool, context.sessionId, context.runId, call, {}, {}}, context.cancellation);
+            const auto r = hook({HookKind::BeforeTool, context.sessionId, context.runId, call, {}, {},hookContext}, context.cancellation);
+            hookEvents(r);
             if (r.block) throw Error(ErrorCode::InvalidArgument, "Pre-tool hook blocked execution: " + r.feedback);
             if (r.updatedArguments) call.arguments = *r.updatedArguments;
+            if(r.permission) {
+                auto priority=[](PermissionBehavior b){return b==PermissionBehavior::Deny?3:b==PermissionBehavior::Ask?2:1;};
+                if(!hookPermission||priority(r.permission->behavior)>=priority(hookPermission->behavior))hookPermission=r.permission;
+            }
+            if(!r.feedback.isEmpty()) {if(!beforeFeedback.isEmpty())beforeFeedback+='\n';beforeFeedback+=r.feedback;}
         }
         entry->validateInput(call.arguments);
         if (tool.validate) tool.validate(call.arguments, context);
         context.workingDirectories=policy_->workingDirectories(context);
+        if(hookPermission&&hookPermission->behavior==PermissionBehavior::Allow)context.allowedTools.append(call.name);
         const auto prepared = tool.prepare ? tool.prepare(call.arguments, context)
             : PreparedTool{tool.definition, [&] { return tool.execute(call.arguments, context); }};
         if (!prepared.execute || prepared.definition.name != tool.definition.name
             || prepared.definition.inputSchema != tool.definition.inputSchema || prepared.definition.outputSchema != tool.definition.outputSchema)
             throw Error(ErrorCode::InvalidArgument, "Prepared tool changed identity/schema or omitted execution");
         auto decision = policy_->decide(prepared.definition, call.arguments, context);
+        if(hookPermission&&(hookPermission->behavior==PermissionBehavior::Deny
+            ||(hookPermission->behavior==PermissionBehavior::Ask&&decision.behavior!=PermissionBehavior::Deny)))decision=*hookPermission;
         if (tool.prepare) decision.reason += "\n" + prepared.definition.description + "\n"
             + QString::fromUtf8(QJsonDocument(prepared.definition.metadata).toJson(QJsonDocument::Compact));
         bool allowed = decision.behavior == PermissionBehavior::Allow;
@@ -197,9 +217,11 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
         result = {QString::fromUtf8(e.what()), {{"error_code", iiLocalLLM::enumName(e.code())}}, true};
     } catch (const std::exception& e) { result = {QString::fromUtf8(e.what()), {}, true}; }
     catch (...) { result = {"Tool failed with an unknown exception", {}, true}; }
+    if(!beforeFeedback.isEmpty())result.text+='\n'+beforeFeedback;
     for (const auto& hook : options_.hooks) {
         context.cancellation.throwIfCancelled();
-        auto r = hook({HookKind::AfterTool, context.sessionId, context.runId, call, result, {}}, context.cancellation);
+        auto r = hook({HookKind::AfterTool, context.sessionId, context.runId, call, result, {},hookContext}, context.cancellation);
+        hookEvents(r);
         if (!r.feedback.isEmpty()) result.text += "\n" + r.feedback;
         if (r.block) result.isError = true;
     }

@@ -214,10 +214,14 @@ public:
             QJsonObject original,current=profileJson(definition),hookContext;
             {std::lock_guard lock(mutex);job->state["status"]="running";original=job->state["profile"].toObject();write(*job);
                 hookContext={{"agent_id",job->state["agentId"]},{"agent_type",definition.name},{"parent_session_id",job->state["parent_session_id"]}};}
+            hookContext["transcript_path"]=QDir(options.stateDirectory).filePath("sessions/"+request.sessionId+"/transcript.jsonl");
             QString startFeedback;
             for(const auto& hook:parent.hooks) {
                 job->token.throwIfCancelled();
                 const auto value=hook({HookKind::SubagentStart,request.sessionId,{}, {},{},request.prompt,hookContext},job->token);
+                if(progress)for(const auto& diagnostic:value.diagnostics)
+                    progress(QJsonObject{{"agentId",hookContext["agent_id"]},{"event",toJson(Event{EventKind::Hook,{},request.sessionId,{}, {},diagnostic.toObject()})}});
+                if(value.stop)throw Error(ErrorCode::Cancelled,value.stopReason.isEmpty()?QString("Stopped by SubagentStart hook"):value.stopReason);
                 require(!value.block,"SubagentStart hook blocked execution: "+value.feedback);
                 if(!value.feedback.isEmpty()){if(!startFeedback.isEmpty())startFeedback+='\n';startFeedback+=value.feedback;}
                 require(startFeedback.size()<=parent.maxInputCharacters,"SubagentStart context exceeds input limit",ErrorCode::ResourceLimit);

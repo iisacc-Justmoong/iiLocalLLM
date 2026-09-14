@@ -3,6 +3,7 @@
 #include "PrivateFile.h"
 #include "AgentProfileConfig.h"
 #include "PermissionSettingsConfig.h"
+#include "CommandHookConfig.h"
 #include <agent/Api.h>
 #include <agent/McpConnections.h>
 #include <agent/ShellTasks.h>
@@ -34,7 +35,7 @@ int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("iiLocalLLMD"));
-    app.setApplicationVersion(QStringLiteral("0.20.0"));
+    app.setApplicationVersion(QStringLiteral("0.21.0"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("iiLocalLLM local JSON IPC service"));
     parser.addHelpOption(); parser.addVersionOption();
@@ -56,6 +57,7 @@ int main(int argc, char** argv)
         {"agent-allow", "Allow a tool permission rule, e.g. Write(src/**), Bash(git status:*) or Skill(review); repeat for more rules. Read-only tools are allowed by default.", "pattern"},
         {"agent-permission-settings", "Private host configuration outside the workspace for layered permission settings.", "file"},
         {"agent-add-dir", "Additional file working directory; repeat. Does not enable disk settings without --agent-permission-settings.", "directory"},
+        {"agent-hooks", "Private command-hook JSON configuration outside the workspace.", "file"},
         {"agent-mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
         {"agent-mcp-project", "Load workspace/.mcp.json after explicit MCP configuration files."},
         {"agent-mcp-eager", "Publish all configured MCP tools to the model without ToolSearch."},
@@ -100,7 +102,7 @@ int main(int argc, char** argv)
             || parser.isSet("agent-mcp-config") || parser.isSet("agent-mcp-project") || parser.isSet("agent-mcp-eager")
             || parser.isSet("agent-apps-dir") || parser.isSet("agent-no-apps") || parser.isSet("agent-no-tasks") || parser.isSet("agent-no-background")
             || parser.isSet("agent-no-skills") || parser.isSet("agent-skills-dir") || parser.isSet("agent-no-subagents") || parser.isSet("agent-subagent-options")
-            || parser.isSet("agent-profiles") || parser.isSet("no-agent-profiles") || parser.isSet("agent-permission-settings") || parser.isSet("agent-add-dir")) {
+            || parser.isSet("agent-profiles") || parser.isSet("no-agent-profiles") || parser.isSet("agent-permission-settings") || parser.isSet("agent-add-dir") || parser.isSet("agent-hooks")) {
             if (parser.isSet("agent-apps-dir") && parser.isSet("agent-no-apps"))
                 throw std::runtime_error("--agent-apps-dir and --agent-no-apps cannot be combined");
             if (parser.isSet("agent-apps-dir") && parser.value("agent-apps-dir").isEmpty())
@@ -144,6 +146,8 @@ int main(int argc, char** argv)
             QList<a::PermissionRule> rules;
             for(const auto& value:parser.values("agent-allow"))rules.append({value,a::PermissionBehavior::Allow});
             agentPolicy=iiLocalLLMClient::permissionConfig(parser.value("agent-permission-settings"),config.workingDirectory,rules,{},parser.values("agent-add-dir"));
+            if(parser.isSet("agent-hooks")&&parser.value("agent-hooks").isEmpty())throw std::runtime_error("--agent-hooks requires a file");
+            config.engine.hooks=iiLocalLLMClient::commandHookConfig(parser.value("agent-hooks"),config.workingDirectory);
             agentConfig = std::move(config);
         }
         iiLocalLLM::Service service(options, {parser.value(QStringLiteral("mlx-python")), worker});
@@ -202,7 +206,7 @@ int main(int argc, char** argv)
 #endif
             if (parser.isSet("agent-apps-dir")) connections.localApplicationsDirectory = QFileInfo(parser.value("agent-apps-dir")).absoluteFilePath();
             QStringList privatePaths{agentConfig->stateDirectory};
-            for(const auto& key:{"agent-credentials","agent-permission-settings","agent-profiles","agent-subagent-options"})
+            for(const auto& key:{"agent-credentials","agent-permission-settings","agent-profiles","agent-subagent-options","agent-hooks"})
                 if(parser.isSet(key))privatePaths.append(parser.value(key));
             for(const auto& file:connections.configFiles)privatePaths.append(QDir::isAbsolutePath(file)?file:QDir(agentConfig->workingDirectory).filePath(file));
             if(!connections.localApplicationsDirectory.isEmpty())privatePaths.append(connections.localApplicationsDirectory);

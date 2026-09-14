@@ -58,6 +58,7 @@ struct ToolContext {
     std::shared_ptr<const Session> sessionSnapshot; // Immutable parent context at the tool batch boundary.
     QStringList allowedTools; // Trusted invocation grants, never restored from transcript metadata.
     QStringList workingDirectories; // Host policy snapshot, replaced by ToolRunner before preparation; never accepted from wire input.
+    QString transcriptPath; // Host-owned transcript location for hooks; empty for standalone tool calls.
 };
 struct ModelRequest {
     QString model;

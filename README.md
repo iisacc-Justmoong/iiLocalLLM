@@ -2,7 +2,7 @@
 
 C++ 에이전트 하네스를 확장 중이다. 현재 실행 계층은 [AgentHarness.md](docs/AgentHarness.md), 전체 요구사항과 남은 구현은 [HarnessParity.md](docs/HarnessParity.md)에 기록한다. MCP/API 및 앱 전체 호환 완료와 기존 대화 기능 완료는 별도 상태로 관리한다.
 
-C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.20.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
+C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.21.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
 
 C++ stdio MCP 클라이언트가 외부 도구·리소스·프롬프트를 인식하고 에이전트 엔진에 연결한다. `iillm-mcp` 서버와 C++ 내장 API로 앱 도구 및 로컬 에이전트 실행을 외부 MCP 클라이언트에 제공한다. 프로토콜·정책·자료 보존 및 현재 지원 경계는 [MCP.md](docs/MCP.md) · [MCP 서버·앱 도구 제공](docs/MCPServer.md)에 설명한다.
 
@@ -262,7 +262,7 @@ IILOCALLLM_WITH_LLAMA=ON INSTALL_PREFIX="$PWD/build/stage" ./install.sh
 IILOCALLLM_WITH_LLAMA를 생략하면 기존 CMake 선택을 유지하며 새 구성의 기본값은 ON이다. 과거 OFF로 구성했던 build/는 `IILOCALLLM_WITH_LLAMA=ON ./install.sh`로 활성화한다. INSTALL_PREFIX, QT_PREFIX_PATH, CMAKE_PREFIX_PATH로 경로를 설정한다. Qt와 MLX Python 환경은 패키지에 복사하지 않는다.
 
 ```cmake
-find_package(iiLocalLLM 0.20.0 CONFIG REQUIRED)
+find_package(iiLocalLLM 0.21.0 CONFIG REQUIRED)
 target_link_libraries(your_app PRIVATE iiLocalLLM::iiLocalLLM)
 ```
 
@@ -308,4 +308,6 @@ GGUF smoke는 chatml을 명시하여 경량 테스트 모델도 사용한다. �
 
 0.19.0은 사용자·프로젝트·로컬·호스트·관리 파일의 권한 설정 계층과 출처별 파일 규칙, 실시간 재로딩, 인증 API·CLI·MCP 조회를 제공한다. `PermissionPolicy` 가상 함수와 `PermissionRule` 레이아웃이 바뀌어 소비자는 ABI 0.19로 다시 빌드한다. 지원 범위와 명시적인 차이는 [권한 설정](docs/PermissionSettings.md)에 기록한다.
 
-0.20.0은 추가 작업 디렉터리를 파일 도구·Bash 리다이렉션·자식 에이전트에 연결한다. 설정과 `--agent-add-dir`/`--add-dir`, 실시간 철회, canonical 대상 바인딩, 호스트 비공개 파일 보호와 API·MCP 조회를 제공한다. 현재 ABI는 0.20이다. [추가 작업 디렉터리](docs/WorkingDirectories.md)에 사용법과 남은 참조 차이를 기록한다.
+0.20.0은 추가 작업 디렉터리를 파일 도구·Bash 리다이렉션·자식 에이전트에 연결한다. 설정과 `--agent-add-dir`/`--add-dir`, 실시간 철회, canonical 대상 바인딩, 호스트 비공개 파일 보호와 API·MCP 조회를 제공한다. 이 단계의 ABI는 0.20이다. [추가 작업 디렉터리](docs/WorkingDirectories.md)에 사용법과 남은 참조 차이를 기록한다.
+
+0.21.0은 C++ 외부 명령 훅을 도구·모델·종료·압축·작업·자식 생명주기에 연결한다. `--agent-hooks`/`--hooks`의 명시적 호스트 설정, JSON stdin, 입력 변경과 일회 권한, 차단·중단, 병렬 실행·취소·진단을 제공한다. 현재 ABI는 0.21이며 전체 생명주기 및 HTTP·prompt·agent 훅은 남아 있다. [명령 훅](docs/CommandHooks.md)에 사용법과 참조 차이를 기록한다.

@@ -1,5 +1,37 @@
 # 구현 검증 기록
 
+## 2026-09-15 C++ 외부 명령 훅 (0.21.0)
+
+명시적 호스트 설정의 command 훅을 도구·모델·Stop·압축·Task·Subagent 콜백에 연결했다. JSON stdin, 입력 재검증, 호출 한 번의 권한 후보, 차단·중단, 병렬 실행·세션별 once, 취소·프로세스 정리·진단을 C++로 구현했다. daemon의 `--agent-hooks`, MCP의 `--hooks` 및 API·IPC CLI 조회/이벤트를 지원한다. 새 생산 의존성 없이 Qt Core와 기존 실행기를 재사용하며 Python은 검증에만 사용한다. [CommandHooks.md](CommandHooks.md)에 지원 범위와 참조 차이를 기록한다.
+
+| 검증 경계 | 최종 관측 |
+|---|---|
+| Release 전체, inference 라벨 제외 | 51/51, 67.72초 |
+| ASan·UBSan, llama 비활성 Debug | 49/49, 91.12초; 계측 오류 보고 없음 |
+| 별도 설치 소비자 | 19/19, 14.62초 |
+| 실제 Qwen3 8B | 소스·설치본 각각 허용 Write·차단 Write·Stop 중단 3개 시나리오 통과 |
+| API·IPC CLI·MCP HTTP·공식 SDK stdio | 소스·설치본 통과; 입력 변경, 실제 파일 바이트/부재, 호스트 Deny/Ask 우선, 진단 전달, 인증·세션 격리 |
+| 잘못된 호스트 설정 | 소스·설치본 각각 16개 모델 초기화 전 거부 |
+| 설치 및 ABI | 공개 헤더 40개·문서·카탈로그·의존성 라이선스 일치; 실제 0.21 라이브러리 로딩 |
+
+최종 검사는 직렬로 실행했다. 첫 Release 전체 실행은 50/51이며 기존 `limitsQueueAndPrivateState`의 150ms 요청이 model.waiting 상태까지 도달하지 못했다. 당시 sanitizer 빌드도 수행 중이었다. 두 작업의 인과를 분리 측정하지 않았으며 제품/테스트 기한은 바꾸지 않았다. 최초 로그 `command-hooks-release-tests.log`를 보존하고, 모든 빌드 종료 뒤 전체 Release·sanitizer·설치 검사를 통과했다. ASAN_OPTIONS=malloc_context_size=0, UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1로 C·C++ 계측을 유지한다.
+
+C++ 명령 검사는 실제 셸 프로세스로 Unicode/셸 문자 stdin 전달, 입력 변경 뒤 실제 Write, 호스트 규칙 및 Plan 우선, 다음 호출의 권한 비복원, exit 2 차단·다른 오류 비차단, JSON 우선 처리, 실제 병렬 장벽, 세션별 once, 취소·시간/출력 제한과 자손 정리를 검증한다. Stop 차단의 두 번째 턴과 continue:false의 독립 중단 이유, 자식의 ID·transcript·Start/Stop 진단도 확인했다. 자식/반복 턴 단위 검사는 결정적인 C++ Model 대역이며 실제 모델 전체 위임 검증과 구분한다.
+
+TDD에서 미매칭 훅도 큰 결과를 직렬화하던 오류와 UTF-8 변환 완료 전에 오류를 확인하던 결함을 재현했다. 매칭 항목을 먼저 고르고 QString 변환을 끝낸 뒤 판정하도록 수정했다. 끝이 잘린 UTF-8도 거부한다. `command-hooks-unmatched-red.log/xml`, `command-hooks-utf8-red.txt` 및 수정 후 로그를 보존했다. 초기 wire 테스트가 이벤트 키를 kind로 잘못 기대한 실패는 기존 event 키로 수정했다. 해당 로그도 남아 있다.
+
+API는 훅 활성 여부와 CLI 조회 일치, 다른 앱 세션 404·잘못된 토큰 401·원격 hooks 주입 400을 확인했다. TaskCreated의 외부 명령이 게시를 거부하면 작업이 저장되지 않으며 TaskCompleted 입력도 확인한다. MCP는 실제 파일 경로 변경·Deny/Ask·exit 2 차단, progressToken 진단, 시작 후 설정 파일 변경의 비적용을 검사했다. 공식 Python MCP SDK 1.26.0 stdio에서도 파일 쓰기와 차단을 확인한다. MCP 직접 호출은 모델을 사용하지 않으며 실제 추론 결과는 다음과 같다.
+
+소스의 Write 호출 수는 허용 1회·거부 1회이고, 설치본은 허용 1회·거부 1회이다. 각 도구 결과를 transcript의 call ID와 짝지었다. 허용은 파일 바이트 일치, 차단은 파일 부재와 HOOK_BLOCK 오류를 요구한다. 두 호스트에서 별도 실제 응답의 Stop 명령이 HOST_STOP을 반환하여 cancelled 상태로 끝나는 것도 확인했다.
+
+모델은 Qwen3 8B Q4_K_M, 5,027,783,488바이트, SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`이며 이번에도 가중치 해시를 별도로 검증했다. 컨텍스트 8192·temperature 0·최대 출력 1024(Stop 시나리오 64), enable_thinking=false, tool_grammar=false이다. 무결성 검증을 유지한 API 시작은 소스 54.321초·설치본 53.510초다. 이 결과는 모든 모델의 지시 이행이나 초기화 성능을 입증하지 않는다.
+
+설치 prefix는 `build/command-hooks-stage`, 소비자는 `build/command-hooks-consumer/build`이다. 라이브러리 SHA-256 `bbf550720d89e6f355e01987ef5f67b22acb067a68651f9664760bea7682dbf6`, Mach-O UUID `BB1C7703-3905-37AA-B3E2-EB8528C6EEAB`가 소스·설치본에서 일치한다. CLI·daemon·MCP 버전은 0.21.0이다. CLI는 바이트 일치, daemon/MCP는 CMake RPATH 설치 변경을 소스 복사본에 적용한 뒤 SHA 일치와 UUID를 확인했다. CLI의 추론 라이브러리 비연결, 의존성 C 심볼 비공개와 실제 설치 경로 로딩도 확인했다. 문서 최종본도 같은 prefix에 재설치하여 대조한다.
+
+검증 기록은 `build/command-hooks-verification.json`, `command-hooks-linkage.json`, 소스·설치 native JSON과 개별 log/JUnit에 있고 원격 게시 결과는 `command-hooks-publication.json`에 기록한다. 공개 ABI는 0.21이므로 소비자는 헤더·라이브러리를 함께 갱신해 다시 빌드한다.
+
+전체 생명주기, HTTP/prompt/agent/async 훅, updatedMCPToolOutput, 영속 once, 스킬·에이전트·플러그인 설정 병합, Windows/모바일 명령 및 Linux 실기기 검증은 남아 있다. hooks와 전체 목표는 partial이다. 이 단계는 SDK 구현/설치 소비자 검증이며 Society·Dreamscapes 재패키징이나 실기기 생성 완료를 뜻하지 않는다. iPhone 제외 지시와 기존 사용자 daemon을 유지한다.
+
 ## 2026-09-15 C++ 추가 작업 디렉터리 (0.20.0)
 
 `permissions.additionalDirectories`와 daemon의 `--agent-add-dir`·MCP의 `--add-dir`을 C++ 파일 도구·권한 판정·자식 에이전트에 연결했다. 현재 경로와 출처·상태는 인증 API·IPC CLI·MCP에서 조회하고 모델의 각 턴에도 전달한다. 설정 삭제는 다음 호출에 반영한다. 도구 권한·호스트 비공개 경로·자식 도구 범위는 추가 디렉터리 안에도 적용한다. 새 생산 의존성은 없으며 Qt와 C++ 실행기를 재사용한다. Python은 검증 클라이언트다. 정확한 계약은 [WorkingDirectories.md](WorkingDirectories.md)를 따른다.

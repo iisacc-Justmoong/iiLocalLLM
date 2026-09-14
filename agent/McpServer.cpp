@@ -249,18 +249,25 @@ public:
         if (!options.artifactsDirectory.isEmpty()) context.artifactsDirectory = QDir(options.artifactsDirectory).filePath(context.sessionId + '/' + context.runId);
         const auto source = frozen->get(name).definition.metadata["source"].toString();
         auto bindContext = [&] {
-            if (options.engine && (source == "builtin.workspace" || source == "builtin.shell" || source == "builtin.shell.control"))
+            if (options.engine && (source == "builtin.workspace" || source == "builtin.shell" || source == "builtin.shell.control")) {
                 context.sessionId = sessionId(conversation(request.sessionId), request.cancellation);
+                context.transcriptPath=options.engine->transcriptPath(context.sessionId);
+            }
+        };
+        int hookProgress=0;
+        auto observe=[&](const Event& event) {
+            if(event.kind==EventKind::Hook&&request.progress)request.progress({{"progress",++hookProgress},{"message","hook"},
+                {"_meta",QJsonObject{{"iisacc/agentEvent",toJson(event)}}}});
         };
         const bool shellControl = source == "builtin.shell.control" && QStringList{"TaskOutput", "TaskStop", "ShellTaskList"}.contains(name);
         const bool inputControl = options.engine && source == "builtin.input.control"
             && QStringList{"iiLocalLLM.agent.inputs.enqueue", "iiLocalLLM.agent.inputs.list", "iiLocalLLM.agent.inputs.remove"}.contains(name);
         const bool subagentControl = options.engine && source == "builtin.subagent.control";
-        if (shellControl || inputControl || subagentControl) { bindContext(); return wireResult(runner.run(call, context)); }
+        if (shellControl || inputControl || subagentControl) { bindContext(); return wireResult(runner.run(call, context,observe)); }
         std::shared_lock shared(execution, std::defer_lock); std::unique_lock exclusive(execution, std::defer_lock);
         if (runner.concurrencySafe(call)) acquire(shared, request.cancellation); else acquire(exclusive, request.cancellation);
         bindContext();
-        return wireResult(runner.run(call, context));
+        return wireResult(runner.run(call, context,observe));
     }
 };
 }
@@ -271,7 +278,10 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
     mcp::ServerOptions server;
     server.lists["tools/list"] = [state](const auto&) {
         QJsonArray result;
-        for (const auto& tool : state->snapshot()->definitions()) result.append(wireDefinition(tool, state->options.appId));
+        for (const auto& tool : state->snapshot()->definitions()) {
+            auto definition=wireDefinition(tool,state->options.appId);auto metadata=definition["_meta"].toObject();
+            metadata["iisacc/hooksEnabled"]=!state->options.tools.hooks.isEmpty();definition["_meta"]=metadata;result.append(definition);
+        }
         return result;
     };
     server.handlers["tools/call"] = [state](const auto& params, const auto& request) { return state->call(params, request); };

@@ -376,9 +376,15 @@
         "agent/Subagents.cpp",
         "tests/agent_profiles_tests.cpp",
         "tests/subagent_tests.cpp",
-        "docs/AgentProfiles.md"
+        "docs/AgentProfiles.md",
+        "agent/CommandHooks.h",
+        "agent/CommandHooks.cpp",
+        "tools/CommandHookConfig.h",
+        "tests/command_hooks_tests.cpp",
+        "tests/command_hooks_wire.py",
+        "docs/CommandHooks.md"
       ],
-      "remaining": "C++ model/tool/stop/compaction, pre-commit TaskCreated/TaskCompleted and SubagentStart/SubagentStop callbacks are implemented. Child Stop is mapped to SubagentStop; veto, feedback and stop_hook_active are tested. Start precedes child Engine.run and has no runId yet. Full lifecycle and external command/HTTP/model hook runners, including agent-file hooks, remain."
+      "remaining": "C++ model/tool/stop/compaction, pre-commit TaskCreated/TaskCompleted and SubagentStart/SubagentStop callbacks are implemented. Version 0.21 adds explicit host-configured desktop POSIX command hooks, JSON stdin and output, updatedInput, invocation-only permission candidates under existing host rules, stop/cancel diagnostics, bounded parallelism, process-local per-session once, process cleanup and API/CLI/MCP integration. Start precedes child Engine.run and has no runId yet. Full lifecycle, HTTP/prompt/agent/async runners, updated MCP output, durable once state, agent/skill/plugin hooks merging and cross-platform/real-app qualification remain. See CommandHooks.md for deliberate differences from the reference."
     },
     {
       "id": "tasks",

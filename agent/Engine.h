@@ -44,6 +44,7 @@ public:
     Session createSession(QString model, QString workspace, QString systemPrompt = {});
     Session session(const QString& id) const;
     Session sessionMetadata(const QString& id) const;
+    QString transcriptPath(const QString& sessionId) const;
     SkillCatalog skills(const QString& sessionId, const CancellationToken& = {}) const;
     QJsonObject permissions(const QString& sessionId, const CancellationToken& = {}) const;
     QStringList sessions() const;

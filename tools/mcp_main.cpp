@@ -7,6 +7,7 @@
 #include "McpCredentials.h"
 #include "AgentProfileConfig.h"
 #include "PermissionSettingsConfig.h"
+#include "CommandHookConfig.h"
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
@@ -19,13 +20,14 @@
 namespace { volatile std::sig_atomic_t interrupted = 0; void interrupt(int) { interrupted = 1; } }
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.20.0");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.21.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},
         {"allow", "Allow a tool permission rule, e.g. Write(src/**), Bash(git status:*) or Skill(review); repeat for more rules. Read-only tools are allowed by default.", "pattern"},
         {"permission-settings", "Private host configuration outside the workspace for layered permission settings.", "file"},
         {"add-dir", "Additional file working directory; repeat. Does not enable disk settings without --permission-settings.", "directory"},
+        {"hooks", "Private command-hook JSON configuration outside the workspace.", "file"},
         {"mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
         {"mcp-project", "Load workspace/.mcp.json after explicit MCP configuration files."},
         {"mcp-eager", "Publish all configured MCP tools to the agent without ToolSearch."},
@@ -129,6 +131,8 @@ int main(int argc, char** argv) {
         }
         if(parser.isSet("permission-settings")&&parser.value("permission-settings").isEmpty())throw std::runtime_error("--permission-settings requires a file");
         auto policy=iiLocalLLMClient::permissionConfig(parser.value("permission-settings"),workspace,rules,hostRules,parser.values("add-dir"));
+        if(parser.isSet("hooks")&&parser.value("hooks").isEmpty())throw std::runtime_error("--hooks requires a file");
+        const auto hooks=iiLocalLLMClient::commandHookConfig(parser.value("hooks"),workspace);
         std::shared_ptr<a::ShellTasks> shells;
 #if defined(Q_OS_UNIX) && !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
         if (!parser.isSet("no-background")) shells = std::make_shared<a::ShellTasks>(workspace,
@@ -143,7 +147,7 @@ int main(int argc, char** argv) {
 #endif
         if (parser.isSet("apps-dir")) connectionOptions.localApplicationsDirectory = QFileInfo(parser.value("apps-dir")).absoluteFilePath();
         QStringList privatePaths{privateState.isEmpty()?QDir(workspace).filePath(".iilocal-llm"):privateState};
-        for(const auto& key:{"credentials","permission-settings","agent-profiles","model-options","sessions","artifacts"})
+        for(const auto& key:{"credentials","permission-settings","agent-profiles","model-options","sessions","artifacts","hooks"})
             if(parser.isSet(key))privatePaths.append(parser.value(key));
         for(const auto& file:connectionOptions.configFiles)privatePaths.append(QDir::isAbsolutePath(file)?file:QDir(workspace).filePath(file));
         if(!connectionOptions.localApplicationsDirectory.isEmpty())privatePaths.append(connectionOptions.localApplicationsDirectory);
@@ -153,6 +157,7 @@ int main(int argc, char** argv) {
             connections = std::make_unique<a::McpConnections>(registry, std::move(connectionOptions));
         std::unique_ptr<iiLocalLLM::Service> service;
         a::McpServerOptions options; options.workingDirectory = workspace; options.appId = "com.iisacc.iiLocalLLM";
+        options.tools.hooks=hooks;
         options.artifactsDirectory = !privateState.isEmpty() ? QDir(privateState).filePath("artifacts")
             : parser.isSet("artifacts") ? parser.value("artifacts") : QDir(workspace).filePath(".iilocal-llm/artifacts");
         if (agent) {
@@ -162,6 +167,7 @@ int main(int argc, char** argv) {
             if (parser.isSet("model-options"))
                 (void)service->loadModel({parser.value("model"), contextTokens, modelOptions}).get();
             a::EngineOptions engineOptions;
+            engineOptions.hooks=hooks;
             engineOptions.taskToolsEnabled = !parser.isSet("no-tasks");
             engineOptions.skills.enabled = !parser.isSet("no-skills");
             engineOptions.skills.directories = parser.values("skills-dir");

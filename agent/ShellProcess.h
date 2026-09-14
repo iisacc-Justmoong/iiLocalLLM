@@ -1,6 +1,7 @@
 #pragma once
 #include "Types.h"
 #include <QtCore/QProcess>
+#include <QtCore/QProcessEnvironment>
 #include <chrono>
 #include <exception>
 #ifdef Q_OS_UNIX
@@ -14,13 +15,18 @@ struct ShellExit { int code; bool crashed; };
 // and background execution use the same process-group cleanup and input EOF.
 inline ShellExit shellProcess(const QString& workspace, const QString& command, int timeoutMs,
     const CancellationToken& token, const std::function<void()>& started,
-    const std::function<void(const QByteArray&, bool)>& output) {
+    const std::function<void(const QByteArray&, bool)>& output,
+    const QByteArray& input = {}, const QProcessEnvironment* environment = nullptr,
+    const QString& program = {}, const QStringList& arguments = {}) {
     token.throwIfCancelled(); QProcess process; process.setWorkingDirectory(workspace);
+    if(environment)process.setProcessEnvironment(*environment);
 #ifdef Q_OS_UNIX
     process.setUnixProcessParameters(QProcess::UnixProcessFlag::CreateNewSession | QProcess::UnixProcessFlag::CloseFileDescriptors);
-    process.start("/bin/bash", {"--noprofile", "--norc", "-c", command});
+    process.start(program.isEmpty()?QString("/bin/bash"):program,
+        program.isEmpty()?QStringList{"--noprofile", "--norc", "-c", command}:arguments);
 #else
-    process.start("cmd.exe", {"/D", "/S", "/C", command});
+    process.start(program.isEmpty()?QString("cmd.exe"):program,
+        program.isEmpty()?QStringList{"/D", "/S", "/C", command}:arguments);
 #endif
     if (!process.waitForStarted(5000)) throw Error(ErrorCode::RuntimeFailure, "Could not start shell: " + process.errorString());
     const auto pid = process.processId();
@@ -54,7 +60,9 @@ inline ShellExit shellProcess(const QString& workspace, const QString& command, 
         }
     };
     try {
-        process.closeWriteChannel(); token.throwIfCancelled(); if (started) started();
+        if(started)started();
+        if(!input.isEmpty()&&process.write(input)!=input.size())throw Error(ErrorCode::RuntimeFailure,"Could not write process input");
+        process.closeWriteChannel(); token.throwIfCancelled();
         for (;;) {
             process.waitForReadyRead(20); drain(true);
             token.throwIfCancelled();

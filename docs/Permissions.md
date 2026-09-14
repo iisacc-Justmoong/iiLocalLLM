@@ -69,3 +69,5 @@ native Skill은 파일 경로·SHA-256·인자·allowed_tools를 고정한다. �
 Read/Write/Edit도 canonical 대상을 준비하고 실행 직전에 원래 경로와 고정된 대상이 같은지 재확인한다. 권한 질문이나 ToolStarted 관찰자 동안 경로가 다른 링크로 교체되면 실패한다. 기존 파일 도구의 경합 검사를 유지하지만 파일 I/O 전체를 openat 디스크립터로 고정한 OS 수준 경합 방어는 아니다. 현재 비-POSIX 실행기의 Bash라는 도구는 cmd.exe를 실행하므로 Bash 인자 규칙으로 자동 허용하지 않으며, 인자 Deny/Ask는 보수적으로 적용한다. 해당 플랫폼의 전체 셸 의미는 별도 구현이 필요하다.
 
 비교 근거는 참조 커밋 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `tools/SkillTool/SkillTool.ts`, `screens/REPL.tsx`, `utils/forkedAgent.ts`, `utils/permissions/permissionSetup.ts`, `permissionRuleParser.ts`, `tools/BashTool/bashPermissions.ts`이다. 참조 TypeScript나 프롬프트를 SDK에 복사하지 않았다. 파일 기반 관리/사용자/프로젝트 권한 설정 계층은 0.19.0의 [PermissionSettings.md](PermissionSettings.md)에 구현 범위를 기록했다. 추가 디렉터리는 [WorkingDirectories.md](WorkingDirectories.md)에 구현 범위를 기록한다. 외부 관리 공급자, 자동 권한 분류, 참조 전체 인자 의미·별칭, 원격 질문 중개와 OS 샌드박스는 구현이 남아 있다.
+
+0.21.0의 명령 PreToolUse 훅은 입력을 바꾸고 호출 한 번에만 allow/ask/deny를 제공한다. 수정 입력을 다시 검증하며 명시적 호스트 Deny/Ask·Plan·자식 범위·파일 경계가 우선한다. Allow를 다음 호출이나 resume에 저장하지 않는다. 커스텀 정책의 최종 판단도 유지한다. [CommandHooks.md](CommandHooks.md)에 순서와 실패 계약을 기록한다.

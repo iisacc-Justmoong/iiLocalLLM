@@ -84,6 +84,10 @@ struct HookResult {
     bool block = false;
     QString feedback;
     std::optional<QJsonObject> updatedArguments;
+    std::optional<PermissionDecision> permission; // Invocation-only; existing deny/ask rules and scope still apply.
+    bool stop = false; // Stop the current run, distinct from requesting another Stop-hook turn.
+    QString stopReason;
+    QJsonArray diagnostics;
 };
 using Hook = std::function<HookResult(const HookInput&, const CancellationToken&)>;
 using PermissionCallback = std::function<bool(const ToolCall&, const PermissionDecision&, const ToolContext&)>;
