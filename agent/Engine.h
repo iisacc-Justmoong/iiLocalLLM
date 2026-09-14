@@ -26,6 +26,8 @@ struct EngineOptions {
     bool taskToolsDeferred = true;
     InputQueueOptions inputQueue;
     SkillOptions skills;
+    QList<Tool> additionalTools; // Host-owned orchestration tools; merged into each live registry snapshot.
+    std::function<bool(const ToolDefinition&)> toolFilter; // Applied before and after deferred discovery.
 };
 class IILOCALLLM_EXPORT Engine {
 public:
@@ -52,6 +54,11 @@ public:
     RunHandle runQueued(RunRequest, EventCallback = {});
     bool taskToolsEnabled() const;
     bool backgroundTasksEnabled() const;
+    bool subagentsEnabled() const;
+    QList<ToolDefinition> subagentToolDefinitions() const;
+    void stopSubagents(const QString& sessionId) const; // Host lifecycle cleanup, independent of model permissions.
+    ToolResult runSubagentTool(const QString& sessionId, const QString& name, const QJsonObject& arguments = {},
+        const CancellationToken& = {}, const EventCallback& = {}) const;
     ToolResult runShellTool(const QString& sessionId, const QString& name, const QJsonObject& arguments = {},
         const CancellationToken& = {}, const EventCallback& = {}) const;
     // Uses the same policy and hooks as model calls. Available during an active

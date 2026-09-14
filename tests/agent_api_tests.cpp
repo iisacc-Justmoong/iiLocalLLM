@@ -52,6 +52,45 @@ template<class F> void error(F fn, ErrorCode expected) {
 class AgentApiTests : public QObject {
     Q_OBJECT
 private slots:
+    void childGenerationUsesHostOptionsIndependentlyOfParentRequests() {
+        class OptionsModel final : public a::Model {
+            a::ModelReply generate(const a::ModelRequest& r,const CancellationToken&,const TextCallback&) override {
+                return {QString::number(r.generation.temperature)+":"+QString::number(r.generation.maxTokens),{}};
+            }
+        };
+        QTemporaryDir root;auto o=options(root);o.subagentsEnabled=true;
+        o.subagents.generation.temperature=0.31;o.subagents.generation.maxTokens=77;
+        a::Api api(std::make_shared<OptionsModel>(),std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass),o);
+        const auto id=call(api,"agent.sessions.create",{{"model","local"}}).value("session_id");
+        const auto child=call(api,"agent.agents.run",{{"session_id",id},{"prompt","report settings"}});
+        QVERIFY(!child["is_error"].toBool());QCOMPARE(child["result"].toObject()["result"].toObject()["text"],"0.31:77");
+        const auto parent=call(api,"agent.run",{{"session_id",id},{"prompt","report settings"},{"options",QJsonObject{{"temperature",0.2},{"max_tokens",99}}}});
+        QCOMPARE(parent["text"],"0.2:99");
+        QVERIFY(call(api,"agent.agents.run",{{"session_id",id},{"prompt","replace settings"},{"options",QJsonObject{{"temperature",1.0}}}})["is_error"].toBool());
+    }
+    void subagentControlsAreAuthenticatedAndRemainResponsive() {
+        QTemporaryDir root; auto o=options(root); o.subagentsEnabled=true;
+        o.maxConcurrentRequests=1; o.maxQueuedRequests=0;
+        auto model=std::make_shared<Model>();
+        a::Api api(model,std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass),o);
+        const auto id=call(api,"agent.sessions.create",{{"model","local"}}).value("session_id");
+        QVERIFY(call(api,"agent.info")["subagents_enabled"].toBool());
+        auto launched=call(api,"agent.agents.run",{{"session_id",id},{"prompt","wait"},{"run_in_background",true}});
+        QVERIFY(!launched["is_error"].toBool()); const auto child=launched["result"].toObject().value("agentId");
+        QTRY_VERIFY(model->waiting.load());
+        QVERIFY_THROWS_EXCEPTION(Error,call(api,"agent.agents.list",{{"session_id",id}},secondToken));
+        const auto other=call(api,"agent.sessions.create",{{"model","local"}},secondToken).value("session_id");
+        auto foreign=call(api,"agent.agents.output",{{"session_id",other},{"agent_id",child}},secondToken);
+        QVERIFY(foreign["is_error"].toBool());
+        auto waiting=api.dispatch("agent.agents.output",{{"session_id",id},{"agent_id",child},{"block",true},{"timeout_ms",2000}},firstToken);
+        auto stopped=call(api,"agent.agents.stop",{{"session_id",id},{"agent_id",child}}); QVERIFY(!stopped["is_error"].toBool());
+        QVERIFY(waiting.result.wait_for(3s)==std::future_status::ready);
+        QCOMPARE(waiting.result.get().toObject()["result"].toObject()["status"],"cancelled");
+        QCOMPARE(call(api,"agent.inputs.list",{{"session_id",id}})["count"],1);
+        auto resumed=call(api,"agent.agents.run",{{"session_id",id},{"resume",child},{"prompt","continue"}});
+        QVERIFY(!resumed["is_error"].toBool()); QCOMPARE(resumed["result"].toObject()["status"],"completed");
+        QVERIFY(call(api,"agent.sessions.get",{{"session_id",id}})["messages"].toArray().isEmpty());
+    }
     void skillsAreClientScopedAndRunWithoutPlaceholderPrompt() {
         QTemporaryDir root; auto o = options(root);
         const auto dir = o.workingDirectory + "/.claude/skills/inspect"; QVERIFY(QDir().mkpath(dir));
@@ -283,7 +322,14 @@ private slots:
         QCOMPARE(next["sessions"].toArray().size(), 1); QVERIFY(!next.contains("next_cursor"));
         auto active = api.dispatch("agent.run", {{"session_id", id}, {"prompt", "wait"}}, firstToken); QTRY_VERIFY(model->waiting.load());
         auto queued = api.dispatch("agent.sessions.create", {{"model", "fixture"}}, secondToken); queued.cancel();
-        QCOMPARE(call(api, "agent.status", {{"request_id", active.requestId}})["state"].toString(), "running");
+        try {
+            QCOMPARE(call(api, "agent.status", {{"request_id", active.requestId}})["state"].toString(), "running");
+        } catch (const Error& e) {
+            // The deliberate 150 ms deadline may expire before this status
+            // request is scheduled. Completion removes active request IDs.
+            QCOMPARE(e.code(), ErrorCode::NotFound);
+            QVERIFY(active.result.wait_for(1s) == std::future_status::ready);
+        }
         error([&] { (void)active.result.get(); }, ErrorCode::Timeout);
         error([&] { (void)queued.result.get(); }, ErrorCode::Cancelled);
         QCOMPARE(call(api, "agent.sessions.list", {}, secondToken)["sessions"].toArray().size(), 0);

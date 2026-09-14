@@ -1,6 +1,7 @@
 #include "agent/McpServer.h"
 #include "agent/McpConnections.h"
 #include "agent/ShellTasks.h"
+#include "agent/Subagents.h"
 #include "mcp/LocalApplications.h"
 #include "mcp/HttpServer.h"
 #include "McpCredentials.h"
@@ -16,7 +17,7 @@
 namespace { volatile std::sig_atomic_t interrupted = 0; void interrupt(int) { interrupted = 1; } }
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.14.0");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.15.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},
@@ -28,6 +29,7 @@ int main(int argc, char** argv) {
         {"no-apps", "Disable discovery of running local applications."},
         {"no-tasks", "Disable persistent task and todo tools."},
         {"no-skills", "Disable local skill discovery and invocation in the agent."},
+        {"no-subagents", "Disable delegated local agent execution."},
         {"skills-dir", "Additional host-authorized skills directory; repeat in highest-priority-first order.", "directory"},
         {"no-background", "Disable background shell execution and its control tools."},
         {"artifacts", "Directory for large tool results.", "path"},
@@ -36,7 +38,7 @@ int main(int argc, char** argv) {
         {"sessions", "Agent transcript directory (default: workspace/.iilocal-llm/sessions).", "path"},
         {"http-port", "Serve Streamable HTTP on 127.0.0.1/mcp; 0 selects an available port.", "port"},
         {"credentials", "Private JSON client-ID/token file outside the workspace; required with --http-port.", "path"},
-        {"state", "Private directory disjoint from the workspace; required with --http-port.", "path"},
+        {"state", "Private directory disjoint from the workspace; required for HTTP and subagents.", "path"},
         {"origin", "Additional exact browser origin allowed by HTTP; repeat for more origins.", "origin"},
         {"context", "Local model context tokens.", "tokens", "4096"},
         {"max-tokens", "Generated tokens per agent turn.", "tokens", "512"},
@@ -62,35 +64,45 @@ int main(int argc, char** argv) {
         const auto statePath = parser.value("state");
         iiLocalLLM::mcp::HttpServerOptions transport;
         quint16 port = 0; QString privateState; std::unique_ptr<QLockFile> stateLock;
-        if (http || parser.isSet("credentials") || parser.isSet("state") || parser.isSet("origin")) {
-            if (!http || !parser.isSet("credentials") || !parser.isSet("state") || parser.isSet("sessions") || parser.isSet("artifacts"))
-                throw std::runtime_error("HTTP requires --http-port, --credentials and --state; use --state instead of --sessions or --artifacts");
+        if (http) {
+            if (!parser.isSet("credentials") || !parser.isSet("state"))
+                throw std::runtime_error("HTTP requires --credentials and --state");
             const auto value = parser.value("http-port").toUInt(&ok);
             if (!ok || value > 65535) throw std::runtime_error("--http-port must be an integer in [0, 65535]");
             port = quint16(value);
-            // Complete credential validation before model/driver initialization.
             transport.authenticate = iiLocalLLMClient::mcpCredentials(parser.value("credentials"), workspace);
             transport.allowedOrigins = parser.values("origin");
-            if (statePath.trimmed().isEmpty() || !QDir().mkpath(statePath)) throw std::runtime_error("Cannot create MCP HTTP state directory");
+        } else if (parser.isSet("credentials") || parser.isSet("origin")) {
+            throw std::runtime_error("Credentials and origins require --http-port");
+        }
+        if (parser.isSet("state")) {
+            if (parser.isSet("sessions") || parser.isSet("artifacts"))
+                throw std::runtime_error("Use --state instead of --sessions or --artifacts");
+            if (statePath.trimmed().isEmpty() || !QDir().mkpath(statePath)) throw std::runtime_error("Cannot create MCP state directory");
             privateState = QFileInfo(statePath).canonicalFilePath();
             if (privateState.isEmpty() || iiLocalLLMClient::containsPath(workspace, privateState)
                 || iiLocalLLMClient::containsPath(privateState, workspace))
-                throw std::runtime_error("MCP HTTP state and workspace must be disjoint");
+                throw std::runtime_error("MCP state and workspace must be disjoint");
             if (!QFile::setPermissions(privateState, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner))
-                throw std::runtime_error("Cannot make MCP HTTP state private");
+                throw std::runtime_error("Cannot make MCP state private");
             stateLock = std::make_unique<QLockFile>(QDir(privateState).filePath("mcp.lock")); stateLock->setStaleLockTime(0);
-            if (!stateLock->tryLock(0)) throw std::runtime_error("MCP HTTP state is already owned or inaccessible");
+            if (!stateLock->tryLock(0)) throw std::runtime_error("MCP state is already owned or inaccessible");
         }
         namespace a = iiLocalLLM::agent;
         QList<a::PermissionRule> rules;
         for (const auto& value : parser.values("allow")) rules.append({value, a::PermissionBehavior::Allow});
         const bool agent = parser.isSet("model");
-        if (agent) rules.append({"iiLocalLLM.agent.run", a::PermissionBehavior::Allow});
+        if (agent) {
+            rules.append({"iiLocalLLM.agent.run", a::PermissionBehavior::Allow});
+            // The inner native Agent/AgentStop call still evaluates host policy.
+            rules.append({"iiLocalLLM.agent.agents.run", a::PermissionBehavior::Allow});
+            rules.append({"iiLocalLLM.agent.agents.stop", a::PermissionBehavior::Allow});
+        }
         auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::DontAsk, rules);
         std::shared_ptr<a::ShellTasks> shells;
 #if defined(Q_OS_UNIX) && !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
         if (!parser.isSet("no-background")) shells = std::make_shared<a::ShellTasks>(workspace,
-            http ? QDir(privateState).filePath("shells") : QDir(workspace).filePath(".iilocal-llm/shells"));
+            !privateState.isEmpty() ? QDir(privateState).filePath("shells") : QDir(workspace).filePath(".iilocal-llm/shells"));
 #endif
         auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, workspace, shells);
         a::McpConnectionOptions connectionOptions; connectionOptions.workingDirectory = workspace;
@@ -106,7 +118,7 @@ int main(int argc, char** argv) {
             connections = std::make_unique<a::McpConnections>(registry, std::move(connectionOptions));
         std::unique_ptr<iiLocalLLM::Service> service;
         a::McpServerOptions options; options.workingDirectory = workspace; options.appId = "com.iisacc.iiLocalLLM";
-        options.artifactsDirectory = http ? QDir(privateState).filePath("artifacts")
+        options.artifactsDirectory = !privateState.isEmpty() ? QDir(privateState).filePath("artifacts")
             : parser.isSet("artifacts") ? parser.value("artifacts") : QDir(workspace).filePath(".iilocal-llm/artifacts");
         if (agent) {
             if (!parser.isSet("models") || !parser.value("model").startsWith("model://")) throw std::runtime_error("--model requires a model:// URI and --models catalog");
@@ -116,13 +128,20 @@ int main(int argc, char** argv) {
             engineOptions.taskToolsEnabled = !parser.isSet("no-tasks");
             engineOptions.skills.enabled = !parser.isSet("no-skills");
             engineOptions.skills.directories = parser.values("skills-dir");
-            engineOptions.sessionsDirectory = http ? QDir(privateState).filePath("sessions")
+            engineOptions.sessionsDirectory = !privateState.isEmpty() ? QDir(privateState).filePath("sessions")
                 : parser.isSet("sessions") ? parser.value("sessions") : QDir(workspace).filePath(".iilocal-llm/sessions");
-            options.engine = std::make_shared<a::Engine>(std::make_shared<a::ServiceModel>(*service), registry, policy, engineOptions);
+            auto model = std::make_shared<a::ServiceModel>(*service);
+            if (!privateState.isEmpty() && !parser.isSet("no-subagents")) {
+                a::SubagentOptions subagents; subagents.workingDirectory = workspace;
+                subagents.stateDirectory = QDir(privateState).filePath("subagents");
+                subagents.maxRuntimeMs = timeout; subagents.generation.maxTokens = maxTokens; subagents.generation.temperature = temperature;
+                engineOptions.additionalTools = a::Subagents::tools(std::make_shared<a::Subagents>(model, registry, policy, engineOptions, subagents));
+            }
+            options.engine = std::make_shared<a::Engine>(model, registry, policy, engineOptions);
             options.model = parser.value("model"); options.generation.maxTokens = maxTokens; options.generation.temperature = temperature;
         }
         if (!agent && !parser.isSet("no-tasks"))
-            options.taskStore = std::make_shared<a::TaskStore>(http ? QDir(privateState).filePath("tasks")
+            options.taskStore = std::make_shared<a::TaskStore>(!privateState.isEmpty() ? QDir(privateState).filePath("tasks")
                 : QDir(workspace).filePath(".iilocal-llm/tasks"));
         auto server = a::mcpServerOptions(registry, policy, std::move(options)); server.requestTimeoutMs = timeout;
         if (http) {

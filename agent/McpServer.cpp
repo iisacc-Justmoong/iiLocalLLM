@@ -79,6 +79,7 @@ public:
         stopShells(owner);
     }
     void stopShells(const QString& owner) {
+        if (options.engine) { try { options.engine->stopSubagents(owner); } catch (const Error&) {} }
         // This is host lifecycle cleanup, independent of the model's stop rule.
         // Native lists put every active job first (at most 64).
         try {
@@ -99,6 +100,18 @@ public:
         if (options.taskStore)
             for (auto tool : taskTools(options.taskStore, {}, false)) frozen->add(std::move(tool));
         if (!options.engine) return frozen;
+        if (options.engine->subagentsEnabled()) for (auto definition : options.engine->subagentToolDefinitions()) {
+            const auto nativeName = definition.name;
+            const QMap<QString, QString> names{{"Agent", "run"}, {"AgentOutput", "output"}, {"AgentStop", "stop"}, {"AgentList", "list"}};
+            definition.name = "iiLocalLLM.agent.agents." + names[nativeName];
+            definition.metadata = {{"source", nativeName == "Agent" ? "builtin.subagent.run" : "builtin.subagent.control"}};
+            Tool tool; tool.definition = definition;
+            tool.execute = [self, nativeName](const QJsonObject& args, const ToolContext& context) {
+                const auto id = self->sessionId(self->conversation(context.sessionId), context.cancellation);
+                return self->options.engine->runSubagentTool(id, nativeName, args, context.cancellation);
+            };
+            frozen->add(std::move(tool));
+        }
         if (options.engine->taskToolsEnabled()) for (auto definition : taskToolDefinitions(false)) {
             Tool tool; tool.definition = definition;
             tool.execute = [self, name = definition.name](const QJsonObject& args, const ToolContext& context) {
@@ -234,7 +247,8 @@ public:
         const bool shellControl = source == "builtin.shell.control" && QStringList{"TaskOutput", "TaskStop", "ShellTaskList"}.contains(name);
         const bool inputControl = options.engine && source == "builtin.input.control"
             && QStringList{"iiLocalLLM.agent.inputs.enqueue", "iiLocalLLM.agent.inputs.list", "iiLocalLLM.agent.inputs.remove"}.contains(name);
-        if (shellControl || inputControl) { bindContext(); return wireResult(runner.run(call, context)); }
+        const bool subagentControl = options.engine && source == "builtin.subagent.control";
+        if (shellControl || inputControl || subagentControl) { bindContext(); return wireResult(runner.run(call, context)); }
         std::shared_lock shared(execution, std::defer_lock); std::unique_lock exclusive(execution, std::defer_lock);
         if (runner.concurrencySafe(call)) acquire(shared, request.cancellation); else acquire(exclusive, request.cancellation);
         bindContext();

@@ -1,5 +1,6 @@
 #pragma once
 #include "Engine.h"
+#include "Subagents.h"
 #include "../Rpc.h"
 #include <QtCore/QMap>
 
@@ -19,6 +20,8 @@ struct ApiOptions {
     int requestTimeoutMs = 300000;
     int maxConcurrentInputControls = 2;
     int maxQueuedInputControls = 16;
+    bool subagentsEnabled = false; // Embedded hosts opt in; daemon enables by default.
+    SubagentOptions subagents; // workspace/state are assigned per authenticated client.
 };
 // One authenticated service shared by HTTP and native IPC. App identities own
 // separate persistent Engine stores. Model, registry and policy are host-owned.

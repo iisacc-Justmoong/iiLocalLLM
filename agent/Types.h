@@ -4,6 +4,7 @@
 #include <optional>
 
 namespace iiLocalLLM::agent {
+struct Session;
 
 enum class MessageRole { User, Assistant, Tool };
 enum class RunStatus { Completed, Cancelled, TurnLimit, Failed };
@@ -54,6 +55,7 @@ struct ToolContext {
     CancellationToken cancellation;
     std::function<void(const QJsonObject&)> progress;
     quint64 contextRevision = 0; // Read-before-edit observations expire after compaction.
+    std::shared_ptr<const Session> sessionSnapshot; // Immutable parent context at the tool batch boundary.
 };
 struct ModelRequest {
     QString model;

@@ -1,6 +1,7 @@
 #include <mcp/Server.h>
 #include <agent/McpServer.h>
 #include <agent/ShellTasks.h>
+#include <agent/Subagents.h>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QFile>
 #include <QtCore/QDir>
@@ -72,6 +73,30 @@ public:
 class McpServerTests : public QObject {
     Q_OBJECT
 private slots:
+    void subagentConnectionsAreIsolatedAndClosedChildrenStop() {
+        QTemporaryDir root; const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
+        auto model=std::make_shared<HistoryModel>();auto registry=std::make_shared<a::ToolRegistry>();
+        auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
+        a::EngineOptions eo;eo.sessionsDirectory=root.filePath("sessions");eo.compaction.automatic=false;
+        a::SubagentOptions so;so.workingDirectory=workspace;so.stateDirectory=root.filePath("subagents");
+        auto agents=std::make_shared<a::Subagents>(model,registry,policy,eo,so);eo.additionalTools=a::Subagents::tools(agents);
+        auto engine=std::make_shared<a::Engine>(model,registry,policy,eo);
+        a::McpServerOptions options;options.workingDirectory=workspace;options.engine=engine;options.model="local";
+        auto bridge=a::mcpServerOptions(registry,policy,options);
+        m::ServerSession first(bridge),second(bridge);initialize(first);initialize(second);
+        auto launched=call(first,2,"iiLocalLLM.agent.agents.run",{{"prompt","hold"},{"run_in_background",true}});
+        QVERIFY(!launched["isError"].toBool());const auto id=launched["structuredContent"].toObject().value("agentId");
+        QTRY_VERIFY(model->waiting.load());
+        auto foreign=call(second,2,"iiLocalLLM.agent.agents.output",{{"agent_id",id}});QVERIFY(foreign["isError"].toBool());
+        auto listed=call(first,3,"iiLocalLLM.agent.agents.list");
+        const auto state=listed["structuredContent"].toObject()["agents"].toArray().at(0).toObject();
+        // Use the connection's actual parent identity instead of depending on UUID sort order.
+        const auto metadata=call(first,4,"iiLocalLLM.agent.session")["structuredContent"].toObject();
+        const auto owner=metadata["session_id"].toString();
+        first.close();QCOMPARE(agents->output(owner,id.toString(),true,2000)["status"],"cancelled");
+        auto other=call(second,3,"iiLocalLLM.agent.agents.list");QVERIFY(other["structuredContent"].toObject()["agents"].toArray().isEmpty());
+        QCOMPARE(state["agentId"],id);
+    }
     void skillCatalogAndInvocationUseTheConnectionConversation() {
         QTemporaryDir root; const auto path = root.filePath(".claude/skills/inspect"); QVERIFY(QDir().mkpath(path));
         QFile file(path + "/SKILL.md"); QVERIFY(file.open(QIODevice::WriteOnly));

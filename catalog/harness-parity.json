@@ -137,8 +137,19 @@
     {
       "id": "subagents",
       "requirement": "전문 에이전트·부모 컨텍스트 fork·모델/도구/권한 범위·백그라운드 알림",
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "agent/Subagents.h",
+        "agent/Subagents.cpp",
+        "agent/Engine.cpp",
+        "agent/Api.cpp",
+        "agent/McpServer.cpp",
+        "tests/subagent_tests.cpp",
+        "tests/subagent_runtime_smoke.cpp",
+        "tests/consumer/subagents.cpp",
+        "docs/Subagents.md"
+      ],
+      "remaining": "C++ separate child conversations, scoped tools/models, foreground/background execution, explicit context forks, resume, cancellation/deadlines, result controls and parent input-queue notifications are implemented. File-based and managed/plugin agent profiles, all specialist roles, skill fork invocation, dedicated lifecycle hooks, agent-specific MCP/memory/skills, automatic background transition, teams/SendMessage/mailbox, worktree/remote isolation, shared TaskOutput/TaskStop routing, trace/cost aggregation and complete real-app qualification remain. Model-level qualification and failures are recorded separately in Verification.md."
     },
     {
       "id": "teams",
@@ -247,9 +258,12 @@
         "agent/ShellTasks.h",
         "tests/shell_tasks_tests.cpp",
         "tests/consumer/shells.cpp",
-        "docs/BackgroundTasks.md"
+        "docs/BackgroundTasks.md",
+        "agent/Subagents.h",
+        "tests/consumer/subagents.cpp",
+        "docs/Subagents.md"
       ],
-      "remaining": "Authenticated HTTP/native IPC sessions, attached agent runs, ordered events, cancellation and independent background shell control/history with thin CLI are implemented. Durable background agent jobs, idempotent response replay, live permission mediation and complete iisacc product workflows remain."
+      "remaining": "Authenticated HTTP/native IPC sessions, attached parent runs, ordered events, cancellation, background shells and delegated child controls/history with thin CLI are implemented. Durable background parent jobs, idempotent response replay, live permission mediation and complete iisacc product workflows remain."
     },
     {
       "id": "discovery",
@@ -350,9 +364,12 @@
         "tests/input_queue_tests.cpp",
         "tests/input_queue_runtime_smoke.cpp",
         "tests/consumer/inputs.cpp",
-        "docs/InputQueue.md"
+        "docs/InputQueue.md",
+        "agent/Subagents.cpp",
+        "tests/subagent_tests.cpp",
+        "docs/Subagents.md"
       ],
-      "remaining": "Persistent planning tasks/todos and background Bash plus durable prompt/notification queues with now/next/later and explicit idle start are implemented through C++/API/CLI/MCP. Per-input UserPromptSubmit hooks, automatic idle wakeup, completion notification producers, media/slash/bash modes, addressed agent input, Sleep wakeup, plan transitions, background subagents and team mailbox remain. Native qualification and model failures are reported separately in Verification.md."
+      "remaining": "Persistent planning tasks/todos, background Bash, delegated child execution/completion notifications and durable prompt/notification queues with now/next/later and explicit idle start are implemented through C++/API/CLI/MCP. Per-input UserPromptSubmit hooks, automatic idle wakeup, shell completion notifications, media/slash/bash modes, addressed agent input, Sleep wakeup, plan transitions, teams/mailbox and crash-consistent subagent notification delivery remain. Native qualification and model failures are reported separately in Verification.md."
     },
     {
       "id": "git",

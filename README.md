@@ -2,7 +2,7 @@
 
 C++ 에이전트 하네스를 확장 중이다. 현재 실행 계층은 [AgentHarness.md](docs/AgentHarness.md), 전체 요구사항과 남은 구현은 [HarnessParity.md](docs/HarnessParity.md)에 기록한다. MCP/API 및 앱 전체 호환 완료와 기존 대화 기능 완료는 별도 상태로 관리한다.
 
-C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.14.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
+C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.15.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
 
 C++ stdio MCP 클라이언트가 외부 도구·리소스·프롬프트를 인식하고 에이전트 엔진에 연결한다. `iillm-mcp` 서버와 C++ 내장 API로 앱 도구 및 로컬 에이전트 실행을 외부 MCP 클라이언트에 제공한다. 프로토콜·정책·자료 보존 및 현재 지원 경계는 [MCP.md](docs/MCP.md) · [MCP 서버·앱 도구 제공](docs/MCPServer.md)에 설명한다.
 
@@ -262,7 +262,7 @@ IILOCALLLM_WITH_LLAMA=ON INSTALL_PREFIX="$PWD/build/stage" ./install.sh
 IILOCALLLM_WITH_LLAMA를 생략하면 기존 CMake 선택을 유지하며 새 구성의 기본값은 ON이다. 과거 OFF로 구성했던 build/는 `IILOCALLLM_WITH_LLAMA=ON ./install.sh`로 활성화한다. INSTALL_PREFIX, QT_PREFIX_PATH, CMAKE_PREFIX_PATH로 경로를 설정한다. Qt와 MLX Python 환경은 패키지에 복사하지 않는다.
 
 ```cmake
-find_package(iiLocalLLM 0.14.0 CONFIG REQUIRED)
+find_package(iiLocalLLM 0.15.0 CONFIG REQUIRED)
 target_link_libraries(your_app PRIVATE iiLocalLLM::iiLocalLLM)
 ```
 
@@ -297,3 +297,7 @@ GGUF smoke는 chatml을 명시하여 경량 테스트 모델도 사용한다. �
 0.13.2는 MCP 요청의 기한·경과 시간·전송 계층 제출 여부를 C++ 오류에 보존하고 연결 관리자에 실패 단계별 진단을 추가한다. 설정 파일로 서버별 초기화·요청 기한을 지정할 수 있다. 초기화 기본 기한은 유지하며 재현된 시간 초과를 해결 완료로 처리하지 않는다. [MCP 계약](docs/MCP.md), [도구 발견](docs/ToolDiscovery.md), [검증 기록](docs/Verification.md)을 참조한다.
 
 0.14.0은 로컬 SKILL.md 탐색·인자 치환·인라인 주입과 인증 API·MCP·CLI 호출을 추가한다. EngineOptions와 RunRequest 확장으로 C++ 소비자는 다시 빌드해야 한다. 스킬 실행의 권한 추가·fork·훅·설치 기능은 남아 있다. [스킬 계약](docs/Skills.md)을 참조한다.
+
+## C++ 서브에이전트 (0.15.0)
+
+별도 대화의 위임 실행·백그라운드·부모 컨텍스트 분기·재개와 도구 범위, 인증 API·MCP·CLI를 제공한다. 계약과 남은 범위는 [Subagents.md](docs/Subagents.md), 실제 모델 결과는 [Verification.md](docs/Verification.md)에 기록한다.

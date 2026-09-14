@@ -83,3 +83,5 @@ pull은 현재 모델 설치/생성과 같은 FIFO에서 실행되므로 긴 다
 `iillm --auth-file TOKEN agent inputs ACTION SESSION [PARAMS_JSON_FILE]`은 enqueue/list/remove/run을 지원한다. enqueue에는 text와 선택 kind·priority·context_paths, remove에는 input_id를 넣는다. run은 prompt 없이 남은 큐에서 실행하고 생성 옵션·max_turns·context_paths를 받는다. 최종 JSON은 기존 native IPC 경로를 사용하며 완료하지 못한 run은 종료 코드 1이다. 진행 이벤트가 필요하면 `--json rpc agent.inputs.run PARAMS_JSON_FILE`을 사용하고 파일에 session_id도 지정한다. [InputQueue.md](InputQueue.md)에 우선순위와 복구 계약을 기록한다.
 
 `iillm --auth-file FILE agent skills list SESSION`으로 스킬 목록을 조회한다. `agent skills run SESSION PARAMS_JSON_FILE`은 `skill`과 선택적 `skill_arguments`를 인증 API로 전달하며 실패 시 종료 코드 1을 반환한다. 스킬을 로딩하는 데몬은 `--agent-skills-dir`/`--agent-no-skills`, MCP 서버는 `--skills-dir`/`--no-skills`를 지원한다. [스킬 계약](Skills.md)을 참조한다.
+
+0.15.0은 C++ 서브에이전트와 `agent.agents.run/output/stop/list`, 대응 MCP·CLI 경로를 추가한다. 소유권·취소·분기·재개와 설정 계약은 [Subagents.md](Subagents.md)를 따른다.

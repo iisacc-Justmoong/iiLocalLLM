@@ -43,6 +43,10 @@ def main():
         client_token = root / "client-token"
         client_token.write_text(token)
         client_token.chmod(0o600)
+        subagent_options = root / "subagent-options.json"
+        subagent_options.write_text(json.dumps({"temperature": 0, "max_tokens": 512}))
+        subagent_options.chmod(0o600)
+        evidence["subagent_generation"] = {"temperature": 0, "max_tokens": 512}
         endpoint = root / "s"
         catalog = root / "Models"
         catalog.mkdir()
@@ -59,7 +63,9 @@ def main():
                 "files": [{"path": "model.gguf", "size": 491400032, "sha256": "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"}]}))
             model = "model://api-fixture"
         base = [str(args.daemon), "--socket", str(endpoint), "--http-port", "0", "--models-root", str(catalog),
-                "--context-tokens", "4096", "--agent-workspace", str(workspace), "--agent-state", str(state), "--agent-credentials", str(credentials), "--agent-allow", "Bash"]
+                "--context-tokens", "4096", "--agent-workspace", str(workspace), "--agent-state", str(state), "--agent-credentials", str(credentials),
+                "--agent-allow", "Bash", "--agent-allow", "Agent", "--agent-allow", "AgentStop",
+                "--agent-subagent-options", str(subagent_options)]
         if not args.model:
             config = root / "mcp.json"
             config.write_text(json.dumps({"mcpServers": {"fixture": {"command": sys.executable,
@@ -141,6 +147,16 @@ def main():
             assert token not in result.stdout + result.stderr
             return json.loads(result.stdout) if expect == 0 else result
 
+        def agents_cli(action, parent, params=None, expect=0):
+            command = [str(args.cli), "--socket", str(endpoint), "--auth-file", str(client_token), "agent", "agents", action, parent]
+            if params is not None:
+                path = root / "agent-params.json"
+                path.write_text(json.dumps(params))
+                command.append(str(path))
+            result = subprocess.run(command, capture_output=True, text=True, timeout=120, env=environment)
+            assert result.returncode == expect, (result.stdout, result.stderr)
+            return json.loads(result.stdout)
+
         credentials.chmod(0o644)
         rejection_started = time.monotonic()
         rejected = subprocess.run(base, capture_output=True, text=True, timeout=10, env=environment)
@@ -149,6 +165,13 @@ def main():
         evidence["invalid_credential_rejection_seconds"] = round(time.monotonic() - rejection_started, 3)
         credentials.chmod(0o600)
         evidence["checks"].append("private_credentials_required")
+        valid_subagent_options = subagent_options.read_text()
+        for invalid in ("[]", '{"temperature":-1}', '{"unknown_option":true}'):
+            subagent_options.write_text(invalid)
+            rejected = subprocess.run(base, capture_output=True, text=True, timeout=10, env=environment)
+            assert rejected.returncode != 0 and "ggml_metal" not in rejected.stderr, rejected.stderr
+        subagent_options.write_text(valid_subagent_options)
+        evidence["checks"].append("subagent_generation_validated_before_runtime")
         for extra in (["--agent-apps-dir", str(root / "apps"), "--agent-no-apps"], ["--agent-apps-dir", ""]):
             rejected = subprocess.run(base + extra, capture_output=True, text=True, timeout=10, env=environment)
             assert rejected.returncode != 0 and "agent-apps-dir" in rejected.stderr, rejected.stderr
@@ -162,6 +185,7 @@ def main():
             assert "agent.tasks.create" in info["methods"] and info["task_tools_enabled"] is True
             assert "agent.shell.start" in info["methods"] and info["background_tasks_enabled"] is True
             assert "agent.inputs.enqueue" in info["methods"] and info["input_queue_enabled"] is True
+            assert "agent.agents.run" in info["methods"] and info["subagents_enabled"] is True
             connections = cli("agent.mcp.status")
             assert native("agent.mcp.status")[-1]["result"] == connections
             assert http(port, "agent.mcp.status")[1]["result"] == connections
@@ -182,6 +206,14 @@ def main():
             assert http(port, "agent.sessions.get", {"session_id": session}, auth=other)[0] == 404
             assert http(port, "agent.sessions.list", auth=other)[1]["result"]["sessions"] == []
             evidence["checks"] += ["http_native_cli_session_identity", "cross_app_isolation"]
+            children = agents_cli("list", session)
+            assert not children["is_error"] and children["result"]["agents"] == []
+            assert native("agent.agents.list", {"session_id": session})[-1]["result"] == children
+            assert http(port, "agent.agents.list", {"session_id": session})[1]["result"] == children
+            assert http(port, "agent.agents.list", {"session_id": session}, auth=other)[0] == 404
+            assert agents_cli("run", session, {"prompt": "rejected before execution", "max_turns": 0}, expect=1)["is_error"]
+            assert agents_cli("list", session) == children
+            evidence["checks"] += ["subagent_list_http_native_cli", "subagent_parent_auth_isolation", "subagent_cli_validation_exit"]
             skill_dir = workspace / ".claude" / "skills" / "inspect"
             skill_dir.mkdir(parents=True)
             (skill_dir / "SKILL.md").write_text("---\ndescription: Inspect a file\ndisable-model-invocation: true\n---\nUse the Read tool to read $0. Then return the exact file contents as your final answer. Do not guess.\n")
@@ -292,6 +324,32 @@ def main():
                 assert sequence == list(range(1, len(sequence) + 1)), sequence
                 evidence.update({"answer": result["text"], "usage": result["usage"], "events": len(sequence)})
                 evidence["checks"].append("real_qwen_read_observation_over_http_sse")
+                child_secret = "CHILD_" + secrets.token_hex(8)
+                (workspace / "child-input.txt").write_text(child_secret)
+                child_prompt = "Use Read to read child-input.txt now. Return its exact current contents as your final answer. Do not guess."
+                child = agents_cli("run", skill_session, {"prompt": child_prompt, "max_turns": 4})["result"]
+                assert child["status"] == "completed" and child_secret in child["result"]["text"] and child["tool_uses"] >= 1, child
+                child_id = child["agentId"]
+                query = {"session_id": skill_session, "agent_id": child_id, "block": True, "timeout_ms": 60000}
+                assert http(port, "agent.agents.output", query, auth=other)[0] == 404
+                resumed_secret = "CHILD_" + secrets.token_hex(8)
+                (workspace / "child-input.txt").write_text(resumed_secret)
+                launched = native("agent.agents.run", {"session_id": skill_session, "prompt": child_prompt,
+                    "resume": child_id, "run_in_background": True, "max_turns": 4})[-1]["result"]
+                assert not launched["is_error"] and launched["result"]["status"] == "async_launched", launched
+                child_final = http(port, "agent.agents.output", query)[1]["result"]["result"]
+                assert child_final["agentId"] == child_id and child_final["session_id"] == child["session_id"], child_final
+                assert child_final["finished"] and child_final["status"] == "completed" and resumed_secret in child_final["result"]["text"], child_final
+                transcript = state / hashlib.sha256(b"society").hexdigest() / "subagents" / "sessions" / child["session_id"] / "transcript.jsonl"
+                child_messages = [row["message"] for row in map(json.loads, transcript.read_text().splitlines()) if row["type"] == "message"]
+                child_calls = [call for message in child_messages for call in message["tool_calls"]]
+                assert sum(call["name"] == "Read" for call in child_calls) >= 2
+                assert all(any(m["role"] == "tool" and code in m["text"] for m in child_messages) for code in (child_secret, resumed_secret))
+                assert {call["id"] for call in child_calls} == {m["tool_call_id"] for m in child_messages if m["role"] == "tool"}
+                assert cli("agent.inputs.list", {"session_id": skill_session})["count"] == 1
+                assert not agents_cli("stop", skill_session, {"agent_id": child_id})["result"]["stop_requested"]
+                evidence["subagent"] = {"foreground": child, "resumed": child_final, "actual_read_calls": sum(c["name"] == "Read" for c in child_calls)}
+                evidence["checks"] += ["native_subagent_cli_foreground_read", "native_subagent_ipc_background_resume", "native_subagent_http_output_isolation", "subagent_observations_and_paired_history", "subagent_notification_and_cli_terminal_stop"]
             pending_input = cli("agent.inputs.enqueue", {"session_id": session, "text": "persist until explicitly resumed", "priority": "later"})["input"]
             assert http(port, "agent.inputs.list", {"session_id": session}, auth=other)[0] == 404
             assert http(port, "agent.inputs.enqueue", {"session_id": session, "text": "wrong", "priority": "invalid"})[0] == 400
@@ -310,6 +368,10 @@ def main():
             client_token.chmod(0o600)
         with daemon() as port:
             after = http(port, "agent.sessions.get", {"session_id": session})[1]["result"]
+            if args.model:
+                assert cli("agent.agents.output", {"session_id": skill_session, "agent_id": child_id})["result"] == child_final
+                assert cli("agent.inputs.list", {"session_id": skill_session})["count"] == 1
+                evidence["checks"].append("subagent_restart_result_and_notification_persistence")
             assert after == before
             assert cli("agent.inputs.list", {"session_id": session})["inputs"] == [pending_input]
             assert cli("agent.inputs.list", {"session_id": fork})["inputs"] == []
@@ -343,9 +405,12 @@ def main():
                     "max_turns": 4, "options": {"max_tokens": 128, "temperature": 0}})
                 assert result["status"] == "completed" and secret in result["text"], result
                 evidence["checks"].append("cli_fork_continuation")
-        with daemon(("--agent-no-tasks", "--agent-no-background")):
+        with daemon(("--agent-no-tasks", "--agent-no-background", "--agent-no-subagents")):
             assert cli("agent.info")["task_tools_enabled"] is False
             assert cli("agent.info")["background_tasks_enabled"] is False
+            assert cli("agent.info")["subagents_enabled"] is False
+            assert "error" in native("agent.agents.list", {"session_id": session})[-1]
+            evidence["checks"].append("subagent_host_opt_out")
             evidence["checks"].append("background_shell_host_opt_out")
             assert "error" in native("agent.tasks.list", {"session_id": session})[-1]
             evidence["checks"].append("task_host_opt_out")

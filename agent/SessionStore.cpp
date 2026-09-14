@@ -141,6 +141,15 @@ Session SessionStore::fork(const QString& id, const QString& throughMessageId) c
     value.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     return publish(directory_, maxTranscriptBytes_, std::move(value));
 }
+Session SessionStore::createFromSnapshot(Session value) const {
+    const auto workspace = QFileInfo(value.workingDirectory).canonicalFilePath();
+    if (value.model.trimmed().isEmpty() || workspace.isEmpty() || !QFileInfo(workspace).isDir()
+        || !pendingToolCalls(value.messages).isEmpty())
+        throw Error(ErrorCode::InvalidArgument, "Invalid or unresolved child session snapshot");
+    value.workingDirectory = workspace;
+    value.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    return publish(directory_, maxTranscriptBytes_, std::move(value));
+}
 std::unique_ptr<SessionLease> SessionStore::acquire(const QString& id) const {
     const auto directory = QDir(directory_).filePath(safeId(id));
     const QFileInfo info(directory);

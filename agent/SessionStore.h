@@ -19,6 +19,9 @@ class IILOCALLLM_EXPORT SessionStore {
 public:
     explicit SessionStore(QString directory, qint64 maxTranscriptBytes = 64 * 1024 * 1024);
     Session create(QString model, QString systemPrompt, QString workingDirectory) const;
+    // Atomically clones an immutable, already-paired snapshot with a fresh ID.
+    // External artifacts are not copied. The caller must handle that boundary.
+    Session createFromSnapshot(Session snapshot) const;
     // Copies a complete message boundary into a new, atomically published session.
     Session fork(const QString& id, const QString& throughMessageId = {}) const;
     // Lease excludes concurrent writers, including other processes, for the whole run.

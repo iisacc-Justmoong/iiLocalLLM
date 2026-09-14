@@ -32,7 +32,7 @@ int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("iiLocalLLMD"));
-    app.setApplicationVersion(QStringLiteral("0.14.0"));
+    app.setApplicationVersion(QStringLiteral("0.15.0"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("iiLocalLLM local JSON IPC service"));
     parser.addHelpOption(); parser.addVersionOption();
@@ -59,6 +59,8 @@ int main(int argc, char** argv)
         {"agent-no-apps", "Disable discovery of running local applications."},
         {"agent-no-tasks", "Disable persistent task and todo tools for the agent API."},
         {"agent-no-skills", "Disable local skill discovery and invocation."},
+        {"agent-no-subagents", "Disable delegated local agent execution."},
+        {"agent-subagent-options", "Private JSON file of host-owned child GenerationOptions (temperature, max_tokens, etc.).", "file"},
         {"agent-skills-dir", "Additional host-authorized skills directory; repeat in highest-priority-first order.", "directory"},
         {"agent-no-background", "Disable background shell execution and its control tools."},
         {"agent-no-auto-compact", "Disable automatic agent conversation compaction; explicit compact requests remain available."},
@@ -90,7 +92,7 @@ int main(int argc, char** argv)
             || parser.isSet("agent-no-auto-compact") || parser.isSet("agent-no-project-context") || parser.isSet("agent-context-exclude")
             || parser.isSet("agent-mcp-config") || parser.isSet("agent-mcp-project") || parser.isSet("agent-mcp-eager")
             || parser.isSet("agent-apps-dir") || parser.isSet("agent-no-apps") || parser.isSet("agent-no-tasks") || parser.isSet("agent-no-background")
-            || parser.isSet("agent-no-skills") || parser.isSet("agent-skills-dir")) {
+            || parser.isSet("agent-no-skills") || parser.isSet("agent-skills-dir") || parser.isSet("agent-no-subagents") || parser.isSet("agent-subagent-options")) {
             if (parser.isSet("agent-apps-dir") && parser.isSet("agent-no-apps"))
                 throw std::runtime_error("--agent-apps-dir and --agent-no-apps cannot be combined");
             if (parser.isSet("agent-apps-dir") && parser.value("agent-apps-dir").isEmpty())
@@ -115,6 +117,14 @@ int main(int argc, char** argv)
             config.engine.taskToolsEnabled = !parser.isSet("agent-no-tasks");
             config.engine.skills.enabled = !parser.isSet("agent-no-skills");
             config.engine.skills.directories = parser.values("agent-skills-dir");
+            config.subagentsEnabled = !parser.isSet("agent-no-subagents");
+            if (parser.isSet("agent-subagent-options")) {
+                QJsonParseError parse;
+                const auto generation = QJsonDocument::fromJson(iiLocalLLMClient::readPrivateFile(parser.value("agent-subagent-options")), &parse);
+                if (parse.error != QJsonParseError::NoError || !generation.isObject())
+                    throw std::runtime_error("--agent-subagent-options must contain a JSON GenerationOptions object");
+                config.subagents.generation = iiLocalLLM::generationOptionsFromJson(generation.object());
+            }
             config.engine.projectContext.enabled = !parser.isSet("agent-no-project-context");
             config.engine.projectContext.excludes = parser.values("agent-context-exclude");
             // Keep HTTP workers available for cancellation and status while runs wait.

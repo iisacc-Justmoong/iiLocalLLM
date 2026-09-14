@@ -118,3 +118,5 @@ Engine과 모델을 설정하면 `iiLocalLLM.agent.inputs.enqueue/list/remove/ru
 진행 중 agent.run이 실행 잠금을 점유해도 enqueue/list/remove를 처리한다. 도구 스키마와 정책은 유지하며 now는 해당 대화의 현재 연산을 협력 취소한다. 전송 작업자 포화는 별도 한도이다. 입력 큐와 transcript는 영속화하지만 새 MCP 연결의 자동 재개·유휴 실행은 제공하지 않는다. 공식 SDK의 `inputs_mcp_stdio`·`inputs_mcp_http`와 내장 서버의 실행 중 요청 검사를 구분한다. 상세 계약은 [InputQueue.md](InputQueue.md)에 있다.
 
 엔진을 연결한 서버는 `iiLocalLLM.agent.skills.list`와 `iiLocalLLM.agent.run`의 `skill`/`skill_arguments`를 지원한다. 호출은 연결별 대화에 인라인으로 저장된다. [스킬 계약](Skills.md)을 참조한다.
+
+0.15.0은 C++ 서브에이전트와 `agent.agents.run/output/stop/list`, 대응 MCP·CLI 경로를 추가한다. 소유권·취소·분기·재개와 설정 계약은 [Subagents.md](Subagents.md)를 따른다.

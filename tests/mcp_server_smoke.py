@@ -37,9 +37,10 @@ async def transport(command, root, http):
     credentials.write_text(json.dumps({"com.iisacc.fixture": credential}))
     credentials.chmod(0o600)
     arguments = list(command.args)
-    if "--sessions" in arguments:
-        index = arguments.index("--sessions")
-        del arguments[index:index + 2]
+    for flag in ("--sessions", "--state"):
+        if flag in arguments:
+            index = arguments.index(flag)
+            del arguments[index:index + 2]
     arguments += ["--http-port", "0", "--credentials", str(credentials), "--state", str(root / "http-state")]
     with (root / "http-server.log").open("ab") as log:
         process = await asyncio.create_subprocess_exec(command.command, *arguments,
@@ -227,8 +228,8 @@ async def native(binary, root, weights, http=False):
                 "sha256": "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"}]}
     (package / "manifest.json").write_text(json.dumps(manifest))
     command = StdioServerParameters(command=str(binary), args=["--workspace", str(workspace),
-        "--models", str(root / "Models"), "--model", "model://agent-fixture", "--sessions", str(root / "sessions"),
-        "--temperature", "0", "--request-timeout", "120000"])
+        "--models", str(root / "Models"), "--model", "model://agent-fixture", "--state", str(root / "stdio-state"),
+        "--allow", "Agent", "--allow", "AgentStop", "--temperature", "0", "--request-timeout", "120000"])
     updates = []
 
     async def progress(value, total, message):
@@ -239,6 +240,7 @@ async def native(binary, root, weights, http=False):
             await session.initialize()
             names = {tool.name for tool in (await session.list_tools()).tools}
             assert {"iiLocalLLM.agent.run", "iiLocalLLM.agent.session"} <= names
+            assert {"iiLocalLLM.agent.agents." + action for action in ("run", "output", "stop", "list")} <= names
             catalog = await session.call_tool("iiLocalLLM.agent.skills.list", {})
             assert not catalog.isError and len(catalog.structuredContent["skills"]) == 1
             assert "content" not in catalog.structuredContent["skills"][0]
@@ -257,9 +259,37 @@ async def native(binary, root, weights, http=False):
             assert any(message["role"] == "tool" and secret in message["text"] for message in messages)
             assert {call["id"] for call in calls} == {message["tool_call_id"] for message in messages if message["role"] == "tool"}
             assert len(updates) >= 3 and all(a["progress"] < b["progress"] for a, b in zip(updates, updates[1:]))
-    assert list((root / "http-state" / "sessions" if http else root / "sessions").glob("**/*.jsonl")), "Agent transcript was not persisted"
+            child_secret = "CHILD_" + secrets.token_hex(8)
+            (workspace / "child.txt").write_text(child_secret)
+            child_prompt = "Use Read to read child.txt now, then return its exact current contents. Do not guess."
+            child_result = await session.call_tool("iiLocalLLM.agent.agents.run", {"prompt": child_prompt, "max_turns": 4})
+            child = child_result.structuredContent
+            assert not child_result.isError and child["status"] == "completed" and child_secret in child["result"]["text"], child_result
+            resumed_secret = "CHILD_" + secrets.token_hex(8)
+            (workspace / "child.txt").write_text(resumed_secret)
+            launched = await session.call_tool("iiLocalLLM.agent.agents.run", {"prompt": child_prompt, "resume": child["agentId"], "run_in_background": True, "max_turns": 4})
+            assert not launched.isError and launched.structuredContent["status"] == "async_launched", launched
+            output = await session.call_tool("iiLocalLLM.agent.agents.output", {"agent_id": child["agentId"], "block": True, "timeout_ms": 60000})
+            resumed = output.structuredContent
+            assert not output.isError and resumed["finished"] and resumed["status"] == "completed" and resumed_secret in resumed["result"]["text"], output
+            assert resumed["session_id"] == child["session_id"]
+            listed = await session.call_tool("iiLocalLLM.agent.agents.list", {})
+            assert len(listed.structuredContent["agents"]) == 1 and listed.structuredContent["agents"][0]["agentId"] == child["agentId"]
+            stopped = await session.call_tool("iiLocalLLM.agent.agents.stop", {"agent_id": child["agentId"]})
+            assert not stopped.isError and not stopped.structuredContent["stop_requested"]
+            notifications = await session.call_tool("iiLocalLLM.agent.inputs.list", {})
+            assert notifications.structuredContent["count"] == 1
+            private_state = root / ("http-state" if http else "stdio-state")
+            child_transcript = private_state / "subagents" / "sessions" / child["session_id"] / "transcript.jsonl"
+            child_messages = [row["message"] for row in map(json.loads, child_transcript.read_text().splitlines()) if row["type"] == "message"]
+            child_calls = [call for message in child_messages for call in message["tool_calls"]]
+            assert sum(call["name"] == "Read" for call in child_calls) >= 2
+            assert all(any(m["role"] == "tool" and code in m["text"] for m in child_messages) for code in (child_secret, resumed_secret))
+            assert {call["id"] for call in child_calls} == {m["tool_call_id"] for m in child_messages if m["role"] == "tool"}
+    assert list((private_state / "sessions").glob("**/*.jsonl")), "Agent transcript was not persisted"
     return {"official_sdk": version("mcp"), "transport": "http" if http else "stdio", "native_model": "Qwen2.5 0.5B Q4_K_M", "run": run,
-            "progress": updates, "transcript": saved, "unpredictable_file_value_verified": True}
+            "progress": updates, "transcript": saved, "unpredictable_file_value_verified": True,
+            "subagent": {"foreground": child, "resumed": resumed, "actual_read_calls": sum(c["name"] == "Read" for c in child_calls), "notification_count": 1}}
 
 
 async def inputs(binary, root, http=False):

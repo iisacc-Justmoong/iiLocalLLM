@@ -52,6 +52,7 @@ QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.se
     "agent.sessions.fork", "agent.sessions.compact", "agent.context.get", "agent.skills.list", "agent.mcp.status", "agent.run", "agent.cancel", "agent.status",
     "agent.tasks.create", "agent.tasks.get", "agent.tasks.list", "agent.tasks.update", "agent.tasks.claim", "agent.todos.write", "agent.todos.get",
     "agent.shell.start", "agent.shell.output", "agent.shell.stop", "agent.shell.list",
+    "agent.agents.run", "agent.agents.output", "agent.agents.stop", "agent.agents.list",
     "agent.inputs.enqueue", "agent.inputs.list", "agent.inputs.remove", "agent.inputs.run"}; }
 bool inputControl(const QString& method) {
     return method == "agent.inputs.enqueue" || method == "agent.inputs.list" || method == "agent.inputs.remove";
@@ -72,7 +73,7 @@ bool nested(const QString& path, const QString& root) { return path == root || p
 }
 class Api::Impl : public std::enable_shared_from_this<Impl> {
 public:
-    struct Client { QString id; QByteArray digest; std::shared_ptr<Engine> engine; std::mutex creation; };
+    struct Client { QString id; QByteArray digest; std::shared_ptr<Engine> engine; std::shared_ptr<Subagents> subagents; std::mutex creation; };
     struct Job {
         QString id, method, clientId; QJsonObject params; CancellationToken token;
         Clock::time_point deadline; std::atomic_bool running = false;
@@ -120,6 +121,13 @@ public:
             auto engineOptions = options.engine;
             const auto directory = QString::fromLatin1(QCryptographicHash::hash(client->id.toUtf8(), QCryptographicHash::Sha256).toHex());
             engineOptions.sessionsDirectory = QDir(options.stateDirectory).filePath(directory + "/sessions");
+            if (options.subagentsEnabled) {
+                require(options.subagents.workingDirectory.isEmpty() && options.subagents.stateDirectory.isEmpty(), "Agent API assigns subagent workspace and state");
+                auto so = options.subagents; so.workingDirectory = options.workingDirectory;
+                so.stateDirectory = QDir(options.stateDirectory).filePath(directory + "/subagents");
+                client->subagents = std::make_shared<Subagents>(model, registry, policy, engineOptions, so);
+                engineOptions.additionalTools.append(Subagents::tools(client->subagents));
+            }
             client->engine = std::make_shared<Engine>(model, registry, policy, engineOptions);
             clients.emplace(client->id, std::move(client));
         }
@@ -149,7 +157,25 @@ public:
                 {"working_directory", options.workingDirectory}, {"project_context_enabled", options.engine.projectContext.enabled},
                 {"auto_compact_enabled", options.engine.compaction.automatic}, {"tool_search_enabled", options.engine.toolSearch.enabled},
                 {"task_tools_enabled", client->engine->taskToolsEnabled()}, {"background_tasks_enabled", client->engine->backgroundTasksEnabled()},
-                {"input_queue_enabled", true}, {"skills_enabled", options.engine.skills.enabled}};
+                {"input_queue_enabled", true}, {"skills_enabled", options.engine.skills.enabled}, {"subagents_enabled", options.subagentsEnabled}};
+        }
+        static const QMap<QString, QString> agentMethods{{"agent.agents.run", "Agent"}, {"agent.agents.output", "AgentOutput"},
+            {"agent.agents.stop", "AgentStop"}, {"agent.agents.list", "AgentList"}};
+        if (agentMethods.contains(method)) {
+            const auto id = text(p, "session_id"); auto arguments = p; arguments.remove("session_id");
+            require(client->engine->sessionMetadata(id).workingDirectory == options.workingDirectory,
+                "Session belongs to a different workspace", ErrorCode::NotFound);
+            auto future = std::async(std::launch::async, [client, id, name = agentMethods[method], arguments, job, callback] {
+                return client->engine->runSubagentTool(id, name, arguments, job->token,
+                    [callback](const Event& event) { if (callback) callback(toJson(event)); });
+            });
+            bool timedOut = false;
+            while (future.wait_for(10ms) != std::future_status::ready) {
+                timedOut |= Clock::now() >= job->deadline; if (timedOut) job->token.cancel();
+            }
+            const auto value = future.get();
+            require(!timedOut && Clock::now() < job->deadline, "Agent API request deadline exceeded", ErrorCode::Timeout);
+            return QJsonObject{{"text", value.text}, {"result", value.data}, {"is_error", value.isError}};
         }
         if (inputControl(method)) {
             const auto id = text(p, "session_id");
@@ -295,7 +321,7 @@ public:
                 {"state", job->running ? "running" : "queued"}, {"cancel_requested", job->token.isCancelled()}});
             return handle;
         }
-        const bool control = inputControl(method);
+        const bool control = inputControl(method) || method == "agent.agents.output" || method == "agent.agents.stop" || method == "agent.agents.list";
         const auto used = std::count_if(active.begin(), active.end(), [control](const auto& item) { return item.second->inputControl == control; });
         const auto capacity = control ? options.maxConcurrentInputControls + options.maxQueuedInputControls
             : options.maxConcurrentRequests + options.maxQueuedRequests;
@@ -314,6 +340,7 @@ public:
         { std::lock_guard lock(mutex); stopping = true; for (const auto& [id, job] : active) job->token.cancel(); }
         workers.waitForDone();
         inputWorkers.waitForDone();
+        for (const auto& [id, client] : clients) if (client->subagents) client->subagents->close();
         { std::lock_guard lock(mutex); clients.clear(); stateLock.reset(); }
     }
 };

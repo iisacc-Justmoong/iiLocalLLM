@@ -41,14 +41,14 @@ public:
             || this->options.toolSearch.maxActiveTools > 4096)
             throw Error(ErrorCode::InvalidArgument, "Invalid agent engine configuration");
         pool.setMaxThreadCount(this->options.maxConcurrentRuns);
+        auto configured = this->registry->snapshot();
+        for (const auto& tool : this->options.additionalTools) configured->add(tool);
         if (this->options.skills.enabled) {
-            auto check = this->registry->snapshot();
-            check->add(detail::skillTool({}, this->options.skills)); // Reserve the native Skill identity.
+            configured->add(detail::skillTool({}, this->options.skills)); // Reserve the native Skill identity.
         }
         if (this->options.taskToolsEnabled) {
             tasks = std::make_shared<TaskStore>(QDir(this->options.sessionsDirectory).filePath("tasks"));
-            auto check = this->registry->snapshot();
-            for (auto tool : agent::taskTools(tasks)) check->add(std::move(tool));
+            for (auto tool : agent::taskTools(tasks)) configured->add(std::move(tool));
         }
     }
     std::shared_ptr<Model> model;
@@ -228,13 +228,20 @@ public:
                 if (!before.feedback.isEmpty()) append({{}, MessageRole::User, before.feedback});
                 const auto& session = lease->session();
                 const auto turnRegistry = registry->snapshot();
+                for (const auto& tool : options.additionalTools) turnRegistry->add(tool);
                 const auto skillCatalog = discoverSkills(session.workingDirectory, options.skills, token);
                 const auto skillContext = skillCatalog.message();
                 if (!skillContext.text.isEmpty()) turnRegistry->add(detail::skillTool(session.workingDirectory, options.skills));
                 for (auto tool : taskToolsFor(session.id, runId, send)) turnRegistry->add(std::move(tool));
                 const bool hasTranscriptTool = !session.compactions.isEmpty();
                 if (hasTranscriptTool) detail::addTranscriptTool(*turnRegistry, session);
+                auto filterTools = [&] {
+                    if (options.toolFilter) for (const auto& t : turnRegistry->definitions())
+                        if (!options.toolFilter(t)) turnRegistry->remove(t.name);
+                };
+                filterTools();
                 detail::prepareToolDiscovery(*turnRegistry, session, options.toolSearch);
+                filterTools();
                 ModelRequest base{session.model, session.systemPrompt, {}, turnRegistry->definitions(), request.generation, session.id};
                 if (!skillContext.text.isEmpty()) base.messages.append(skillContext);
                 if (auto state = taskContext(session.id, token)) base.messages.append(std::move(*state));
@@ -296,7 +303,7 @@ public:
                     }
                     result.text = reply.text; result.status = RunStatus::Completed; break;
                 }
-                const ToolContext toolBase{session.id, runId, session.workingDirectory, lease->artifactsDirectory(), token, {}, quint64(session.compactions.size())};
+                const ToolContext toolBase{session.id, runId, session.workingDirectory, lease->artifactsDirectory(), token, {}, quint64(session.compactions.size()), std::make_shared<Session>(session)};
                 auto runTool = [&](const ToolCall& call) {
                     auto context = toolBase;
                     context.progress = [&, id = call.id](const QJsonObject& data) {
@@ -383,6 +390,46 @@ bool Engine::backgroundTasksEnabled() const {
         return d->registry->get("ShellTaskList").definition.metadata["source"] == "builtin.shell.control"
             && d->registry->get("Bash").definition.inputSchema["properties"].toObject().contains("run_in_background");
     } catch (const Error& error) { if (error.code() == ErrorCode::NotFound) return false; throw; }
+}
+bool Engine::subagentsEnabled() const {
+    for (const auto& t : d->options.additionalTools)
+        if (t.definition.name == "Agent" && t.definition.metadata["source"] == "builtin.subagent") return true;
+    return false;
+}
+QList<ToolDefinition> Engine::subagentToolDefinitions() const {
+    QList<ToolDefinition> result;
+    for (const auto& t : d->options.additionalTools) if (t.definition.metadata["source"] == "builtin.subagent") result.append(t.definition);
+    return result;
+}
+void Engine::stopSubagents(const QString& id) const {
+    Tool list, stop;
+    for (const auto& t : d->options.additionalTools) if (t.definition.metadata["source"] == "builtin.subagent") {
+        if (t.definition.name == "AgentList") list = t;
+        if (t.definition.name == "AgentStop") stop = t;
+    }
+    if (!list.execute || !stop.execute) return;
+    const ToolContext context{id, {}, d->store.metadata(id).workingDirectory};
+    for (const auto& value : list.execute({}, context).data["agents"].toArray()) {
+        const auto state = value.toObject();
+        if (!state["finished"].toBool()) stop.execute({{"agent_id", state["agentId"]}}, context);
+    }
+}
+ToolResult Engine::runSubagentTool(const QString& id, const QString& name, const QJsonObject& args,
+    const CancellationToken& token, const EventCallback& callback) const {
+    if (!subagentsEnabled()) throw Error(ErrorCode::RuntimeUnavailable, "Subagents are disabled by the host");
+    if (!QStringList{"Agent", "AgentOutput", "AgentStop", "AgentList"}.contains(name)) throw Error(ErrorCode::NotFound, "Unknown subagent tool");
+    token.throwIfCancelled();
+    const auto session = name == "Agent" && args["fork_context"].toBool() ? d->store.load(id) : d->store.metadata(id);
+    auto registry = std::make_shared<ToolRegistry>();
+    for (const auto& t : d->options.additionalTools) if (t.definition.metadata["source"] == "builtin.subagent") registry->add(t);
+    ToolContext context{id, uuid(), session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), token};
+    context.sessionSnapshot = std::make_shared<Session>(session);
+    const auto callId = uuid();
+    context.progress = [callback, id, runId = context.runId, callId](const QJsonObject& data) {
+        if (callback) callback({EventKind::ToolProgress, runId, id, callId, {}, data});
+    };
+    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission});
+    return runner.run({callId, name, args}, context, callback);
 }
 ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJsonObject& args,
     const CancellationToken& token, const EventCallback& callback) const {

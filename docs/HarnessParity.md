@@ -19,7 +19,7 @@
 | context | 프롬프트 조합·CLAUDE/AGENTS 규칙·첨부·요약·microcompact·cache 관리 | partial |
 | memory | 프로젝트 Markdown 메모리·검색·자동 정리·세션 메모리 | pending |
 | sessions | JSONL 영속 기록·resume/fork·압축 경계·파일 rewind | partial |
-| subagents | 전문 에이전트·부모 컨텍스트 fork·모델/도구/권한 범위·백그라운드 알림 | pending |
+| subagents | 전문 에이전트·부모 컨텍스트 fork·모델/도구/권한 범위·백그라운드 알림 | partial |
 | teams | 동일 프로세스/별도 프로세스 팀·mailbox·작업·권한 전달·worktree | pending |
 | mcp_client | stdio·Streamable HTTP·legacy SSE·초기화·버전/기능 협상·재연결·인증 | partial |
 | mcp_features | 도구·리소스·프롬프트·roots·sampling·elicitation·진행/취소·구독·tasks | partial |
@@ -78,3 +78,5 @@
 0.13.2는 MCP 로컬 요청 기한의 구조화 오류와 연결·도구 발견 단계별 상태 진단 및 서버별 설정 기한을 추가한다. 관측성은 이 범위에 한해 partial이며 초기화 간헐 실패의 해결이나 전체 trace·비용 진단 완료를 뜻하지 않는다. [MCP.md](MCP.md), [ToolDiscovery.md](ToolDiscovery.md), [Verification.md](Verification.md)를 참조한다.
 
 0.14.0은 로컬 스킬의 메타데이터 목록·인자 치환·인라인 대화 주입·복원을 C++로 구현하고 인증 API·MCP·CLI에 연결한다. 허용 도구에 따른 권한 추가, fork, 훅, 조건부/원격 스킬, 번들/플러그인 설치와 갱신은 아직 남아 있다. [Skills.md](Skills.md)의 구체적 지원 범위를 따른다.
+
+0.15.0은 별도 C++ Engine의 자식 대화, 범위 제한, 동기·백그라운드 실행, 명시적 부모 컨텍스트 분기, 재개·취소·기한과 결과 제어·완료 알림을 API·MCP·CLI에 연결한다. 프로파일 파일 계층·전체 전문 역할·전용 훅·에이전트별 확장·팀·worktree·remote와 전체 앱 검증은 남아 있다. [Subagents.md](Subagents.md)를 참조한다.
