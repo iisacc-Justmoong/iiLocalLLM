@@ -36,7 +36,7 @@ template<class Lock> void acquire(Lock& lock, const CancellationToken& token) {
 }
 class Bridge : public std::enable_shared_from_this<Bridge> {
 public:
-    struct Conversation { std::timed_mutex mutex, identity; QString id; };
+    struct Conversation { std::timed_mutex mutex, identity; QString id; bool resetting=false; };
     std::shared_ptr<ToolRegistry> registry;
     std::shared_ptr<const PermissionPolicy> policy;
     McpServerOptions options;
@@ -63,7 +63,13 @@ public:
     }
     QString sessionId(const std::shared_ptr<Conversation>& conversation, const CancellationToken& token, bool create = true, bool reset = false) {
         std::unique_lock guard(conversation->identity, std::defer_lock); acquire(guard, token);
-        if (reset && !conversation->id.isEmpty()) stopShells(conversation->id);
+        if(conversation->resetting)throw Error(ErrorCode::ModelInUse,"MCP conversation is being replaced");
+        if (reset && !conversation->id.isEmpty()) {
+            const auto previous=conversation->id;conversation->resetting=true;guard.unlock();
+            try {options.engine->endSession(previous,"clear",token);}
+            catch(...){guard.lock();conversation->resetting=false;throw;}
+            guard.lock();conversation->resetting=false;token.throwIfCancelled();
+        }
         if ((create && conversation->id.isEmpty()) || reset)
             conversation->id = options.engine->createSession(options.model, options.workingDirectory, options.systemPrompt).id;
         return conversation->id;
@@ -75,6 +81,7 @@ public:
         if (options.engine) {
             if (!current) return;
             owner = sessionId(current, {}, false); if (owner.isEmpty()) return;
+            options.engine->endSession(owner,"other");return;
         }
         stopShells(owner);
     }

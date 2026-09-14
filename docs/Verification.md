@@ -1,5 +1,34 @@
 # 구현 검증 기록
 
+## 2026-09-15 실제 세션 종료와 호스트 정리 (0.23.0)
+
+C++ SessionEnd와 Engine::endSession/close를 실제 API·MCP 종료 지점에 연결했다. Stop의 턴 종료와 구분하며, 활성화별 중복 방지·취소·기록 보존·resume을 제공한다. 기본 1.5초의 공통 훅 예산을 적용하고 종료 거부·추가 문맥·새 초기 입력은 적용하지 않는다. [SessionEnd.md](SessionEnd.md)에 동시성, 프로세스 정리, 진단과 참조 차이를 기록한다. 새 생산 의존성 없이 Qt/C++ 실행기를 재사용한다.
+
+| 검증 경계 | 최종 관측 |
+|---|---|
+| Release 전체, inference 라벨 제외 | 53/53, 136.80초 |
+| ASan·UBSan, llama 비활성 Debug | 51/51, 105.31초; 계측 오류 보고 없음 |
+| 별도 설치 소비자 | 21/21, 15.73초 |
+| C++ 종료 | 진행·대기 실행과 직접 네이티브 호출 취소, 활성화별 중복 방지·조회 재진입·resume·예외·공통 예산 통과 |
+| 인증 API·IPC CLI | 소스/설치본의 소유권·사유 검증, logout·중복 종료·기록 보존 및 daemon 종료 훅 확인 |
+| MCP | 소스/설치본의 교체 clear, HTTP DELETE other, 공식 SDK stdio 종료 및 SIGINT/SIGTERM 정상 정리 확인 |
+| 실제 Qwen3 8B | 소스/설치본 각각 허용 Write·도구 거부·Stop 중단·훅 문맥의 임의 값 Write 통과 |
+| 설치/ABI | 공개 헤더 40개·문서·카탈로그·라이선스 일치, 0.23 실제 설치 라이브러리 로딩 |
+
+TDD 초기 실행은 SessionEnd 설정 거부와 agent.sessions.end 미존재의 두 실패를 재현했다(session-end-red.log). 첫 관련 검사 5개는 10.95초에 통과했다. 이후 추가한 fixture 두 개는 필수 description 누락과 MCP agent.run의 기본 Ask 정책 때문에 의도한 경로에 진입하지 못했다(session-end-target-3.log). fixture에 올바른 입력과 명시적 호스트 허용 정책을 넣고 4.82초에 통과했다(session-end-target-4.log). 해당 실패를 생산 코드 결함 수정으로 주장하지 않는다. 모든 빌드가 끝난 뒤 최종 전체 검사를 직렬 실행했다.
+
+API 검사는 단일 일반 worker가 실행 중인 상황에서도 별도 제어 worker가 같은 세션의 실행·대기 요청을 취소하고 SessionEnd 이전에 경계를 정리하는지 확인한다. 취소된 대기 요청이 자동으로 resume하지 않으며 다음 명시적 요청만 resume한다. Engine 검사에서는 다른 세션의 worker를 기다리지 않고 아직 시작하지 않은 작업을 제거한다. 직접 TaskCreate 취소는 저장을 롤백하고 호출자의 원래 취소 토큰을 변경하지 않는다. 훅에서 기록 조회가 가능하고 동일 세션 새 실행은 거부된다. 실제 명령의 reason 매처와 공유 시간 예산도 검사했다.
+
+wire 검사는 --agent-hooks/--hooks의 실제 명령 프로세스를 사용한다. 종료 훅의 continue:false와 block을 받아도 CLI는 ended=true를 반환하며, 기존 원문을 그대로 조회한다. API 프로세스 종료 후 owner의 other가 한 번, 명시적으로 닫은 세션의 logout이 한 번임을 검사했다. MCP 교체 전 ID의 clear, HTTP DELETE 수락 후 비동기 정리 완료, 공식 Python MCP SDK 1.26.0의 stdio 연결 종료, 별도 stdio 프로세스의 SIGINT/SIGTERM 후 정상 종료 코드와 other 1회를 확인했다. 종료 진단은 영속 감사 로그가 아니다.
+
+Qwen3의 허용/거부 Write 호출 수는 소스 1/1, 설치본 1/1이다. 허용 파일의 정확한 바이트, 거부 파일 부재, 도구 호출/결과 정합성과 HOST_STOP을 확인했다. 사용자 프롬프트에 없는 임의 값을 제출 훅의 문맥으로만 전달하여 실제 Write 결과가 일치하는지도 확인했다. 각 실제 모델 세션은 호스트 정리 경로의 SessionEnd에도 참여한다. 다른 모델·장기 부하·모바일 검증을 대신하지 않는다.
+
+모델은 5,027,783,488바이트, SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`의 Qwen3 8B Q4_K_M이며 가중치 해시를 다시 검사했다. 컨텍스트 8192, temperature 0, 최대 출력 1024(Stop은 64), enable_thinking=false, tool_grammar=false 조건이다. 무결성 검증을 포함한 API 시작은 소스 55.927초, 설치본 53.890초였다.
+
+설치 prefix는 build/session-end-stage, 소비자는 build/session-end-consumer/build이다. 라이브러리 SHA-256 `aaeb2f02c690b71e4e31681da61135367387efd4495738b76a06adc8dc267ad9`, Mach-O UUID `FA32C427-5E62-312D-81D6-C70C66D31EA9`가 소스/설치본에서 일치한다. CLI·daemon·MCP 모두 0.23.0이며 환경의 DYLD_LIBRARY_PATH·DYLD_FRAMEWORK_PATH·DYLD_FALLBACK_LIBRARY_PATH·LIBRARY_PATH를 제거하고 검증했다. 실제 설치 로딩, 추론 라이브러리에 연결하지 않는 CLI, CMake의 설치 RPATH 변경 정규화 후 실행 파일 바이트, 공개 헤더·문서·라이선스·내부 C 심볼 비공개를 확인했다. ASan은 malloc_context_size=0, UBSan은 halt_on_error=1:print_stacktrace=1이다.
+
+최종 증거는 build/session-end-verification.json, session-end-linkage.json, 소스/설치 native JSON과 각 log/JUnit이며, 커밋·원격 게시 증거는 session-end-publication.json에 별도 기록한다. 주 실행과 네이티브 셸의 정리, 자식 에이전트에 대한 취소 요청을 구분한다. C++ 콜백의 비협조적 대기, 전체 wall-clock 상한, 크래시에서의 훅 보장, 영속 종료 진단은 제공하지 않는다. SessionStart(clear)·전체 clear 정책·watchPaths·권한 훅과 나머지 실행기, 앱/플랫폼 검증은 남아 있어 전체 하네스 목표는 partial이다. 이번 SDK 단계에서 Society·Dreamscapes를 다시 패키징하지 않았다.
+
 ## 2026-09-15 C++ 사용자 입력·세션 시작 (0.22.0)
 
 UserPromptSubmit과 SessionStart를 직접 입력·사용자 스킬·입력 큐·활성화·재개·압축에 연결했다. 차단·중단 판정을 원본에 저장하고 일반 모델 문맥에서의 적용을 구분한다. 큐의 준비와 저장/확인을 분리하여 콜백의 큐 조회·추가·철회, 긴급 입력 취소와 저장 후 확인 실패 복구를 지원한다. 기존 Qt/C++ 실행기를 사용하며 새 생산 의존성은 없다. [InputLifecycle.md](InputLifecycle.md)에 상세 계약과 남은 범위를 기록한다.

@@ -145,7 +145,7 @@ private slots:
         auto wrong=pre("allow");wrong["hookSpecificOutput"]=QJsonObject{{"hookEventName","Stop"},{"permissionDecision","allow"}};
         a::CommandHooks invalid(config("PreToolUse",output(wrong)),options);
         const auto failed=invalid.callback()(input,{});QVERIFY(!failed.permission);QCOMPARE(failed.diagnostics.last().toObject()["outcome"].toString(),QString("non_blocking_error"));
-        QVERIFY_THROWS_EXCEPTION(Error,a::CommandHooks(config("SessionEnd","exit 0"),options));
+        QVERIFY_THROWS_EXCEPTION(Error,a::CommandHooks(config("Notification","exit 0"),options));
         QVERIFY_THROWS_EXCEPTION(Error,a::CommandHooks(config("PreToolUse","exit 0","["),options));
         QVERIFY_THROWS_EXCEPTION(Error,a::CommandHooks(commands("PreToolUse",{QJsonObject{{"type","command"},{"command","exit 0"},{"async",true}}}),options));
     }

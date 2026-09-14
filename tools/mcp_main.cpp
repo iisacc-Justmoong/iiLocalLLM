@@ -17,10 +17,16 @@
 #include <cmath>
 #include <csignal>
 #include <iostream>
-namespace { volatile std::sig_atomic_t interrupted = 0; void interrupt(int) { interrupted = 1; } }
+#include <atomic>
+#include <thread>
+namespace {
+std::atomic_bool interrupted=false;
+static_assert(std::atomic_bool::is_always_lock_free);
+void interrupt(int) { interrupted.store(true,std::memory_order_relaxed); }
+}
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.22.0");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.23.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},
@@ -198,7 +204,13 @@ int main(int argc, char** argv) {
             QObject::connect(&shutdown, &QTimer::timeout, &app, [&] { if (interrupted) app.quit(); });
             shutdown.start(100); return app.exec();
         }
-        iiLocalLLM::mcp::serveStdio(std::move(server));
+        std::signal(SIGINT, interrupt);std::signal(SIGTERM, interrupt);
+        iiLocalLLM::CancellationToken cancellation;
+        std::jthread shutdown([&](std::stop_token stop) {
+            while(!stop.stop_requested()&&!interrupted.load(std::memory_order_relaxed))std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            if(interrupted.load(std::memory_order_relaxed))cancellation.cancel();
+        });
+        iiLocalLLM::mcp::serveStdio(std::move(server),cancellation);
         return 0;
     } catch (const std::exception& e) { std::cerr << "iillm-mcp: " << e.what() << '\n'; return 1; }
 }

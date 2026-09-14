@@ -32,13 +32,14 @@ struct EngineOptions {
     // May add live host definitions; duplicates with any other source are errors.
     std::function<QList<Tool>()> additionalToolsProvider;
     SkillForkExecutor forkedSkill; // Synchronous child execution, supplied by Subagents::attach().
-    bool sessionStartHooks = true; // Main conversations; delegated engines use SubagentStart instead.
+    bool sessionStartHooks = true; // Main SessionStart/End; delegated engines use SubagentStart/Stop instead.
+    int sessionEndTimeoutMs = 1500; // Shared cooperative budget for this session's end hooks.
 };
 class IILOCALLLM_EXPORT Engine {
 public:
     Engine(std::shared_ptr<Model>, std::shared_ptr<ToolRegistry>,
         std::shared_ptr<const PermissionPolicy>, EngineOptions);
-    // Cancels and joins accepted runs. Do not destroy/wait from an event callback.
+    // Calls close(). Do not destroy, close or end a session from its hook/event callback.
     ~Engine();
     Engine(const Engine&) = delete;
     Engine& operator=(const Engine&) = delete;
@@ -50,6 +51,12 @@ public:
     QJsonObject permissions(const QString& sessionId, const CancellationToken& = {}) const;
     QStringList sessions() const;
     Session forkSession(const QString& id, const QString& throughMessageId = {});
+    // Cancel/join this session's accepted work, stop its native background jobs,
+    // then run non-vetoing SessionEnd hooks. Retains history; a later run resumes.
+    // Cancellation is checked before admission; admitted cleanup owns its token.
+    QJsonObject endSession(const QString& id, QString reason = "other", const CancellationToken& = {});
+    // Stops admission and closes all sessions touched by this Engine. Idempotent.
+    QJsonArray close(QString reason = "other");
     ProjectContext context(const QString& sessionId, const QStringList& targetPaths = {}, const CancellationToken& = {}) const;
     RunHandle run(RunRequest, EventCallback = {});
     RunHandle compact(CompactRequest, EventCallback = {});

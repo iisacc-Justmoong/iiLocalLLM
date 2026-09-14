@@ -1,5 +1,7 @@
 # 에이전트 HTTP·native IPC API
 
+0.23.0의 `agent.sessions.end`는 `{session_id, reason?}`을 받아 소유한 세션의 접수 요청을 취소·정리하고 `{session_id, reason, ended, timed_out, diagnostics}`를 반환한다. reason 기본값은 other이다. 제어 worker를 사용하며 원문과 큐를 보존한다. 다음 명시적 실행은 resume한다. API close도 활성 세션을 정리한다. 상세 수명과 취소 계약은 [SessionEnd.md](SessionEnd.md)를 따른다.
+
 0.20.0의 `agent.permissions.get`은 호스트가 선택한 `working_directories`와 출처별
 `additional_directories`도 반환한다. 원격 입력으로 경로 권한을 추가하지 않는다.
 실행·자식·철회·비공개 경로 계약은 [WorkingDirectories.md](WorkingDirectories.md)를 따른다.

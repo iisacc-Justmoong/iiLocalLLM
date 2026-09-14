@@ -70,7 +70,7 @@ private:
     QList<PermissionRule> rules_;
 };
 enum class HookKind { BeforeModel, AfterModel, BeforeTool, AfterTool, Stop, BeforeCompact, AfterCompact,
-    TaskCreated, TaskCompleted, SubagentStart, SubagentStop, UserPromptSubmit, SessionStart }; // Task lifecycle callbacks veto before the transaction commits.
+    TaskCreated, TaskCompleted, SubagentStart, SubagentStop, UserPromptSubmit, SessionStart, SessionEnd }; // Task lifecycle callbacks veto before the transaction commits.
 struct HookInput {
     HookKind kind;
     QString sessionId;

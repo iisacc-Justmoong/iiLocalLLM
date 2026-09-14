@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <map>
 #include <mutex>
+#include <condition_variable>
 
 namespace iiLocalLLM::agent {
 namespace {
@@ -53,7 +54,7 @@ QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.se
     "agent.tasks.create", "agent.tasks.get", "agent.tasks.list", "agent.tasks.update", "agent.tasks.claim", "agent.todos.write", "agent.todos.get",
     "agent.shell.start", "agent.shell.output", "agent.shell.stop", "agent.shell.list",
     "agent.agents.run", "agent.agents.output", "agent.agents.stop", "agent.agents.list", "agent.agents.profiles",
-    "agent.inputs.enqueue", "agent.inputs.list", "agent.inputs.remove", "agent.inputs.run"}; }
+    "agent.inputs.enqueue", "agent.inputs.list", "agent.inputs.remove", "agent.inputs.run", "agent.sessions.end"}; }
 bool inputControl(const QString& method) {
     return method == "agent.inputs.enqueue" || method == "agent.inputs.list" || method == "agent.inputs.remove";
 }
@@ -73,7 +74,7 @@ bool nested(const QString& path, const QString& root) { return path == root || p
 }
 class Api::Impl : public std::enable_shared_from_this<Impl> {
 public:
-    struct Client { QString id; QByteArray digest; std::shared_ptr<Engine> engine; std::shared_ptr<Subagents> subagents; std::mutex creation; };
+    struct Client { QString id; QByteArray digest; std::shared_ptr<Engine> engine; std::shared_ptr<Subagents> subagents; std::mutex creation; QSet<QString> ending; };
     struct Job {
         QString id, method, clientId; QJsonObject params; CancellationToken token;
         Clock::time_point deadline; std::atomic_bool running = false;
@@ -82,6 +83,7 @@ public:
     };
     ApiOptions options;
     std::mutex mutex, joining;
+    std::condition_variable changed;
     bool stopping = false;
     std::map<QString, std::shared_ptr<Client>> clients;
     std::map<QString, std::shared_ptr<Job>> active;
@@ -253,6 +255,26 @@ public:
             fields(p, {"session_id", "offset", "limit"});
             return sessionObject(session(client, p), integer(p, "offset", 0, 0, 1000000), integer(p, "limit", 32, 0, 100));
         }
+        if(method=="agent.sessions.end") {
+            fields(p,{"session_id","reason"});const auto original=client->engine->sessionMetadata(text(p,"session_id"));
+            require(original.workingDirectory==options.workingDirectory,"Session belongs to a different workspace",ErrorCode::NotFound);
+            auto reason=text(p,"reason",false);if(!p.contains("reason"))reason="other";
+            require(QStringList{"clear","resume","logout","prompt_input_exit","other","bypass_permissions_disabled"}.contains(reason),"Invalid session exit reason");
+            {
+                std::unique_lock lock(mutex);job->token.throwIfCancelled();
+                require(!client->ending.contains(original.id),"Agent session is ending",ErrorCode::ModelInUse);client->ending.insert(original.id);
+                auto belongs=[&](const auto& candidate){return candidate->clientId==client->id&&candidate->params["session_id"]==original.id&&candidate->method!="agent.sessions.end";};
+                for(const auto& [_,candidate]:active)if(belongs(candidate))candidate->token.cancel();
+                // Queued jobs see cancellation before entering perform(). Running
+                // jobs finish their Engine admission/cleanup before SessionEnd.
+                changed.wait(lock,[&]{return std::none_of(active.begin(),active.end(),[&](const auto& item){return belongs(item.second)&&item.second->running;});});
+            }
+            struct Finish {Impl& state;std::shared_ptr<Client> client;QString id;
+                ~Finish(){std::lock_guard lock(state.mutex);client->ending.remove(id);state.changed.notify_all();}} finish{*this,client,original.id};
+            const auto result=client->engine->endSession(original.id,reason);
+            require(Clock::now()<job->deadline,"Agent API request deadline exceeded after session cleanup",ErrorCode::Timeout);
+            return result;
+        }
         if (method == "agent.context.get") {
             fields(p, {"session_id", "context_paths"}); const auto original = session(client, p);
             return client->engine->context(original.id, contextPaths(p, options.engine.projectContext.maxTargetPaths), job->token).toJson();
@@ -305,16 +327,18 @@ public:
         QJsonValue result; std::exception_ptr failure;
         try {
             job->token.throwIfCancelled(); require(Clock::now() < job->deadline, "Agent API request expired in queue", ErrorCode::Timeout);
-            job->running = true; result = perform(client, job, std::move(callback));
+            {std::lock_guard lock(mutex);job->token.throwIfCancelled();job->running=true;}
+            result = perform(client, job, std::move(callback));
             require(QJsonDocument(result.toObject()).toJson(QJsonDocument::Compact).size() <= options.maxResultBytes,
                 "Agent API result exceeds limit", ErrorCode::ResourceLimit);
         } catch (...) { failure = std::current_exception(); }
-        { std::lock_guard lock(mutex); active.erase(job->id); }
+        { std::lock_guard lock(mutex); active.erase(job->id);changed.notify_all(); }
         if (failure) job->promise->set_exception(failure); else job->promise->set_value(std::move(result));
     }
     RpcHandle dispatch(QString method, QJsonObject params, QString credential, RpcEventCallback callback) {
         std::lock_guard lock(mutex); auto client = authenticateLocked(credential);
         require(methods().contains(method), "Unknown agent API method", ErrorCode::NotFound);
+        require(!client->ending.contains(params.value("session_id").toString()),"Agent session is ending",ErrorCode::ModelInUse);
         require(QJsonDocument(params).toJson(QJsonDocument::Compact).size() <= options.maxResultBytes, "Agent API parameters exceed limit", ErrorCode::ResourceLimit);
         auto promise = std::make_shared<std::promise<QJsonValue>>(); RpcHandle handle{uuid(), {}, promise->get_future().share()};
         if (method == "agent.cancel" || method == "agent.status") {
@@ -326,7 +350,7 @@ public:
                 {"state", job->running ? "running" : "queued"}, {"cancel_requested", job->token.isCancelled()}});
             return handle;
         }
-        const bool control = inputControl(method) || method == "agent.agents.output" || method == "agent.agents.stop" || method == "agent.agents.list";
+        const bool control = inputControl(method) || method == "agent.sessions.end" || method == "agent.agents.output" || method == "agent.agents.stop" || method == "agent.agents.list";
         const auto used = std::count_if(active.begin(), active.end(), [control](const auto& item) { return item.second->inputControl == control; });
         const auto capacity = control ? options.maxConcurrentInputControls + options.maxQueuedInputControls
             : options.maxConcurrentRequests + options.maxQueuedRequests;
@@ -345,6 +369,7 @@ public:
         { std::lock_guard lock(mutex); stopping = true; for (const auto& [id, job] : active) job->token.cancel(); }
         workers.waitForDone();
         inputWorkers.waitForDone();
+        for (const auto& [id, client] : clients) client->engine->close();
         for (const auto& [id, client] : clients) if (client->subagents) client->subagents->close();
         { std::lock_guard lock(mutex); clients.clear(); stateLock.reset(); }
     }

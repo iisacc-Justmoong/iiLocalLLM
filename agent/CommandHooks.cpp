@@ -44,6 +44,7 @@ QString eventName(const HookInput& input) {
     case HookKind::AfterModel:return "AfterModel";
     case HookKind::UserPromptSubmit:return "UserPromptSubmit";
     case HookKind::SessionStart:return "SessionStart";
+    case HookKind::SessionEnd:return "SessionEnd";
     }
     throw Error(ErrorCode::InvalidArgument,"Unknown hook event");
 }
@@ -71,7 +72,7 @@ HookResult response(const QJsonObject& object,const QString& event,bool& suppres
         if(behavior=="passthrough")return;
         result.permission=PermissionDecision{behavior=="allow"?PermissionBehavior::Allow:behavior=="ask"?PermissionBehavior::Ask:PermissionBehavior::Deny,reason};
         result.block=behavior=="deny";
-        if(result.block&&event!="SessionStart")result.feedback=reason.isEmpty()?QString("Blocked by command hook"):reason;
+        if(result.block&&event!="SessionStart"&&event!="SessionEnd")result.feedback=reason.isEmpty()?QString("Blocked by command hook"):reason;
     };
     if(object.contains("decision")) {
         const auto decision=string(object["decision"]);require(decision=="approve"||decision=="block","Invalid hook decision");
@@ -109,7 +110,7 @@ public:
         require(!options.workingDirectory.isEmpty()&&QFileInfo(options.workingDirectory).isDir(),"Command hook workspace must exist");
         permits.release(options.maxConcurrentProcesses);keys(settings,{"hooks"});
         require(settings["hooks"].isObject(),"Command hook settings require a hooks object");
-        const QStringList events{"PreToolUse","PostToolUse","PostToolUseFailure","Stop","PreCompact","PostCompact","TaskCreated","TaskCompleted","SubagentStart","SubagentStop","BeforeModel","AfterModel","UserPromptSubmit","SessionStart"};
+        const QStringList events{"PreToolUse","PostToolUse","PostToolUseFailure","Stop","PreCompact","PostCompact","TaskCreated","TaskCompleted","SubagentStart","SubagentStop","BeforeModel","AfterModel","UserPromptSubmit","SessionStart","SessionEnd"};
         const auto hooks=settings["hooks"].toObject();
         for(auto i=hooks.begin();i!=hooks.end();++i) {
             require(events.contains(i.key()),"Unsupported command hook event: "+i.key(),ErrorCode::RuntimeUnavailable);
@@ -148,6 +149,7 @@ public:
         if(event=="SubagentStart"||event=="SubagentStop")query=input.context["agent_type"].toString();
         if(event=="PreCompact"||event=="PostCompact")query=input.context["trigger"].toString();
         if(event=="SessionStart")query=input.context["source"].toString();
+        if(event=="SessionEnd")query=input.context["reason"].toString();
         if(!entry.matcher.isEmpty()&&entry.matcher!="*") {
             if(entry.literal) {if(!entry.matcher.split('|').contains(query))return false;}
             else if(!entry.regex.match(query).hasMatch())return false;
@@ -181,7 +183,7 @@ public:
             const auto trimmed=stdoutBytes.trimmed();QJsonParseError error;QJsonDocument document;
             if(trimmed.startsWith('{'))document=QJsonDocument::fromJson(trimmed,&error);
             if(document.isObject()&&error.error==QJsonParseError::NoError)result=response(document.object(),event,suppress);
-            else if(outcome.code==2&&event!="SessionStart") {result.block=true;result.feedback=stderrText.isEmpty()?QString("Blocked by command hook"):stderrText;}
+            else if(outcome.code==2&&event!="SessionStart"&&event!="SessionEnd") {result.block=true;result.feedback=stderrText.isEmpty()?QString("Blocked by command hook"):stderrText;}
             else if(outcome.code==0&&QStringList{"BeforeModel","PreCompact","UserPromptSubmit","SessionStart"}.contains(event))result.feedback=stdoutText.trimmed();
             diagnostic["outcome"]=result.block?"blocked":outcome.code==0?"success":"non_blocking_error";
             if(!suppress)diagnostic["stdout"]=stdoutText.left(4096);diagnostic["stderr"]=stderrText.left(4096);

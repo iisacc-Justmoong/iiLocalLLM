@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 import re
 import secrets
+import selectors
+import signal
 import shlex
 import shutil
 import subprocess
@@ -68,6 +70,9 @@ elif event == "SessionStart":
         fields["initialUserMessage"] = initial.read_text()
     print(json.dumps({"continue": False, "decision": "block", "reason": "IGNORED_START_ERROR",
         "hookSpecificOutput": fields}))
+elif event == "SessionEnd":
+    assert pathlib.Path(value["transcript_path"]).is_file()
+    print(json.dumps({"continue": False, "decision": "block", "reason": "IGNORED_END_ERROR"}))
 elif event == "UserPromptSubmit":
     if "BLOCK_USER_PROMPT" in value["prompt"]:
         print("USER_PROMPT_DENIED", file=sys.stderr)
@@ -88,14 +93,14 @@ elif event == "Stop" and (root / "stop").exists():
         command = shlex.join([sys.executable, "-B", script])
         settings = {"hooks": {event: [{"matcher": "Write" if "ToolUse" in event else "*",
             "hooks": [{"type": "command", "command": command, "timeout": 10}]}]
-            for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure", "TaskCreated", "TaskCompleted", "Stop", "SessionStart", "UserPromptSubmit")}}
+            for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure", "TaskCreated", "TaskCompleted", "Stop", "SessionStart", "UserPromptSubmit", "SessionEnd")}}
         hooks = private("hooks", settings)
         common_daemon = [daemon, "--socket", str(root / "s"), "--http-port", "0", "--models-root", str(root / "models"),
             "--agent-workspace", str(workspace), "--agent-state", str(root / "api-state"), "--agent-credentials", credentials,
             "--agent-no-apps", "--agent-no-background", "--agent-no-skills", "--agent-no-subagents", "--no-agent-profiles"]
         common_mcp = [mcp, "--workspace", str(workspace), "--no-apps", "--no-background", "--no-agent-profiles"]
         invalid = 0
-        for value in ([], {}, {"hooks": {"SessionEnd": []}}, {"hooks": {"PreToolUse": [{"hooks": [{"type": "http"}]}]}},
+        for value in ([], {}, {"hooks": {"Notification": []}}, {"hooks": {"PreToolUse": [{"hooks": [{"type": "http"}]}]}},
                       {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "true", "async": True}]}]}},
                       {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": 1}]}]}}):
             bad = private("invalid", value)
@@ -228,6 +233,16 @@ elif event == "Stop" and (root / "stop").exists():
             assert rpc("agent.inputs.list", {"session_id": initial_owner})["count"] == 0
             (root / "initial.txt").unlink()
             report["api_input_lifecycle"]["initial_user_message_uses_queue_and_prompt_hook"] = True
+            rpc("agent.sessions.end", {"session_id": initial_owner}, other, 404)
+            rpc("agent.sessions.end", {"session_id": initial_owner, "reason": "invented"}, expected=400)
+            parameters = private("end-parameters", {"session_id": initial_owner, "reason": "logout"})
+            cli_end = subprocess.run([cli, "--socket", str(root / "s"), "--auth-file", auth, "rpc", "agent.sessions.end", parameters],
+                env=env, text=True, capture_output=True, timeout=15)
+            ended = json.loads(cli_end.stdout)
+            assert cli_end.returncode == 0 and ended["ended"] and ended["reason"] == "logout", cli_end
+            assert not rpc("agent.sessions.end", {"session_id": initial_owner})["ended"]
+            assert rpc("agent.sessions.get", {"session_id": initial_owner})["messages"] == initial_history
+            report["session_end"] = {"api_authentication": True, "invalid_reason": True, "cli": ended, "history_preserved": True, "repeat_idempotent": True}
             if args.catalog:
                 results = []
                 for allowed in (True, False):
@@ -269,6 +284,10 @@ elif event == "Stop" and (root / "stop").exists():
                 assert outcome["status"] == "completed" and (workspace / "hook-context.txt").read_text() == content, outcome
                 report["model_input_context"] = {"passed": True, "outcome": outcome, "content": content}
 
+        events = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]
+        assert [e["reason"] for e in events if e["hook_event_name"] == "SessionEnd" and e["session_id"] == owner] == ["other"]
+        assert [e["reason"] for e in events if e["hook_event_name"] == "SessionEnd" and e["session_id"] == initial_owner] == ["logout"]
+        report["session_end"]["daemon_shutdown_once"] = True
         with server("api-resume", common_daemon + ["--agent-hooks", hooks, "--agent-permission-settings", policy],
                     r"iiLocalLLM HTTP: http://127\.0\.0\.1:(\d+)") as match:
             port = int(match[1])
@@ -307,6 +326,13 @@ elif event == "Stop" and (root / "stop").exists():
                 outcome = call_tool("iiLocalLLM.agent.run", {"prompt": prompt})
                 assert outcome["isError"] and outcome["structuredContent"]["status"] == expected, outcome
                 assert "USER_PROMPT_" in outcome["structuredContent"]["error_message"], outcome
+            previous_id = outcome["structuredContent"]["session_id"]
+            outcome = call_tool("iiLocalLLM.agent.run", {"prompt": "BLOCK_USER_PROMPT fresh MCP", "new_session": True})
+            mcp_id = outcome["structuredContent"]["session_id"]
+            assert previous_id != mcp_id
+            events = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]
+            assert [e["reason"] for e in events if e["hook_event_name"] == "SessionEnd" and e["session_id"] == previous_id] == ["clear"]
+            report["session_end"]["mcp_replace_clear"] = True
 
             assert not call("rewrite.txt").get("isError")
             assert not (workspace / "rewrite.txt").exists() and (workspace / "rewritten.txt").read_text() == "REWRITTEN"
@@ -321,6 +347,56 @@ elif event == "Stop" and (root / "stop").exists():
             assert post(url.port, "/mcp", initialize, other, identity)[0] == 404
             report["mcp_http"] = {"rewrite": True, "deny_ask_precedence": True, "block": True, "hook_progress": True,
                 "frozen_config": True, "user_prompt_block_stop": True}
+            connection = HTTPConnection("127.0.0.1", url.port, timeout=10)
+            try:
+                connection.request("DELETE", "/mcp", headers={"Authorization": "Bearer " + token, "Mcp-Session-Id": identity})
+                response = connection.getresponse(); response.read(); assert response.status == 200
+            finally:
+                connection.close()
+            deadline = time.monotonic() + 5
+            while True:
+                events = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]
+                reasons = [e["reason"] for e in events if e["hook_event_name"] == "SessionEnd" and e["session_id"] == mcp_id]
+                if reasons: break
+                assert time.monotonic() < deadline, "HTTP DELETE did not finish SessionEnd"
+                time.sleep(.02)
+            assert reasons == ["other"], reasons
+            report["session_end"]["mcp_http_delete"] = True
+
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            with (root / (sig.name + ".log")).open("w") as log:
+                process = subprocess.Popen(common_mcp + mcp_flags, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, env=env)
+                incoming = b""
+                with selectors.DefaultSelector() as selector:
+                    selector.register(process.stdout, selectors.EVENT_READ)
+                    def stdio_rpc(message):
+                        nonlocal incoming
+                        process.stdin.write(json.dumps(message).encode() + b"\n"); process.stdin.flush()
+                        if "id" not in message: return
+                        deadline = time.monotonic() + 15
+                        while True:
+                            while b"\n" in incoming:
+                                line, incoming = incoming.split(b"\n", 1)
+                                value = json.loads(line)
+                                if value.get("id") == message["id"]: return value
+                            assert time.monotonic() < deadline, "stdio response timed out"
+                            if selector.select(.1):
+                                chunk = os.read(process.stdout.fileno(), 65536)
+                                assert chunk, "stdio closed before its response"
+                                incoming += chunk
+                    try:
+                        stdio_rpc(initialize)
+                        stdio_rpc({"jsonrpc": "2.0", "method": "notifications/initialized"})
+                        outcome = stdio_rpc({"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {
+                            "name": "iiLocalLLM.agent.run", "arguments": {"prompt": "BLOCK_USER_PROMPT signal cleanup"}}})
+                        signal_id = outcome["result"]["structuredContent"]["session_id"]
+                        process.send_signal(sig); assert process.wait(timeout=10) == 0
+                    finally:
+                        if process.poll() is None: process.kill(); process.wait()
+                        process.stdin.close(); process.stdout.close()
+            events = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]
+            assert [e["reason"] for e in events if e["hook_event_name"] == "SessionEnd" and e["session_id"] == signal_id] == ["other"]
+            report["session_end"]["stdio_" + sig.name.lower()] = True
 
         if args.official_stdio:
             from mcp import ClientSession, StdioServerParameters
@@ -334,6 +410,7 @@ elif event == "Stop" and (root / "stop").exists():
                         for prompt in ("BLOCK_USER_PROMPT STDIO", "STOP_USER_PROMPT STDIO"):
                             denied = await session.call_tool("iiLocalLLM.agent.run", {"prompt": prompt})
                             assert denied.isError and "USER_PROMPT_" in denied.structuredContent["error_message"], denied
+                        stdio_id = denied.structuredContent["session_id"]
                         result = await session.call_tool("Write", {"path": "stdio.txt", "content": "OFFICIAL"})
                         assert not result.isError and (workspace / "stdio.txt").read_text() == "OFFICIAL"
                         (root / "block").touch()
@@ -341,6 +418,9 @@ elif event == "Stop" and (root / "stop").exists():
                         assert result.isError and not (workspace / "stdio-blocked.txt").exists()
                         (root / "block").unlink()
                 report["official_mcp_stdio"] = {"write": True, "block": True, "user_prompt_block_stop": True}
+                events = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]
+                assert [e["reason"] for e in events if e["hook_event_name"] == "SessionEnd" and e["session_id"] == stdio_id] == ["other"]
+                report["session_end"]["official_stdio_close"] = True
 
             asyncio.run(official())
         events = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]

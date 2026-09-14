@@ -1,5 +1,7 @@
 # C++ MCP 서버와 앱 도구 제공
 
+0.23.0은 연결 종료·HTTP DELETE·stdio EOF/SIGINT/SIGTERM에서 SessionEnd(other), new_session 교체에서 SessionEnd(clear)를 실행한다. 종료 정리는 연결 소유 세션만 대상으로 한다. HTTP DELETE 수락과 실제 정리 완료는 별개이며, 재개·시간 예산·진단 보존 한계는 [SessionEnd.md](SessionEnd.md)를 따른다.
+
 `mcp::ServerSession`은 연결별 JSON-RPC 상태를 제공하고 `mcp::serveStdio`는 POSIX stdin/stdout 전송을 연결한다. `agent::mcpServerOptions`는 앱이 등록한 ToolRegistry를 기존 스키마·권한·훅을 유지하면서 MCP 도구로 공개한다. 배포 실행 파일은 `iillm-mcp`다. 생산 경로는 C++·Qt이며 공식 Python MCP SDK는 독립 교차 검증에만 사용한다.
 
 stdio·C++ 내장 서버와 0.8.0의 인증된 [Streamable HTTP 서버](MCPHTTPServer.md)를 제공한다. 전체 MCP 요구사항 중 legacy SSE·OAuth, tasks, logging/completion 전용 API, 앱 자동 발견과 실제 Society/Dreamscapes 제품 연결은 남아 있다. Windows에서도 ServerSession을 내장할 수 있지만 이번 stdio 어댑터는 POSIX 전용이며 Windows 전송·실기기는 아직 검증하지 않았다.

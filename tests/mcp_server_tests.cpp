@@ -74,6 +74,23 @@ public:
 class McpServerTests : public QObject {
     Q_OBJECT
 private slots:
+    void sessionEndFollowsConversationReplacementAndConnectionClose() {
+        QTemporaryDir root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
+        auto model=std::make_shared<HistoryModel>();auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
+        a::EngineOptions eo;eo.sessionsDirectory=root.filePath("sessions");eo.compaction.automatic=false;
+        QJsonArray ended;eo.hooks.append([&](const a::HookInput& input,const CancellationToken&){
+            if(input.kind==a::HookKind::SessionEnd)ended.append(QJsonObject{{"id",input.sessionId},{"reason",input.context["reason"]}});
+            return a::HookResult{};});
+        auto engine=std::make_shared<a::Engine>(model,registry,policy,eo);a::McpServerOptions options;options.workingDirectory=workspace;options.engine=engine;options.model="local";
+        auto bridge=a::mcpServerOptions(registry,policy,options);m::ServerSession first(bridge),second(bridge);initialize(first);initialize(second);
+        const auto old=call(first,2,"iiLocalLLM.agent.run",{{"prompt","one"}})["structuredContent"].toObject().value("session_id");
+        const auto other=call(second,2,"iiLocalLLM.agent.run",{{"prompt","two"}})["structuredContent"].toObject().value("session_id");
+        QVERIFY(ended.isEmpty());const auto fresh=call(first,3,"iiLocalLLM.agent.run",{{"prompt","fresh"},{"new_session",true}})["structuredContent"].toObject().value("session_id");
+        QVERIFY(old!=fresh);QCOMPARE(ended.size(),1);QCOMPARE(ended.first().toObject()["id"],old);QCOMPARE(ended.first().toObject()["reason"],"clear");
+        first.close();QCOMPARE(ended.size(),2);QCOMPARE(ended.last().toObject()["id"],fresh);QCOMPARE(ended.last().toObject()["reason"],"other");
+        first.close();QCOMPARE(ended.size(),2);second.close();QCOMPARE(ended.size(),3);QCOMPARE(ended.last().toObject()["id"],other);
+        engine->close();QCOMPARE(ended.size(),3);QVERIFY(!engine->session(old.toString()).messages.isEmpty());
+    }
     void permissionInspectionAndFileReloadUseHostWorkspace() {
         QTemporaryDir root;const auto workspace=root.filePath("workspace");QVERIFY(QDir().mkpath(workspace+"/.claude"));
         const auto path=workspace+"/.claude/settings.json";

@@ -14,6 +14,8 @@
 #include <chrono>
 #include <algorithm>
 #include <cmath>
+#include <condition_variable>
+#include <thread>
 
 namespace iiLocalLLM::agent {
 using namespace std::chrono_literals;
@@ -22,6 +24,10 @@ QString uuid() { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
 void failure(RunResult& r, const Error& e) {
     r.status = e.code() == ErrorCode::Cancelled ? RunStatus::Cancelled : RunStatus::Failed;
     r.errorCode = e.code(); r.errorMessage = QString::fromUtf8(e.what());
+}
+void validateExitReason(const QString& reason) {
+    if(!QStringList{"clear","resume","logout","prompt_input_exit","other","bypass_permissions_disabled"}.contains(reason))
+        throw Error(ErrorCode::InvalidArgument,"Invalid session exit reason");
 }
 }
 class Engine::Impl {
@@ -33,6 +39,7 @@ public:
         if (!this->model || !this->registry || !this->policy || this->options.maxConcurrentRuns < 1 || this->options.maxConcurrentRuns > 64
             || this->options.maxQueuedRuns < 0 || this->options.maxConcurrentTools < 1 || this->options.maxConcurrentTools > 64
             || this->options.maxToolCallsPerTurn < 1 || this->options.maxToolCallsPerTurn > 64 || this->options.maxInputCharacters < 1
+            || this->options.sessionEndTimeoutMs < 1 || this->options.sessionEndTimeoutMs > 600000
             || !std::isfinite(this->options.compaction.triggerFraction) || this->options.compaction.triggerFraction < 0.1
             || this->options.compaction.triggerFraction >= 1 || this->options.compaction.keepRecentGroups < 1
             || this->options.compaction.keepRecentGroups > 128 || this->options.compaction.summaryMaxTokens < 16
@@ -62,11 +69,44 @@ public:
     std::shared_ptr<TaskStore> tasks;
     QThreadPool pool;
     std::mutex mutex;
+    std::mutex joining;
+    std::condition_variable changed;
     bool stopping = false;
-    struct ActiveRun { CancellationToken root, operation; QString sessionId; bool acceptsInput = true; bool interrupted = false; };
+    struct ActiveRun {
+        CancellationToken root, operation;QString sessionId;bool acceptsInput=true,interrupted=false,executing=false;
+        QRunnable* task=nullptr;std::function<void()> cancelledBeforeStart;
+    };
     std::map<QString, ActiveRun> active;
     QSet<QString> busySessions;
     QSet<QString> createdSessions,startedSessions;
+    QSet<QString> touchedSessions,endingSessions;
+    // Called under mutex. executing is set before a worker accesses the run,
+    // so a non-executing task cannot have been deleted/reused by QThreadPool.
+    QList<std::function<void()>> cancelRuns(const QString& session={}) {
+        QList<std::function<void()>> completions;
+        for(auto it=active.begin();it!=active.end();) {
+            auto& run=it->second;
+            if(!session.isEmpty()&&run.sessionId!=session){++it;continue;}
+            run.root.cancel();
+            if(!run.executing&&pool.tryTake(run.task)) {
+                delete run.task;completions.append(std::move(run.cancelledBeforeStart));busySessions.remove(run.sessionId);it=active.erase(it);
+            }else ++it;
+        }
+        return completions;
+    }
+    struct NativeRun {QString sessionId;CancellationToken token;};
+    std::map<QString,NativeRun> native;
+    struct NativeOperation {
+        Impl& state;QString id=uuid();CancellationToken token;
+        NativeOperation(Impl& state,const QString& session,const CancellationToken& parent)
+            :state(state),token(CancellationToken::linkedTo(parent)) {
+            token.throwIfCancelled();std::lock_guard lock(state.mutex);
+            if(state.stopping)throw Error(ErrorCode::ShuttingDown,"Agent engine is shutting down");
+            if(state.endingSessions.contains(session))throw Error(ErrorCode::ModelInUse,"Agent session is ending");
+            state.native.emplace(id,NativeRun{session,token});state.touchedSessions.insert(session);
+        }
+        ~NativeOperation(){std::lock_guard lock(state.mutex);state.native.erase(id);state.changed.notify_all();}
+    };
 
     QList<Tool> additionalTools() const {
         auto result = options.additionalTools;
@@ -265,9 +305,10 @@ public:
             repair();
             send({EventKind::Started, runId, request.sessionId, {}, {}, {}});
             bool activation=false;QString startSource;
-            if(options.sessionStartHooks&&!options.hooks.isEmpty()) {
+            {
                 std::lock_guard lock(mutex);activation=!startedSessions.contains(request.sessionId);
                 startSource=createdSessions.contains(request.sessionId)?"startup":"resume";
+                touchedSessions.insert(request.sessionId);
             }
             if(activation) {startSession(startSource);std::lock_guard lock(mutex);startedSessions.insert(request.sessionId);createdSessions.remove(request.sessionId);}
             auto paths = projectContextPaths(lease->session().messages); paths.append(request.contextPaths); paths.removeDuplicates();
@@ -480,7 +521,7 @@ public:
         catch (const std::exception& error) { failure(result, Error(ErrorCode::StorageFailure, "Transcript recovery failed: " + QString::fromUtf8(error.what()))); }
         lease.reset();
         {
-            std::lock_guard lock(mutex); active.erase(runId); busySessions.remove(request.sessionId);
+            std::lock_guard lock(mutex); active.erase(runId); busySessions.remove(request.sessionId);changed.notify_all();
         }
         // Terminal observer failures cannot change the already finalized transcript/result.
         try { send({EventKind::Finished, runId, request.sessionId, {}, result.text, toJson(result)}); } catch (...) {}
@@ -491,12 +532,13 @@ Engine::Engine(std::shared_ptr<Model> model, std::shared_ptr<ToolRegistry> regis
     std::shared_ptr<const PermissionPolicy> policy, EngineOptions options)
     : d(std::make_unique<Impl>(std::move(model), std::move(registry), std::move(policy), std::move(options))) {}
 Engine::~Engine() {
-    { std::lock_guard lock(d->mutex); d->stopping = true; for (const auto& [id, run] : d->active) run.root.cancel(); }
-    d->pool.waitForDone();
+    try {close();}catch(...) {} // Destructors cannot propagate host cleanup failures.
 }
 Session Engine::createSession(QString model, QString workspace, QString systemPrompt) {
+    std::lock_guard lock(d->mutex);
+    if(d->stopping)throw Error(ErrorCode::ShuttingDown,"Agent engine is shutting down");
     auto session=d->store.create(std::move(model),std::move(systemPrompt),std::move(workspace));
-    if(d->options.sessionStartHooks&&!d->options.hooks.isEmpty()) {std::lock_guard lock(d->mutex);d->createdSessions.insert(session.id);}
+    d->createdSessions.insert(session.id);d->touchedSessions.insert(session.id);
     return session;
 }
 Session Engine::session(const QString& id) const { return d->store.load(id); }
@@ -506,10 +548,96 @@ QString Engine::transcriptPath(const QString& id) const {
 QStringList Engine::sessions() const { return d->store.list(); }
 Session Engine::forkSession(const QString& id, const QString& throughMessageId) {
     std::lock_guard lock(d->mutex);
-    if (d->busySessions.contains(id)) throw Error(ErrorCode::ModelInUse, "Cannot fork a session with an accepted run");
+    if(d->stopping)throw Error(ErrorCode::ShuttingDown,"Agent engine is shutting down");
+    if (d->busySessions.contains(id)||d->endingSessions.contains(id)) throw Error(ErrorCode::ModelInUse, "Cannot fork an active or ending session");
     auto session=d->store.fork(id,throughMessageId);
-    if(d->options.sessionStartHooks&&!d->options.hooks.isEmpty())d->createdSessions.insert(session.id);
+    d->createdSessions.insert(session.id);d->touchedSessions.insert(session.id);
     return session;
+}
+QJsonObject Engine::endSession(const QString& id,QString reason,const CancellationToken& caller) {
+    validateExitReason(reason);caller.throwIfCancelled();const auto session=d->store.metadata(id);
+    {
+        std::unique_lock lock(d->mutex);
+        while(d->endingSessions.contains(id)){d->changed.wait_for(lock,10ms);caller.throwIfCancelled();}
+        caller.throwIfCancelled();d->endingSessions.insert(id);
+        const auto completions=d->cancelRuns(id);
+        for(const auto& [_,run]:d->native)if(run.sessionId==id)run.token.cancel();
+        lock.unlock();for(const auto& done:completions)done();lock.lock();
+        d->changed.wait(lock,[&]{
+            return std::none_of(d->active.begin(),d->active.end(),[&](const auto& item){return item.second.sessionId==id;})
+                &&std::none_of(d->native.begin(),d->native.end(),[&](const auto& item){return item.second.sessionId==id;});
+        });
+    }
+    struct Finish {
+        Impl& state;QString id;
+        ~Finish(){std::lock_guard lock(state.mutex);state.endingSessions.remove(id);state.touchedSessions.remove(id);state.changed.notify_all();}
+    } finish{*d,id};
+    bool ended;
+    {std::lock_guard lock(d->mutex);ended=d->startedSessions.remove(id);}
+    QJsonArray diagnostics;
+    auto error=[&](const QString& text,const QString& code=QString()) {
+        diagnostics.append(QJsonObject{{"hook_event_name","SessionEnd"},{"outcome","non_blocking_error"},{"error",text},{"error_code",code}});
+    };
+    try {stopSubagents(id);}catch(const std::exception& e){error(QString::fromUtf8(e.what()));}catch(...){error("Subagent cleanup failed");}
+    try {
+        const auto list=d->registry->get("ShellTaskList"),stop=d->registry->get("TaskStop");
+        if(list.definition.metadata["source"]=="builtin.shell.control"&&stop.definition.metadata["source"]=="builtin.shell.control") {
+            const ToolContext context{id,{},session.workingDirectory};
+            for(const auto& value:list.execute({{"limit",100}},context).data["tasks"].toArray()) {
+                const auto task=value.toObject();
+                if(task["status"]=="pending"||task["status"]=="running") {
+                    try {stop.execute({{"task_id",task["task_id"]}},context);}catch(const std::exception& e){error(QString::fromUtf8(e.what()));}
+                }
+            }
+        }
+    }catch(const Error& e){if(e.code()!=ErrorCode::NotFound)error(QString::fromUtf8(e.what()),enumName(e.code()));}
+    catch(const std::exception& e){error(QString::fromUtf8(e.what()));}catch(...){error("Shell cleanup failed");}
+    bool timedOut=false;
+    if(ended&&d->options.sessionStartHooks&&!d->options.hooks.isEmpty()) {
+        CancellationToken token;std::mutex timerMutex;std::condition_variable timerChanged;bool done=false;
+        const auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(d->options.sessionEndTimeoutMs);
+        std::thread timer([&]{std::unique_lock lock(timerMutex);if(!timerChanged.wait_until(lock,deadline,[&]{return done;}))token.cancel();});
+        // The watchdog only cancels; the calling thread retains callback ownership.
+        struct TimerJoin {
+            std::thread& thread;std::mutex& mutex;std::condition_variable& changed;bool& done;
+            ~TimerJoin(){{std::lock_guard lock(mutex);done=true;}changed.notify_all();thread.join();}
+        } timerJoin{timer,timerMutex,timerChanged,done};
+        QJsonObject context{{"cwd",session.workingDirectory},{"reason",reason},{"model",session.model},
+            {"transcript_path",QDir(d->options.sessionsDirectory).filePath(id+"/transcript.jsonl")},{"permission_mode","unknown"}};
+        try {context["permission_mode"]=d->policy->describe({id,{},session.workingDirectory,{},token})["mode"].toString("unknown");}
+        catch(const std::exception& e){error(QString::fromUtf8(e.what()));}catch(...){error("Permission inspection failed during session end");}
+        for(const auto& hook:d->options.hooks) {
+            if(token.isCancelled()||std::chrono::steady_clock::now()>=deadline)break;
+            try {
+                const auto result=hook({HookKind::SessionEnd,id,{}, {},{},{},context},token);
+                for(const auto& value:result.diagnostics)diagnostics.append(value);
+                if(result.block||result.stop||!result.feedback.isEmpty()||result.initialUserMessage)
+                    diagnostics.append(QJsonObject{{"hook_event_name","SessionEnd"},{"outcome","ignored_control"}});
+            }catch(const Error& e){error(QString::fromUtf8(e.what()),enumName(e.code()));}
+            catch(const std::exception& e){error(QString::fromUtf8(e.what()));}catch(...){error("SessionEnd hook failed");}
+        }
+        timedOut=token.isCancelled()||std::chrono::steady_clock::now()>=deadline;
+        if(timedOut)error("SessionEnd hook budget expired","timeout");
+    }
+    return {{"session_id",id},{"reason",reason},{"ended",ended},{"timed_out",timedOut},{"diagnostics",diagnostics}};
+}
+QJsonArray Engine::close(QString reason) {
+    validateExitReason(reason);std::lock_guard join(d->joining);QStringList sessions;
+    {
+        std::unique_lock lock(d->mutex);d->stopping=true;
+        const auto completions=d->cancelRuns();
+        for(const auto& [_,run]:d->native)run.token.cancel();
+        lock.unlock();for(const auto& done:completions)done();lock.lock();
+        d->changed.wait(lock,[&]{return d->native.empty();});
+    }
+    d->pool.waitForDone();
+    {std::lock_guard lock(d->mutex);sessions=d->touchedSessions.values();}
+    sessions.sort();QJsonArray result;
+    for(const auto& id:sessions) {
+        try {result.append(endSession(id,reason));}
+        catch(const std::exception& e){result.append(QJsonObject{{"session_id",id},{"ended",false},{"error",QString::fromUtf8(e.what())}});}
+    }
+    return result;
 }
 ProjectContext Engine::context(const QString& id, const QStringList& targetPaths, const CancellationToken& token) const {
     const auto session = d->store.load(id); auto paths = projectContextPaths(session.messages);
@@ -552,11 +680,12 @@ ToolResult Engine::runSubagentTool(const QString& id, const QString& name, const
     if (!QStringList{"Agent", "AgentOutput", "AgentStop", "AgentList", "AgentProfiles"}.contains(name)) throw Error(ErrorCode::NotFound, "Unknown subagent tool");
     token.throwIfCancelled();
     const auto session = name == "Agent" && args["fork_context"].toBool() ? d->store.load(id) : d->store.metadata(id);
+    Impl::NativeOperation operation(*d,id,token);
     auto registry = std::make_shared<ToolRegistry>();
     // State controls remain usable even if fresh profile discovery fails.
     const auto tools = name == "Agent" ? d->additionalTools() : d->options.additionalTools;
     for (const auto& t : tools) if (t.definition.metadata["source"] == "builtin.subagent") registry->add(t);
-    ToolContext context{id, uuid(), session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), token};
+    ToolContext context{id, uuid(), session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), operation.token};
     context.transcriptPath=transcriptPath(id);
     context.sessionSnapshot = std::make_shared<Session>(session);
     const auto callId = uuid();
@@ -571,10 +700,11 @@ ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJ
     if (!backgroundTasksEnabled()) throw Error(ErrorCode::RuntimeUnavailable, "Background shell tasks are disabled by the host");
     if (!QStringList{"Bash", "TaskOutput", "TaskStop", "ShellTaskList"}.contains(name)) throw Error(ErrorCode::NotFound, "Unknown shell task tool");
     token.throwIfCancelled(); const auto session = d->store.metadata(id); auto registry = d->registry->snapshot();
+    Impl::NativeOperation operation(*d,id,token);
     const auto definition = registry->get(name).definition;
     if (definition.metadata["source"] != (name == "Bash" ? "builtin.shell" : "builtin.shell.control"))
         throw Error(ErrorCode::InvalidArgument, "Shell control must refer to the host's native tool");
-    ToolContext context{id, uuid(), session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), token};
+    ToolContext context{id, uuid(), session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), operation.token};
     context.transcriptPath=transcriptPath(id);
     const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission});
     return runner.run({uuid(), name, args}, context, callback);
@@ -593,9 +723,10 @@ ToolResult Engine::runTaskTool(const QString& id, const QString& name, const QJs
     if (!d->tasks) throw Error(ErrorCode::RuntimeUnavailable, "Task tools are disabled by the host");
     token.throwIfCancelled();
     const auto session = d->store.metadata(id);
+    Impl::NativeOperation operation(*d,id,token);
     auto registry = std::make_shared<ToolRegistry>(); const auto runId = uuid();
     for (auto tool : d->taskToolsFor(id, runId, callback)) registry->add(std::move(tool));
-    ToolContext context{id, runId, session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), token};
+    ToolContext context{id, runId, session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), operation.token};
     context.transcriptPath=transcriptPath(id);
     const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission});
     return runner.run({uuid(), name, args}, context, callback);
@@ -614,6 +745,7 @@ QJsonObject Engine::enqueueInput(const QString& id, const QJsonObject& input, co
     (void)loadProjectContext(session.workingDirectory, paths, d->options.projectContext, token);
     std::lock_guard lock(d->mutex);
     if (d->stopping) throw Error(ErrorCode::ShuttingDown, "Agent engine is shutting down");
+    if (d->endingSessions.contains(id)) throw Error(ErrorCode::ModelInUse,"Agent session is ending");
     auto result = d->inputs.enqueue(id, input, token);
     for (auto& [runId, run] : d->active) if (run.sessionId == id && run.acceptsInput) {
         result["active_run_id"] = runId;
@@ -645,15 +777,23 @@ RunHandle Engine::submit(RunRequest request, EventCallback callback, bool compac
         request.allowedTools = parsePermissionRules(request.allowedTools);
         std::lock_guard lock(d->mutex);
         if (d->stopping) throw Error(ErrorCode::ShuttingDown, "Agent engine is shutting down");
+        if (d->endingSessions.contains(request.sessionId)) throw Error(ErrorCode::ModelInUse,"Agent session is ending");
         if (d->active.size() >= size_t(d->options.maxConcurrentRuns + d->options.maxQueuedRuns))
             throw Error(ErrorCode::QueueFull, "Agent run queue is full");
         if (d->busySessions.contains(request.sessionId)) throw Error(ErrorCode::ModelInUse, "Agent session already has an accepted run");
-        d->busySessions.insert(request.sessionId); d->active.emplace(handle.runId,
-            Impl::ActiveRun{handle.cancellation, CancellationToken::linkedTo(handle.cancellation), request.sessionId, !compactOnly});
+        auto cancelled=[promise,callback,id=handle.runId,session=request.sessionId] {
+            RunResult result;result.runId=id;result.sessionId=session;failure(result,Error(ErrorCode::Cancelled,"Queued run cancelled before execution"));
+            try {if(callback)callback({EventKind::Finished,id,session,{},{},toJson(result)});}catch(...) {}
+            promise->set_value(std::move(result));
+        };
+        const auto sessionId=request.sessionId;
         auto task = QRunnable::create([impl = d.get(), request = std::move(request), callback = std::move(callback),
                 id = handle.runId, token = handle.cancellation, promise, compactOnly, instructions = std::move(instructions), queuedOnly]() mutable {
+            {std::lock_guard lock(impl->mutex);impl->active.at(id).executing=true;}
             impl->execute(std::move(request), id, token, std::move(callback), promise, compactOnly, std::move(instructions), queuedOnly);
         });
+        d->busySessions.insert(sessionId);d->active.emplace(handle.runId,
+            Impl::ActiveRun{handle.cancellation,CancellationToken::linkedTo(handle.cancellation),sessionId,!compactOnly,false,false,task,std::move(cancelled)});
         d->pool.start(task);
     } catch (const Error& error) {
         RunResult result; result.runId = handle.runId; result.sessionId = request.sessionId; failure(result, error);

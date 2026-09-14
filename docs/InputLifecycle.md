@@ -1,5 +1,7 @@
 # 사용자 입력과 세션 시작 생명주기
 
+0.23.0에서 [SessionEnd.md](SessionEnd.md)의 실제 세션 종료가 추가되었다. endSession 뒤 같은 ID를 실행하면 resume하며, 아래의 0.22 구현 시점 설명과 구분한다.
+
 0.22.0은 C++ UserPromptSubmit·SessionStart 콜백과 호스트 명령 훅을 기존 Engine·API·CLI·MCP 실행 경로에 연결한다. HookResult::initialUserMessage, RunRequest::userPrompt, EngineOptions::sessionStartHooks가 추가되어 현재 ABI는 0.22이다. 소비자는 새 헤더와 라이브러리로 함께 다시 빌드한다.
 
 ## 사용자 제출
