@@ -52,6 +52,28 @@ template<class F> void error(F fn, ErrorCode expected) {
 class AgentApiTests : public QObject {
     Q_OBJECT
 private slots:
+    void skillsAreClientScopedAndRunWithoutPlaceholderPrompt() {
+        QTemporaryDir root; auto o = options(root);
+        const auto dir = o.workingDirectory + "/.claude/skills/inspect"; QVERIFY(QDir().mkpath(dir));
+        QFile file(dir + "/SKILL.md"); QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("---\ndescription: Inspect\ndisable-model-invocation: true\n---\nSKILL_API $ARGUMENTS"); file.close();
+        a::Api api(std::make_shared<Model>(), std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), o);
+        const auto id = call(api, "agent.sessions.create", {{"model", "fixture"}}).value("session_id");
+        QVERIFY(call(api, "agent.info")["skills_enabled"].toBool());
+        auto catalog = call(api, "agent.skills.list", {{"session_id", id}}); QCOMPARE(catalog["skills"].toArray().size(), 1);
+        QVERIFY(!catalog["skills"].toArray()[0].toObject().contains("content"));
+        error([&] { call(api, "agent.skills.list", {{"session_id", id}}, secondToken); }, ErrorCode::NotFound);
+        error([&] { call(api, "agent.skills.list", {{"session_id", id}}, "invalid"); }, ErrorCode::Unauthorized);
+        error([&] { call(api, "agent.run", {{"session_id", id}, {"skill", 4}}); }, ErrorCode::InvalidArgument);
+        const auto run = call(api, "agent.run", {{"session_id", id}, {"skill", "inspect"}, {"skill_arguments", "literal args"}});
+        QCOMPARE(run["status"], "completed"); QVERIFY(run["text"].toString().contains("SKILL_API literal args"));
+        error([&] { call(api, "agent.inputs.run", {{"session_id", id}, {"skill", "inspect"}}); }, ErrorCode::InvalidArgument);
+        o.engine.skills.enabled = false; api.close();
+        a::Api disabled(std::make_shared<Model>(), std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), o);
+        QVERIFY(!call(disabled, "agent.info")["skills_enabled"].toBool());
+        QVERIFY(call(disabled, "agent.skills.list", {{"session_id", id}})["skills"].toArray().isEmpty());
+        QCOMPARE(call(disabled, "agent.run", {{"session_id", id}, {"skill", "inspect"}})["error_code"], "runtime_unavailable");
+    }
     void inputsReachAnActiveRunWithoutAnAvailableRunWorker() {
         QTemporaryDir root; auto o = options(root); o.maxConcurrentRequests = 1; o.maxQueuedRequests = 0;
         auto model = std::make_shared<Model>();

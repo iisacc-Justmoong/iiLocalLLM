@@ -175,3 +175,5 @@ agent.tasks.create/get/list/update/claim 및 agent.todos.write/get을 추가한�
 ```
 
 입력 큐의 now/next/later, 저장·복구, runQueued와 입력 전달 이벤트는 [InputQueue.md](InputQueue.md)를 따른다. 빈 큐 run은 RunResult의 not_found이며 placeholder 메시지를 추가하지 않는다. 새 요청으로 재등록하면 새 ID가 생기므로 응답 유실 시 자동 재등록으로 중복 방지를 보장하지 않는다.
+
+로컬 스킬 목록은 인증된 `agent.skills.list`로 조회한다. `agent.run`에 `skill`과 `skill_arguments`를 주면 `prompt`를 생략할 수 있다. `agent.info.skills_enabled`와 데몬의 `--agent-skills-dir`/`--agent-no-skills`를 지원한다. [스킬 계약](Skills.md)을 참조한다.

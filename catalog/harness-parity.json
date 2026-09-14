@@ -281,8 +281,23 @@
     {
       "id": "skills",
       "requirement": "SKILL.md·메타데이터·인라인/fork 실행·허용 도구·검색·설치",
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "agent/Skills.h",
+        "agent/Skills.cpp",
+        "agent/Engine.cpp",
+        "agent/Api.cpp",
+        "agent/McpServer.cpp",
+        "tests/skill_tests.cpp",
+        "tests/skill_runtime_smoke.cpp",
+        "tests/agent_api_tests.cpp",
+        "tests/agent_api_smoke.py",
+        "tests/mcp_server_tests.cpp",
+        "tests/mcp_server_smoke.py",
+        "tests/consumer/skills.cpp",
+        "docs/Skills.md"
+      ],
+      "remaining": "Local bounded discovery, metadata catalog, literal arguments, inline user/model invocation and durable restoration are implemented. Permission grants, model/effort changes, fork, hooks, conditional and dynamic scopes, remote MCP skills, legacy commands, bundled/plugin skills, installation and update, ranking and active-skill compaction reinjection remain."
     },
     {
       "id": "plugins",

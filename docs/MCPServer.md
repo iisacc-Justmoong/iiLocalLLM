@@ -116,3 +116,5 @@ TaskOutput 대기 또는 agent.run 중에도 같은 연결에서 TaskStop을 처
 Engine과 모델을 설정하면 `iiLocalLLM.agent.inputs.enqueue/list/remove/run`을 제공한다. 현재 연결의 대화를 사용하며 다른 session_id를 받지 않는다. enqueue는 text 및 선택 kind·priority·context_paths, list는 offset·limit, remove는 input_id, run은 max_turns·context_paths를 받는다. 생성 설정은 기존 MCP 호스트 설정을 따른다. list는 읽기 전용이고 나머지는 호스트 정책이 허용해야 한다. 실행 파일에서는 `--allow 'iiLocalLLM.agent.inputs.*'`로 지정할 수 있다.
 
 진행 중 agent.run이 실행 잠금을 점유해도 enqueue/list/remove를 처리한다. 도구 스키마와 정책은 유지하며 now는 해당 대화의 현재 연산을 협력 취소한다. 전송 작업자 포화는 별도 한도이다. 입력 큐와 transcript는 영속화하지만 새 MCP 연결의 자동 재개·유휴 실행은 제공하지 않는다. 공식 SDK의 `inputs_mcp_stdio`·`inputs_mcp_http`와 내장 서버의 실행 중 요청 검사를 구분한다. 상세 계약은 [InputQueue.md](InputQueue.md)에 있다.
+
+엔진을 연결한 서버는 `iiLocalLLM.agent.skills.list`와 `iiLocalLLM.agent.run`의 `skill`/`skill_arguments`를 지원한다. 호출은 연결별 대화에 인라인으로 저장된다. [스킬 계약](Skills.md)을 참조한다.

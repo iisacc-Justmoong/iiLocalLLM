@@ -215,6 +215,9 @@ async def native(binary, root, weights, http=False):
     workspace.mkdir()
     secret = "LOCAL_" + uuid.uuid4().hex[:12]
     (workspace / "secret.txt").write_text(secret)
+    skill_dir = workspace / ".claude" / "skills" / "inspect"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text("---\ndescription: Inspect a file\ndisable-model-invocation: true\n---\nUse the Read tool to read $0. Then return the exact file contents as your final answer. Do not guess.\n")
     package = root / "Models" / "agent-fixture"
     package.mkdir(parents=True)
     os.link(weights, package / "model.gguf")
@@ -236,14 +239,18 @@ async def native(binary, root, weights, http=False):
             await session.initialize()
             names = {tool.name for tool in (await session.list_tools()).tools}
             assert {"iiLocalLLM.agent.run", "iiLocalLLM.agent.session"} <= names
+            catalog = await session.call_tool("iiLocalLLM.agent.skills.list", {})
+            assert not catalog.isError and len(catalog.structuredContent["skills"]) == 1
+            assert "content" not in catalog.structuredContent["skills"][0]
             result = await session.call_tool("iiLocalLLM.agent.run", {
-                "prompt": "Use the Read tool to read secret.txt. Then return the exact file contents as your final answer. Do not guess.",
+                "skill": "inspect", "skill_arguments": "secret.txt",
                 "max_turns": 4}, progress_callback=progress)
             run = result.structuredContent
             assert not result.isError and run["status"] == "completed", result
             assert secret in run["text"] and run["turns"] >= 2 and run["usage"]["generated_tokens"] > 0, run
             saved = (await session.call_tool("iiLocalLLM.agent.session", {"include_messages": True})).structuredContent
             messages = saved["messages"]
+            assert any("iilocal.skill" in message.get("metadata", {}) for message in messages), messages
             assert saved["session_id"] == run["session_id"]
             calls = [call for message in messages for call in message["tool_calls"]]
             assert any(call["name"] == "Read" for call in calls), messages

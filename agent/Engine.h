@@ -1,4 +1,5 @@
 #pragma once
+#include "Skills.h"
 #include "Tools.h"
 #include "SessionStore.h"
 #include "ProjectContext.h"
@@ -24,6 +25,7 @@ struct EngineOptions {
     bool taskToolsEnabled = false; // Opt in for embedded hosts; daemon/MCP CLI enable it by default.
     bool taskToolsDeferred = true;
     InputQueueOptions inputQueue;
+    SkillOptions skills;
 };
 class IILOCALLLM_EXPORT Engine {
 public:
@@ -36,6 +38,7 @@ public:
     Session createSession(QString model, QString workspace, QString systemPrompt = {});
     Session session(const QString& id) const;
     Session sessionMetadata(const QString& id) const;
+    SkillCatalog skills(const QString& sessionId, const CancellationToken& = {}) const;
     QStringList sessions() const;
     Session forkSession(const QString& id, const QString& throughMessageId = {});
     ProjectContext context(const QString& sessionId, const QStringList& targetPaths = {}, const CancellationToken& = {}) const;

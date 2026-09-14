@@ -72,6 +72,25 @@ public:
 class McpServerTests : public QObject {
     Q_OBJECT
 private slots:
+    void skillCatalogAndInvocationUseTheConnectionConversation() {
+        QTemporaryDir root; const auto path = root.filePath(".claude/skills/inspect"); QVERIFY(QDir().mkpath(path));
+        QFile file(path + "/SKILL.md"); QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write("---\ndescription: Inspect\ndisable-model-invocation: true\n---\nMCP_SKILL $ARGUMENTS"); file.close();
+        auto registry = std::make_shared<a::ToolRegistry>(); auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
+        a::EngineOptions eo; eo.sessionsDirectory = root.filePath("sessions");
+        auto engine = std::make_shared<a::Engine>(std::make_shared<HistoryModel>(), registry, policy, eo);
+        a::McpServerOptions config; config.workingDirectory = root.path(); config.engine = engine; config.model = "fixture";
+        const auto options = a::mcpServerOptions(registry, policy, config);
+        m::ServerSession first(options), second(options); initialize(first); initialize(second);
+        QCOMPARE(call(first, 2, "iiLocalLLM.agent.skills.list")["structuredContent"].toObject()["skills"].toArray().size(), 1);
+        const auto value = call(first, 3, "iiLocalLLM.agent.run", {{"skill", "inspect"}, {"skill_arguments", "private args"}});
+        QVERIFY2(!value["isError"].toBool(), qPrintable(QJsonDocument(value).toJson()));
+        QVERIFY(value["structuredContent"].toObject()["text"].toString().contains("MCP_SKILL private args"));
+        const auto other = call(second, 2, "iiLocalLLM.agent.run", {{"prompt", "other"}});
+        QVERIFY(!other["structuredContent"].toObject()["text"].toString().contains("private args"));
+        QVERIFY(call(first, 4, "iiLocalLLM.agent.run", {{"skill", "missing"}})["isError"].toBool());
+        QVERIFY(call(first, 5, "iiLocalLLM.agent.inputs.run", {{"skill", "inspect"}})["isError"].toBool());
+    }
     void urgentInputBypassesTheRunningConversationLock() {
         QTemporaryDir root; auto registry = std::make_shared<a::ToolRegistry>();
         auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass); auto model = std::make_shared<HistoryModel>();

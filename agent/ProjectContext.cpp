@@ -1,4 +1,5 @@
 #include "ProjectContext.h"
+#include "ContextFile.h"
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
 #include <QtCore/QDirIterator>
@@ -11,11 +12,6 @@
 #include <yaml.h>
 #include <algorithm>
 #include <cstdint>
-#ifdef Q_OS_UNIX
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
 
 namespace iiLocalLLM::agent {
 namespace {
@@ -251,26 +247,7 @@ public:
     }
     QByteArray read(const QString& path) {
         token.throwIfCancelled(); require(++fileCount <= options.maxFiles, "Too many instruction files", ErrorCode::ResourceLimit);
-        QFile file(path);
-#ifdef Q_OS_UNIX
-        // Reopen the canonical relative path without following newly substituted symlinks.
-        int fd = ::open(QFile::encodeName(root).constData(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
-        require(fd >= 0, "Cannot open instruction root", ErrorCode::StorageFailure);
-        const auto parts = QDir(root).relativeFilePath(path).split('/');
-        for (qsizetype i = 0; i < parts.size(); ++i) {
-            const auto flags = O_RDONLY | O_CLOEXEC | O_NOFOLLOW | (i + 1 < parts.size() ? O_DIRECTORY : O_NONBLOCK);
-            const int next = ::openat(fd, QFile::encodeName(parts[i]).constData(), flags); ::close(fd); fd = next;
-            require(fd >= 0, "Cannot safely open instruction file", ErrorCode::StorageFailure);
-        }
-        struct stat status{};
-        if (::fstat(fd, &status) || !S_ISREG(status.st_mode)) { ::close(fd); throw Error(ErrorCode::StorageFailure, "Instruction is not a regular file"); }
-        if (!file.open(fd, QIODevice::ReadOnly, QFileDevice::AutoCloseHandle)) { ::close(fd); throw Error(ErrorCode::StorageFailure, "Cannot read instruction file"); }
-#else
-        require(QFileInfo(path).isFile() && file.open(QIODevice::ReadOnly), "Cannot read instruction file", ErrorCode::StorageFailure);
-#endif
-        auto data = file.read(qint64(options.maxFileBytes) + 1);
-        require(file.error() == QFileDevice::NoError, "Cannot read instruction file", ErrorCode::StorageFailure);
-        require(data.size() <= options.maxFileBytes && file.atEnd(), "Instruction file exceeds limit", ErrorCode::ResourceLimit);
+        auto data = detail::readContextFile(root, path, options.maxFileBytes, token);
         total += data.size(); require(total <= options.maxTotalBytes, "Instruction input exceeds total byte limit", ErrorCode::ResourceLimit);
         decode(data); return data;
     }

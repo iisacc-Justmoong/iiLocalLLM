@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "SkillsInternal.h"
 #include "../Parameters.h"
 #include <QtCore/QThreadPool>
 #include <QtCore/QRunnable>
@@ -40,6 +41,10 @@ public:
             || this->options.toolSearch.maxActiveTools > 4096)
             throw Error(ErrorCode::InvalidArgument, "Invalid agent engine configuration");
         pool.setMaxThreadCount(this->options.maxConcurrentRuns);
+        if (this->options.skills.enabled) {
+            auto check = this->registry->snapshot();
+            check->add(detail::skillTool({}, this->options.skills)); // Reserve the native Skill identity.
+        }
         if (this->options.taskToolsEnabled) {
             tasks = std::make_shared<TaskStore>(QDir(this->options.sessionsDirectory).filePath("tasks"));
             auto check = this->registry->snapshot();
@@ -146,6 +151,7 @@ public:
             for (const auto& call : pendingToolCalls(lease->session().messages))
                 lease->append({{}, MessageRole::Tool, "Execution was interrupted; the outcome is unknown. Do not automatically repeat this action.",
                     {}, call.id, true, {{"interrupted", true}}});
+            for (auto message : detail::pendingSkillMessages(lease->session().messages)) lease->append(std::move(message));
         };
         auto deliverInputs = [&](bool includeLater) {
             QList<Message> delivered;
@@ -197,6 +203,12 @@ public:
             auto paths = projectContextPaths(lease->session().messages); paths.append(request.contextPaths); paths.removeDuplicates();
             const auto initial = loadProjectContext(lease->session().workingDirectory, paths, options.projectContext, token);
             Message user{{}, MessageRole::User, request.prompt};
+            if (!request.skill.isEmpty()) {
+                user = loadSkill(lease->session().workingDirectory, request.skill, request.skillArguments,
+                    request.sessionId, SkillInvocationSource::User, options.skills, token);
+                if (!request.prompt.isEmpty()) user.text += "\n\nAdditional user request:\n" + request.prompt;
+                if (user.text.size() > options.maxInputCharacters) throw Error(ErrorCode::ResourceLimit, "Expanded skill exceeds engine input limit");
+            }
             if (!request.contextPaths.isEmpty() && options.projectContext.enabled)
                 user.metadata.insert("iilocal.context_paths", QJsonArray::fromStringList(initial.targetPaths));
             if (!compactOnly && !queuedOnly) append(std::move(user));
@@ -216,11 +228,15 @@ public:
                 if (!before.feedback.isEmpty()) append({{}, MessageRole::User, before.feedback});
                 const auto& session = lease->session();
                 const auto turnRegistry = registry->snapshot();
+                const auto skillCatalog = discoverSkills(session.workingDirectory, options.skills, token);
+                const auto skillContext = skillCatalog.message();
+                if (!skillContext.text.isEmpty()) turnRegistry->add(detail::skillTool(session.workingDirectory, options.skills));
                 for (auto tool : taskToolsFor(session.id, runId, send)) turnRegistry->add(std::move(tool));
                 const bool hasTranscriptTool = !session.compactions.isEmpty();
                 if (hasTranscriptTool) detail::addTranscriptTool(*turnRegistry, session);
                 detail::prepareToolDiscovery(*turnRegistry, session, options.toolSearch);
                 ModelRequest base{session.model, session.systemPrompt, {}, turnRegistry->definitions(), request.generation, session.id};
+                if (!skillContext.text.isEmpty()) base.messages.append(skillContext);
                 if (auto state = taskContext(session.id, token)) base.messages.append(std::move(*state));
                 if (auto state = shellContext(session, token)) base.messages.append(std::move(*state));
                 const auto context = loadProjectContext(session.workingDirectory, projectContextPaths(session.messages), options.projectContext, token);
@@ -286,7 +302,10 @@ public:
                     context.progress = [&, id = call.id](const QJsonObject& data) {
                         send({EventKind::ToolProgress, runId, request.sessionId, id, {}, data});
                     };
-                    return runner.run(call, context, send);
+                    auto output = runner.run(call, context, send);
+                    // Only the reserved native tool may request prompt injection.
+                    if (call.name != "Skill" || skillContext.text.isEmpty()) output.metadata.remove("iilocal.skill_result");
+                    return output;
                 };
                 for (qsizetype i = 0; i < reply.toolCalls.size();) {
                     token.throwIfCancelled();
@@ -314,6 +333,7 @@ public:
                     }
                     i = end;
                 }
+                for (auto message : detail::pendingSkillMessages(lease->session().messages)) append(std::move(message));
                 } catch (const Error& error) {
                     if (error.code() != ErrorCode::Cancelled || runToken.isCancelled() || !wasInterrupted(runId) || compactOnly) throw;
                     repair();
@@ -377,6 +397,9 @@ ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJ
     return runner.run({uuid(), name, args}, context, callback);
 }
 Session Engine::sessionMetadata(const QString& id) const { return d->store.metadata(id); }
+SkillCatalog Engine::skills(const QString& id, const CancellationToken& token) const {
+    return discoverSkills(d->store.metadata(id).workingDirectory, d->options.skills, token);
+}
 ToolResult Engine::runTaskTool(const QString& id, const QString& name, const QJsonObject& args,
     const CancellationToken& token, const EventCallback& callback) const {
     if (!d->tasks) throw Error(ErrorCode::RuntimeUnavailable, "Task tools are disabled by the host");
@@ -423,7 +446,9 @@ RunHandle Engine::submit(RunRequest request, EventCallback callback, bool compac
     auto promise = std::make_shared<std::promise<RunResult>>();
     RunHandle handle{uuid(), {}, promise->get_future().share()};
     try {
-        if ((!compactOnly && !queuedOnly && request.prompt.trimmed().isEmpty()) || (queuedOnly && !request.prompt.isEmpty()) || request.prompt.size() > d->options.maxInputCharacters
+        if ((!compactOnly && !queuedOnly && request.prompt.trimmed().isEmpty() && request.skill.isEmpty()) || (queuedOnly && !request.prompt.isEmpty()) || request.prompt.size() > d->options.maxInputCharacters
+            || ((compactOnly || queuedOnly) && (!request.skill.isEmpty() || !request.skillArguments.isEmpty()))
+            || (request.skill.isEmpty() && !request.skillArguments.isEmpty()) || request.skill.size() > 129 || request.skillArguments.size() > 65536
             || instructions.size() > d->options.maxInputCharacters
             || request.maxTurns < 1 || request.maxTurns > 10000
             || request.contextPaths.size() > d->options.projectContext.maxTargetPaths) throw Error(ErrorCode::InvalidArgument, "Invalid agent run request");

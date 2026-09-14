@@ -26,7 +26,7 @@
 | mcp_server | iiLocalLLM 및 앱 기능을 MCP로 제공·세션 격리·권한·동시성·구조화 결과 | partial |
 | api | C++ SDK·기존 native IPC·HTTP/SSE 에이전트 API·OpenAI 도구 호환 | partial |
 | discovery | 앱 manifest·MCP/API 자동 인식·기능 협상·tool search·지연 공개 | partial |
-| skills | SKILL.md·메타데이터·인라인/fork 실행·허용 도구·검색·설치 | pending |
+| skills | SKILL.md·메타데이터·인라인/fork 실행·허용 도구·검색·설치 | partial |
 | plugins | manifest·명령/스킬/에이전트/훅/MCP/LSP 등록·버전/캐시·설치/갱신 | pending |
 | hooks | 전체 생명주기·C++ 콜백·명령·HTTP·모델/에이전트·입력 변경·결과/차단 | partial |
 | tasks | 계획·Todo/Task·작업 의존성·입력 큐·백그라운드 작업/알림 | partial |
@@ -76,3 +76,5 @@
 0.13.1은 ServiceModel에서 누락하던 도구 data와 오류 상태를 JSON 관측으로 전달하고 동일 입력으로 예산을 측정한다. 실제 입력·KV 캐시 대조와 모델 수락은 [Verification.md](Verification.md)에 분리 기록하며 execution/providers/tools는 partial을 유지한다.
 
 0.13.2는 MCP 로컬 요청 기한의 구조화 오류와 연결·도구 발견 단계별 상태 진단 및 서버별 설정 기한을 추가한다. 관측성은 이 범위에 한해 partial이며 초기화 간헐 실패의 해결이나 전체 trace·비용 진단 완료를 뜻하지 않는다. [MCP.md](MCP.md), [ToolDiscovery.md](ToolDiscovery.md), [Verification.md](Verification.md)를 참조한다.
+
+0.14.0은 로컬 스킬의 메타데이터 목록·인자 치환·인라인 대화 주입·복원을 C++로 구현하고 인증 API·MCP·CLI에 연결한다. 허용 도구에 따른 권한 추가, fork, 훅, 조건부/원격 스킬, 번들/플러그인 설치와 갱신은 아직 남아 있다. [Skills.md](Skills.md)의 구체적 지원 범위를 따른다.

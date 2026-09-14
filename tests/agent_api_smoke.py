@@ -182,6 +182,34 @@ def main():
             assert http(port, "agent.sessions.get", {"session_id": session}, auth=other)[0] == 404
             assert http(port, "agent.sessions.list", auth=other)[1]["result"]["sessions"] == []
             evidence["checks"] += ["http_native_cli_session_identity", "cross_app_isolation"]
+            skill_dir = workspace / ".claude" / "skills" / "inspect"
+            skill_dir.mkdir(parents=True)
+            (skill_dir / "SKILL.md").write_text("---\ndescription: Inspect a file\ndisable-model-invocation: true\n---\nUse the Read tool to read $0. Then return the exact file contents as your final answer. Do not guess.\n")
+            skills = cli("agent.skills.list", {"session_id": session})
+            assert len(skills["skills"]) == 1 and "content" not in skills["skills"][0]
+            assert native("agent.skills.list", {"session_id": session})[-1]["result"] == skills
+            assert http(port, "agent.skills.list", {"session_id": session})[1]["result"] == skills
+            assert http(port, "agent.skills.list", {"session_id": session}, auth=other)[0] == 404
+            skills_cli = subprocess.run([str(args.cli), "--socket", str(endpoint), "--auth-file", str(client_token),
+                "agent", "skills", "list", session], capture_output=True, text=True, timeout=20, env=environment)
+            assert skills_cli.returncode == 0 and json.loads(skills_cli.stdout) == skills
+            skill_params = root / "skill-params.json"
+            skill_params.write_text(json.dumps({"skill": "missing"}))
+            bad_skill = subprocess.run([str(args.cli), "--socket", str(endpoint), "--auth-file", str(client_token),
+                "agent", "skills", "run", session, str(skill_params)], capture_output=True, text=True, timeout=20, env=environment)
+            assert bad_skill.returncode == 1 and json.loads(bad_skill.stdout)["error_code"] == "not_found"
+            if args.model:
+                skill_secret = "SKILL_" + secrets.token_hex(8)
+                (workspace / "skill-input.txt").write_text(skill_secret)
+                skill_session = cli("agent.sessions.create", {"model": model})["session_id"]
+                skill_params.write_text(json.dumps({"skill": "inspect", "skill_arguments": "skill-input.txt", "options": {"temperature": 0, "max_tokens": 512}}))
+                skill_run = subprocess.run([str(args.cli), "--socket", str(endpoint), "--auth-file", str(client_token),
+                    "agent", "skills", "run", skill_session, str(skill_params)], capture_output=True, text=True, timeout=120, env=environment)
+                assert skill_run.returncode == 0 and skill_secret in json.loads(skill_run.stdout)["text"], (skill_run.stdout, skill_run.stderr)
+                saved_skill = cli("agent.sessions.get", {"session_id": skill_session})
+                assert any("iilocal.skill" in m.get("metadata", {}) for m in saved_skill["messages"])
+                evidence["checks"].append("native_skill_cli_read_and_observation")
+            evidence["checks"] += ["skill_catalog_http_native_cli", "skill_cross_app_isolation", "skill_run_cli_failure_exit"]
             task_input = {"session_id": session, "subject": "Verify application", "description": "Inspect the actual result"}
             created = cli("agent.tasks.create", task_input)
             assert not created["is_error"] and created["result"]["task"]["id"] == "1", created
@@ -307,7 +335,7 @@ def main():
             assert cli("agent.shell.list", {"session_id": fork})["result"]["tasks"] == []
             evidence["checks"] += ["background_shell_restart_history", "background_shell_shutdown_stop", "background_shell_fork_isolation"]
             evidence["checks"] += ["task_restart_persistence", "task_fork_isolation"]
-            assert len(cli("agent.sessions.list")["sessions"]) == (3 if args.model else 2)
+            assert len(cli("agent.sessions.list")["sessions"]) == (4 if args.model else 2)
             assert native("agent.sessions.get", {"session_id": fork})[-1]["result"]["message_count"] == before["message_count"]
             evidence["checks"] += ["daemon_restart_resume", "transcript_fork"]
             if args.model:

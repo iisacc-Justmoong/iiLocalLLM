@@ -49,7 +49,7 @@ QStringList contextPaths(const QJsonObject& parameters, int limit) {
     return paths;
 }
 QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.sessions.list", "agent.sessions.get",
-    "agent.sessions.fork", "agent.sessions.compact", "agent.context.get", "agent.mcp.status", "agent.run", "agent.cancel", "agent.status",
+    "agent.sessions.fork", "agent.sessions.compact", "agent.context.get", "agent.skills.list", "agent.mcp.status", "agent.run", "agent.cancel", "agent.status",
     "agent.tasks.create", "agent.tasks.get", "agent.tasks.list", "agent.tasks.update", "agent.tasks.claim", "agent.todos.write", "agent.todos.get",
     "agent.shell.start", "agent.shell.output", "agent.shell.stop", "agent.shell.list",
     "agent.inputs.enqueue", "agent.inputs.list", "agent.inputs.remove", "agent.inputs.run"}; }
@@ -149,7 +149,7 @@ public:
                 {"working_directory", options.workingDirectory}, {"project_context_enabled", options.engine.projectContext.enabled},
                 {"auto_compact_enabled", options.engine.compaction.automatic}, {"tool_search_enabled", options.engine.toolSearch.enabled},
                 {"task_tools_enabled", client->engine->taskToolsEnabled()}, {"background_tasks_enabled", client->engine->backgroundTasksEnabled()},
-                {"input_queue_enabled", true}};
+                {"input_queue_enabled", true}, {"skills_enabled", options.engine.skills.enabled}};
         }
         if (inputControl(method)) {
             const auto id = text(p, "session_id");
@@ -230,6 +230,10 @@ public:
             fields(p, {"session_id", "context_paths"}); const auto original = session(client, p);
             return client->engine->context(original.id, contextPaths(p, options.engine.projectContext.maxTargetPaths), job->token).toJson();
         }
+        if (method == "agent.skills.list") {
+            fields(p, {"session_id"}); const auto original = session(client, p);
+            return client->engine->skills(original.id, job->token).toJson();
+        }
         if (method == "agent.sessions.fork") {
             fields(p, {"session_id", "through_message_id"}); const auto original = session(client, p);
             std::lock_guard lock(client->creation);
@@ -241,10 +245,11 @@ public:
         const bool queuedOnly = method == "agent.inputs.run";
         if (compactOnly) fields(p, {"session_id", "instructions", "options"});
         else if (queuedOnly) fields(p, {"session_id", "options", "max_turns", "context_paths"});
-        else fields(p, {"session_id", "prompt", "options", "max_turns", "context_paths"});
+        else fields(p, {"session_id", "prompt", "options", "max_turns", "context_paths", "skill", "skill_arguments"});
         const auto original = session(client, p);
-        RunRequest request{original.id, compactOnly || queuedOnly ? QString() : text(p, "prompt"), generationOptionsFromJson(object(p, "options")), integer(p, "max_turns", options.maxTurns, 1, options.maxTurns)};
+        RunRequest request{original.id, compactOnly || queuedOnly ? QString() : text(p, "prompt", !p.contains("skill")), generationOptionsFromJson(object(p, "options")), integer(p, "max_turns", options.maxTurns, 1, options.maxTurns)};
         request.contextPaths = contextPaths(p, options.engine.projectContext.maxTargetPaths);
+        request.skill = text(p, "skill", false); request.skillArguments = text(p, "skill_arguments", false);
         job->token.throwIfCancelled();
         require(Clock::now() < job->deadline, "Agent API request deadline exceeded", ErrorCode::Timeout);
         quint64 sequence = 0;

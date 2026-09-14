@@ -111,8 +111,11 @@ public:
         Tool run;
         run.definition.name = "iiLocalLLM.agent.run";
         run.definition.description = "Run the configured local agent in this connection's private conversation and workspace. Use new_session to start a new conversation.";
-        run.definition.inputSchema = {{"type", "object"}, {"additionalProperties", false}, {"required", QJsonArray{"prompt"}},
+        run.definition.inputSchema = {{"type", "object"}, {"additionalProperties", false},
+            {"anyOf", QJsonArray{QJsonObject{{"required", QJsonArray{"prompt"}}}, QJsonObject{{"required", QJsonArray{"skill"}}}}},
             {"properties", QJsonObject{{"prompt", QJsonObject{{"type", "string"}, {"minLength", 1}, {"maxLength", 1048576}}},
+                {"skill", QJsonObject{{"type", "string"}, {"minLength", 1}, {"maxLength", 129}}},
+                {"skill_arguments", QJsonObject{{"type", "string"}, {"maxLength", 65536}}},
                 {"new_session", QJsonObject{{"type", "boolean"}}},
                 {"context_paths", QJsonObject{{"type", "array"}, {"maxItems", 128}, {"items", QJsonObject{{"type", "string"}, {"minLength", 1}, {"maxLength", 4096}}}}},
                 {"max_turns", QJsonObject{{"type", "integer"}, {"minimum", 1}, {"maximum", options.maxAgentTurns}}}}}};
@@ -126,6 +129,7 @@ public:
             const auto id = self->sessionId(conversation, context.cancellation, !compactOnly, args["new_session"].toBool());
             if (compactOnly && id.isEmpty()) throw Error(ErrorCode::NotFound, "This MCP connection has no conversation to compact");
             RunRequest request{id, args["prompt"].toString(), self->options.generation, args["max_turns"].toInt(self->options.maxAgentTurns)};
+            request.skill = args["skill"].toString(); request.skillArguments = args["skill_arguments"].toString();
             for (const auto& path : args["context_paths"].toArray()) request.contextPaths.append(path.toString());
             int progress = 0;
             auto observe = [&](const Event& event) {
@@ -152,9 +156,19 @@ public:
         queuedRun.definition.description = "Start this connection's idle agent from pending input. Does not create a placeholder user prompt.";
         auto queuedProperties = run.definition.inputSchema["properties"].toObject();
         queuedProperties.remove("prompt"); queuedProperties.remove("new_session");
+        queuedProperties.remove("skill"); queuedProperties.remove("skill_arguments");
         queuedRun.definition.inputSchema = {{"type", "object"}, {"additionalProperties", false}, {"properties", queuedProperties}};
         queuedRun.execute = [executeAgent](const auto& args, const auto& context) { return executeAgent(args, context, false, true); };
         frozen->add(std::move(queuedRun));
+        Tool skills; skills.definition.name = "iiLocalLLM.agent.skills.list";
+        skills.definition.description = "List local skill metadata and unsupported features for this connection's agent. Does not load a model or execute a skill.";
+        skills.definition.readOnly = true; skills.definition.concurrencySafe = true;
+        skills.definition.inputSchema = {{"type", "object"}, {"additionalProperties", false}, {"properties", QJsonObject{}}};
+        skills.execute = [self](const QJsonObject&, const ToolContext& context) {
+            const auto id = self->sessionId(self->conversation(context.sessionId), context.cancellation);
+            return ToolResult{"Local skill catalog", self->options.engine->skills(id, context.cancellation).toJson()};
+        };
+        frozen->add(std::move(skills));
         const auto text = QJsonObject{{"type", "string"}, {"minLength", 1}, {"maxLength", 65536}};
         const auto inputId = QJsonObject{{"type", "string"}, {"minLength", 1}, {"maxLength", 128}};
         for (const QString action : {QStringLiteral("enqueue"), QStringLiteral("list"), QStringLiteral("remove")}) {

@@ -16,7 +16,7 @@
 namespace { volatile std::sig_atomic_t interrupted = 0; void interrupt(int) { interrupted = 1; } }
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.13.2");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.14.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},
@@ -27,6 +27,8 @@ int main(int argc, char** argv) {
         {"apps-dir", "Private registry of running local application MCP endpoints.", "directory"},
         {"no-apps", "Disable discovery of running local applications."},
         {"no-tasks", "Disable persistent task and todo tools."},
+        {"no-skills", "Disable local skill discovery and invocation in the agent."},
+        {"skills-dir", "Additional host-authorized skills directory; repeat in highest-priority-first order.", "directory"},
         {"no-background", "Disable background shell execution and its control tools."},
         {"artifacts", "Directory for large tool results.", "path"},
         {"model", "Enable the local agent using an installed model:// URI.", "uri"},
@@ -112,6 +114,8 @@ int main(int argc, char** argv) {
             service = std::make_unique<iiLocalLLM::Service>(serviceOptions);
             a::EngineOptions engineOptions;
             engineOptions.taskToolsEnabled = !parser.isSet("no-tasks");
+            engineOptions.skills.enabled = !parser.isSet("no-skills");
+            engineOptions.skills.directories = parser.values("skills-dir");
             engineOptions.sessionsDirectory = http ? QDir(privateState).filePath("sessions")
                 : parser.isSet("sessions") ? parser.value("sessions") : QDir(workspace).filePath(".iilocal-llm/sessions");
             options.engine = std::make_shared<a::Engine>(std::make_shared<a::ServiceModel>(*service), registry, policy, engineOptions);
