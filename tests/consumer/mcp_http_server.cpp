@@ -30,7 +30,10 @@ int main(int argc, char** argv) {
             options.bearerToken = [principal] { return "consumer-" + principal.toUtf8() + "-fixture"; };
             m::HttpClient client(options);
             const auto definitions = client.listTools();
-            if (definitions.size() != 1 || definitions[0]["_meta"].toObject()["iisacc/appId"] != "app-" + principal) return 2;
+            if (definitions.size() != 2) return 2;
+            for(const auto& definition:definitions)if(definition.toObject().value("_meta").toObject().value("iisacc/appId") != "app-" + principal)return 2;
+            const auto inspection=client.callTool("iiLocalLLM.agent.permissions.get",{});
+            if(inspection["isError"].toBool()||inspection["structuredContent"].toObject()["provider"]!="rules")return 4;
             const auto result = client.callTool("app_value", {});
             if (result["isError"].toBool() || result["structuredContent"].toObject()["number"] != (principal == "alpha" ? 37 : 91)) return 3;
         }

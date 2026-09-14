@@ -6,6 +6,7 @@
 #include "mcp/HttpServer.h"
 #include "McpCredentials.h"
 #include "AgentProfileConfig.h"
+#include "PermissionSettingsConfig.h"
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
@@ -18,11 +19,12 @@
 namespace { volatile std::sig_atomic_t interrupted = 0; void interrupt(int) { interrupted = 1; } }
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.18.0");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.19.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},
         {"allow", "Allow a tool permission rule, e.g. Write(src/**), Bash(git status:*) or Skill(review); repeat for more rules. Read-only tools are allowed by default.", "pattern"},
+        {"permission-settings", "Private host configuration outside the workspace for layered permission settings.", "file"},
         {"mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
         {"mcp-project", "Load workspace/.mcp.json after explicit MCP configuration files."},
         {"mcp-eager", "Publish all configured MCP tools to the agent without ToolSearch."},
@@ -115,16 +117,17 @@ int main(int argc, char** argv) {
             if (!stateLock->tryLock(0)) throw std::runtime_error("MCP state is already owned or inaccessible");
         }
         namespace a = iiLocalLLM::agent;
-        QList<a::PermissionRule> rules;
+        QList<a::PermissionRule> rules,hostRules;
         for (const auto& value : parser.values("allow")) rules.append({value, a::PermissionBehavior::Allow});
         const bool agent = parser.isSet("model");
         if (agent) {
-            rules.append({"iiLocalLLM.agent.run", a::PermissionBehavior::Allow});
+            hostRules.append({"iiLocalLLM.agent.run", a::PermissionBehavior::Allow});
             // The inner native Agent/AgentStop call still evaluates host policy.
-            rules.append({"iiLocalLLM.agent.agents.run", a::PermissionBehavior::Allow});
-            rules.append({"iiLocalLLM.agent.agents.stop", a::PermissionBehavior::Allow});
+            hostRules.append({"iiLocalLLM.agent.agents.run", a::PermissionBehavior::Allow});
+            hostRules.append({"iiLocalLLM.agent.agents.stop", a::PermissionBehavior::Allow});
         }
-        auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::DontAsk, rules);
+        if(parser.isSet("permission-settings")&&parser.value("permission-settings").isEmpty())throw std::runtime_error("--permission-settings requires a file");
+        auto policy=iiLocalLLMClient::permissionConfig(parser.value("permission-settings"),workspace,rules,hostRules);
         std::shared_ptr<a::ShellTasks> shells;
 #if defined(Q_OS_UNIX) && !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
         if (!parser.isSet("no-background")) shells = std::make_shared<a::ShellTasks>(workspace,

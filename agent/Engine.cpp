@@ -497,6 +497,11 @@ ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJ
     return runner.run({uuid(), name, args}, context, callback);
 }
 Session Engine::sessionMetadata(const QString& id) const { return d->store.metadata(id); }
+QJsonObject Engine::permissions(const QString& id,const CancellationToken& token) const {
+    token.throwIfCancelled();
+    const ToolContext context{id,{},d->store.metadata(id).workingDirectory,{},token};
+    return d->policy->describe(context);
+}
 SkillCatalog Engine::skills(const QString& id, const CancellationToken& token) const {
     return detail::executableSkills(d->store.metadata(id).workingDirectory, d->options.skills, bool(d->options.forkedSkill), token);
 }

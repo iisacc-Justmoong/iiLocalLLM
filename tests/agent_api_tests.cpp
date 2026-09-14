@@ -1,7 +1,9 @@
 #include <agent/Api.h>
 #include <agent/ShellTasks.h>
+#include <agent/PermissionSettings.h>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
+#include <QtCore/QJsonDocument>
 #include <QtCore/QTemporaryDir>
 #include <QtTest/QTest>
 #include <chrono>
@@ -52,6 +54,19 @@ template<class F> void error(F fn, ErrorCode expected) {
 class AgentApiTests : public QObject {
     Q_OBJECT
 private slots:
+    void permissionsInspectionIsAuthenticatedAndCannotChangePolicy() {
+        QTemporaryDir root;auto config=options(root);a::PermissionSettingsOptions settings;settings.workingDirectory=config.workingDirectory;
+        settings.inlineSettings={{"permissions",QJsonObject{{"deny",QJsonArray{"Write"}}}},{"env",QJsonObject{{"secret","DO_NOT_DISCLOSE"}}}};
+        auto policy=std::make_shared<a::SettingsPermissionPolicy>(settings);
+        a::Api api(std::make_shared<Model>(),std::make_shared<a::ToolRegistry>(),policy,config);
+        const auto id=call(api,"agent.sessions.create",{{"model","local"}}).value("session_id");
+        const auto result=call(api,"agent.permissions.get",{{"session_id",id}});
+        QCOMPARE(result["provider"],"settings");QCOMPARE(result["rules"].toArray()[0].toObject()["behavior"],"deny");
+        QVERIFY(!QJsonDocument(result).toJson().contains("DO_NOT_DISCLOSE"));
+        error([&]{call(api,"agent.permissions.get",{{"session_id",id}},secondToken);},ErrorCode::NotFound);
+        error([&]{call(api,"agent.permissions.get",{{"session_id",id}},"invalid");},ErrorCode::Unauthorized);
+        error([&]{call(api,"agent.permissions.get",{{"session_id",id},{"mode","bypassPermissions"}});},ErrorCode::InvalidArgument);
+    }
     void liveProfilesShareHostConfigurationButRespectClientIdentity() {
         QTemporaryDir root;auto config=options(root);config.subagentsEnabled=true;config.subagents.profiles.enabled=true;config.subagents.profiles.projectBoundary=config.workingDirectory;
         a::Api api(std::make_shared<Model>(),std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass),config);

@@ -99,16 +99,26 @@ void ToolRegistry::validateOutput(const QString& name, const QJsonObject& output
 }
 RulePolicy::RulePolicy(PermissionMode mode, QList<PermissionRule> rules) : mode_(mode) {
     QStringList all;
-    for (const auto& rule : rules) { for (const auto& pattern : parsePermissionRules({rule.toolPattern})) { rules_.append({pattern, rule.behavior}); all.append(pattern); } }
+    for (const auto& rule : rules) { for (const auto& pattern : parsePermissionRules({rule.toolPattern})) { auto item=rule;item.toolPattern=pattern;rules_.append(item); all.append(pattern); } }
     parsePermissionRules(all);
+}
+QJsonObject RulePolicy::describe(const ToolContext& context) const {
+    context.cancellation.throwIfCancelled();
+    const QString mode=mode_==PermissionMode::AcceptEdits?"acceptEdits":mode_==PermissionMode::DontAsk?"dontAsk"
+        :mode_==PermissionMode::Bypass?"bypassPermissions":mode_==PermissionMode::Plan?"plan":"default";
+    QJsonArray rules;
+    for(const auto& rule:rules_)rules.append(QJsonObject{{"rule",rule.toolPattern},{"behavior",rule.behavior==PermissionBehavior::Allow?"allow":rule.behavior==PermissionBehavior::Deny?"deny":"ask"},
+        {"source",rule.source.isEmpty()?QString("host"):rule.source},{"root_directory",rule.rootDirectory},{"settings_syntax",rule.settingsSyntax}});
+    return {{"provider","rules"},{"mode",mode},{"rules",rules},{"inspection_supported",true}};
 }
 PermissionDecision RulePolicy::decide(const ToolDefinition& tool, const QJsonObject& args, const ToolContext& context) const {
     std::optional<PermissionBehavior> matched;
-    QStringList denies, asks, allows = context.allowedTools;
+    QList<PermissionRule> denies, asks, allows;
+    for(const auto& rule:parsePermissionRules(context.allowedTools)) allows.append({rule,PermissionBehavior::Allow});
     for (const auto& rule : rules_) {
-        if (rule.behavior == PermissionBehavior::Deny) denies.append(rule.toolPattern);
-        else if (rule.behavior == PermissionBehavior::Ask) asks.append(rule.toolPattern);
-        else allows.append(rule.toolPattern);
+        if (rule.behavior == PermissionBehavior::Deny) denies.append(rule);
+        else if (rule.behavior == PermissionBehavior::Ask) asks.append(rule);
+        else allows.append(rule);
     }
     if (detail::permissionRulesMatch(denies, tool, args, context, false)) return {PermissionBehavior::Deny, "Explicit tool deny rule"};
     const bool taskState = tool.metadata["source"] == "builtin.task"

@@ -2,12 +2,26 @@
 #include "agent/Tools.h"
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QFile>
+#include <QtCore/QElapsedTimer>
 #include <QtTest/QtTest>
 using namespace iiLocalLLM;
 namespace a=iiLocalLLM::agent;
 class PermissionRulesTests final : public QObject {
     Q_OBJECT
 private slots:
+    void initTestCase() {
+#ifdef Q_OS_UNIX
+        // Record the cold parser result separately from semantic assertions.
+        // Paging/instrumentation can consume the production 100 ms budget;
+        // one warm-up keeps later syntax tests from testing cold-start latency.
+        a::ToolDefinition bash{"Bash","shell",{{"type","object"}}};a::ToolContext context;
+        context.allowedTools={"Bash(printf:*)"};QElapsedTimer timer;timer.start();
+        const auto decision=a::RulePolicy().decide(bash,{{"command","printf parser-warmup"}},context);
+        qInfo().noquote()<<QString("cold_parser_behavior=%1 reason=%2 elapsed_ms=%3")
+            .arg(int(decision.behavior)).arg(decision.reason).arg(timer.elapsed());
+        QVERIFY(decision.behavior==a::PermissionBehavior::Allow||decision.behavior==a::PermissionBehavior::Ask);
+#endif
+    }
     void parsesListsWithoutSplittingArgumentPatterns() {
         QCOMPARE(a::parsePermissionRules({"Read, Bash(git status:*)", "Write(src/**) Skill(review:*)"}),
             QStringList({"Read","Bash(git status:*)","Write(src/**)","Skill(review:*)"}));
@@ -42,8 +56,12 @@ private slots:
 #endif
         a::ToolDefinition bash{"Bash","shell",{{"type","object"}}};a::ToolContext context;
         context.allowedTools={"Bash(git status:*)","Bash(printf:*)"};a::RulePolicy policy;
-        for(const auto& cmd:{"git status", "git status --short && printf done", "git status | printf done"})
-            QCOMPARE(policy.decide(bash,{{"command",cmd}},context).behavior,a::PermissionBehavior::Allow);
+        for(const auto& cmd:{"git status", "git status --short && printf done", "git status | printf done"}) {
+            QElapsedTimer timer;timer.start();
+            const auto decision=policy.decide(bash,{{"command",cmd}},context);
+            QVERIFY2(decision.behavior==a::PermissionBehavior::Allow,qPrintable(QString("command=%1 behavior=%2 reason=%3 elapsed_ms=%4")
+                .arg(cmd).arg(int(decision.behavior)).arg(decision.reason).arg(timer.elapsed())));
+        }
         for(const auto& cmd:{"git status && rm file", "git status $(rm file)", "git status; unknown", "git status > /tmp/out", "git status\nunknown"})
             QVERIFY(policy.decide(bash,{{"command",cmd}},context).behavior!=a::PermissionBehavior::Allow);
         a::RulePolicy denied(a::PermissionMode::Bypass,{{"Bash(rm:*)",a::PermissionBehavior::Deny}});

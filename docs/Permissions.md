@@ -1,6 +1,6 @@
 # 도구 권한과 스킬 호출 범위
 
-0.18.0은 C++ `RulePolicy`의 인자 규칙과 스킬 `allowed-tools`를 제공한다. `ToolContext`·`RunRequest`·`SkillInfo`·`Tool`의 공개 레이아웃이 바뀌어 ABI는 **0.18**이다. 소비자는 헤더와 라이브러리를 함께 갱신한다. 전체 참조 권한 시스템은 아직 partial이다.
+0.18.0에서 C++ `RulePolicy` 인자 규칙과 스킬 `allowed-tools`를 추가했다. 현재 0.19.0은 출처 정보와 설정 계층을 추가하여 ABI가 **0.19**이다. 소비자는 헤더와 라이브러리를 함께 갱신한다. 전체 참조 권한 시스템은 아직 partial이다.
 
 ## 판정 순서
 
@@ -68,4 +68,4 @@ native Skill은 파일 경로·SHA-256·인자·allowed_tools를 고정한다. �
 
 Read/Write/Edit도 canonical 대상을 준비하고 실행 직전에 원래 경로와 고정된 대상이 같은지 재확인한다. 권한 질문이나 ToolStarted 관찰자 동안 경로가 다른 링크로 교체되면 실패한다. 기존 파일 도구의 경합 검사를 유지하지만 파일 I/O 전체를 openat 디스크립터로 고정한 OS 수준 경합 방어는 아니다. 현재 비-POSIX 실행기의 Bash라는 도구는 cmd.exe를 실행하므로 Bash 인자 규칙으로 자동 허용하지 않으며, 인자 Deny/Ask는 보수적으로 적용한다. 해당 플랫폼의 전체 셸 의미는 별도 구현이 필요하다.
 
-비교 근거는 참조 커밋 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `tools/SkillTool/SkillTool.ts`, `screens/REPL.tsx`, `utils/forkedAgent.ts`, `utils/permissions/permissionSetup.ts`, `permissionRuleParser.ts`, `tools/BashTool/bashPermissions.ts`이다. 참조 TypeScript나 프롬프트를 SDK에 복사하지 않았다. 관리/사용자/프로젝트 설정 계층, 자동 권한 분류, 참조 전체 인자 의미·별칭, 원격 질문 중개와 OS 샌드박스는 구현이 남아 있다.
+비교 근거는 참조 커밋 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `tools/SkillTool/SkillTool.ts`, `screens/REPL.tsx`, `utils/forkedAgent.ts`, `utils/permissions/permissionSetup.ts`, `permissionRuleParser.ts`, `tools/BashTool/bashPermissions.ts`이다. 참조 TypeScript나 프롬프트를 SDK에 복사하지 않았다. 파일 기반 관리/사용자/프로젝트 권한 설정 계층은 0.19.0의 [PermissionSettings.md](PermissionSettings.md)에 구현 범위를 기록했다. 추가 디렉터리, 외부 관리 공급자, 자동 권한 분류, 참조 전체 인자 의미·별칭, 원격 질문 중개와 OS 샌드박스는 구현이 남아 있다.

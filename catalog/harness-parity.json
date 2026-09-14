@@ -56,9 +56,14 @@
         "agent/PermissionRules.cpp",
         "tests/permission_rules_tests.cpp",
         "tests/skill_permission_tests.cpp",
-        "docs/Permissions.md"
+        "docs/Permissions.md",
+        "agent/PermissionSettings.cpp",
+        "tests/permission_settings_tests.cpp",
+        "tests/permission_settings_patterns.json",
+        "tests/permission_settings_wire.py",
+        "docs/PermissionSettings.md"
       ],
-      "remaining": "RulePolicy modes, host callbacks, argument rules for files/Bash/Skill/Agent/MCP, bounded C Bash AST analysis, immutable prepared invocation and scoped skill grants are implemented. Managed/user/project rule sources, full BashSecurity and wrapper normalization, argument contracts for other tools, automatic classifier, remote permission mediation and OS sandbox remain. Opaque shell operations use conservative deny/ask; this is not full reference permission parity."
+      "remaining": "C++ file-backed user/project/local/flag/managed layers, live reload, source-rooted bounded gitignore patterns, protected settings writes, host CLI configuration and authenticated API/MCP inspection now supplement RulePolicy and scoped skill grants. Additional directories, remote/MDM/registry policy sources, auto classifier, complete BashSecurity/OS sandbox, broader Unicode/reference pattern parity, and remote permission mediation remain."
     },
     {
       "id": "files",
@@ -427,8 +432,16 @@
     {
       "id": "settings",
       "requirement": "프로젝트/사용자/관리 설정 우선순위·기능 gate·환경·migration",
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "agent/PermissionSettings.cpp",
+        "agent/PermissionSettings.h",
+        "tools/PermissionSettingsConfig.h",
+        "tests/permission_settings_tests.cpp",
+        "tests/permission_settings_wire.py",
+        "docs/PermissionSettings.md"
+      ],
+      "remaining": "File-backed permission arrays, scalar modes, managed-only rules, bypass disable, source selection, managed drop-ins and source metadata are implemented. General environment/settings application, additionalDirectories, remote/MDM/registry providers, plugins, features/gates and migrations remain. Unsupported permission features fail execution; unrelated values are not applied or disclosed."
     },
     {
       "id": "observability",

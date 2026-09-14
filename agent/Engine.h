@@ -45,6 +45,7 @@ public:
     Session session(const QString& id) const;
     Session sessionMetadata(const QString& id) const;
     SkillCatalog skills(const QString& sessionId, const CancellationToken& = {}) const;
+    QJsonObject permissions(const QString& sessionId, const CancellationToken& = {}) const;
     QStringList sessions() const;
     Session forkSession(const QString& id, const QString& throughMessageId = {});
     ProjectContext context(const QString& sessionId, const QStringList& targetPaths = {}, const CancellationToken& = {}) const;

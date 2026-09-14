@@ -1,0 +1,365 @@
+{
+  "oracle": "node-ignore 7.0.5; project root; reference trailing /** normalization; regular files",
+  "source": {
+    "url": "https://raw.githubusercontent.com/kaelzhang/node-ignore/7.0.5/index.js",
+    "sha256": "56e047fefe8e36a8a1529b31e2992314006372bd271703d9d62ba4b5d5777340"
+  },
+  "cases": [
+    {
+      "patterns": [
+        ".env"
+      ],
+      "path": ".env",
+      "denied": true
+    },
+    {
+      "patterns": [
+        ".env"
+      ],
+      "path": "sub/.env",
+      "denied": true
+    },
+    {
+      "patterns": [
+        ".env"
+      ],
+      "path": "a.env",
+      "denied": false
+    },
+    {
+      "patterns": [
+        "*.txt"
+      ],
+      "path": "a.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "*.txt"
+      ],
+      "path": "sub/a.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "*.txt"
+      ],
+      "path": "a.tx",
+      "denied": false
+    },
+    {
+      "patterns": [
+        "/top.txt"
+      ],
+      "path": "top.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "/top.txt"
+      ],
+      "path": "sub/top.txt",
+      "denied": false
+    },
+    {
+      "patterns": [
+        "foo/**"
+      ],
+      "path": "foo/a",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "foo/**"
+      ],
+      "path": "sub/foo/a",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "foo/**"
+      ],
+      "path": "foo",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "foo/**/bar"
+      ],
+      "path": "foo/bar",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "foo/**/bar"
+      ],
+      "path": "foo/a/bar",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "foo/**/bar"
+      ],
+      "path": "foo/a/b/bar",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "foo/**/bar"
+      ],
+      "path": "sub/foo/bar",
+      "denied": false
+    },
+    {
+      "patterns": [
+        "private/",
+        "!private/visible.txt"
+      ],
+      "path": "private/visible.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "private/",
+        "!private/visible.txt"
+      ],
+      "path": "private/hidden.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "private/",
+        "!private/visible.txt"
+      ],
+      "path": "private",
+      "denied": false
+    },
+    {
+      "patterns": [
+        "flat/*",
+        "!flat/public.txt"
+      ],
+      "path": "flat/public.txt",
+      "denied": false
+    },
+    {
+      "patterns": [
+        "flat/*",
+        "!flat/public.txt"
+      ],
+      "path": "flat/private.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "flat/*",
+        "!flat/public.txt"
+      ],
+      "path": "flat/sub/public.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "[Ss]ecret?.txt"
+      ],
+      "path": "Secret1.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "[Ss]ecret?.txt"
+      ],
+      "path": "sub/secret2.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "[Ss]ecret?.txt"
+      ],
+      "path": "Secret12.txt",
+      "denied": false
+    },
+    {
+      "patterns": [
+        "\\#note"
+      ],
+      "path": "#note",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "\\#note"
+      ],
+      "path": "sub/#note",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "\\#note"
+      ],
+      "path": "note",
+      "denied": false
+    },
+    {
+      "patterns": [
+        "\\!note"
+      ],
+      "path": "!note",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "\\!note"
+      ],
+      "path": "sub/!note",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "\\!note"
+      ],
+      "path": "note",
+      "denied": false
+    },
+    {
+      "patterns": [
+        "with space.txt"
+      ],
+      "path": "with space.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "with space.txt"
+      ],
+      "path": "sub/with space.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "end\\ "
+      ],
+      "path": "end ",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "end\\ "
+      ],
+      "path": "end",
+      "denied": false
+    },
+    {
+      "patterns": [
+        "비밀?.txt"
+      ],
+      "path": "sub/비밀가.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "비밀?.txt"
+      ],
+      "path": "비밀가나.txt",
+      "denied": false
+    },
+    {
+      "patterns": [
+        "[가-힣]문서.txt"
+      ],
+      "path": "한문서.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "[가-힣]문서.txt"
+      ],
+      "path": "가문서.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "[가-힣]문서.txt"
+      ],
+      "path": "a문서.txt",
+      "denied": false
+    },
+    {
+      "patterns": [
+        "ÉTUDE.txt"
+      ],
+      "path": "étude.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "ÉTUDE.txt"
+      ],
+      "path": "ÉTUDE.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "ÉTUDE.txt"
+      ],
+      "path": "etude.txt",
+      "denied": false
+    },
+    {
+      "patterns": [
+        "**/cache/**"
+      ],
+      "path": "cache/a",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "**/cache/**"
+      ],
+      "path": "a/cache/b",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "**/cache/**"
+      ],
+      "path": "uncached",
+      "denied": false
+    },
+    {
+      "patterns": [
+        "?.txt"
+      ],
+      "path": "가.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "?.txt"
+      ],
+      "path": "😀.txt",
+      "denied": false
+    },
+    {
+      "patterns": [
+        "[!a-c].txt"
+      ],
+      "path": "d.txt",
+      "denied": false
+    },
+    {
+      "patterns": [
+        "[!a-c].txt"
+      ],
+      "path": "a.txt",
+      "denied": true
+    },
+    {
+      "patterns": [
+        "[!a-c].txt"
+      ],
+      "path": "가.txt",
+      "denied": false
+    }
+  ]
+}

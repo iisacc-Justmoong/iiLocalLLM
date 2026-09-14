@@ -93,3 +93,5 @@ pull은 현재 모델 설치/생성과 같은 FIFO에서 실행되므로 긴 다
 0.18.0의 스킬 allowed-tools와 인자 권한 규칙은 [Permissions.md](Permissions.md)를 따른다. API·IPC·MCP 입력은 allowed_tools/prompt_metadata 같은 호스트 전용 권한·출처 필드를 받지 않는다. 모델 Skill의 PermissionRequested 이벤트에는 고정된 permission_preview가 있다. 원격 권한 응답 중개는 아직 지원하지 않는다.
 
 `iillm-mcp --model-options FILE`은 비공개 JSON 객체의 모델 로딩 옵션으로 `--model`을 미리 로드한다. 파일·시작 계약과 API 설정 재현 예시는 [MCPServer.md](MCPServer.md)를 따른다.
+
+0.19.0은 `iiLocalLLMD --agent-permission-settings FILE`과 `iillm-mcp --permission-settings FILE`로 같은 C++ 설정 계층을 사용한다. `iillm --auth-file FILE agent permissions get SESSION`은 읽기 전용 조회다. 호스트 설정 파일은 workspace 밖의 private JSON이며 일반 원격 run 인자로 대신할 수 없다. [PermissionSettings.md](PermissionSettings.md)에 전체 입력과 한도를 기록한다.

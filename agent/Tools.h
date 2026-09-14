@@ -50,16 +50,20 @@ struct PermissionDecision {
 struct PermissionRule {
     QString toolPattern;
     PermissionBehavior behavior = PermissionBehavior::Ask;
+    QString source, rootDirectory, homeDirectory;
+    bool settingsSyntax = false; // Source-rooted gitignore file patterns; native rules retain their existing syntax.
 };
 class IILOCALLLM_EXPORT PermissionPolicy {
 public:
     virtual ~PermissionPolicy() = default;
     virtual PermissionDecision decide(const ToolDefinition&, const QJsonObject&, const ToolContext&) const = 0;
+    virtual QJsonObject describe(const ToolContext&) const { return {{"provider","custom"},{"inspection_supported",false}}; }
 };
 class IILOCALLLM_EXPORT RulePolicy final : public PermissionPolicy {
 public:
     explicit RulePolicy(PermissionMode mode = PermissionMode::Default, QList<PermissionRule> rules = {});
     PermissionDecision decide(const ToolDefinition&, const QJsonObject&, const ToolContext&) const override;
+    QJsonObject describe(const ToolContext&) const override;
 private:
     PermissionMode mode_;
     QList<PermissionRule> rules_;

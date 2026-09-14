@@ -6,12 +6,16 @@
 #include <algorithm>
 #include <chrono>
 #include <memory>
+#include <QtCore/QMap>
+extern "C" {
+#include "wildmatch.h"
+}
 
 extern "C" const TSLanguage* tree_sitter_bash();
 namespace iiLocalLLM::agent {
 namespace {
 void require(bool ok, const QString& message) { if (!ok) throw Error(ErrorCode::InvalidArgument, message); }
-struct Rule { QString tool, content; bool whole = true; };
+struct Rule { QString tool, content; bool whole = true; QString root, home; bool settings = false; };
 Rule parse(const QString& value) {
     Rule r; bool escaped = false; int start = -1, end = -1;
     for (int i = 0; i < value.size(); ++i) {
@@ -73,6 +77,98 @@ bool fileMatch(const QString& content, const QString& path, const ToolContext& c
     pattern = QDir::cleanPath(pattern);
     if (allow) return inside(lexical, root) && inside(canonical, root) && pathGlob(pattern, lexical) && pathGlob(pattern, canonical);
     return pathGlob(pattern, lexical) || (!canonical.isEmpty() && pathGlob(pattern, canonical));
+}
+bool named(const Rule& rule, const QString& name) {
+    return toolMatch(rule.tool,name) || (rule.settings && rule.tool=="Edit" && name=="Write");
+}
+struct FilePattern { QString pattern; bool negative=false, anchored=false, directory=false; };
+// wildmatch is byte based. Map the sorted non-ASCII UTF-16 units to a private
+// alphabet, preserving character ranges and one-unit '?' matching. Lowercase
+// both inputs before mapping; no filesystem or locale-dependent folding.
+QPair<QByteArray,QByteArray> patternBytes(QString pattern, QString value) {
+    require(!pattern.contains(QChar::Null)&&!value.contains(QChar::Null),"Permission pattern input contains NUL");
+    if (pattern.size() > 4096 || value.size() > 16384)
+        throw Error(ErrorCode::ResourceLimit,"Permission pattern input exceeds limit");
+    // node-ignore uses JavaScript character classes: leading ! is literal,
+    // whereas wildmatch treats it as class negation. ^ remains negation.
+    QString translated;
+    for(qsizetype i=0;i<pattern.size();++i) {
+        translated+=pattern[i];
+        if(pattern[i]=='\\'&&i+1<pattern.size())translated+=pattern[++i];
+        else if(pattern[i]=='['&&i+1<pattern.size()&&pattern[i+1]=='!') { translated+="\\!";++i; }
+    }
+    pattern=translated.toLower(); value=value.toLower();
+    QList<ushort> units;
+    for (const auto& text : {pattern,value}) for (const auto c:text)
+        if (c.unicode()>127 && !units.contains(c.unicode())) {
+            if (units.size()==128) throw Error(ErrorCode::ResourceLimit,"Permission pattern alphabet exceeds limit");
+            units.append(c.unicode());
+        }
+    std::sort(units.begin(),units.end());
+    auto encode=[&](const QString& text) {
+        QByteArray bytes;bytes.reserve(text.size());
+        for(const auto c:text) bytes.append(c.unicode()<128?char(c.unicode()):char(128+units.indexOf(c.unicode())));
+        return bytes;
+    };
+    return {encode(pattern),encode(value)};
+}
+bool settingsPathMatch(const QList<Rule>& rules, const QString& name, const QString& path, const ToolContext& context) {
+    struct Budget { const CancellationToken& token; std::chrono::steady_clock::time_point deadline; };
+    Budget budget{context.cancellation,std::chrono::steady_clock::now()+std::chrono::milliseconds(100)};
+    iilocal_wildmatch_limits limits{500000,0,[](void* payload) {
+        const auto& value=*static_cast<Budget*>(payload);
+        return int(value.token.isCancelled()||std::chrono::steady_clock::now()>=value.deadline);
+    },&budget};
+    QMap<QString,QList<FilePattern>> groups;
+    for(const auto& rule:rules) {
+        if(!rule.settings || !named(rule,name) || rule.whole) continue;
+        QString pattern=rule.content;FilePattern item;
+        require(!pattern.contains('\n')&&!pattern.contains('\r'),"Permission file patterns must contain one line");
+        item.negative=pattern.startsWith('!');if(item.negative)pattern.remove(0,1);
+        if(pattern.startsWith('#')||pattern.isEmpty())continue;
+        while(pattern.endsWith(' ')&&!pattern.endsWith("\\ "))pattern.chop(1);
+        QString root=context.workingDirectory;
+        if(!item.negative&&pattern.startsWith("//")){root="/";pattern.remove(0,2);item.anchored=true;}
+        else if(!item.negative&&pattern.startsWith("~/")){require(!rule.home.isEmpty(),"Permission home directory must be supplied by the host");root=rule.home;pattern.remove(0,2);item.anchored=true;}
+        else if(pattern.startsWith('/')){if(!item.negative)root=rule.root;pattern.remove(0,1);item.anchored=true;}
+        if(pattern.startsWith("./"))pattern.remove(0,2);
+        if(pattern.endsWith("/**"))pattern.chop(3);
+        item.directory=pattern.endsWith('/');if(item.directory)pattern.chop(1);
+        item.anchored|=pattern.contains('/');item.pattern=pattern;
+        require(!root.isEmpty()&&QDir::isAbsolutePath(root),"Permission setting rule root must be absolute");
+        auto& group=groups[QDir::cleanPath(root)];
+        if(std::none_of(group.begin(),group.end(),[&](const auto& old) {
+            return old.pattern==item.pattern&&old.negative==item.negative&&old.anchored==item.anchored&&old.directory==item.directory;
+        })) group.append(item);
+    }
+    for(auto group=groups.begin();group!=groups.end();++group) {
+        const auto relative=QDir(group.key()).relativeFilePath(path);
+        if(relative=="."||relative==".."||relative.startsWith("../")||QDir::isAbsolutePath(relative))continue;
+        const auto parts=relative.split('/');QString current;
+        for(qsizetype n=0;n<parts.size();++n) {
+            context.cancellation.throwIfCancelled();current+=(current.isEmpty()?QString():QString("/"))+parts[n];
+            const bool directory=n+1<parts.size()||QFileInfo(path).isDir();bool ignored=false;
+            for(const auto& pattern:group.value()) {
+                if(pattern.directory&&!directory)continue;
+                const auto bytes=patternBytes(pattern.pattern,pattern.anchored?current:parts[n]);
+                const auto match=iilocal_wildmatch(bytes.first.constData(),bytes.second.constData(),WM_PATHNAME,&limits);
+                context.cancellation.throwIfCancelled();
+                if(match==WM_ABORT_LIMIT) throw Error(ErrorCode::ResourceLimit,"Permission pattern work limit exceeded");
+                if(match==WM_MATCH)ignored=!pattern.negative;
+            }
+            if(ignored)return true;
+        }
+    }
+    return false;
+}
+bool fileRulesMatch(const QList<Rule>& rules,const QString& name,const QString& path,const ToolContext& context,bool allow) {
+    for(const auto& rule:rules)if(named(rule,name)&&(rule.whole||(!rule.settings&&fileMatch(rule.content,path,context,allow))))return true;
+    if(path.isEmpty()||context.workingDirectory.isEmpty())return false;
+    const auto root=QFileInfo(context.workingDirectory).canonicalFilePath();
+    const auto lexical=QDir::cleanPath(QDir::isAbsolutePath(path)?path:QDir(root).filePath(path));
+    const auto canonical=canonicalTarget(lexical);
+    if(allow)return inside(lexical,root)&&inside(canonical,root)&&settingsPathMatch(rules,name,lexical,context)&&settingsPathMatch(rules,name,canonical,context);
+    return settingsPathMatch(rules,name,lexical,context)||(!canonical.isEmpty()&&settingsPathMatch(rules,name,canonical,context));
 }
 bool valueMatch(const Rule& rule, const QString& name, const QJsonObject& args, const ToolContext& context, bool allow) {
     if (!toolMatch(rule.tool, name)) return false;
@@ -226,8 +322,10 @@ QStringList parsePermissionRules(const QStringList& input) {
     result.removeDuplicates(); return result;
 }
 namespace detail {
-bool permissionRulesMatch(const QStringList& input, const ToolDefinition& tool, const QJsonObject& args, const ToolContext& context, bool allow) {
-    const auto strings = parsePermissionRules(input); QList<Rule> rules; for (const auto& s : strings) rules.append(parse(s));
+bool permissionRulesMatch(const QList<PermissionRule>& input, const ToolDefinition& tool, const QJsonObject& args, const ToolContext& context, bool allow) {
+    QStringList strings;for(const auto& item:input)strings.append(item.toolPattern);parsePermissionRules(strings);
+    QList<Rule> rules; for (const auto& item : input) { auto rule=parse(item.toolPattern);rule.root=item.rootDirectory;rule.home=item.homeDirectory;rule.settings=item.settingsSyntax;rules.append(rule); }
+    if(tool.name=="Read"||tool.name=="Write"||tool.name=="Edit")return fileRulesMatch(rules,tool.name,args["path"].toString(),context,allow);
     if (tool.name != "Bash") return std::any_of(rules.begin(), rules.end(), [&](const auto& r) { return valueMatch(r, tool.name, args, context, allow); });
     QList<Rule> bash, files;
     for (const auto& r : rules) {
@@ -235,7 +333,7 @@ bool permissionRulesMatch(const QStringList& input, const ToolDefinition& tool, 
             if (r.whole) return true;
             bash.append(r);
         }
-        if (!allow && (toolMatch(r.tool, "Read") || toolMatch(r.tool, "Write"))) files.append(r);
+        if (!allow && (named(r, "Read") || named(r, "Write"))) files.append(r);
     }
     if (bash.isEmpty() && files.isEmpty()) return false;
 #ifndef Q_OS_UNIX
@@ -246,8 +344,8 @@ bool permissionRulesMatch(const QStringList& input, const ToolDefinition& tool, 
     const auto command = args["command"].toString().trimmed(); const auto shell = inspectShell(command, context);
     if (!allow && (!bash.isEmpty() && shell.opaque)) return true; // Cannot exclude a denied/ask operation.
     if (!allow && !files.isEmpty() && (shell.unknownRedirect || (shell.changesDirectory && !shell.redirects.isEmpty()))) return true;
-    for (const auto& r : files) for (const auto& redirect : shell.redirects)
-        if (valueMatch(r, redirect.write ? "Write" : "Read", {{"path", redirect.path}}, context, false)) return true;
+    for (const auto& redirect : shell.redirects)
+        if (fileRulesMatch(files, redirect.write ? "Write" : "Read", redirect.path, context, false)) return true;
     for (const auto& r : bash) if (!r.content.contains('*') && !r.content.contains('?') && command == r.content) return true;
     auto covered = [&](const Command& cmd) {
         return std::any_of(bash.begin(), bash.end(), [&](const auto& r) {

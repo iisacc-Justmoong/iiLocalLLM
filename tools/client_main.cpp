@@ -88,7 +88,7 @@ private:
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
-    app.setApplicationName(QStringLiteral("iillm")); app.setApplicationVersion(QStringLiteral("0.18.0"));
+    app.setApplicationName(QStringLiteral("iillm")); app.setApplicationVersion(QStringLiteral("0.19.0"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("Native IPC client of iiLocalLLMD. Inference runs only in the daemon."));
     parser.addHelpOption(); parser.addVersionOption();
@@ -124,15 +124,16 @@ int main(int argc, char** argv)
         };
         if (command == "agent") {
             const bool mcp = args.size() == 2 && args[1] == "mcp";
-            const bool tasks = args.size() >= 4 && args.size() <= 5 && (args[1] == "tasks" || args[1] == "todos" || args[1] == "shell" || args[1] == "inputs" || args[1] == "skills" || args[1] == "agents");
+            const bool tasks = args.size() >= 4 && args.size() <= 5 && (args[1] == "tasks" || args[1] == "todos" || args[1] == "shell" || args[1] == "inputs" || args[1] == "skills" || args[1] == "agents" || args[1] == "permissions");
             if ((!mcp && !tasks) || !parser.isSet("auth-file"))
-                throw std::runtime_error("Usage: iillm --auth-file FILE agent mcp | agent tasks/todos/shell/inputs/skills/agents ACTION SESSION [PARAMS_JSON_FILE]");
+                throw std::runtime_error("Usage: iillm --auth-file FILE agent mcp | agent tasks/todos/shell/inputs/skills/agents/permissions ACTION SESSION [PARAMS_JSON_FILE]");
             const auto token = QString::fromUtf8(iiLocalLLMClient::readPrivateFile(parser.value("auth-file"), 512)).trimmed();
             if (token.size() < 32 || token.size() > 256) throw std::runtime_error("Invalid app token length");
             if (mcp) printJson(client.call("agent.mcp.status", {}, {}, 300000, token));
             else {
                 const auto allowed = args[1] == "tasks" ? QStringList{"create", "get", "list", "update", "claim"}
                     : args[1] == "skills" ? QStringList{"list", "run"}
+                    : args[1] == "permissions" ? QStringList{"get"}
                     : args[1] == "agents" ? QStringList{"run", "output", "stop", "list", "profiles"}
                     : args[1] == "inputs" ? QStringList{"enqueue", "list", "remove", "run"}
                     : args[1] == "shell" ? QStringList{"start", "output", "stop", "list"} : QStringList{"get", "write"};

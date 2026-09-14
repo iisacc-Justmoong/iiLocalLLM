@@ -1,5 +1,38 @@
 # 구현 검증 기록
 
+## 2026-09-15 C++ 계층형 권한 설정 (0.19.0)
+
+사용자·프로젝트·로컬·명시적 호스트·관리자 파일의 권한을 C++ `SettingsPermissionPolicy`에 연결했다. 출처별 경로 기준, 배열 합침·scalar 우선순위, managed-only 필터, bypass 금지와 파일 변경·삭제의 다음 호출 반영을 구현했다. 인증된 API·IPC·CLI와 MCP에서 현재 정책·출처·SHA를 조회한다. 설정 파일 자체의 쓰기 보호, 지원하지 않는 권한 필드의 실행 거부, 잘못된 호스트 설정의 모델 초기화 전 거부를 포함한다. 자세한 계약·참조와 차이는 [PermissionSettings.md](PermissionSettings.md)에 기록한다.
+
+| 검증 경계 | 최종 결과 |
+|---|---|
+| Release 전체 검사, inference 라벨 제외 | 47/47, 62.61초 |
+| AddressSanitizer·UndefinedBehaviorSanitizer, llama 비활성 | 45/45, 72.03초; 런타임 오류 보고 없음 |
+| 별도 설치 소비자 | 17/17, 6.54초 |
+| 독립 node-ignore 7.0.5 기대값과 파일 규칙 대조 | 50개 사례, C++ 검사 통과 |
+| Qwen3 8B의 실제 허용·거부 Write | 소스 2/2, 설치본 2/2; 각 실행에서 Write 1회 |
+| 인증 HTTP·IPC CLI·MCP HTTP·공식 SDK stdio | 소스·설치본 모두 통과; 실제 쓰기·변경 후 거부·세션 격리 확인 |
+| 잘못된 호스트 설정 | 소스·설치본 각각 15개 시작 전 거부 |
+| 설치·ABI·로더 | 공개 헤더 39개·문서·catalog·의존성 소스/라이선스 일치, 실제 0.19 라이브러리 로딩 |
+
+Release는 inference 라벨을 제외한 검사 범위이며 모든 모델의 지시 이행 정확도를 검증한 결과가 아니다. Sanitizer는 C·C++에 address/undefined 계측을 적용하고 `ASAN_OPTIONS=malloc_context_size=0`, `UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`로 실행했다. 할당·해제 스택 이력은 껐으며 계측은 유지한다. 마지막 전체 검사는 직렬로 실행했다.
+
+C++ 회귀 검사는 출처 필터·관리 조각의 정렬·managed-only의 첫 판단·모드 복원·bypass 금지, 경로 기준·basename·부정·부모 제외·중복·문자 범위·Unicode를 포함한다. 링크·비정규 파일·읽기 실패·크기 한도·과도한 패턴·취소는 실행 실패로 검사하고 Deny를 버리지 않는다. API의 다른 앱 세션은 404, 잘못된 토큰은 401, 원격 mode 주입은 400으로 거부한다. 일반 env 설정은 적용하거나 값을 노출하지 않는다. 독립 기대값은 고정한 node-ignore 파일의 URL·SHA와 함께 `tests/permission_settings_patterns.json`에 있다. 이 버전이 참조 미러의 실제 배포 의존성과 같다는 뜻은 아니다.
+
+실제 Qwen3 8B 검사는 새 세션 두 개에서 모델이 생성한 Write와 결과를 확인한다. 허용 실행은 실제 파일 바이트가 요청과 일치하고, 거부 실행은 permission denied 결과와 파일 부재를 확인해야 통과한다. 소스·설치본 각각 허용 Write 1회·거부 Write 1회를 관측했고 두 실행 모두 완료했다. MCP HTTP와 공식 Python MCP SDK 1.26.0 stdio에서도 실제 파일을 쓴 뒤 관리 설정을 바꿔 다음 쓰기의 거부를 확인했다. MCP HTTP에서는 범위 이탈·민감 파일·설정 쓰기 거부와 다른 연결의 세션 접근 거부도 검사했다. MCP 검사 자체는 모델을 필요로 하지 않으며 위 실제 모델 검사와 별도 경계다.
+
+모델은 Qwen3 8B Q4_K_M, 5,027,783,488바이트, SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`이다. 컨텍스트 8192·최대 출력 1024토큰·temperature 0, `enable_thinking=false`, `tool_grammar=false`로 실행했다. 이번에도 가중치 해시를 별도로 재확인했다. 첫 소스 호스트는 검사의 90초 시작 한도를 넘겼다. 프로세스 샘플에서는 가중치 파일 읽기와 SHA-256 검증이 관측되었다. 제품의 무결성 검증은 유지하고 모델을 사용하는 검사의 시작 한도를 300초로 지정했다. 최종 API 시작 시간은 소스 100.904초, 설치본 53.248초이며 빠른 시작을 검증한 결과로 해석하지 않는다. 최초 로그와 `permission-settings-model-startup.sample.txt`를 보존한다.
+
+초기 테스트 작성 중 새 API 검사가 임시 JSON 객체의 참조를 보관해 충돌했고 `.value()` 복사로 수정했다. MCP SSE 프레임 처리와 기존 도구 개수·첫 항목 가정도 새 조회 도구에 맞게 수정했다. 문자 집합의 선행 `!`를 처리하는 C 매처와 node-ignore의 차이는 독립 사례로 재현해 어댑터를 고쳤다. 과도한 패턴 검사도 실제 재귀 깊이 한도에 도달하는 입력으로 바로잡았다. 원래 실패와 최종 성공은 별도로 보존한다.
+
+중간 sanitizer 검사에서는 기존 150ms API 기한 사례가 대기 상태까지 도달하지 못했다. sanitizer 오류 보고는 없었고 최종 직렬 전체 검사에서는 통과했다. 이후 Release 전체 검사 한 번에서는 기존 Bash 허용 명령 검사가 Allow 대신 Ask를 반환했고 단독 대조에서는 통과했다. 진단을 추가한 다음 sanitizer 검사에서는 첫 `git status` 판정이 121ms 뒤 Ask를 반환했다. 제품 파서의 전체 구문 분석 기한은 100ms이다. 초기 페이지 로딩·계측 등 각각의 기여는 분리 측정하지 않았다. 파서 한도와 판정 동작은 유지하고 테스트에 최초 파서 호출을 한 번 추가하여 시간·결과를 기록한다. 최초 호출은 Allow 또는 보수적인 Ask를 허용하며 이후의 기존 문법 검사는 계속 Allow를 요구한다. 마지막 통과는 이 초기화 뒤의 문법 검사 결과이며 최초 호출의 성능 문제가 해결됐다는 뜻은 아니다. 로그는 `permission-settings-sanitizer-tests-first.log`, `permission-settings-release-tests-bash-intermittent.log`, `permission-settings-sanitizer-tests-bash-cold.log`에 남긴다.
+
+설치 prefix는 `build/permission-settings-stage`, 소비자는 `build/permission-settings-consumer/build`이다. 라이브러리 SHA-256 `6ccd13980e38d11a4ac3a244afd9d3d43807c4888f7adb19884d34efaa411aa3`, Mach-O UUID `B7A53712-3595-3D3A-BB69-A5E4EE39AF2F`가 소스와 설치본에서 일치한다. CLI·데몬·MCP의 버전은 0.19.0이다. CLI 바이너리는 바이트 단위로 같고, 데몬·MCP는 CMake 설치 시 build RPATH가 `@loader_path/../lib`로 바뀌므로 원본 해시는 설치본과 다르다. 소스 실행 파일의 별도 복사본에 같은 설치 경로 변환을 적용한 뒤 설치본 SHA와 일치함을 확인했고 UUID도 같다. CLI는 추론 라이브러리를 링크하지 않는다. tree-sitter와 wildmatch C 심볼은 비공개이고 수정한 wildmatch 소스·원본 라이선스·출처·수정 설명을 설치 패키지에 포함했다. 정확한 의존성 조건은 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)를 따른다.
+
+라이브러리 경로 환경변수 네 개를 제거하고 임시 데이터·앱 발견 경로를 build 아래로 격리했다. 명령·JUnit·모델 결과·설치 대조·초기 실패와 변경 파일 해시는 `build/permission-settings-verification.json` 및 `permission-settings-*`에 있다. ABI는 0.19이므로 헤더와 라이브러리를 함께 갱신하여 소비자를 다시 빌드해야 한다. 이번 단계는 SDK 검증이며 Society·Dreamscapes나 물리 디바이스 앱을 변경하지 않았다. iPhone 제외 지시를 유지한다.
+
+생산 권한 실행기는 C++이고 패턴 매칭은 제한을 추가한 C 의존성을 사용한다. Python은 검증 클라이언트다. 추가 디렉터리·원격 관리/MDM·Windows 레지스트리·자동 분류·원격 승인·전체 BashSecurity·OS 샌드박스와 나머지 하네스 기능은 남아 있다. settings와 permissions는 **partial**이며 전체 목표는 계속 진행 중이다.
+
 ## 2026-09-15 호출 범위 스킬 권한과 실행 스냅샷 (0.18.0)
 
 스킬의 `allowed-tools`를 현재 호출의 권한에만 합치고, 호스트의 Deny·Ask·Plan 및 자식 도구 범위를 유지한다. 모델의 Skill 호출은 권한 판정 전에 본문·출처·SHA·요청 권한을 한 번 고정하고, 성공한 도구 결과가 저장된 뒤 권한을 활성화한다. 파일 도구도 승인한 canonical 대상을 실행 직전에 재검증한다. 정확한 문법·우선순위·미지원 범위는 [Permissions.md](Permissions.md)에 기록한다.

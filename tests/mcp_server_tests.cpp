@@ -2,6 +2,7 @@
 #include <agent/McpServer.h>
 #include <agent/ShellTasks.h>
 #include <agent/Subagents.h>
+#include <agent/PermissionSettings.h>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QFile>
 #include <QtCore/QDir>
@@ -73,6 +74,20 @@ public:
 class McpServerTests : public QObject {
     Q_OBJECT
 private slots:
+    void permissionInspectionAndFileReloadUseHostWorkspace() {
+        QTemporaryDir root;const auto workspace=root.filePath("workspace");QVERIFY(QDir().mkpath(workspace+"/.claude"));
+        const auto path=workspace+"/.claude/settings.json";
+        auto save=[&](const char* behavior) { QFile file(path);if(!file.open(QIODevice::WriteOnly))throw std::runtime_error("fixture");file.write(QJsonDocument(QJsonObject{{"permissions",QJsonObject{{behavior,QJsonArray{"Write(/output/**)"}}}}}).toJson()); };
+        save("allow");a::PermissionSettingsOptions settings;settings.workingDirectory=workspace;settings.fallbackMode=a::PermissionMode::DontAsk;
+        auto policy=std::make_shared<a::SettingsPermissionPolicy>(settings);auto registry=std::make_shared<a::ToolRegistry>();a::registerWorkspaceTools(*registry,workspace);
+        a::McpServerOptions options;options.workingDirectory=workspace;
+        m::ServerSession session(a::mcpServerOptions(registry,policy,options));initialize(session);
+        auto result=call(session,2,"iiLocalLLM.agent.permissions.get");QCOMPARE(result["structuredContent"].toObject()["provider"],"settings");
+        QVERIFY(!call(session,3,"Write",{{"path","output/first"},{"content","first"}})["isError"].toBool());
+        QVERIFY(QFileInfo::exists(workspace+"/output/first"));save("deny");
+        QVERIFY(call(session,4,"Write",{{"path","output/second"},{"content","second"}})["isError"].toBool());QVERIFY(!QFileInfo::exists(workspace+"/output/second"));
+        QVERIFY(call(session,5,"iiLocalLLM.agent.permissions.get",{{"working_directory",root.path()}})["isError"].toBool());
+    }
     void subagentConnectionsAreIsolatedAndClosedChildrenStop() {
         QTemporaryDir root; const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
         auto model=std::make_shared<HistoryModel>();auto registry=std::make_shared<a::ToolRegistry>();

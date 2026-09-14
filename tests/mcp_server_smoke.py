@@ -130,7 +130,9 @@ async def basic(binary, root, http=False):
             definitions = (await session.list_tools()).tools
             task_names = {"TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TaskClaim", "TodoWrite", "TodoRead"}
             shell_names = {"TaskOutput", "TaskStop", "ShellTaskList"}
-            assert {item.name for item in definitions} == {"Read", "Write", "Edit", "Glob", "Grep", "Bash"} | task_names | shell_names, sorted(item.name for item in definitions)
+            assert {item.name for item in definitions} == {"Read", "Write", "Edit", "Glob", "Grep", "Bash", "iiLocalLLM.agent.permissions.get"} | task_names | shell_names, sorted(item.name for item in definitions)
+            inspection = await session.call_tool("iiLocalLLM.agent.permissions.get", {})
+            assert not inspection.isError and inspection.structuredContent["provider"] == "rules"
             assert all(item.meta["iisacc/appId"] == "com.iisacc.iiLocalLLM" for item in definitions)
             created = await session.call_tool("TaskCreate", {"subject": "Verify package", "description": "Inspect the installed output"})
             assert not created.isError and created.structuredContent["task"]["id"] == "1", created
@@ -205,8 +207,8 @@ async def basic(binary, root, http=False):
     async with transport(command, root, http) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            assert {item.name for item in (await session.list_tools()).tools} == {"Read", "Write", "Edit", "Glob", "Grep", "Bash"}
-    return {"official_sdk": version("mcp"), "transport": "http" if http else "stdio", "tools": 16, "real_file_read_write": True,
+            assert {item.name for item in (await session.list_tools()).tools} == {"Read", "Write", "Edit", "Glob", "Grep", "Bash", "iiLocalLLM.agent.permissions.get"}
+    return {"official_sdk": version("mcp"), "transport": "http" if http else "stdio", "tools": 17, "real_file_read_write": True,
             "background_shell_start_output_stop": True, "background_shell_connection_isolation": True, "background_shell_host_opt_out": True,
             "task_create_claim_complete_todos": True, "task_revision_conflict": True, "task_connection_isolation": True, "task_host_opt_out": True,
             "permission_denial": True, "schema_validation": True, "workspace_boundary": True,

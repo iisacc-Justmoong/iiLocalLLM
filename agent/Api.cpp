@@ -49,7 +49,7 @@ QStringList contextPaths(const QJsonObject& parameters, int limit) {
     return paths;
 }
 QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.sessions.list", "agent.sessions.get",
-    "agent.sessions.fork", "agent.sessions.compact", "agent.context.get", "agent.skills.list", "agent.mcp.status", "agent.run", "agent.cancel", "agent.status",
+    "agent.sessions.fork", "agent.sessions.compact", "agent.context.get", "agent.skills.list", "agent.permissions.get", "agent.mcp.status", "agent.run", "agent.cancel", "agent.status",
     "agent.tasks.create", "agent.tasks.get", "agent.tasks.list", "agent.tasks.update", "agent.tasks.claim", "agent.todos.write", "agent.todos.get",
     "agent.shell.start", "agent.shell.output", "agent.shell.stop", "agent.shell.list",
     "agent.agents.run", "agent.agents.output", "agent.agents.stop", "agent.agents.list", "agent.agents.profiles",
@@ -259,6 +259,10 @@ public:
         if (method == "agent.skills.list") {
             fields(p, {"session_id"}); const auto original = session(client, p);
             return client->engine->skills(original.id, job->token).toJson();
+        }
+        if(method=="agent.permissions.get") {
+            fields(p,{"session_id"});const auto original=session(client,p);
+            return client->engine->permissions(original.id,job->token);
         }
         if (method == "agent.sessions.fork") {
             fields(p, {"session_id", "through_message_id"}); const auto original = session(client, p);

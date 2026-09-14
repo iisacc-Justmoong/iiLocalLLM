@@ -34,7 +34,7 @@
 | editor | LSP·IDE 통신·파일 변경 알림·진단·심볼/정의/참조 | pending |
 | frontends | CLI interactive/headless·구조화 입출력·앱용 상태/이벤트·LVRS UI 바인딩 | pending |
 | remote | 원격/bridge 실행·인증·연결 복원·메시지 라우팅 | pending |
-| settings | 프로젝트/사용자/관리 설정 우선순위·기능 gate·환경·migration | pending |
+| settings | 프로젝트/사용자/관리 설정 우선순위·기능 gate·환경·migration | partial |
 | observability | 구조화 로그·실행 trace·사용량/비용·성능·오류 진단 | partial |
 | iisacc_apps | Society·Dreamscapes·Congregation·Thinking Space 실제 consumer 연동 검증 | partial |
 | packaging | 공개 헤더·CMake export·daemon/CLI·설치 consumer·플랫폼 검증 | partial |
@@ -86,3 +86,5 @@
 0.17.0은 C++ `context: fork` 스킬의 사용자·모델 호출, 자식 격리, 모델 별칭과 동기 결과 반환을 추가한다. skills와 subagents의 전체 상태는 계속 partial이며 effort·KAIROS 예약 fork 등은 남아 있다. [Skills.md](Skills.md)에 구현 범위와 차이를 기록한다.
 
 0.18.0은 호출 범위의 allowed-tools, 권한 판정/실행 스냅샷, 인자 규칙과 C Bash AST 검사를 추가한다. 권한의 설정 계층·자동 분류·전체 BashSecurity·OS 샌드박스 등은 남아 있어 permissions/skills/subagents는 계속 partial이다. [Permissions.md](Permissions.md)에 구체적인 차이를 기록한다.
+
+0.19.0은 파일 기반 권한 설정의 계층·관리 규칙·출처 경로·실시간 반영·호스트 설정과 인증 조회를 구현했다. settings와 permissions는 partial이다. 추가 디렉터리·외부 관리 공급자·일반 환경 설정·마이그레이션·자동 분류·OS 샌드박스는 남아 있다. [PermissionSettings.md](PermissionSettings.md)가 현재 계약이다.

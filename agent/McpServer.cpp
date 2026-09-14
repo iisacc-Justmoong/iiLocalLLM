@@ -99,6 +99,14 @@ public:
         auto self = shared_from_this();
         if (options.taskStore)
             for (auto tool : taskTools(options.taskStore, {}, false)) frozen->add(std::move(tool));
+        Tool permissions;permissions.definition.name="iiLocalLLM.agent.permissions.get";
+        permissions.definition.description="Inspect current host permission settings and source metadata. Does not change policy or expose unrelated settings values.";
+        permissions.definition.readOnly=true;permissions.definition.concurrencySafe=true;
+        permissions.definition.inputSchema={{"type","object"},{"additionalProperties",false},{"properties",QJsonObject{}}};
+        permissions.execute=[self](const QJsonObject&,const ToolContext& context) {
+            return ToolResult{"Host permission settings",self->policy->describe(context)};
+        };
+        frozen->add(std::move(permissions));
         if (!options.engine) return frozen;
         if (options.engine->subagentsEnabled()) for (auto definition : options.engine->subagentToolDefinitions()) {
             const auto nativeName = definition.name;

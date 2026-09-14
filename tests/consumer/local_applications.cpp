@@ -33,8 +33,16 @@ int main(int argc, char** argv) {
         a::McpConnectionOptions options; options.workingDirectory = root.path();
         options.localApplicationsDirectory = root.filePath("apps"); options.refreshIntervalMs = 0;
         a::McpConnections connections(imported, options);
-        if (imported->definitions().size() != 1) return 2;
-        auto tool = imported->get(imported->definitions().first().name);
+        if (imported->definitions().size() != 2) return 2;
+        QString statusName,inspectionName;
+        for(const auto& definition:imported->definitions()) {
+            if(definition.metadata["remote_name"]=="status")statusName=definition.name;
+            if(definition.metadata["remote_name"]=="iiLocalLLM.agent.permissions.get")inspectionName=definition.name;
+        }
+        if(statusName.isEmpty()||inspectionName.isEmpty())return 2;
+        const auto inspection=imported->get(inspectionName).execute({},{});
+        if(inspection.isError||inspection.data["provider"]!="rules")return 6;
+        auto tool = imported->get(statusName);
         auto future = std::async(std::launch::async, [&] { return tool.execute({}, {}); });
         QElapsedTimer timer; timer.start();
         while (future.wait_for(std::chrono::milliseconds(0)) != std::future_status::ready && timer.elapsed() < 5000) {

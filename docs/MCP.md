@@ -88,3 +88,5 @@ iiLocalLLM.mcp_official은 공식 SDK 서버의 도구·자료·프롬프트·�
 ## 0.10.0 구조화 결과 전달
 
 `structuredContent`가 있을 때 설명 텍스트가 있더라도 실제 JSON을 모델 입력에서 보존한다. 서버 bridge는 JSON text block을 함께 반환하고 클라이언트 어댑터는 상대 서버가 빠뜨린 경우 모델용 텍스트에 추가한다. 이미 같은 JSON이 있으면 공백 형식과 무관하게 중복하지 않는다. 원래 MCP content·구조화 데이터·host용 `_meta`는 각각 보존한다. `_meta`는 모델 텍스트에 추가하지 않는다. 실제 앱 연동과 검증은 [LocalApplications.md](LocalApplications.md)에 기록한다.
+
+0.19.0의 `iiLocalLLM.agent.permissions.get`은 빈 인자로 호스트 권한·출처·SHA·미지원 이름을 조회한다. 모델 활성화 없이도 사용할 수 있고 stdio 또는 인증 HTTP의 연결 권한을 따른다. 일반 설정 값은 반환하지 않는다. `--permission-settings FILE`의 동작은 [PermissionSettings.md](PermissionSettings.md)를 따른다.

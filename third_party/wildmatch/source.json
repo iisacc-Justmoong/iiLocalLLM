@@ -1,0 +1,24 @@
+{
+  "project": "libgit2",
+  "version": "1.9.7",
+  "sources": [
+    {
+      "path": "wildmatch.c",
+      "source": "https://raw.githubusercontent.com/libgit2/libgit2/v1.9.7/src/util/wildmatch.c",
+      "bytes": 9449,
+      "sha256": "0102685757a40046a5fdee4be5be784989a84d3b4be9160d48120c4485c37133"
+    },
+    {
+      "path": "wildmatch.h",
+      "source": "https://raw.githubusercontent.com/libgit2/libgit2/v1.9.7/src/util/wildmatch.h",
+      "bytes": 525,
+      "sha256": "7d59454a8271f810622ccfebb26c8408bd85f64c99d4411028e8482ab2c333d0"
+    },
+    {
+      "path": "COPYING",
+      "source": "https://raw.githubusercontent.com/libgit2/libgit2/v1.9.7/COPYING",
+      "bytes": 72970,
+      "sha256": "e0938121c0554985fe17196ac38fc590d149268e9c46e0c0e7a2eae1354fae71"
+    }
+  ]
+}
