@@ -61,9 +61,15 @@
       "status": "partial",
       "evidence": [
         "agent/WorkspaceTools.cpp",
-        "tests/agent_tests.cpp"
+        "tests/agent_tests.cpp",
+        "agent/ShellProcess.h",
+        "agent/ShellTasks.h",
+        "agent/ShellTasks.cpp",
+        "tests/shell_tasks_tests.cpp",
+        "tests/shell_runtime_smoke.cpp",
+        "docs/BackgroundTasks.md"
       ],
-      "remaining": "Bounded process execution and Unix process-group cancellation implemented; background jobs, persistent environment and Windows process-tree support remain."
+      "remaining": "Bounded foreground/background POSIX execution, TaskOutput/TaskStop, private byte-paged logs, session ownership, group cleanup and interrupted-host recovery implemented. Automatic backgrounding, persistent environment/cwd, Windows process trees, mobile and remote execution remain."
     },
     {
       "id": "web",
@@ -196,9 +202,11 @@
         "tests/mcp_http_server_wire.py",
         "tests/mcp_http_server_cli.py",
         "tests/consumer/mcp_http_server.cpp",
-        "docs/MCPHTTPServer.md"
+        "docs/MCPHTTPServer.md",
+        "agent/ShellTasks.cpp",
+        "docs/BackgroundTasks.md"
       ],
-      "remaining": "C++ sessions, POSIX stdio, authenticated loopback Streamable HTTP, resumable SSE, CLI, app ToolRegistry export and local agent tools implemented. Remote TLS/proxy qualification, legacy SSE, OAuth, Windows stdio, task lifecycle, automatic discovery and actual iisacc app endpoints remain."
+      "remaining": "C++ sessions, POSIX stdio, authenticated loopback Streamable HTTP, resumable SSE, CLI, app ToolRegistry export and local agent tools are implemented. Shell controls share conversation ownership and stop on connection close/reset. Remote TLS/proxy qualification, legacy SSE, OAuth, Windows stdio and MCP asynchronous tasks remain."
     },
     {
       "id": "api",
@@ -224,9 +232,13 @@
         "docs/Compaction.md",
         "agent/TaskStore.h",
         "tests/consumer/tasks.cpp",
-        "docs/Tasks.md"
+        "docs/Tasks.md",
+        "agent/ShellTasks.h",
+        "tests/shell_tasks_tests.cpp",
+        "tests/consumer/shells.cpp",
+        "docs/BackgroundTasks.md"
       ],
-      "remaining": "Authenticated HTTP/native IPC agent sessions, attached runs, ordered events, cancellation and thin CLI implemented; durable background jobs, idempotent response replay, live permission mediation and actual iisacc product integration remain."
+      "remaining": "Authenticated HTTP/native IPC sessions, attached agent runs, ordered events, cancellation and independent background shell control/history with thin CLI are implemented. Durable background agent jobs, idempotent response replay, live permission mediation and complete iisacc product workflows remain."
     },
     {
       "id": "discovery",
@@ -297,9 +309,14 @@
         "tests/agent_api_smoke.py",
         "tests/mcp_server_smoke.py",
         "tests/consumer/tasks.cpp",
-        "docs/Tasks.md"
+        "docs/Tasks.md",
+        "agent/ShellTasks.cpp",
+        "tests/shell_tasks_tests.cpp",
+        "tests/shell_runtime_smoke.cpp",
+        "tests/consumer/shells.cpp",
+        "docs/BackgroundTasks.md"
       ],
-      "remaining": "Persistent TaskCreate/Get/List/Update, atomic claims and dependency transactions, TodoWrite/Read, live model context, authenticated API, MCP and thin CLI implemented. Plan mode transitions/approval, background execution/output/stop, input queues, task notifications and team mailbox integration remain. Native model qualification is reported separately in Verification.md."
+      "remaining": "Persistent planning tasks/todos, dependencies, claims, hooks and live context plus background Bash output/stop/list are implemented through C++/API/CLI/MCP. Plan transitions, background subagents, input queues, completion notifications and team mailbox remain. Native eager qualification and deferred failures are reported separately in Verification.md."
     },
     {
       "id": "git",
@@ -374,7 +391,11 @@
         "tests/consumer/local_applications.cpp",
         "agent/TaskStore.h",
         "tests/consumer/tasks.cpp",
-        "docs/Tasks.md"
+        "docs/Tasks.md",
+        "agent/ShellTasks.h",
+        "tests/consumer/shells.cpp",
+        "tests/shell_runtime_smoke.cpp",
+        "docs/BackgroundTasks.md"
       ],
       "remaining": "Public MCP client/server headers and a POSIX MCP executable are installed and tested through fresh C++ consumers. Complete app integration and platform qualification remain."
     },

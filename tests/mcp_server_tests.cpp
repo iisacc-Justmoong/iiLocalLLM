@@ -1,5 +1,6 @@
 #include <mcp/Server.h>
 #include <agent/McpServer.h>
+#include <agent/ShellTasks.h>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QFile>
 #include <QtCore/QDir>
@@ -48,6 +49,7 @@ QJsonObject call(m::ServerSession& s, int id, QString name, QJsonObject args = {
 }
 class HistoryModel final : public a::Model {
 public:
+    std::atomic_bool waiting = false, released = false;
     std::optional<ContextBudget> measure(const a::ModelRequest& r, const CancellationToken&) override {
         qint64 count = 100 + r.systemPrompt.size() + r.tools.size() * 40;
         for (const auto& message : r.messages) count += message.text.size() + 10;
@@ -55,6 +57,11 @@ public:
     }
     a::ModelReply generate(const a::ModelRequest& r, const CancellationToken& token, const TextCallback&) override {
         token.throwIfCancelled();
+        if (!r.messages.isEmpty() && r.messages.last().text == "hold") {
+            waiting = true;
+            while (!released && !token.isCancelled()) std::this_thread::sleep_for(1ms);
+            token.throwIfCancelled();
+        }
         if (r.summarizing) return {"MCP conversation summary with preserved source observations", {}, {100, 10, 0, 0}};
         QStringList history;
         for (const auto& m : r.messages) if (m.role == a::MessageRole::User) history.append(m.text);
@@ -65,6 +72,64 @@ public:
 class McpServerTests : public QObject {
     Q_OBJECT
 private slots:
+    void newConversationStopsPreviousShells() {
+#if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+        QSKIP("Background shell execution requires a desktop POSIX host");
+#endif
+        QTemporaryDir root; auto registry = std::make_shared<a::ToolRegistry>();
+        auto shells = std::make_shared<a::ShellTasks>(root.path(), root.filePath("shells"));
+        a::registerWorkspaceTools(*registry, root.path(), shells);
+        auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
+        a::EngineOptions eo; eo.sessionsDirectory = root.filePath("sessions");
+        auto engine = std::make_shared<a::Engine>(std::make_shared<HistoryModel>(), registry, policy, eo);
+        a::McpServerOptions config; config.workingDirectory = root.path(); config.engine = engine; config.model = "fixture";
+        m::ServerSession session(a::mcpServerOptions(registry, policy, config)); initialize(session);
+        const auto started = call(session, 2, "Bash", {{"command", "sleep 30"}, {"run_in_background", true}});
+        const auto taskId = started["structuredContent"].toObject()["backgroundTaskId"].toString(); QVERIFY(!taskId.isEmpty());
+        const auto original = call(session, 3, "iiLocalLLM.agent.session")["structuredContent"].toObject()["session_id"].toString();
+        const auto reset = call(session, 4, "iiLocalLLM.agent.run", {{"prompt", "New session"}, {"new_session", true}});
+        QVERIFY(!reset["isError"].toBool());
+        QCOMPARE(shells->output(original, taskId, false, 0, 0, 1024)["task"].toObject()["status"], "killed");
+        QVERIFY(call(session, 5, "ShellTaskList")["structuredContent"].toObject()["tasks"].toArray().isEmpty());
+        QVERIFY(call(session, 6, "TaskOutput", {{"task_id", taskId}, {"block", false}})["isError"].toBool());
+    }
+    void shellControlsShareAgentIdentityAndInterruptDuringRun() {
+#if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+        QSKIP("Background shell execution requires a desktop POSIX host");
+#endif
+        QTemporaryDir root; auto registry = std::make_shared<a::ToolRegistry>();
+        auto shells = std::make_shared<a::ShellTasks>(root.path(), root.filePath("shells"));
+        a::registerWorkspaceTools(*registry, root.path(), shells);
+        auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass); auto model = std::make_shared<HistoryModel>();
+        a::EngineOptions eo; eo.sessionsDirectory = root.filePath("sessions");
+        auto engine = std::make_shared<a::Engine>(model, registry, policy, eo);
+        a::McpServerOptions config; config.workingDirectory = root.path(); config.engine = engine; config.model = "fixture";
+        const auto options = a::mcpServerOptions(registry, policy, config);
+        m::ServerSession first(options), second(options); initialize(first); initialize(second);
+        const auto started = call(first, 2, "Bash", {{"command", "printf mcp-job; sleep 30"}, {"run_in_background", true}});
+        QVERIFY(!started["isError"].toBool()); const auto taskId = started["structuredContent"].toObject().value("backgroundTaskId");
+        QVERIFY(!taskId.toString().isEmpty());
+        const auto sessionId = call(first, 3, "iiLocalLLM.agent.session")["structuredContent"].toObject()["session_id"].toString();
+        QVERIFY(!sessionId.isEmpty());
+        QCOMPARE(engine->runShellTool(sessionId, "ShellTaskList").data["tasks"].toArray().size(), 1);
+        QVERIFY(call(second, 2, "TaskOutput", {{"task_id", taskId}, {"block", false}})["isError"].toBool());
+        first.receive(request(10, "tools/call", {{"name", "iiLocalLLM.agent.run"}, {"arguments", QJsonObject{{"prompt", "hold"}}}}));
+        QTRY_VERIFY_WITH_TIMEOUT(model->waiting.load(), 2000);
+        first.receive(request(11, "tools/call", {{"name", "TaskOutput"}, {"arguments", QJsonObject{{"task_id", taskId}, {"timeout", 30000}}}}));
+        first.receive(request(12, "tools/call", {{"name", "TaskStop"}, {"arguments", QJsonObject{{"task_id", taskId}}}}));
+        QJsonObject stop, output; QElapsedTimer clock; clock.start();
+        while ((stop.isEmpty() || output.isEmpty()) && clock.elapsed() < 2000) for (const auto& value : first.takeMessages(20)) {
+            const auto message = value.toObject();
+            if (message["id"].toInt() == 12) stop = message["result"].toObject();
+            if (message["id"].toInt() == 11) output = message["result"].toObject();
+        }
+        model->released = true;
+        QVERIFY2(!stop.isEmpty() && !stop["isError"].toBool(), "TaskStop must run while the model and TaskOutput are waiting");
+        QCOMPARE(output["structuredContent"].toObject()["task"].toObject()["status"], "killed");
+        const auto remaining = engine->runShellTool(sessionId, "Bash", {{"command", "sleep 30"}, {"run_in_background", true}}).data["backgroundTaskId"].toString();
+        first.close(); second.close();
+        QCOMPARE(shells->output(sessionId, remaining, false, 0, 0, 1024)["task"].toObject()["status"], "killed");
+    }
     void taskToolsAreConnectionBoundAndShareAgentState() {
         QTemporaryDir root; auto registry = std::make_shared<a::ToolRegistry>();
         auto policy = std::make_shared<a::RulePolicy>();

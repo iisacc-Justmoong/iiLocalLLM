@@ -46,7 +46,7 @@ RulePolicy는 Default/AcceptEdits/DontAsk/Bypass/Plan을 제공한다. 명시적
 - Write/Edit: 기존 파일의 완전 읽기·내용 일치를 요구한다. 변경 전 백업과 QSaveFile 쓰기를 사용한다.
 - Glob: 파일 패턴, 최대 1,000개. Git ignore·완전한 globstar 호환은 미완료이다.
 - Grep: Qt 정규식, 최대 10,000개 파일·100개 일치, 파일당 1 MiB. rg/LSP 고급 검색은 미완료이다.
-- Bash: 작업 디렉터리에서 별도 프로세스 실행, 시간/출력 제한, Unix 프로세스 그룹 취소. OS 샌드박스와 백그라운드 작업 관리, 셸 환경/cwd 지속, Windows 프로세스 트리는 미완료이다.
+- Bash: 작업 디렉터리에서 별도 프로세스 실행, 시간/출력 제한, Unix 프로세스 그룹 취소. 0.12.0부터 ShellTasks를 등록한 데스크톱 POSIX 호스트에서 명시적 백그라운드 실행·출력·중단을 제공한다. OS 샌드박스, 셸 환경/cwd 지속, Windows 프로세스 트리는 미완료이다.
 
 ## 앱에서 사용하는 예
 
@@ -75,7 +75,7 @@ Service는 ServiceModel과 Engine보다 오래 살아야 한다. Engine 파괴�
 
 Native ServiceModel의 도구 오류는 tool 역할의 `Tool error:` 결과로 전달한다. 기본 llama.cpp 로그에서는 생성 토큰을 포함하는 debug 메시지를 내보내지 않는다. 모든 CTest 임시 디렉터리는 build/tmp 아래에 생성한다.
 
-MCP 서버는 [MCPServer.md](MCPServer.md)의 C++ ToolRegistry 공개와 연결별 로컬 에이전트 실행을 제공한다. 파일 읽기 이력·권한·동시 실행 경계를 유지한다. HTTP 서버·인증·앱 자동 발견·실제 제품 연동은 전체 대응표에 남아 있다.
+MCP 서버는 [MCPServer.md](MCPServer.md)의 C++ ToolRegistry 공개와 연결별 로컬 에이전트 실행을 제공한다. 파일 읽기 이력·권한·동시 실행 경계를 유지한다. 인증된 HTTP 전송과 실행 중인 앱 발견은 각각 [MCPHTTPServer.md](MCPHTTPServer.md), [LocalApplications.md](LocalApplications.md)에 구현 범위를 기록하며 전체 제품·플랫폼 검증은 남아 있다.
 
 ## 프로젝트 지침과 입력 조합 (0.5.0)
 
@@ -92,3 +92,7 @@ MCP 서버는 [MCPServer.md](MCPServer.md)의 C++ ToolRegistry 공개와 연결�
 ## 영속 작업 상태 (0.11.0)
 
 EngineOptions.taskToolsEnabled로 작업 도구를 활성화한다. TaskStore는 transcript와 별도 잠금을 사용하며 runTaskTool은 모델 실행 중에도 동일 정책·훅을 적용한다. TaskCreated/TaskCompleted는 게시 전에 block할 수 있다. SessionStore::metadata와 Engine::sessionMetadata는 활성 실행 중에도 불변 대화 헤더만 읽고 messages/compactions는 비워 반환한다. 목록 격리·재시작·fork·컨텍스트 및 정확한 저장 계약은 [Tasks.md](Tasks.md)를 참조한다.
+
+## 백그라운드 실행 상태 (0.12.0)
+
+`registerWorkspaceTools(registry, workspace, shells)`로 C++ ShellTasks를 연결한다. Engine의 `runShellTool`은 별도 대화 기록 잠금 없이 동일 정책·훅과 세션 소유권을 적용하며 진행 중인 모델 실행과 독립적으로 사용할 수 있다. 각 모델 턴에는 최대 32개의 실행 상태를 임시 데이터 메시지로 조합하고 토큰 예산에 포함한다. 출력 본문은 미리보기에 넣지 않으며 TaskOutput 또는 허용된 Read로 조회한다. 제어 도구는 기본 지연 공개이고 실제 eager 추론 검증은 별도 조건이다. [BackgroundTasks.md](BackgroundTasks.md)에 저장·수명·권한과 미완료 범위를 기록한다.

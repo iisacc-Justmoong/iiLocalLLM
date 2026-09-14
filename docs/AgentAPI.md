@@ -2,7 +2,7 @@
 
 `agent::Api`는 C++ `Engine`을 HTTP와 native IPC에서 함께 제공한다. 같은 인증키로 접속한 앱은 두 전송에서 같은 영속 세션을 사용한다. 앱마다 별도의 세션 저장소를 두며, 다른 앱의 세션 및 진행 중 요청 ID는 조회·취소할 수 없다. 프로토콜 식별자는 `iisacc.agent/1`이다. MCP JSON-RPC나 OpenAI Chat Completions와는 별도의 iiLocalLLM RPC 계약이다.
 
-이 단계의 범위는 인증, 세션 생성·조회·목록·기본 분기, 연결이 유지되는 실행, 이벤트, 취소이다. **전체 Claude 하네스 호환이나 Society/Dreamscapes의 실제 앱 연동 완료를 뜻하지 않는다.** 앱 발견·설정 manifest, 백그라운드 작업, 파일 rewind, artifact 복제는 대응표의 미완료 항목이다.
+현재 API는 인증, 영속 대화, 연결이 유지되는 에이전트 실행·이벤트·취소, 작업·Todo 상태와 백그라운드 셸 제어를 제공한다. **전체 Claude 하네스 호환이나 모든 제품 연동의 완료를 뜻하지 않는다.** 백그라운드 에이전트 실행, 입력 큐, 파일 rewind, artifact 복제 등은 대응표의 미완료 항목이다.
 
 ## daemon 실행
 
@@ -129,7 +129,7 @@ daemon은 HTTP 작업자 8개 중 제어 요청을 처리할 여유를 두기 �
 
 실행은 호출 연결에 붙어 있다. 연결 해제·출력 버퍼 초과·기한 종료·API 종료는 취소를 전달하며, 수락 슬롯은 작업이 실제로 종료될 때 해제한다. `Api::close()`는 실행을 취소하고 작업자를 join한다. 모델·도구·이벤트 함수는 취소에 협조해야 하고 콜백 안에서 close·파괴 또는 자기 future 대기를 호출하면 안 된다. 메타데이터의 파일 게시나 도구 부작용은 취소로 롤백되지 않는다.
 
-status는 현재 프로세스에서 진행 중인 요청만 조회한다. 완료 후·재시작 후 request_id는 NotFound가 될 수 있다. transcript는 재시작 후 같은 세션 ID로 이어갈 수 있지만 실행 응답 재전송, 영속 작업 핸들, idempotency key는 아직 없다. 연결이 끊긴 실행을 자동 재시도하지 말고 세션 기록에서 결과를 확인한다. 이전 프로세스에서 도구 결과를 남기지 못한 호출은 기존 Engine의 결과 미확인 처리로 닫는다.
+status는 현재 프로세스에서 진행 중인 요청만 조회한다. 완료 후·재시작 후 request_id는 NotFound가 될 수 있다. transcript는 재시작 후 같은 세션 ID로 이어갈 수 있지만 에이전트 실행 응답 재전송, 영속 실행 핸들, idempotency key는 아직 없다. 별도 셸 작업 ID와 출력 기록은 아래 `agent.shell` 계약으로 보존한다. 연결이 끊긴 에이전트 실행을 자동 재시도하지 말고 세션 기록에서 결과를 확인한다. 이전 프로세스에서 도구 결과를 남기지 못한 호출은 기존 Engine의 결과 미확인 처리로 닫는다.
 
 검증은 `tests/agent_api_tests.cpp`, `tests/agent_transport_tests.cpp`, `tests/agent_api_smoke.py`, 설치 소비자 `tests/consumer/api.cpp`에 있다. 실제 수치와 모델·설치 검증 결과는 [Verification.md](Verification.md)에 기록한다.
 
@@ -150,3 +150,9 @@ status는 현재 프로세스에서 진행 중인 요청만 조회한다. 완료
 ## 작업·Todo API (0.11.0)
 
 agent.tasks.create/get/list/update/claim 및 agent.todos.write/get을 추가한다. session_id와 도구별 인수를 받으며 {text,result,is_error}를 반환한다. 인증된 앱이 소유한 대화와 현재 workspace를 검사하고 모델 실행 중에도 접근한다. daemon에서는 기본 활성화이며 --agent-no-tasks로 끈다. TaskCreated/TaskCompleted와 일반 권한·훅이 동일하게 적용된다. [Tasks.md](Tasks.md)에 상태·페이징·revision·오류 계약과 CLI 사용법을 기록한다.
+
+## 백그라운드 셸 API (0.12.0)
+
+`agent.shell.start/output/stop/list`는 `session_id`와 해당 셸 도구의 인수를 받으며 `{text,result,is_error}`를 반환한다. start는 `Bash` 권한을 확인하고 `run_in_background=true`를 호스트가 지정한다. output은 TaskOutput, stop은 TaskStop, list는 ShellTaskList에 대응한다. `agent.info.background_tasks_enabled`로 사용 여부를 확인하며 데스크톱 POSIX daemon의 `--agent-no-background`로 끌 수 있다.
+
+실행 중인 에이전트와 독립적으로 조회·중단한다. 출력 조회의 남은 API 기한이 요청한 대기 시간보다 짧으면 그 기한으로 제한하고, 아직 실행 중일 경우 timeout 오류를 반환한다. 조회 취소·기한 만료는 셸을 종료하지 않는다. 다른 앱이나 대화의 작업 ID는 접근할 수 없다. 재시작 기록, 바이트 페이징과 명시적 종료 계약은 [BackgroundTasks.md](BackgroundTasks.md)를 참조한다.

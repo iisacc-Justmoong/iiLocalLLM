@@ -3,6 +3,7 @@
 #include "PrivateFile.h"
 #include <agent/Api.h>
 #include <agent/McpConnections.h>
+#include <agent/ShellTasks.h>
 #include <mcp/LocalApplications.h>
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QCoreApplication>
@@ -31,7 +32,7 @@ int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("iiLocalLLMD"));
-    app.setApplicationVersion(QStringLiteral("0.11.0"));
+    app.setApplicationVersion(QStringLiteral("0.12.0"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("iiLocalLLM local JSON IPC service"));
     parser.addHelpOption(); parser.addVersionOption();
@@ -57,6 +58,7 @@ int main(int argc, char** argv)
         {"agent-apps-dir", "Private registry of running local application MCP endpoints.", "directory"},
         {"agent-no-apps", "Disable discovery of running local applications."},
         {"agent-no-tasks", "Disable persistent task and todo tools for the agent API."},
+        {"agent-no-background", "Disable background shell execution and its control tools."},
         {"agent-no-auto-compact", "Disable automatic agent conversation compaction; explicit compact requests remain available."},
         {"agent-no-project-context", "Disable automatic project instruction loading for the agent API."},
         {"agent-context-exclude", "Exclude a workspace-relative instruction glob; repeat for more patterns.", "pattern"},
@@ -85,7 +87,7 @@ int main(int argc, char** argv)
         if (parser.isSet("agent-workspace") || parser.isSet("agent-state") || parser.isSet("agent-credentials") || parser.isSet("agent-allow")
             || parser.isSet("agent-no-auto-compact") || parser.isSet("agent-no-project-context") || parser.isSet("agent-context-exclude")
             || parser.isSet("agent-mcp-config") || parser.isSet("agent-mcp-project") || parser.isSet("agent-mcp-eager")
-            || parser.isSet("agent-apps-dir") || parser.isSet("agent-no-apps") || parser.isSet("agent-no-tasks")) {
+            || parser.isSet("agent-apps-dir") || parser.isSet("agent-no-apps") || parser.isSet("agent-no-tasks") || parser.isSet("agent-no-background")) {
             if (parser.isSet("agent-apps-dir") && parser.isSet("agent-no-apps"))
                 throw std::runtime_error("--agent-apps-dir and --agent-no-apps cannot be combined");
             if (parser.isSet("agent-apps-dir") && parser.value("agent-apps-dir").isEmpty())
@@ -156,7 +158,12 @@ int main(int argc, char** argv)
         }
         std::shared_ptr<iiLocalLLM::agent::Api> agent;
         if (agentConfig) {
-            auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, agentConfig->workingDirectory);
+            std::shared_ptr<a::ShellTasks> shells;
+#if defined(Q_OS_UNIX) && !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
+            if (!parser.isSet("agent-no-background")) shells = std::make_shared<a::ShellTasks>(agentConfig->workingDirectory,
+                QDir(agentConfig->stateDirectory).filePath("shells"));
+#endif
+            auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, agentConfig->workingDirectory, shells);
             a::McpConnectionOptions connections; connections.workingDirectory = agentConfig->workingDirectory;
             for (const auto& path : parser.values("agent-mcp-config")) connections.configFiles.append(QFileInfo(path).absoluteFilePath());
             if (parser.isSet("agent-mcp-project")) connections.configFiles.append(".mcp.json");

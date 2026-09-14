@@ -12,7 +12,7 @@ build/iillm-mcp --workspace /absolute/project --allow Write --allow Edit
 build/iillm-mcp --workspace /absolute/project --allow Bash
 ```
 
-기본으로 Read·Glob·Grep을 허용한다. Write·Edit·Bash 등은 실행 파일의 `--allow` 설정으로 공개 실행 권한을 부여한다. MCP 클라이언트의 요청 인자로 이 설정을 바꿀 수 없다. 파일 도구의 기존 읽기 이력·변경 감지·작업 폴더 제한을 적용하며 Bash는 OS 샌드박스가 아니다. stdout에는 JSON-RPC만 기록하고 진단은 stderr로 보낸다. 모델 옵션을 생략하면 모델을 로드하지 않고 파일 도구만 제공한다.
+기본으로 Read·Glob·Grep을 허용한다. Write·Edit·Bash 등은 실행 파일의 `--allow` 설정으로 공개 실행 권한을 부여한다. MCP 클라이언트의 요청 인자로 이 설정을 바꿀 수 없다. 파일 도구의 기존 읽기 이력·변경 감지·작업 폴더 제한을 적용하며 Bash는 OS 샌드박스가 아니다. stdout에는 JSON-RPC만 기록하고 진단은 stderr로 보낸다. 모델 옵션을 생략하면 추론 모델을 로드하지 않고 파일·작업 상태·셸 도구를 제공한다.
 
 설치된 로컬 모델을 사용하는 에이전트를 함께 제공하려면 다음과 같이 시작한다.
 
@@ -104,3 +104,9 @@ Engine을 설정한 서버는 `iiLocalLLM.agent.compact`를 제공한다. 선택
 iillm-mcp는 기본 작업·Todo 도구 일곱 개를 추가하며 --no-tasks로 비활성화한다. 모델이 있으면 현재 연결의 Engine 대화와 목록을 공유하고, 모델이 없으면 연결별 TaskStore를 사용한다. 원격 목록 ID 선택은 허용하지 않는다. 직접 C++ 호스트는 McpServerOptions.taskStore 또는 taskToolsEnabled인 Engine을 선택한다. [Tasks.md](Tasks.md)에 연결 수명·권한·스키마·저장 계약을 기록한다.
 
 공식 Python SDK의 stdio 클라이언트는 제한된 환경 변수만 자동 상속한다. 수락 검사는 하위 서버에 독립 앱 등록 경로와 임시 경로를 명시적으로 전달하여 실행 중인 사용자 앱의 도구가 fixture 목록에 섞이지 않게 한다. HTTP 검사도 같은 격리 경로를 사용한다.
+
+## 백그라운드 셸 도구 (0.12.0)
+
+데스크톱 POSIX iillm-mcp는 Bash의 `run_in_background`와 TaskOutput·TaskStop·ShellTaskList를 제공하며 `--no-background`로 비활성화한다. 계획 작업의 `--no-tasks`와 독립적이다. 모델 없이도 실행할 수 있고, Engine이 있으면 파일·셸 도구와 에이전트가 같은 대화 소유권을 사용한다.
+
+TaskOutput 대기 또는 agent.run 중에도 같은 연결에서 TaskStop을 처리할 수 있다. 제어 도구만 실행 잠금 밖에서 처리하며 기존 스키마·권한·소유권 검사는 유지한다. 연결 종료와 `new_session=true`는 이전 대화의 실행을 중단한다. 다른 연결은 작업 ID나 출력 경로를 알아도 접근할 수 없다. 저장소 위치와 수명은 [BackgroundTasks.md](BackgroundTasks.md)에 있다. 이 기능은 일반 tools/call이며 MCP 비동기 tasks 규격은 아직 미완료이다.

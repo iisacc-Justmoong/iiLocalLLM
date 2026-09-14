@@ -119,14 +119,15 @@ async def basic(binary, root, http=False):
     secret = "MCP_SERVER_" + uuid.uuid4().hex
     (workspace / "secret.txt").write_text(secret)
     (root / "outside.txt").write_text("NOT_EXPOSED")
-    command = StdioServerParameters(command=str(binary), args=["--workspace", str(workspace)])
+    command = StdioServerParameters(command=str(binary), args=["--workspace", str(workspace), "--allow", "Bash"])
     async with transport(command, root, http) as (read, write):
         async with ClientSession(read, write, read_timeout_seconds=timedelta(seconds=10)) as session:
             info = await session.initialize()
             assert info.protocolVersion == "2025-11-25"
             definitions = (await session.list_tools()).tools
             task_names = {"TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TaskClaim", "TodoWrite", "TodoRead"}
-            assert {item.name for item in definitions} == {"Read", "Write", "Edit", "Glob", "Grep", "Bash"} | task_names, sorted(item.name for item in definitions)
+            shell_names = {"TaskOutput", "TaskStop", "ShellTaskList"}
+            assert {item.name for item in definitions} == {"Read", "Write", "Edit", "Glob", "Grep", "Bash"} | task_names | shell_names, sorted(item.name for item in definitions)
             assert all(item.meta["iisacc/appId"] == "com.iisacc.iiLocalLLM" for item in definitions)
             created = await session.call_tool("TaskCreate", {"subject": "Verify package", "description": "Inspect the installed output"})
             assert not created.isError and created.structuredContent["task"]["id"] == "1", created
@@ -142,6 +143,17 @@ async def basic(binary, root, http=False):
             assert not (await session.call_tool("TodoWrite", {"todos": todos})).isError
             assert (await session.call_tool("TodoRead", {})).structuredContent["todos"] == todos
             assert (await session.call_tool("TaskGet", {"taskId": "1", "listId": "other"})).isError
+            started = await session.call_tool("Bash", {"command": "sleep 0.1; cat secret.txt", "run_in_background": True})
+            assert not started.isError, started
+            shell_id = started.structuredContent["backgroundTaskId"]
+            output = await session.call_tool("TaskOutput", {"task_id": shell_id, "timeout": 5000})
+            assert not output.isError and output.structuredContent["task"]["status"] == "completed", output
+            assert output.structuredContent["task"]["output"] == secret, output
+            output_path = output.structuredContent["task"]["output_file"]
+            assert read_text(await session.call_tool("Read", {"path": output_path})) == secret
+            active = await session.call_tool("Bash", {"command": "sleep 30", "run_in_background": True})
+            stopped = await session.call_tool("TaskStop", {"task_id": active.structuredContent["backgroundTaskId"]})
+            assert not stopped.isError and stopped.structuredContent["status"] == "killed", stopped
             result = await session.call_tool("Read", {"path": "secret.txt"})
             assert read_text(result) == secret
             denied = await session.call_tool("Write", {"path": "blocked.txt", "content": "denied"})
@@ -162,6 +174,9 @@ async def basic(binary, root, http=False):
         async with ClientSession(read, observer, read_timeout_seconds=timedelta(seconds=10)) as session:
             await session.initialize()
             assert (await session.call_tool("TaskList", {})).structuredContent["tasks"] == []
+            assert (await session.call_tool("ShellTaskList", {})).structuredContent["tasks"] == []
+            assert (await session.call_tool("TaskOutput", {"task_id": shell_id, "block": False})).isError
+            assert (await session.call_tool("Read", {"path": output_path})).isError
             result = await session.call_tool("Write", {"path": "created.txt", "content": secret})
             assert not result.isError and (workspace / "created.txt").read_text() == secret
             command_text = 'printf "%s" "$$" > shell.pid; sleep 30 & printf "%s" "$!" > child.pid; wait; printf late > late.txt'
@@ -183,12 +198,13 @@ async def basic(binary, root, http=False):
                     pass
             await session.send_ping()
             assert read_text(await session.call_tool("Read", {"path": "created.txt"})) == secret
-    command.args += ["--no-tasks"]
+    command.args += ["--no-tasks", "--no-background"]
     async with transport(command, root, http) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
             assert {item.name for item in (await session.list_tools()).tools} == {"Read", "Write", "Edit", "Glob", "Grep", "Bash"}
-    return {"official_sdk": version("mcp"), "transport": "http" if http else "stdio", "tools": 13, "real_file_read_write": True,
+    return {"official_sdk": version("mcp"), "transport": "http" if http else "stdio", "tools": 16, "real_file_read_write": True,
+            "background_shell_start_output_stop": True, "background_shell_connection_isolation": True, "background_shell_host_opt_out": True,
             "task_create_claim_complete_todos": True, "task_revision_conflict": True, "task_connection_isolation": True, "task_host_opt_out": True,
             "permission_denial": True, "schema_validation": True, "workspace_boundary": True,
             "cancelled_shell_and_child_exited": True, "connection_survived_cancellation": True}

@@ -1,5 +1,37 @@
 # 구현 검증 기록
 
+## 2026-09-14 백그라운드 셸과 실행 중 API/MCP 제어 (0.12.0)
+
+C++ `ShellTasks`에 실제 백그라운드 Bash, TaskOutput·TaskStop·ShellTaskList, 소유 대화 격리, 원시 출력 보존·바이트 페이징, 시간/출력/동시 실행 상한과 정상 종료·재시작 복구를 구현했다. 매 모델 턴의 현재 상태, 인증된 HTTP/native IPC, 얇은 CLI와 MCP에 연결한다. 기존 Qt QProcess·QLockFile·QSaveFile과 표준 C++ 스레드를 재사용하며 생산 Python 실행기나 새 런타임 의존성을 추가하지 않았다.
+
+| 검증 | 최종 관측 결과 |
+|---|---|
+| Release 전체 빌드·CTest | 빌드 성공, **49/52 통과**, 370.22초. 실패 항목은 아래에 그대로 기록 |
+| ASan·UBSan | llama 비활성 Debug 전체 **33/33 통과**, 67.15초. 아래의 명시적 ASan 실행 조건 적용 |
+| 셸 C++ 회귀 | 실제 프로세스와 자식 그룹 종료, 완료/중단 중 최종 출력, 조회만 취소, 시간/출력/용량 제한, 세션 격리, 파일 보호·페이지화, 손상 거부·복구, 비정상 종료 코드의 null 처리. 9개 동작 사례 |
+| 새 설치 소비자 | 별도 `shell-stage`와 `shell-consumer/build`에서 **17/20 통과**, 232.28초. 설치된 C++ 셸 실행·출력·중단·재시작 기록 포함 |
+| 설치된 API·CLI·공식 MCP | **3/3 통과**. API·CLI 28개 수락 조건. 공식 Python MCP 1.26.0의 stdio/HTTP에서 16개 도구, 백그라운드 시작·출력·중단, 연결 격리와 호스트 비활성화 확인 |
+| 실제 Qwen3 8B 셸 실행 | 소스 **통과, 62.91초**. 설치본 **통과, 62.87초**. 아래 eager 조건에서 실제 Bash→TaskOutput→임의 파일 값 답변 확인 |
+| 설치·ABI·로더 | 실제 `shell-stage/lib/libiiLocalLLM.0.12.0.dylib` 로드. 소스/설치 UUID `302A6AC5-F8FA-35F1-B279-35A1B78A442A` 및 SHA-256 일치. daemon·CLI·MCP 버전 0.12.0. iillm은 iiLocalLLM/llama/ggml을 링크하지 않음 |
+
+최종 Release 실패는 `iiLocalLLM.tasks_inference`, `iiLocalLLM.tasks_catalog_discovery`, `iiLocalLLM.discovery_inference`이다. 설치 소비자 실패는 `iiLocalLLM.installed_tasks_inference`, `iiLocalLLM.installed_tasks_discovery`, `iiLocalLLM.installed_discovery_inference`이다. 전체 결과와 별도 재실행은 서로 다른 관측이며 합쳐서 전체 통과로 표시하지 않는다. 모델별 실제 도구 실행과 의도한 저장 값·출력 소비를 검증하며, 잘못된 답이나 빈 모델 턴을 호스트가 대신 만들어 통과시키지 않는다.
+
+0.5B 모델은 TaskGet 호출 없이 답하거나 MCP ToolSearch 뒤 실제 도구 실행을 생략했다. 8B 모델은 지연 공개 검사에서 TaskGet 정의를 검색한 뒤 빈 모델 턴을 반환했다. 세 실패는 새 셸 수락 검사의 성공과 별도로 남아 있다.
+
+Qwen3 8B Q4_K_M은 `model://qwen3-8b-q4`, 컨텍스트 8,192, 턴당 2,048토큰·최대 6턴, seed 0, temperature 0.7·top_p 0.8·top_k 20, `/no_think`, `tool_grammar:false`로 검사했다. 셸 제어 도구는 이 수락 검사에서 처음부터 제공한다. 모델은 정확히 한 번 `sleep 0.1; cat observation.txt`를 백그라운드로 실행하고 실제 반환된 작업 ID로 TaskOutput을 호출해야 한다. 임의 파일 값은 프롬프트와 상태 미리보기에 없으며 최종 답·완료 상태·도구 결과 쌍까지 검사한다. 기본 지연 공개나 광범위한 자율 작업의 성공 증거로 확대하지 않는다. 모델의 고정 원본 revision·크기·SHA-256은 [Tasks.md](Tasks.md)에 있다.
+
+초기 ASan 기본 설정의 전체 결과는 **32/33**, 64.34초였다. daemon의 첫 셸이 실행 직전 종료되는 실패를 단독·격리 실행에서도 재현했다. macOS 27의 충돌 보고서는 `fork` 자식의 `_objc_atfork_child → wrap_free → ASan StackStore → os_unfair_lock` 내부 잠금 오류를 기록한다. 신호 호출 추적에서는 SDK 정리가 시도되기 전에 해당 프로세스가 이미 사라졌음을 확인했다. 생산 실행기의 중단 로직이나 시스템 보호 설정을 바꾸지 않았다.
+
+최종 sanitizer 실행은 `ASAN_OPTIONS=malloc_context_size=0`을 명시한다. 이 옵션은 할당/해제 시 보관하는 호출 스택 깊이이며, 해당 실행에서는 할당 이력 스택 진단을 포기한다. [Sanitizer 공식 옵션 설명](https://github.com/google/sanitizers/wiki/SanitizerCommonFlags)을 확인했고, 같은 설정의 별도 오류 probe가 heap-use-after-free와 signed integer overflow를 각각 비정상 종료로 감지했다. ASan·UBSan 계측은 유지한다. 이 조건의 통과를 기본 sanitizer 설정의 통과로 바꾸어 해석하지 않는다. 재현 로그와 축약 충돌 프레임은 `build/shell-sanitizer-first-*`, `build/shell-sanitizer-daemon-focused-tests.log`, `build/shell-sanitizer-crash-diagnosis.json`, `build/shell-sanitizer-probe-result.json`에 있다.
+
+TDD에서는 공개 헤더 부재, 손상된 종료 코드의 재수용, API 대기 기한 누락, 중단 중 마지막 출력 누락, 비정상 종료 시 정의되지 않은 종료 코드 노출을 확인했다. 각각 구현·재검증으로 수정했다. API 선택 인수 `block`을 읽다가 null을 삽입하던 회귀도 수정하고 실제 daemon에서 확인했다. 근거는 `build/shell-red-build.log`, `build/shell-recovery-red-tests.log`, `build/shell-deadline-red-tests.log`, `build/shell-focused-tests.log`, `build/shell-final-output-red-tests.log`, `build/shell-exit-code-red-tests.log`이다.
+
+종료 코드 보완 전 전체 실행은 Release **45/52**, 492.95초, 설치 소비자 **17/20**, 228.86초였다. Release에서 MCP 시험 상대 연결 실패 3건과 8B RAM 보호 거절 1건, 모델의 도구 호출·검색 실패 3건을 관측했다. MCP 연결 3건만 별도 대조한 실행은 **3/3**, 8.62초였다. 이후 최종 코드로 전체 검사를 다시 수행한 값이 위 표이며, 초기 실패는 `build/shell-pre-exit-code-*`와 `build/shell-final-focused-tests.log`에 보존한다.
+
+최종 라이브러리 SHA-256은 `c1db1f71442599ed3a50fb0e79fed7227e6483c2ae6c62ff3093cdaf00fd7ece`이다. SDK의 별도 설치·외부 소비자 검증이며 기본 SDK 위치나 Society·Dreamscapes 기기 앱을 재배포한 결과가 아니다. iPhone은 사용자 지시로 제외한다. 자동 배경 전환, 지속 셸 환경, Windows/모바일, 백그라운드 에이전트·원격 실행, 입력 큐·완료 알림·팀 mailbox 및 MCP 비동기 tasks 규격은 남아 있다. 전체 하네스 목표는 진행 중이다.
+
+계약은 [BackgroundTasks.md](BackgroundTasks.md), 범위는 [HarnessParity.md](HarnessParity.md)이다. 최종 증거는 `build/shell-final-{release,sanitizer,consumer}-tests.log`, 해당 JUnit XML·LastTest, `build/shell-installed-wire/`, `build/shell-linkage.json`, `build/shell-installed-loader.log`, `build/shell-verification.json`에 보관한다.
+
 ## 2026-09-14 영속 작업·Todo 및 에이전트/API/MCP 연결 (0.11.0)
 
 C++ `TaskStore`에 일곱 작업·Todo 도구, 양방향 의존 관계의 원자적 갱신·삭제, 순환 검사, 담당자 선점, revision 충돌 검사와 재시작 보존을 구현했다. Engine의 현재 작업 컨텍스트와 게시 전 TaskCreated/TaskCompleted 훅, 인증된 HTTP/native IPC, 얇은 CLI 및 MCP 서버에 연결했다. Qt의 잠금·원자적 파일 저장과 기존 JSON Schema/ToolRunner를 재사용하며 새 생산 의존성은 없다.

@@ -1,20 +1,17 @@
 #include "Tools.h"
+#include "ShellTasks.h"
+#include "ShellProcess.h"
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
 #include <QtCore/QDirIterator>
-#include <QtCore/QElapsedTimer>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
-#include <QtCore/QProcess>
+#include <QtCore/QJsonDocument>
 #include <QtCore/QSaveFile>
 #include <QtCore/QStringConverter>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QUuid>
 #include <mutex>
-#ifdef Q_OS_UNIX
-#include <signal.h>
-#include <unistd.h>
-#endif
 
 namespace iiLocalLLM::agent {
 namespace {
@@ -42,6 +39,7 @@ bool inside(const QString& path, const QString& root) {
 class Workspace {
 public:
     QString root;
+    std::shared_ptr<ShellTasks> shells;
     struct ReadState { QByteArray digest; bool complete; };
     std::mutex mutex;
     QHash<QString, ReadState> reads;
@@ -69,6 +67,10 @@ public:
             canonical = QDir(ancestor.canonicalFilePath()).filePath(tail.join('/'));
         }
         const auto artifacts = write ? QString() : QFileInfo(c.artifactsDirectory).canonicalFilePath();
+        if (shells && shells->containsStatePath(canonical)) {
+            require(!write && shells->ownsOutput(c.sessionId, canonical), "Shell state is private; only this session's output files can be read");
+            return canonical;
+        }
         require(inside(canonical, root) || inside(canonical, artifacts), "Path is outside the configured workspace");
         if (write) require(canonical != root, "Cannot replace the workspace root");
         return canonical;
@@ -108,8 +110,13 @@ public:
 };
 }
 void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot) {
+    registerWorkspaceTools(registry, workspaceRoot, {});
+}
+void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot, std::shared_ptr<ShellTasks> shells) {
     auto workspace = std::make_shared<Workspace>(); workspace->root = QFileInfo(workspaceRoot).canonicalFilePath();
     require(!workspace->root.isEmpty() && QFileInfo(workspace->root).isDir(), "Workspace must be an existing directory");
+    require(!shells || shells->workspace() == workspace->root, "Shell manager belongs to a different workspace");
+    workspace->shells = shells;
     Tool read;
     read.definition = {"Read", "Read a UTF-8 file (up to 1 MiB). Read the full file before editing it.",
         inputSchema({{"path", stringSchema()}, {"offset", integerSchema(1, 1000000)}, {"limit", integerSchema(1, 20000)}}, {"path"}), {}, true, true};
@@ -126,7 +133,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         const QJsonObject contextPaths = path == workspace->root || path.startsWith(workspace->root + '/')
             ? QJsonObject{{"iilocal.context_paths", QJsonArray{path}}} : QJsonObject{};
         return ToolResult{output.join('\n'), {{"path", path}, {"offset", offset}, {"lines", output.size()}, {"complete", complete}}, false, {}, contextPaths};
-    }; registry.add(std::move(read));
+    }; read.definition.metadata = {{"source", "builtin.workspace"}}; registry.add(std::move(read));
     Tool write;
     write.definition = {"Write", "Write a UTF-8 file. Existing files must have been read completely and remain unchanged.",
         inputSchema({{"path", stringSchema()}, {"content", stringSchema()}}, {"path", "content"}), {}, false, false, true};
@@ -137,7 +144,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         if (QFileInfo::exists(path)) before = workspace->writable(c, path);
         const auto backup = workspace->write(c, path, a["content"].toString().toUtf8(), before);
         return ToolResult{"Wrote " + path, {{"path", path}, {"backup_path", backup}}, false, {}, {{"iilocal.context_paths", QJsonArray{path}}}};
-    }; registry.add(std::move(write));
+    }; write.definition.metadata = {{"source", "builtin.workspace"}}; registry.add(std::move(write));
     Tool edit;
     edit.definition = {"Edit", "Replace exact text in a previously read UTF-8 file. Multiple matches require replace_all=true.",
         inputSchema({{"path", stringSchema()}, {"old_string", QJsonObject{{"type", "string"}, {"minLength", 1}}},
@@ -152,7 +159,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         text.replace(old, replacement);
         const auto backup = workspace->write(c, path, text.toUtf8(), before);
         return ToolResult{"Edited " + path, {{"path", path}, {"replacements", matches}, {"backup_path", backup}}, false, {}, {{"iilocal.context_paths", QJsonArray{path}}}};
-    }; registry.add(std::move(edit));
+    }; edit.definition.metadata = {{"source", "builtin.workspace"}}; registry.add(std::move(edit));
     Tool glob;
     glob.definition = {"Glob", "List matching relative file paths in the workspace (up to 1000 results).",
         inputSchema({{"pattern", stringSchema()}}, {"pattern"}), {}, true, true};
@@ -163,11 +170,11 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         QDirIterator iterator(workspace->root, QDir::Files | QDir::NoSymLinks, QDirIterator::Subdirectories);
         while (iterator.hasNext() && paths.size() < 1000) {
             c.cancellation.throwIfCancelled(); const auto path = iterator.next(); const auto relative = QDir(workspace->root).relativeFilePath(path);
-            if (regex.match(relative).hasMatch()) paths.append(relative);
+            if ((!workspace->shells || !workspace->shells->containsStatePath(path)) && regex.match(relative).hasMatch()) paths.append(relative);
         }
         paths.sort(); QJsonArray values; for (const auto& path : paths) values.append(path);
         return ToolResult{paths.join('\n'), {{"paths", values}, {"truncated", iterator.hasNext()}}};
-    }; registry.add(std::move(glob));
+    }; glob.definition.metadata = {{"source", "builtin.workspace"}}; registry.add(std::move(glob));
     Tool grep;
     grep.definition = {"Grep", "Search a regular expression in UTF-8 workspace files (up to 100 matches, 1 MiB per file).",
         inputSchema({{"pattern", stringSchema()}, {"path", stringSchema()}}, {"pattern"}), {}, true, true};
@@ -181,6 +188,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         QStringList matches; QJsonArray values;
         for (const auto& path : files) {
             c.cancellation.throwIfCancelled();
+            if (workspace->shells && workspace->shells->containsStatePath(path)) continue;
             if (QFileInfo(path).size() > maxFileBytes) continue;
             QString text; try { text = decode(readFile(path)); } catch (const Error&) { continue; }
             const auto lines = text.split('\n');
@@ -192,43 +200,35 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
             if (matches.size() >= 100) break;
         }
         return ToolResult{matches.join('\n'), {{"matches", values}, {"limit_reached", matches.size() >= 100}}};
-    }; registry.add(std::move(grep));
+    }; grep.definition.metadata = {{"source", "builtin.workspace"}}; registry.add(std::move(grep));
     Tool shell;
     shell.definition = {"Bash", "Execute a shell command in the workspace; this requires tool permission and is not an OS sandbox.",
         inputSchema({{"command", QJsonObject{{"type", "string"}, {"minLength", 1}}}, {"timeout_ms", integerSchema(1, 600000)}}, {"command"})};
+    shell.definition.metadata = {{"source", "builtin.shell"}};
+    if (shells) {
+        auto properties = shell.definition.inputSchema["properties"].toObject();
+        properties["run_in_background"] = QJsonObject{{"type", "boolean"}};
+        properties["description"] = QJsonObject{{"type", "string"}, {"maxLength", 1024}};
+        properties["timeout_ms"] = integerSchema(1, 86400000);
+        shell.definition.inputSchema["properties"] = properties;
+        shell.definition.description += " run_in_background=true returns a task ID and output file; use TaskOutput or TaskStop later. Foreground timeout_ms is at most 600000, background at most the host limit.";
+    }
     shell.execute = [workspace](const QJsonObject& a, const ToolContext& c) {
         workspace->resolve(".", c);
-        c.cancellation.throwIfCancelled(); QProcess process; process.setWorkingDirectory(workspace->root);
-#ifdef Q_OS_UNIX
-        process.setChildProcessModifier([] { if (::setsid() < 0) ::_exit(126); });
-        process.start("/bin/bash", {"--noprofile", "--norc", "-c", a["command"].toString()});
-#else
-        process.start("cmd.exe", {"/D", "/S", "/C", a["command"].toString()});
-#endif
-        if (!process.waitForStarted(5000)) throw Error(ErrorCode::RuntimeFailure, "Could not start shell: " + process.errorString());
-        const auto pid = process.processId();
-        auto terminate = [&] {
-#ifdef Q_OS_UNIX
-            ::kill(-pid_t(pid), SIGTERM);
-#endif
-            process.terminate(); process.waitForFinished(200);
-#ifdef Q_OS_UNIX
-            ::kill(-pid_t(pid), SIGKILL);
-#endif
-            process.kill(); process.waitForFinished(1000);
-        };
-        QByteArray output, errors; QElapsedTimer elapsed; elapsed.start();
-        const int timeout = a["timeout_ms"].toInt(30000);
-        for (;;) {
-            process.waitForFinished(20); output += process.readAllStandardOutput(); errors += process.readAllStandardError();
-            if (c.cancellation.isCancelled()) { terminate(); c.cancellation.throwIfCancelled(); }
-            if (elapsed.elapsed() > timeout) { terminate(); throw Error(ErrorCode::Timeout, "Shell command timed out"); }
-            if (output.size() + errors.size() > maxFileBytes) { terminate(); throw Error(ErrorCode::ResourceLimit, "Shell output exceeds 1 MiB"); }
-            if (process.state() == QProcess::NotRunning) break;
+        if (a["run_in_background"].toBool()) {
+            require(bool(workspace->shells), "Background shell execution is disabled");
+            auto data = workspace->shells->start(c, a["command"].toString(), a["description"].toString(), a["timeout_ms"].toInt(3600000));
+            return ToolResult{QString::fromUtf8(QJsonDocument(data).toJson(QJsonDocument::Compact)), data};
         }
+        const int timeout = a["timeout_ms"].toInt(30000); require(timeout <= 600000, "Foreground shell timeout exceeds 600000 ms");
+        QByteArray output, errors;
+        const auto value = detail::shellProcess(workspace->root, a["command"].toString(), timeout, c.cancellation, {}, [&](const QByteArray& bytes, bool error) {
+            if (output.size() + errors.size() + bytes.size() > maxFileBytes) throw Error(ErrorCode::ResourceLimit, "Shell output exceeds 1 MiB");
+            (error ? errors : output).append(bytes);
+        });
         const auto text = QString::fromUtf8(output) + (errors.isEmpty() ? QString() : "\n[stderr]\n" + QString::fromUtf8(errors));
-        return ToolResult{text, {{"exit_code", process.exitCode()}, {"crashed", process.exitStatus() == QProcess::CrashExit}},
-            process.exitCode() != 0 || process.exitStatus() == QProcess::CrashExit};
+        return ToolResult{text, {{"exit_code", value.code}, {"crashed", value.crashed}}, value.code != 0 || value.crashed};
     }; registry.add(std::move(shell));
+    if (shells) registerShellTaskControls(registry, shells);
 }
 }

@@ -1,6 +1,6 @@
 # 영속 작업·Todo 관리
 
-`agent::TaskStore`는 C++ 작업 목록 저장소이다. `TaskCreate`, `TaskGet`, `TaskList`, `TaskUpdate`, `TaskClaim`, `TodoWrite`, `TodoRead`를 같은 입력 검증과 트랜잭션으로 처리한다. 작업 상태 변경은 작업 실행이나 성공 검증을 뜻하지 않는다. 프로세스 실행·백그라운드 작업·팀 mailbox·계획 승인·입력 큐는 이 저장소와 별도의 하네스 기능이다.
+`agent::TaskStore`는 C++ 작업 목록 저장소이다. `TaskCreate`, `TaskGet`, `TaskList`, `TaskUpdate`, `TaskClaim`, `TodoWrite`, `TodoRead`를 같은 입력 검증과 트랜잭션으로 처리한다. 작업 상태 변경은 작업 실행이나 성공 검증을 뜻하지 않는다. 0.12.0의 [백그라운드 셸 실행](BackgroundTasks.md)과 팀 mailbox·계획 승인·입력 큐는 이 저장소와 별도의 하네스 기능이다.
 
 ## 계약과 참조 범위
 

@@ -36,7 +36,7 @@ template<class Lock> void acquire(Lock& lock, const CancellationToken& token) {
 }
 class Bridge : public std::enable_shared_from_this<Bridge> {
 public:
-    struct Conversation { std::timed_mutex mutex; QString id; };
+    struct Conversation { std::timed_mutex mutex, identity; QString id; };
     std::shared_ptr<ToolRegistry> registry;
     std::shared_ptr<const PermissionPolicy> policy;
     McpServerOptions options;
@@ -61,6 +61,38 @@ public:
         if (conversations.size() >= size_t(options.maxAgentSessions)) throw Error(ErrorCode::QueueFull, "MCP agent session limit reached");
         auto value = std::make_shared<Conversation>(); conversations.emplace(session, value); return value;
     }
+    QString sessionId(const std::shared_ptr<Conversation>& conversation, const CancellationToken& token, bool create = true, bool reset = false) {
+        std::unique_lock guard(conversation->identity, std::defer_lock); acquire(guard, token);
+        if (reset && !conversation->id.isEmpty()) stopShells(conversation->id);
+        if ((create && conversation->id.isEmpty()) || reset)
+            conversation->id = options.engine->createSession(options.model, options.workingDirectory, options.systemPrompt).id;
+        return conversation->id;
+    }
+    void closeConnection(const QString& connection) {
+        QString owner = connection; std::shared_ptr<Conversation> current;
+        { std::lock_guard guard(mutex); const auto found = conversations.find(connection);
+            if (found != conversations.end()) { current = found->second; conversations.erase(found); } }
+        if (options.engine) {
+            if (!current) return;
+            owner = sessionId(current, {}, false); if (owner.isEmpty()) return;
+        }
+        stopShells(owner);
+    }
+    void stopShells(const QString& owner) {
+        // This is host lifecycle cleanup, independent of the model's stop rule.
+        // Native lists put every active job first (at most 64).
+        try {
+            const auto list = registry->get("ShellTaskList"), stop = registry->get("TaskStop");
+            if (list.definition.metadata["source"] != "builtin.shell.control" || stop.definition.metadata["source"] != "builtin.shell.control") return;
+            const ToolContext context{owner, {}, options.workingDirectory};
+            for (const auto& value : list.execute({{"limit", 100}}, context).data["tasks"].toArray()) {
+                const auto task = value.toObject();
+                if (task["status"] == "pending" || task["status"] == "running") {
+                    try { stop.execute({{"task_id", task["task_id"]}}, context); } catch (const Error&) {}
+                }
+            }
+        } catch (const Error&) {}
+    }
     std::shared_ptr<ToolRegistry> snapshot() {
         auto frozen = registry->snapshot();
         auto self = shared_from_this();
@@ -71,10 +103,8 @@ public:
             Tool tool; tool.definition = definition;
             tool.execute = [self, name = definition.name](const QJsonObject& args, const ToolContext& context) {
                 auto conversation = self->conversation(context.sessionId);
-                std::unique_lock lock(conversation->mutex, std::defer_lock); acquire(lock, context.cancellation);
-                if (conversation->id.isEmpty())
-                    conversation->id = self->options.engine->createSession(self->options.model, self->options.workingDirectory, self->options.systemPrompt).id;
-                return self->options.engine->runTaskTool(conversation->id, name, args, context.cancellation);
+                const auto id = self->sessionId(conversation, context.cancellation);
+                return self->options.engine->runTaskTool(id, name, args, context.cancellation);
             };
             frozen->add(std::move(tool));
         }
@@ -93,17 +123,16 @@ public:
         auto executeAgent = [self](const QJsonObject& args, const ToolContext& context, bool compactOnly) {
             auto conversation = self->conversation(context.sessionId);
             std::unique_lock lock(conversation->mutex, std::defer_lock); acquire(lock, context.cancellation);
-            if (compactOnly && conversation->id.isEmpty()) throw Error(ErrorCode::NotFound, "This MCP connection has no conversation to compact");
-            if (conversation->id.isEmpty() || args["new_session"].toBool())
-                conversation->id = self->options.engine->createSession(self->options.model, self->options.workingDirectory, self->options.systemPrompt).id;
-            RunRequest request{conversation->id, args["prompt"].toString(), self->options.generation, args["max_turns"].toInt(self->options.maxAgentTurns)};
+            const auto id = self->sessionId(conversation, context.cancellation, !compactOnly, args["new_session"].toBool());
+            if (compactOnly && id.isEmpty()) throw Error(ErrorCode::NotFound, "This MCP connection has no conversation to compact");
+            RunRequest request{id, args["prompt"].toString(), self->options.generation, args["max_turns"].toInt(self->options.maxAgentTurns)};
             for (const auto& path : args["context_paths"].toArray()) request.contextPaths.append(path.toString());
             int progress = 0;
             auto observe = [&](const Event& event) {
                 if (context.progress) context.progress({{"progress", ++progress}, {"message", enumName(event.kind)},
                     {"_meta", QJsonObject{{"iisacc/agentEvent", toJson(event)}}}});
             };
-            auto handle = compactOnly ? self->options.engine->compact({conversation->id, self->options.generation, args["instructions"].toString()}, observe)
+            auto handle = compactOnly ? self->options.engine->compact({id, self->options.generation, args["instructions"].toString()}, observe)
                                       : self->options.engine->run(request, observe);
             while (handle.result.wait_for(10ms) != std::future_status::ready)
                 if (context.cancellation.isCancelled()) handle.cancel();
@@ -125,9 +154,10 @@ public:
         session.execute = [self](const QJsonObject& args, const ToolContext& context) {
             auto conversation = self->conversation(context.sessionId);
             std::unique_lock lock(conversation->mutex, std::defer_lock); acquire(lock, context.cancellation);
-            QJsonObject value{{"session_id", conversation->id}, {"model", self->options.model}, {"message_count", 0}};
-            if (!conversation->id.isEmpty()) {
-                const auto session = self->options.engine->session(conversation->id);
+            const auto id = self->sessionId(conversation, context.cancellation, false);
+            QJsonObject value{{"session_id", id}, {"model", self->options.model}, {"message_count", 0}};
+            if (!id.isEmpty()) {
+                const auto session = self->options.engine->session(id);
                 value["message_count"] = session.messages.size(); value["compaction_count"] = session.compactions.size();
                 if (!session.compactions.isEmpty()) value["compaction"] = toJson(session.compactions.last());
                 if (args["include_messages"].toBool()) { QJsonArray messages; for (const auto& m : session.messages) messages.append(toJson(m)); value["messages"] = messages; }
@@ -146,8 +176,16 @@ public:
         ToolCall call{uuid(), name, params["arguments"].toObject()};
         ToolContext context{request.sessionId, uuid(), options.workingDirectory, {}, request.cancellation, request.progress};
         if (!options.artifactsDirectory.isEmpty()) context.artifactsDirectory = QDir(options.artifactsDirectory).filePath(context.sessionId + '/' + context.runId);
+        const auto source = frozen->get(name).definition.metadata["source"].toString();
+        auto bindContext = [&] {
+            if (options.engine && (source == "builtin.workspace" || source == "builtin.shell" || source == "builtin.shell.control"))
+                context.sessionId = sessionId(conversation(request.sessionId), request.cancellation);
+        };
+        const bool shellControl = source == "builtin.shell.control" && QStringList{"TaskOutput", "TaskStop", "ShellTaskList"}.contains(name);
+        if (shellControl) { bindContext(); return wireResult(runner.run(call, context)); }
         std::shared_lock shared(execution, std::defer_lock); std::unique_lock exclusive(execution, std::defer_lock);
         if (runner.concurrencySafe(call)) acquire(shared, request.cancellation); else acquire(exclusive, request.cancellation);
+        bindContext();
         return wireResult(runner.run(call, context));
     }
 };
@@ -163,7 +201,7 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
         return result;
     };
     server.handlers["tools/call"] = [state](const auto& params, const auto& request) { return state->call(params, request); };
-    server.onClosed = [state](const QString& session) { std::lock_guard lock(state->mutex); state->conversations.erase(session); };
+    server.onClosed = [state](const QString& session) { state->closeConnection(session); };
     return server;
 }
 }

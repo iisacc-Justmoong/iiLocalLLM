@@ -1,5 +1,6 @@
 #include "agent/McpServer.h"
 #include "agent/McpConnections.h"
+#include "agent/ShellTasks.h"
 #include "mcp/LocalApplications.h"
 #include "mcp/HttpServer.h"
 #include "McpCredentials.h"
@@ -15,7 +16,7 @@
 namespace { volatile std::sig_atomic_t interrupted = 0; void interrupt(int) { interrupted = 1; } }
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.11.0");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.12.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},
@@ -26,6 +27,7 @@ int main(int argc, char** argv) {
         {"apps-dir", "Private registry of running local application MCP endpoints.", "directory"},
         {"no-apps", "Disable discovery of running local applications."},
         {"no-tasks", "Disable persistent task and todo tools."},
+        {"no-background", "Disable background shell execution and its control tools."},
         {"artifacts", "Directory for large tool results.", "path"},
         {"model", "Enable the local agent using an installed model:// URI.", "uri"},
         {"models", "Installed model catalog directory; required with --model.", "path"},
@@ -83,7 +85,12 @@ int main(int argc, char** argv) {
         const bool agent = parser.isSet("model");
         if (agent) rules.append({"iiLocalLLM.agent.run", a::PermissionBehavior::Allow});
         auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::DontAsk, rules);
-        auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, workspace);
+        std::shared_ptr<a::ShellTasks> shells;
+#if defined(Q_OS_UNIX) && !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
+        if (!parser.isSet("no-background")) shells = std::make_shared<a::ShellTasks>(workspace,
+            http ? QDir(privateState).filePath("shells") : QDir(workspace).filePath(".iilocal-llm/shells"));
+#endif
+        auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, workspace, shells);
         a::McpConnectionOptions connectionOptions; connectionOptions.workingDirectory = workspace;
         for (const auto& path : parser.values("mcp-config")) connectionOptions.configFiles.append(QFileInfo(path).absoluteFilePath());
         if (parser.isSet("mcp-project")) connectionOptions.configFiles.append(".mcp.json");

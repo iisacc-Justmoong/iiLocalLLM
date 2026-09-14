@@ -2,11 +2,13 @@
 
 C++ 에이전트 하네스를 확장 중이다. 현재 실행 계층은 [AgentHarness.md](docs/AgentHarness.md), 전체 요구사항과 남은 구현은 [HarnessParity.md](docs/HarnessParity.md)에 기록한다. MCP/API 및 앱 전체 호환 완료와 기존 대화 기능 완료는 별도 상태로 관리한다.
 
-C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.11.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
+C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.12.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
 
 C++ stdio MCP 클라이언트가 외부 도구·리소스·프롬프트를 인식하고 에이전트 엔진에 연결한다. `iillm-mcp` 서버와 C++ 내장 API로 앱 도구 및 로컬 에이전트 실행을 외부 MCP 클라이언트에 제공한다. 프로토콜·정책·자료 보존 및 현재 지원 경계는 [MCP.md](docs/MCP.md) · [MCP 서버·앱 도구 제공](docs/MCPServer.md)에 설명한다.
 
 `agent::Api`를 같은 daemon의 HTTP `/v1/rpc`와 native IPC에 연결하면 앱별 키 인증·영속 세션·기본 transcript 분기·실행 이벤트·취소를 공유한다. 설치된 `iillm --auth-file FILE rpc METHOD [PARAMS_FILE]`로도 호출한다. 설정·메서드·수명·현재 한계는 [AgentAPI.md](docs/AgentAPI.md)에 설명한다.
+
+0.12.0은 데스크톱 POSIX의 실제 백그라운드 Bash 실행, `TaskOutput`·`TaskStop`·`ShellTaskList`, 실행 기록·출력 보존을 제공한다. 인증된 `agent.shell.*`, 얇은 CLI 및 MCP에서 같은 실행을 제어하며 모델의 다음 턴에는 현재 실행 상태를 전달한다. 대기 취소와 프로세스 종료, 정상 종료와 비정상 종료 복구의 차이는 [BackgroundTasks.md](docs/BackgroundTasks.md)에 명시한다. 소스와 설치 헤더·라이브러리는 함께 다시 빌드한다.
 
 ```text
 C++ Local API / Native IPC / localhost HTTP
@@ -258,7 +260,7 @@ IILOCALLLM_WITH_LLAMA=ON INSTALL_PREFIX="$PWD/build/stage" ./install.sh
 IILOCALLLM_WITH_LLAMA를 생략하면 기존 CMake 선택을 유지하며 새 구성의 기본값은 ON이다. 과거 OFF로 구성했던 build/는 `IILOCALLLM_WITH_LLAMA=ON ./install.sh`로 활성화한다. INSTALL_PREFIX, QT_PREFIX_PATH, CMAKE_PREFIX_PATH로 경로를 설정한다. Qt와 MLX Python 환경은 패키지에 복사하지 않는다.
 
 ```cmake
-find_package(iiLocalLLM 0.11.0 CONFIG REQUIRED)
+find_package(iiLocalLLM 0.12.0 CONFIG REQUIRED)
 target_link_libraries(your_app PRIVATE iiLocalLLM::iiLocalLLM)
 ```
 
@@ -284,4 +286,4 @@ GGUF smoke는 chatml을 명시하여 경량 테스트 모델도 사용한다. �
 
 자체 코드·문서는 **AGPL-3.0-only**이며 [LICENSE](LICENSE)를 따른다. 외부 의존성과 가중치는 각각의 라이선스를 유지한다. 도입 검토와 출처는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)에 있다.
 
-0.11.0은 작업·Todo 영속 저장, 의존 관계와 원자적 선점, C++/에이전트 API/MCP/CLI 연결을 추가한다. [작업 관리](docs/Tasks.md)에 입력·저장·권한·재시작 계약을 기록한다. 현재 ABI는 0.11이며 소비자는 새 헤더와 라이브러리로 함께 다시 빌드한다.
+0.11.0에서 작업·Todo 영속 저장, 의존 관계와 원자적 선점, C++/에이전트 API/MCP/CLI 연결을 추가했다. [작업 관리](docs/Tasks.md)에 입력·저장·권한·재시작 계약을 기록한다. 현재 0.12 ABI의 소비자는 새 헤더와 라이브러리로 함께 다시 빌드한다.

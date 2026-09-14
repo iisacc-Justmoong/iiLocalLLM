@@ -66,3 +66,5 @@
 0.10.0은 같은 OS 사용자의 실행 중인 앱 endpoint 등록·발견·토큰 인증, QObject 주 스레드 호출과 취소/종료를 추가한다. 실제 Society·Dreamscapes 데스크톱 컨트롤러를 연결하고 MCP 구조화 결과가 모델 입력에서 누락되던 문제를 수정했다. Society는 실제 Qwen 0.5B의 eager 도구 호출 후 컨테이너 ID 소비까지, Dreamscapes는 프로토콜 fixture로 실제 앱 생성 큐·결과 PNG·취소까지 확인한다. 앱 재시작은 새 인스턴스로 발견된다. iisacc_apps는 partial이며 나머지 앱·플랫폼과 광범위한 자율 작업은 남아 있다. [LocalApplications.md](LocalApplications.md), [Verification.md](Verification.md)를 참조한다.
 
 0.11.0은 영속 Task/Todo 저장, 원자적 의존 관계·삭제·담당자 선점, 대화별 최신 상태 주입, TaskCreated/TaskCompleted 게시 전 훅, C++·인증된 API·MCP·CLI를 추가한다. 작업 실행기나 백그라운드 작업, 계획 모드 전환, 팀 알림은 별도 미완료 항목이다. [Tasks.md](Tasks.md), [Verification.md](Verification.md)를 참조한다.
+
+0.12.0은 C++ 백그라운드 Bash, TaskOutput·TaskStop·ShellTaskList, 원시 출력 보존·페이지화, 소유 세션 격리, 시간/출력/동시 실행 상한과 정상 종료·재시작 복구를 추가한다. API·CLI 및 MCP의 실행 중 조회·중단을 연결하고 각 모델 턴에 현재 상태를 반영한다. 자동 배경 전환, 지속 환경, Windows/모바일, 백그라운드 에이전트, 완료 알림·입력 큐와 MCP 비동기 tasks 규격은 남아 있으므로 shell/tasks/API의 partial 상태를 유지한다. [BackgroundTasks.md](BackgroundTasks.md), [Verification.md](Verification.md)를 참조한다.

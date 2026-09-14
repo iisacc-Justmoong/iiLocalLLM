@@ -49,7 +49,8 @@ QStringList contextPaths(const QJsonObject& parameters, int limit) {
 }
 QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.sessions.list", "agent.sessions.get",
     "agent.sessions.fork", "agent.sessions.compact", "agent.context.get", "agent.mcp.status", "agent.run", "agent.cancel", "agent.status",
-    "agent.tasks.create", "agent.tasks.get", "agent.tasks.list", "agent.tasks.update", "agent.tasks.claim", "agent.todos.write", "agent.todos.get"}; }
+    "agent.tasks.create", "agent.tasks.get", "agent.tasks.list", "agent.tasks.update", "agent.tasks.claim", "agent.todos.write", "agent.todos.get",
+    "agent.shell.start", "agent.shell.output", "agent.shell.stop", "agent.shell.list"}; }
 QJsonObject sessionObject(const Session& s, int offset = 0, int limit = 0) {
     require(offset <= s.messages.size(), "Message offset exceeds the session length");
     QJsonArray messages;
@@ -138,7 +139,32 @@ public:
             return QJsonObject{{"protocol", "iisacc.agent/1"}, {"client_id", client->id}, {"methods", names}, {"max_turns", options.maxTurns},
                 {"working_directory", options.workingDirectory}, {"project_context_enabled", options.engine.projectContext.enabled},
                 {"auto_compact_enabled", options.engine.compaction.automatic}, {"tool_search_enabled", options.engine.toolSearch.enabled},
-                {"task_tools_enabled", client->engine->taskToolsEnabled()}};
+                {"task_tools_enabled", client->engine->taskToolsEnabled()}, {"background_tasks_enabled", client->engine->backgroundTasksEnabled()}};
+        }
+        static const QMap<QString, QString> shellMethods{{"agent.shell.start", "Bash"}, {"agent.shell.output", "TaskOutput"},
+            {"agent.shell.stop", "TaskStop"}, {"agent.shell.list", "ShellTaskList"}};
+        if (shellMethods.contains(method)) {
+            const auto id = text(p, "session_id"); auto arguments = p; arguments.remove("session_id");
+            require(client->engine->sessionMetadata(id).workingDirectory == options.workingDirectory,
+                "Session belongs to a different workspace", ErrorCode::NotFound);
+            if (method == "agent.shell.start") {
+                require(!arguments.contains("run_in_background"), "agent.shell.start always starts in the background");
+                arguments["run_in_background"] = true;
+            }
+            bool deadlineLimited = false;
+            if (method == "agent.shell.output") {
+                require(!arguments.contains("block") || arguments.value("block").isBool(), "Invalid agent API block");
+                const auto wait = integer(arguments, "timeout", 30000, 0, 600000);
+                if (arguments.value("block").toBool(true)) {
+                    const auto remaining = std::max<qint64>(0, std::chrono::duration_cast<std::chrono::milliseconds>(job->deadline - Clock::now()).count());
+                    deadlineLimited = wait > remaining;
+                    if (deadlineLimited) arguments["timeout"] = int(remaining);
+                }
+            }
+            const auto value = client->engine->runShellTool(id, shellMethods[method], arguments, job->token,
+                [callback](const Event& event) { if (callback) callback(toJson(event)); });
+            require(!(deadlineLimited && value.data["retrieval_status"] == "timeout"), "Agent API request deadline exceeded", ErrorCode::Timeout);
+            return QJsonObject{{"text", value.text}, {"result", value.data}, {"is_error", value.isError}};
         }
         static const QMap<QString, QString> taskMethods{{"agent.tasks.create", "TaskCreate"}, {"agent.tasks.get", "TaskGet"},
             {"agent.tasks.list", "TaskList"}, {"agent.tasks.update", "TaskUpdate"}, {"agent.tasks.claim", "TaskClaim"},

@@ -59,7 +59,7 @@ def main():
                 "files": [{"path": "model.gguf", "size": 491400032, "sha256": "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"}]}))
             model = "model://api-fixture"
         base = [str(args.daemon), "--socket", str(endpoint), "--http-port", "0", "--models-root", str(catalog),
-                "--context-tokens", "4096", "--agent-workspace", str(workspace), "--agent-state", str(state), "--agent-credentials", str(credentials)]
+                "--context-tokens", "4096", "--agent-workspace", str(workspace), "--agent-state", str(state), "--agent-credentials", str(credentials), "--agent-allow", "Bash"]
         if not args.model:
             config = root / "mcp.json"
             config.write_text(json.dumps({"mcpServers": {"fixture": {"command": sys.executable,
@@ -160,6 +160,7 @@ def main():
             assert "agent.sessions.compact" in info["methods"] and info["auto_compact_enabled"] is True
             assert "agent.mcp.status" in info["methods"] and info["tool_search_enabled"] is True
             assert "agent.tasks.create" in info["methods"] and info["task_tools_enabled"] is True
+            assert "agent.shell.start" in info["methods"] and info["background_tasks_enabled"] is True
             connections = cli("agent.mcp.status")
             assert native("agent.mcp.status")[-1]["result"] == connections
             assert http(port, "agent.mcp.status")[1]["result"] == connections
@@ -197,6 +198,28 @@ def main():
             conflicting = cli("agent.tasks.update", {"session_id": session, "taskId": "1", "status": "pending", "expectedRevision": 0})
             assert conflicting["is_error"], conflicting
             evidence["checks"] += ["task_http_native_cli_state", "task_app_isolation", "task_atomic_revision_conflict"]
+            shell_secret = "SHELL_" + secrets.token_hex(8)
+            (workspace / "shell-observation.txt").write_text(shell_secret)
+            started = cli("agent.shell.start", {"session_id": session, "command": "sleep 0.1; cat shell-observation.txt"})
+            assert not started["is_error"], started
+            shell_id = started["result"]["backgroundTaskId"]
+            query = {"session_id": session, "task_id": shell_id, "timeout": 5000}
+            output = http(port, "agent.shell.output", query)[1]["result"]
+            assert not output["is_error"] and output["result"]["task"]["status"] == "completed", output
+            assert output["result"]["task"]["output"] == shell_secret, output
+            assert http(port, "agent.shell.output", query, auth=other)[0] == 404
+            listed_shells = native("agent.shell.list", {"session_id": session})[-1]["result"]
+            shell_cli = subprocess.run([str(args.cli), "--socket", str(endpoint), "--auth-file", str(client_token),
+                "agent", "shell", "list", session], capture_output=True, text=True, timeout=20, env=environment)
+            assert shell_cli.returncode == 0 and json.loads(shell_cli.stdout) == listed_shells, (shell_cli.stdout, shell_cli.stderr)
+            active_shell = cli("agent.shell.start", {"session_id": session, "command": "sleep 30"})["result"]["backgroundTaskId"]
+            params_path = root / "shell-stop.json"
+            params_path.write_text(json.dumps({"task_id": active_shell}))
+            shell_stop = subprocess.run([str(args.cli), "--socket", str(endpoint), "--auth-file", str(client_token),
+                "agent", "shell", "stop", session, str(params_path)], capture_output=True, text=True, timeout=20, env=environment)
+            assert shell_stop.returncode == 0 and json.loads(shell_stop.stdout)["result"]["status"] == "killed", (shell_stop.stdout, shell_stop.stderr)
+            shutdown_shell = cli("agent.shell.start", {"session_id": session, "command": "sleep 600"})["result"]["backgroundTaskId"]
+            evidence["checks"] += ["background_shell_http_native_cli", "background_shell_output_consumed", "background_shell_app_isolation", "background_shell_stop_cli"]
             compact = {"session_id": session, "instructions": "Preserve the current task"}
             assert http(port, "agent.sessions.compact", compact, auth=other)[0] == 404
             # An empty session is rejected by the Engine after authenticated dispatch,
@@ -251,6 +274,11 @@ def main():
             assert after == before
             assert cli("agent.tasks.get", {"session_id": session, "taskId": "1"})["result"]["task"]["status"] == "completed"
             assert cli("agent.tasks.list", {"session_id": fork})["result"]["tasks"] == []
+            restored = cli("agent.shell.output", {"session_id": session, "task_id": shell_id, "block": False})["result"]["task"]
+            assert restored["status"] == "completed" and restored["output"] == shell_secret, restored
+            assert cli("agent.shell.output", {"session_id": session, "task_id": shutdown_shell, "block": False})["result"]["task"]["status"] == "killed"
+            assert cli("agent.shell.list", {"session_id": fork})["result"]["tasks"] == []
+            evidence["checks"] += ["background_shell_restart_history", "background_shell_shutdown_stop", "background_shell_fork_isolation"]
             evidence["checks"] += ["task_restart_persistence", "task_fork_isolation"]
             assert len(cli("agent.sessions.list")["sessions"]) == (3 if args.model else 2)
             assert native("agent.sessions.get", {"session_id": fork})[-1]["result"]["message_count"] == before["message_count"]
@@ -260,8 +288,10 @@ def main():
                     "max_turns": 4, "options": {"max_tokens": 128, "temperature": 0}})
                 assert result["status"] == "completed" and secret in result["text"], result
                 evidence["checks"].append("cli_fork_continuation")
-        with daemon(("--agent-no-tasks",)):
+        with daemon(("--agent-no-tasks", "--agent-no-background")):
             assert cli("agent.info")["task_tools_enabled"] is False
+            assert cli("agent.info")["background_tasks_enabled"] is False
+            evidence["checks"].append("background_shell_host_opt_out")
             assert "error" in native("agent.tasks.list", {"session_id": session})[-1]
             evidence["checks"].append("task_host_opt_out")
         if os.name == "posix":

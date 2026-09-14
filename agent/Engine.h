@@ -40,6 +40,9 @@ public:
     RunHandle run(RunRequest, EventCallback = {});
     RunHandle compact(CompactRequest, EventCallback = {});
     bool taskToolsEnabled() const;
+    bool backgroundTasksEnabled() const;
+    ToolResult runShellTool(const QString& sessionId, const QString& name, const QJsonObject& arguments = {},
+        const CancellationToken& = {}, const EventCallback& = {}) const;
     // Uses the same policy and hooks as model calls. Available during an active
     // run; the task transaction uses a separate lock from the transcript lease.
     ToolResult runTaskTool(const QString& sessionId, const QString& name, const QJsonObject& arguments = {},

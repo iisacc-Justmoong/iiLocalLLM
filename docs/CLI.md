@@ -73,3 +73,7 @@ pull은 현재 모델 설치/생성과 같은 FIFO에서 실행되므로 긴 다
 ## 작업·Todo 명령 (0.11.0)
 
 인증된 iillm에서 `agent tasks ACTION SESSION [PARAMS_JSON_FILE]` 및 `agent todos ACTION SESSION [PARAMS_JSON_FILE]`을 제공한다. tasks는 create/get/list/update/claim, todos는 get/write를 지원한다. JSON 응답의 is_error가 true이면 종료 코드 1이다. daemon의 기본 활성화·옵트아웃과 예시는 [Tasks.md](Tasks.md)를 참조한다. CLI는 여전히 Core/Network만 링크한다.
+
+## 백그라운드 셸 명령 (0.12.0)
+
+`iillm --auth-file TOKEN agent shell ACTION SESSION [PARAMS_JSON_FILE]`에서 ACTION은 start/output/stop/list이다. start JSON에는 `command`, output/stop JSON에는 `task_id`를 지정한다. 목록은 JSON 파일 없이 조회할 수 있다. CLI는 native IPC를 사용하고 도구의 `is_error=true`에 종료 코드 1을 반환한다. 실제 실행 수명과 대기 취소의 차이, 출력 페이지와 daemon 비활성화 옵션은 [BackgroundTasks.md](BackgroundTasks.md)에 기록한다.

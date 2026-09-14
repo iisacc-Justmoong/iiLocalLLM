@@ -1,4 +1,5 @@
 #include <agent/Api.h>
+#include <agent/ShellTasks.h>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QTemporaryDir>
@@ -51,6 +52,48 @@ template<class F> void error(F fn, ErrorCode expected) {
 class AgentApiTests : public QObject {
     Q_OBJECT
 private slots:
+    void shellOutputHonorsApiDeadlineWithoutStoppingCommand() {
+#if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+        QSKIP("Background shell execution requires a desktop POSIX host");
+#endif
+        QTemporaryDir root; auto o = options(root); o.requestTimeoutMs = 200;
+        auto shells = std::make_shared<a::ShellTasks>(o.workingDirectory, root.filePath("shell-state"));
+        auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, o.workingDirectory, shells);
+        a::Api api(std::make_shared<Model>(), registry, std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass), o);
+        const auto id = call(api, "agent.sessions.create", {{"model", "fixture"}}).value("session_id");
+        const auto task = call(api, "agent.shell.start", {{"session_id", id}, {"command", "sleep 30"}})["result"].toObject().value("backgroundTaskId");
+        error([&] { call(api, "agent.shell.output", {{"session_id", id}, {"task_id", task}, {"timeout", 1000}}); }, ErrorCode::Timeout);
+        QCOMPARE(shells->output(id.toString(), task.toString(), false, 0, 0, 1024)["task"].toObject()["status"], "running");
+        shells->stop(id.toString(), task.toString());
+    }
+    void backgroundShellsAreAuthenticatedAndControlledDuringRuns() {
+#if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+        QSKIP("Background shell execution requires a desktop POSIX host");
+#endif
+        QTemporaryDir root; auto o = options(root); auto model = std::make_shared<Model>();
+        auto shells = std::make_shared<a::ShellTasks>(o.workingDirectory, root.filePath("shell-state"));
+        auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, o.workingDirectory, shells);
+        auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::DontAsk,
+            QList<a::PermissionRule>{{"Bash", a::PermissionBehavior::Allow}});
+        a::Api api(model, registry, policy, o);
+        QVERIFY(call(api, "agent.info")["background_tasks_enabled"].toBool());
+        const auto id = call(api, "agent.sessions.create", {{"model", "fixture"}}).value("session_id");
+        auto run = api.dispatch("agent.run", {{"session_id", id}, {"prompt", "wait"}}, firstToken);
+        QTRY_VERIFY_WITH_TIMEOUT(model->waiting.load(), 3000);
+        const auto started = call(api, "agent.shell.start", {{"session_id", id}, {"command", "printf api-background; sleep 30"}});
+        QVERIFY(!started["is_error"].toBool()); const auto task = started["result"].toObject().value("backgroundTaskId");
+        QVERIFY(!task.toString().isEmpty());
+        error([&] { call(api, "agent.shell.output", {{"session_id", id}, {"task_id", task}}, secondToken); }, ErrorCode::NotFound);
+        error([&] { call(api, "agent.shell.list", {{"session_id", id}}, "bad-token"); }, ErrorCode::Unauthorized);
+        const auto another = call(api, "agent.sessions.create", {{"model", "fixture"}}).value("session_id");
+        QVERIFY(call(api, "agent.shell.stop", {{"session_id", another}, {"task_id", task}})["is_error"].toBool());
+        auto waiting = api.dispatch("agent.shell.output", {{"session_id", id}, {"task_id", task}, {"timeout", 30000}}, firstToken);
+        const auto stop = call(api, "agent.shell.stop", {{"session_id", id}, {"task_id", task}});
+        QVERIFY(!stop["is_error"].toBool());
+        QCOMPARE(waiting.result.get().toObject()["result"].toObject()["task"].toObject()["status"], "killed");
+        QCOMPARE(call(api, "agent.shell.list", {{"session_id", id}})["result"].toObject()["tasks"].toArray().size(), 1);
+        call(api, "agent.cancel", {{"request_id", run.requestId}}); QCOMPARE(run.result.get().toObject()["status"], "cancelled");
+    }
     void taskStateIsAuthenticatedAndAccessibleDuringRuns() {
         QTemporaryDir root; auto o = options(root); o.engine.taskToolsEnabled = true;
         auto model = std::make_shared<Model>();

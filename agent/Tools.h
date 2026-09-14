@@ -93,4 +93,7 @@ private:
 // Read, Write, Edit, Glob, Grep and Bash. Paths are restricted to the canonical workspace.
 // Bash is a permission-controlled process, not an OS sandbox.
 IILOCALLLM_EXPORT void registerWorkspaceTools(ToolRegistry&, const QString& workspaceRoot);
+class ShellTasks;
+// Opt in to host-owned background Bash, TaskOutput, TaskStop and ShellTaskList.
+IILOCALLLM_EXPORT void registerWorkspaceTools(ToolRegistry&, const QString& workspaceRoot, std::shared_ptr<ShellTasks>);
 }
