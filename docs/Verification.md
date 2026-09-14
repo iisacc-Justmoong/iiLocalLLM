@@ -1,5 +1,45 @@
 # 구현 검증 기록
 
+## 2026-09-14 네이티브 도구 관측의 구조화 결과 보존 (0.13.1)
+
+ServiceModel이 도구의 text만 모델에 전달해 data를 누락하던 결함을 수정했다. 이제 tool content는 text·data·is_error를 담은 JSON 관측이며 구조화 결과만 있는 앱 도구, 부분 읽기·검색 잘림·셸 종료 코드·중단 여부가 모델 입력에 포함된다. 원문 공백·줄바꿈·따옴표와 중첩 값은 보존하고 Message.metadata는 제외하며 도구가 data 안에 포함한 metadata 값은 보존한다. 측정과 생성이 같은 변환을 사용하여 구조화 결과가 실제 컨텍스트 예산에 반영된다. 기존 Qt JSON과 C++ 어댑터를 사용하며 새 생산 의존성은 없다.
+
+| 검증 | 관측 결과 |
+|---|---|
+| Release 전체 빌드·CTest | 빌드 성공, **54/59 통과**, 742.57초 |
+| ASan·UBSan 전체 | llama 비활성 Debug **36/36 통과**, 92.79초. ASAN_OPTIONS=malloc_context_size=0 |
+| 새 설치 소비자 | observation-stage 및 observation-consumer/build, **23/25 통과**, 516.98초 |
+| 설치 API·CLI·공식 MCP | 5/5 통과. API·CLI 35개 조건 및 Python MCP 1.26.0 stdio/HTTP 왕복 |
+| 설치·로더 | 공개 헤더 34개 일치, 소스/설치 라이브러리 SHA-256·UUID 일치, 실제 0.13.1 stage 로드, 세 실행 파일 버전과 얇은 CLI 링크 확인 |
+
+Release 실패: `iiLocalLLM.mcp_official` · `iiLocalLLM.tasks_inference` · `iiLocalLLM.tasks_catalog_thinking_control` · `iiLocalLLM.configured_mcp_inference` · `iiLocalLLM.discovery_inference`. 설치 소비자 실패: `iiLocalLLM.installed_tasks_inference` · `iiLocalLLM.installed_discovery_inference`. Sanitizer 실패: 없음. 단독 대조를 전체 검사 결과에 합치지 않는다. ASAN_OPTIONS는 할당·해제 스택 이력을 끄는 이전 검증 조건이며 ASan·UBSan 계측 자체는 유지한다. 기본 ASan 설정의 통과로 해석하지 않는다.
+
+TDD에서는 구조화 결과 누락과 그 데이터가 토큰 측정에서 제외되는 현상을 새 회귀 두 개로 재현했다. 변경 전 두 사례가 모두 실패했고, 수정 뒤 두 사례와 기존 reasoning-only 거절 사례가 모두 통과했다. 원문 왕복, 중첩·null 값, 빈 text, 오류 상태, 호스트 metadata 제외, 측정/생성 요청 일치와 큰 data의 ContextOverflow를 검사한다. build/prompt-diagnosis/observation-red-tests.log 및 observation-green-tests.log를 보존한다.
+
+변경 전 0.13.0의 입력 큐 오답도 별도로 진단했다. 고정 Qwen3 8B에서 동일한 모델 입력·seed·샘플링을 유지한 6개 요청을 기존 KV 컨텍스트와 새 컨텍스트로 각각 실행했다. 실제 토큰을 원문으로 변환한 프롬프트에 도구 원문이 모두 있었고 6개 요청의 raw 출력도 각각 일치했다. 후속/긴급 파일의 실제 값은 최종 답에서 예시 문장으로 바뀌었다. 따라서 이 관측에서 입력 누락·파서의 답 치환·KV 접두사 재사용은 오답을 설명하지 않는다. 모든 런타임·모델 원인을 배제한 결론은 아니다. 이 대조와 이후 발견한 data 누락 결함을 같은 원인으로 단정하지 않는다. 증거는 build/prompt-diagnosis/comparison.json과 native-trace.jsonl이다.
+
+입력 큐의 실제 모델 검사는 0.13.0의 프롬프트·모델·생성 설정을 유지하며 판정은 부분 문자열 포함에서 완전 일치로 강화했다. Qwen3 8B Q4_K_M, 컨텍스트 8,192, 턴당 2,048토큰·최대 6턴, seed 0, temperature 0.7·top_p 0.8·top_k 20, enable_thinking=false·tool_grammar=false이며 /no_think를 추가하지 않는다. 모델에 전달되는 도구 관측 형식과 그 형식을 설명하는 시스템 지침은 이번 수정으로 바뀌었다. 결과는 한정된 수락 조건의 관측이며 일반적인 모델 정확도 보증이 아니다.
+
+소스 입력 큐의 개별 관측은 다음과 같다.
+
+- next: 통과. 기대값 `INPUT_af5f1b6bd967`, 최종 답(JSON 문자열 표기) `"INPUT_af5f1b6bd967"`. 제어 판정 `{"delivered":1,"first_reads":1,"history_paired":true,"next_reads":1,"queue_empty":true,"value_exact":true}`.
+- now: 통과. 기대값 `INPUT_03861620395d`, 최종 답(JSON 문자열 표기) `"INPUT_03861620395d"`. 제어 판정 `{"bash_calls":1,"history_paired":true,"interrupted":1,"no_later_side_effect":true,"queue_empty":true,"root_not_cancelled":true,"shell_gone":true,"urgent_reads":1,"value_exact":true}`.
+
+설치본 입력 큐의 개별 관측은 다음과 같다.
+
+- next: 통과. 기대값 `INPUT_9ddbe8da0f50`, 최종 답(JSON 문자열 표기) `"INPUT_9ddbe8da0f50"`. 제어 판정 `{"delivered":1,"first_reads":1,"history_paired":true,"next_reads":1,"queue_empty":true,"value_exact":true}`.
+- now: 통과. 기대값 `INPUT_7b04b7d6662d`, 최종 답(JSON 문자열 표기) `"INPUT_7b04b7d6662d"`. 제어 판정 `{"bash_calls":1,"history_paired":true,"interrupted":1,"no_later_side_effect":true,"queue_empty":true,"root_not_cancelled":true,"shell_gone":true,"urgent_reads":1,"value_exact":true}`.
+
+추론 모드를 명시적으로 끈 소스 Task 검사에서는 실제 ToolSearch→TaskGet이 수행됐지만 최종 답이 임의 description 대신 subject인 Inspect artifact여서 실패했다. 이전 0.13.0의 해당 검사는 통과했으므로 이번 관측을 개선으로 표현하지 않는다. 설치본의 해당 검사는 통과했다. 두 실행은 서로 다른 임의값을 사용하므로 같은 모델 입력의 재실행이 아니다. 입력 누락 수정과 모델의 필드 선택 정확도를 별도로 추적한다. 0.5B의 TaskGet 생략 및 지연 MCP 검색 후 실행 누락도 실패 기록에 남긴다.
+
+변경 전 원본 configured_mcp_inference의 별도 대조는 7.04초에 통과했다. 수정 후 전체 검사에서는 보강한 실패 기록으로 configured stdio 연결의 timeout, generation 0, tool_count 0을 확인했다. 이 값은 게시된 연결 상태이며 초기화와 도구 목록 요청의 어느 내부 단계에서 지연됐는지를 단독으로 증명하지 않는다. 별도의 mcp_official 검사도 MCP initialize request timed out으로 실패했다. 해당 시험은 Service 모델 로딩을 하지 않으므로 두 실패를 모델 로딩 때문이라고 단정할 수 없다. 반복된 상대 연결 준비 실패의 근본 원인은 아직 확정하지 않는다. 모델의 도구 실행/답변 실패와 구분한다.
+
+라이브러리 SHA-256은 `ae11597ff2572e43c9432563ea1b1f628ca0df4ea0e73d5fc8b66545e98c414f`, UUID는 `D86818C1-5FFF-3A14-AD31-E8E32FE5F2B2`이다. llama 원본은 고정 아카이브와 핵심 소스 8개의 SHA-256을 다시 대조했다. 기존 아카이브 경계와 revision은 build/observation-verification.json에 기록한다. 구조화 결과의 별도 페이지화와 자동 압축 대상 개선, 일반 모델 신뢰성, 나머지 하네스 기능은 계속 남아 있다. 큰 구조화 결과는 기존 서비스 입력·컨텍스트 한도에 걸릴 수 있으며 묵시적으로 버리지 않는다.
+
+이 단계는 SDK와 Workspace의 별도 설치본까지이며 기본 SDK 설치나 기기 앱 재배포는 수행하지 않았다. iPhone은 사용자 지시로 제외한다. 전체 하네스 목표는 진행 중이다. 계약은 [AgentHarness.md](AgentHarness.md), 범위는 [HarnessParity.md](HarnessParity.md)에 있다. 전체 로그·JUnit·원문은 build/observation-final-{release,sanitizer,consumer}-*, 설치 검사는 build/observation-installed-wire/, 종합 기록은 build/observation-verification.json에 보관한다.
+
+최초 설치 검증에서 실제 왕복 5개는 통과했지만 설치 뒤 수정한 harness-parity.json의 파일 일치 검사가 실패했다. 문서와 대응표를 다시 설치하고 동일한 바이너리 SHA-256을 확인한 뒤 메타데이터·로더 대조를 통과했다. 바이너리 변경이 없어 성공한 왕복 결과는 재실행하지 않았다. 초기 실패와 최종 대조는 observation-installed-wire-checks.log 및 observation-installed-final-checks.log에 별도로 보존한다.
+
 ## 2026-09-14 영속 입력 큐와 실행 중 방향 전환 (0.13.0)
 
 C++ `InputQueue`에 대화별 prompt/notification 저장, now/next/later 우선순위와 같은 종류의 묶음 전달을 구현했다. Engine은 현재 모델·도구 연산의 취소와 전체 실행 취소를 구분하며 미완료 도구 결과를 중단 기록으로 짝지은 뒤 후속 입력을 처리한다. 인증 API·native IPC·HTTP·CLI·MCP를 연결했고 유휴 큐는 명시적 runQueued로 시작한다. Qt의 QLockFile·QSaveFile과 기존 C++ 실행 계층을 재사용하며 새 생산 의존성은 없다.

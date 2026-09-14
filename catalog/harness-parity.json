@@ -31,7 +31,7 @@
         "tests/task_runtime_smoke.cpp",
         "docs/NativeThinking.md"
       ],
-      "remaining": "Native llama.cpp Jinja, explicit thinking-template control for text and tool prompts, grammar, PEG parsing and Service-owned cache are implemented. Reasoning-only output is not promoted to an agent action. MLX tools, external local providers, incremental reasoning/tool streaming and broader model qualification remain."
+      "remaining": "Native llama.cpp Jinja, explicit thinking-template control for text and tool prompts, grammar, PEG parsing and Service-owned cache are implemented. Reasoning-only output is not promoted to an agent action. Native tool observations preserve text, structured data and error state; measured and generated inputs match. MLX tools, external local providers, incremental reasoning/tool streaming and broader model qualification remain."
     },
     {
       "id": "tools",
@@ -39,9 +39,12 @@
       "status": "partial",
       "evidence": [
         "agent/Tools.cpp",
-        "tests/agent_tests.cpp"
+        "tests/agent_tests.cpp",
+        "agent/Engine.cpp",
+        "tests/service_tests.cpp",
+        "docs/AgentHarness.md"
       ],
-      "remaining": "Schema validation, frozen per-turn registry, permissions, concurrency and large text artifacts implemented; aliases and remaining tool protocols remain."
+      "remaining": "Schema validation, frozen per-turn registry, permissions, concurrency, large text artifacts and native text/data/error observations are implemented. Structured data participates in native context measurement. Aliases, structured-result paging and remaining tool protocols remain."
     },
     {
       "id": "permissions",

@@ -14,6 +14,10 @@ Model은 대화·도구 정의·생성 옵션을 받고 ModelReply를 반환한�
 
 ServiceModel의 기본 지침은 파일 내용을 도구로 확인하고 관측값을 예문으로 치환하지 않도록 요구한다. 사용자가 정확한 원문을 요구할 때에는 관측한 텍스트를 문자 그대로 반환하도록 명시한다. 이는 모델에 주는 지침이며 출력 형식이나 답변 정확도를 강제하는 검증기는 아니다. 실제 소형 모델이 지침을 어긴 사례, 입력·캐시 대조와 수정 후 수락 시험은 Verification.md에 기록한다.
 
+0.13.1부터 ServiceModel은 각 tool 메시지의 content를 `{"text": 원문, "data": 구조화 결과, "is_error": 오류 여부}` JSON 문자열로 전달한다. 이전에는 text만 전달해 구조화 결과만 있는 앱 도구, 부분 읽기의 complete=false, 검색의 truncated/limit_reached, 셸 exit_code·interrupted 정보를 모델 입력에서 누락했다. 이제 빈 text와 중첩 data도 보존하며 원문 공백·줄바꿈·따옴표를 JSON 인코딩으로 왕복한다. 오류 여부를 별도 필드로 전달하므로 원문에 `Tool error:`를 덧붙이지 않는다. 정확한 파일 답변은 JSON을 해석한 text 값이다. Message.metadata는 관측 객체에 복사하지 않는다. 도구가 data 안에 포함한 metadata 값은 다른 구조화 결과와 함께 그대로 전달한다.
+
+에이전트 대화의 예산 측정과 생성은 같은 변환을 사용하므로 구조화 결과가 컨텍스트 예산에도 반영된다. 요약용 JSON 기록은 기존 원본 보존 계약을 따른다. 결과가 너무 크면 기존 압축·한도 오류 경로를 따르며 data를 몰래 버리지 않는다. 일반 `Service::converse` 호출자의 content 형식과 저장된 원본 transcript는 이 어댑터 변환의 대상이 아니다. 이 변경은 모델에 관측값을 전달하는 계약을 고치며, 모델이 올바르게 답한다고 보증하지 않는다.
+
 현재 `ServiceModel`은 `Service::converse`의 구조화 대화 API를 사용한다. `ConversationRequest`는 OpenAI function-call 형식의 텍스트 메시지·도구 정의와 `auto/required/none` toolChoice를 받는다. llama.cpp에 고정된 upstream common의 Jinja 채팅 템플릿, 도구 문법 샘플러, PEG 응답 파서를 사용하며 도구 결과를 user 메시지로 바꾸지 않는다. 미지원 런타임은 RuntimeUnavailable을 반환한다. MLX 네이티브 도구 호출은 아직 미완료이다.
 
 구조화 대화도 기존 Service의 단일 추론 스케줄러, 모델 무결성/메모리 정책, 제한된 KV 캐시를 사용한다. contextId는 모델별로 분리해 재사용하며 빈 ID는 일회성 컨텍스트이다. 대화 기록은 호출자가 소유한다. 잘못된 도구 ID 연결, 알 수 없는 도구, 잘린 호출을 거부한다. 컨텍스트 초과 시 도구 결과를 임의로 잘라내지 않고 ContextOverflow를 반환한다. 현재 텍스트 Delta는 완성된 응답의 파싱 후 전달한다. 토큰/도구 인자/추론 블록의 점진적 스트리밍은 후속 구현 대상이다.

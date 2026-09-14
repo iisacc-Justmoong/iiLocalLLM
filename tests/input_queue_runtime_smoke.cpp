@@ -73,9 +73,12 @@ int main(int argc, char** argv) {
                 if (call.arguments["path"] == "next.txt") ++nextReads;
             }
         }
-        const bool nextVerified = nextResult.status == a::RunStatus::Completed && nextResult.text.contains(next) && firstReads == 1 && nextReads == 1
-            && delivered == 1 && a::pendingToolCalls(nextMessages).isEmpty() && engine.queuedInputs(nextId)["count"].toInt() == 0;
+        const bool nextExact = nextResult.text == next, nextPaired = a::pendingToolCalls(nextMessages).isEmpty();
+        const bool nextEmpty = engine.queuedInputs(nextId)["count"].toInt() == 0;
+        const bool nextVerified = nextResult.status == a::RunStatus::Completed && nextExact && firstReads == 1 && nextReads == 1
+            && delivered == 1 && nextPaired && nextEmpty;
         std::cout << QJsonDocument(QJsonObject{{"phase", "next"}, {"verified", nextVerified}, {"first_reads", firstReads},
+            {"value_exact", nextExact}, {"history_paired", nextPaired}, {"queue_empty", nextEmpty},
             {"next_reads", nextReads}, {"delivered", delivered}, {"expected", next}, {"result", a::toJson(nextResult)}}).toJson(QJsonDocument::Compact).constData() << std::endl;
         const auto nowId = engine.createSession(args[3], workspace).id;
         const QString command = "printf '%s' $$ > shell.pid; printf ready > waiting.txt; sleep 30; printf survived > should-not-exist.txt";
@@ -102,10 +105,14 @@ int main(int argc, char** argv) {
             }
         }
         const bool shellGone = ::kill(pid_t(pid), 0) == -1 && errno == ESRCH;
-        const bool nowVerified = nowResult.status == a::RunStatus::Completed && nowResult.text.contains(urgent) && !run.cancellation.isCancelled()
-            && bashCalls == 1 && urgentReads == 1 && interrupted == 1 && a::pendingToolCalls(nowMessages).isEmpty()
-            && shellGone && !QFileInfo::exists(QDir(workspace).filePath("should-not-exist.txt")) && engine.queuedInputs(nowId)["count"].toInt() == 0;
+        const bool nowExact = nowResult.text == urgent, nowPaired = a::pendingToolCalls(nowMessages).isEmpty();
+        const bool nowEmpty = engine.queuedInputs(nowId)["count"].toInt() == 0, rootLive = !run.cancellation.isCancelled();
+        const bool noLaterSideEffect = !QFileInfo::exists(QDir(workspace).filePath("should-not-exist.txt"));
+        const bool nowVerified = nowResult.status == a::RunStatus::Completed && nowExact && rootLive
+            && bashCalls == 1 && urgentReads == 1 && interrupted == 1 && nowPaired && shellGone && noLaterSideEffect && nowEmpty;
         std::cout << QJsonDocument(QJsonObject{{"phase", "now"}, {"verified", nowVerified}, {"bash_calls", bashCalls},
+            {"value_exact", nowExact}, {"history_paired", nowPaired}, {"queue_empty", nowEmpty},
+            {"root_not_cancelled", rootLive}, {"no_later_side_effect", noLaterSideEffect},
             {"urgent_reads", urgentReads}, {"interrupted", interrupted}, {"shell_gone", shellGone}, {"expected", urgent},
             {"result", a::toJson(nowResult)}}).toJson(QJsonDocument::Compact).constData() << std::endl;
         require(nextVerified && nowVerified, "Native input acceptance failed; see the separate next/now phase records");

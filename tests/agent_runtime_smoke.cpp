@@ -69,7 +69,9 @@ int main(int argc, char** argv) {
             a::McpConnectionOptions o; o.workingDirectory = workspace; o.configFiles = {path};
             o.deferTools = discovery;
             connections = std::make_unique<a::McpConnections>(registry, o);
-            if (connections->status().first().toObject()["state"] != "ready") throw std::runtime_error("Configured MCP peer did not connect");
+            const auto connectionState = connections->status();
+            if (connectionState.isEmpty() || connectionState.first().toObject().value("state") != "ready")
+                throw std::runtime_error("Configured MCP peer did not connect: " + QJsonDocument(connectionState).toJson(QJsonDocument::Compact).toStdString());
             toolName = "mcp__fixture__read_secret";
         } else if (remote) {
             mcp::StdioOptions transport; transport.program = QString::fromLocal8Bit(argv[2]);

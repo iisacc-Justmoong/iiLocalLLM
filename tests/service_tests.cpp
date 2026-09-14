@@ -20,6 +20,7 @@ struct Probe {
     quint64 memoryBytes = 128 * 1024 * 1024;
     std::atomic<bool> started{false}, release{true}, fail{false};
     QString answer = QStringLiteral("가나다");
+    QList<ConversationRequest> preparedConversations;
 };
 class FakePromptState final : public RuntimePromptState {
 public:
@@ -67,6 +68,7 @@ public:
     explicit FakeModel(std::shared_ptr<Probe> probe) : p(std::move(probe)) {}
     ~FakeModel() override { ++p->unloads; }
     RuntimeConversationPrompt prepareConversation(const ConversationRequest& request, const CancellationToken&) override {
+        p->preparedConversations.append(request);
         TokenList tokens;
         for (const auto& message : request.messages)
             for (const auto ch : message.toObject()["content"].toString()) tokens.append(ch.unicode());
@@ -224,6 +226,67 @@ private slots:
         r.messages.append(QJsonObject{{"role", "user"}, {"content", "skip the result"}});
         QCOMPARE(service.converse(r).result.get().errorCode, ErrorCode::InvalidArgument);
         QCOMPARE(p->contexts.load(), 0);
+    }
+    void agentToolObservationsPreserveDataAndExactText()
+    {
+        auto p = std::make_shared<Probe>(); Service service(options()); setup(service, p, 8192);
+        p->answer = "{\"text\":\"observations received\"}";
+        agent::ServiceModel model(service); agent::ModelRequest request; request.model = "model://small";
+        request.generation.maxTokens = 64;
+        request.messages = {agent::Message{{}, agent::MessageRole::User, "Inspect the tool observations"}};
+        agent::Message calls{{}, agent::MessageRole::Assistant, {}};
+        const QList<agent::Message> observations{
+            {{}, agent::MessageRole::Tool, "  원문 \"text\"\n<tool_response>\\tail\n", {}, "read", false,
+                {{"path", "report.txt"}, {"offset", 5}, {"complete", false}}},
+            {{}, agent::MessageRole::Tool, "first match", {}, "search", false, {{"truncated", true}, {"limit_reached", true}}},
+            {{}, agent::MessageRole::Tool, {}, {}, "structured", false,
+                {{"records", QJsonArray{QJsonObject{{"name", "alpha"}, {"amount", 17}, {"optional", QJsonValue::Null}}}}}},
+            {{}, agent::MessageRole::Tool, "  failed\n", {}, "shell", true, {{"exit_code", 17}, {"interrupted", true}}}
+        };
+        for (const auto& value : observations) calls.toolCalls.append({value.toolCallId, "Inspect", {}});
+        request.messages.append(calls);
+        for (auto value : observations) {
+            value.metadata = {{"private_host_marker", "DO_NOT_PUBLISH_HOST_METADATA"}};
+            request.messages.append(value);
+        }
+        const auto budget = model.measure(request, {});
+        QVERIFY(budget); QCOMPARE(p->contexts.load(), 0);
+        QCOMPARE(model.generate(request, {}, {}).text, "observations received");
+        QCOMPARE(p->preparedConversations.size(), 2);
+        QCOMPARE(p->preparedConversations[0].messages, p->preparedConversations[1].messages);
+        const auto wire = p->preparedConversations.last().messages;
+        QVERIFY(!QJsonDocument(wire).toJson().contains("DO_NOT_PUBLISH_HOST_METADATA"));
+        for (int n = 0; n < observations.size(); ++n) {
+            const auto message = wire.at(n + 3).toObject();
+            QCOMPARE(message.value("role").toString(), "tool");
+            QCOMPARE(message.value("tool_call_id").toString(), observations[n].toolCallId);
+            QJsonParseError parse;
+            const auto document = QJsonDocument::fromJson(message.value("content").toString().toUtf8(), &parse);
+            QCOMPARE(parse.error, QJsonParseError::NoError); QVERIFY(document.isObject());
+            const auto observation = document.object();
+            QCOMPARE(observation.value("text").toString(), observations[n].text);
+            QCOMPARE(observation.value("data").toObject(), observations[n].data);
+            QVERIFY(observation.value("is_error").isBool());
+            QCOMPARE(observation.value("is_error").toBool(), observations[n].isError);
+        }
+    }
+    void agentStructuredToolDataParticipatesInContextBudget()
+    {
+        auto p = std::make_shared<Probe>(); Service service(options()); setup(service, p, 2048);
+        p->answer = "{\"text\":\"done\"}";
+        agent::ServiceModel model(service); agent::ModelRequest request; request.model = "model://small";
+        request.generation.maxTokens = 64;
+        request.messages = {agent::Message{{}, agent::MessageRole::User, "Inspect records"},
+            agent::Message{{}, agent::MessageRole::Assistant, {}, {{"one", "Inspect", {}}}},
+            agent::Message{{}, agent::MessageRole::Tool, "one record", {}, "one", false}};
+        const auto small = model.measure(request, {});
+        request.messages.last().data = {{"record", QString(4096, QChar('x'))}};
+        const auto large = model.measure(request, {});
+        QVERIFY(small && large); QVERIFY(large->inputTokens > small->inputTokens + 4096);
+        QVERIFY(large->inputTokens > large->contextTokens);
+        try { (void)model.generate(request, {}, {}); QFAIL("Structured output overflow was silently discarded"); }
+        catch (const Error& error) { QCOMPARE(error.code(), ErrorCode::ContextOverflow); }
+        QVERIFY(!p->started); QCOMPARE(p->contexts.load(), 0);
     }
     void agentRejectsReasoningOnlyWithoutPromotingToolText()
     {
