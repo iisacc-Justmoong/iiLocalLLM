@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 project(iiLocalLLMConsumer LANGUAGES CXX)
 
-find_package(iiLocalLLM 0.6.0 CONFIG REQUIRED)
+find_package(iiLocalLLM 0.7.0 CONFIG REQUIRED)
 add_executable(iiLocalLLMConsumer ../hello_world.cpp)
 target_link_libraries(iiLocalLLMConsumer PRIVATE iiLocalLLM::iiLocalLLM)
 set_target_properties(iiLocalLLMConsumer PROPERTIES CXX_EXTENSIONS OFF)
@@ -33,6 +33,8 @@ if(IILOCALLLM_TEST_MCP_PYTHON)
     target_link_libraries(iiLocalLLMMcpConsumer PRIVATE iiLocalLLM::iiLocalLLM)
     add_test(NAME iiLocalLLM.installed_mcp_consumer COMMAND iiLocalLLMMcpConsumer
         "${IILOCALLLM_TEST_MCP_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/../mcp_official_server.py")
+    add_test(NAME iiLocalLLM.installed_mcp_http_consumer COMMAND iiLocalLLMMcpConsumer
+        "${IILOCALLLM_TEST_MCP_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/../mcp_official_server.py" streamable-http)
 endif()
 file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/tmp")
 get_property(_consumer_tests DIRECTORY PROPERTY TESTS)

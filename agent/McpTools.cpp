@@ -27,9 +27,13 @@ QString textContent(const QJsonArray& content) {
     return parts.join('\n');
 }
 }
-QList<Tool> mcpTools(std::shared_ptr<mcp::StdioClient> client, const McpToolOptions& options, CancellationToken token) {
+QList<Tool> mcpTools(std::shared_ptr<mcp::Client> client, const McpToolOptions& options, CancellationToken token) {
     if (!client || options.serverName.trimmed().isEmpty()) throw Error(ErrorCode::InvalidArgument, "MCP client and server name are required");
-    const auto definitions = client->listTools(token); QList<Tool> tools; QSet<QString> names;
+    const auto generation = client->connectionGeneration();
+    const auto definitions = client->listTools(token);
+    if (generation != client->connectionGeneration())
+        throw Error(ErrorCode::RuntimeFailure, "MCP session changed during tool discovery");
+    QList<Tool> tools; QSet<QString> names;
     // Compile the complete remote schema set before returning any tool to a host.
     ToolRegistry validation;
     for (const auto& value : definitions) {
@@ -45,8 +49,10 @@ QList<Tool> mcpTools(std::shared_ptr<mcp::StdioClient> client, const McpToolOpti
         tool.definition.metadata = {{"source", "mcp"}, {"server_name", options.serverName}, {"remote_name", remoteName},
             {"remote_definition", remote}, {"annotations_trusted", options.trustAnnotations}};
         if (!options.appId.isEmpty()) tool.definition.metadata["app_id"] = options.appId;
-        tool.execute = [client, remoteName](const QJsonObject& args, const ToolContext& context) {
-            const auto wire = client->callTool(remoteName, args, context.cancellation, context.progress);
+        tool.execute = [client, remoteName, generation](const QJsonObject& args, const ToolContext& context) {
+            if (generation != client->connectionGeneration())
+                throw Error(ErrorCode::RuntimeFailure, "MCP session changed; refresh tool definitions before executing");
+            const auto wire = client->callTool(remoteName, args, context.cancellation, context.progress, generation);
             ToolResult result; result.content = wire["content"].toArray(); result.text = textContent(result.content);
             result.data = wire["structuredContent"].toObject(); result.metadata = wire["_meta"].toObject();
             result.isError = wire["isError"].toBool();

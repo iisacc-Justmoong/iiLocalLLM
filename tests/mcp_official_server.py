@@ -36,4 +36,14 @@ def summarize(topic: str) -> str:
     return "Summarize " + topic
 
 
-server.run(transport="stdio")
+if len(sys.argv) > 2 and sys.argv[2] == "streamable-http":
+    import socket
+    import uvicorn
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(128)
+    print(f"http://127.0.0.1:{listener.getsockname()[1]}/mcp", flush=True)
+    runner = uvicorn.Server(uvicorn.Config(server.streamable_http_app(), log_level="warning"))
+    runner.run(sockets=[listener])
+else:
+    server.run(transport="stdio")

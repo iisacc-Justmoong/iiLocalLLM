@@ -1,4 +1,6 @@
 #include <agent/McpTools.h>
+#include <mcp/HttpClient.h>
+#include <QtCore/QProcess>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QFile>
 #include <QtCore/QTemporaryDir>
@@ -8,7 +10,7 @@
 
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
-    if (argc != 3) return 2;
+    if (argc != 3 && argc != 4) return 2;
     try {
         QTemporaryDir directory;
         const auto secret = "MCP_" + QUuid::createUuid().toString(QUuid::WithoutBraces);
@@ -19,7 +21,20 @@ int main(int argc, char** argv) {
         options.program = QString::fromLocal8Bit(argv[1]); options.arguments = {"-B", QString::fromLocal8Bit(argv[2]), file.fileName()};
         iiLocalLLM::mcp::ClientOptions config;
         config.roots = {QJsonObject{{"uri", QUrl::fromLocalFile(directory.path()).toString()}}};
-        auto client = std::make_shared<iiLocalLLM::mcp::StdioClient>(options, config);
+        struct ServerProcess {
+            QProcess process;
+            ~ServerProcess() { if (process.state() != QProcess::NotRunning) { process.kill(); process.waitForFinished(3000); } }
+        } server;
+        std::shared_ptr<iiLocalLLM::mcp::Client> client;
+        if (argc == 4) {
+            options.arguments.append("streamable-http");
+            server.process.start(options.program, options.arguments);
+            if (!server.process.waitForStarted(10000) || !server.process.waitForReadyRead(10000))
+                throw std::runtime_error("Official HTTP peer failed to start");
+            iiLocalLLM::mcp::HttpOptions http;
+            http.endpoint = QUrl(QString::fromUtf8(server.process.readLine()).trimmed());
+            client = std::make_shared<iiLocalLLM::mcp::HttpClient>(http, config);
+        } else client = std::make_shared<iiLocalLLM::mcp::StdioClient>(options, config);
         auto check = [](bool ok, const char* message) { if (!ok) throw std::runtime_error(message); };
         check(client->protocolVersion() == "2025-11-25", "Wrong protocol negotiation");
         check(client->listTools().size() == 2, "Official tools not discovered");
@@ -35,7 +50,8 @@ int main(int argc, char** argv) {
         iiLocalLLM::agent::ToolRegistry registry;
         for (auto& tool : tools) registry.add(std::move(tool));
         check(registry.definitions().size() == 2, "MCP agent adapter failed");
-        std::cout << "Official MCP Python SDK 1.26.0: initialize, tools, structured output, progress, resources, prompts and reverse roots passed.\n";
+        client->close();
+        std::cout << (argc == 4 ? "Streamable HTTP: " : "stdio: ") << "Official MCP Python SDK 1.26.0: initialize, tools, structured output, progress, resources, prompts and reverse roots passed.\n";
         return 0;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
 }

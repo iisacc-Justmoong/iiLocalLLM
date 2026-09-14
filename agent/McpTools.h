@@ -12,6 +12,6 @@ struct McpToolOptions {
 };
 // Discover a full list before exposing tools. Returned handlers retain the client.
 // Add these to a fresh registry (or at a host-controlled registry update boundary).
-IILOCALLLM_EXPORT QList<Tool> mcpTools(std::shared_ptr<mcp::StdioClient>, const McpToolOptions&,
+IILOCALLLM_EXPORT QList<Tool> mcpTools(std::shared_ptr<mcp::Client>, const McpToolOptions&,
     CancellationToken = {});
 }

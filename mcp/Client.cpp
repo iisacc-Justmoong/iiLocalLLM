@@ -1,13 +1,11 @@
 #include "Client.h"
+#include "ClientTransport.h"
 #include "Protocol.h"
 #include "BatchReplies.h"
 #include <QtCore/QJsonDocument>
-#include <QtCore/QDir>
-#include <QtCore/QProcess>
 #include <QtCore/QSet>
 #include <QtCore/QStringDecoder>
 #include <QtCore/QThreadPool>
-#include <QtCore/QUrl>
 #include <QtCore/QUuid>
 #include <chrono>
 #include <cmath>
@@ -17,21 +15,17 @@
 #include <optional>
 #include <climits>
 #include <thread>
-#ifdef Q_OS_UNIX
-#include <signal.h>
-#endif
 
 namespace iiLocalLLM::mcp {
 namespace {
 using Clock = std::chrono::steady_clock;
-using namespace std::chrono_literals;
 using namespace detail;
 
 }
 RpcError::RpcError(int code, const QString& message, QJsonValue data)
     : Error(ErrorCode::ProtocolError, message), code_(code), data_(std::move(data)) {}
 
-class StdioClient::Impl : public std::enable_shared_from_this<Impl> {
+class Client::Impl : public std::enable_shared_from_this<Impl> {
 public:
     struct Pending {
         QString id;
@@ -48,11 +42,14 @@ public:
         std::optional<QJsonObject> result;
         std::exception_ptr error;
         bool done = false;
+        bool internal = false;
     };
     struct Outgoing { QByteArray frame; std::shared_ptr<Pending> request; };
     struct Incoming { QJsonValue id; CancellationToken cancellation; };
-    struct Completion { QString key; QJsonObject message; };
-    StdioOptions options;
+    struct Completion { QString key; QJsonObject message; quint64 epoch; };
+    ClientLimits options;
+    std::unique_ptr<detail::ClientTransport> transport;
+    quint64 generation = 0, handlerEpoch = 0;
     ClientOptions client;
     mutable std::mutex mutex;
     std::mutex joining;
@@ -72,16 +69,14 @@ public:
     std::map<QString, Incoming> incoming;
     detail::BatchReplies batches;
 
-    Impl(StdioOptions o, ClientOptions c) : options(std::move(o)), client(std::move(c)),
+    Impl(std::unique_ptr<detail::ClientTransport> t, ClientLimits o, ClientOptions c) : options(std::move(o)), transport(std::move(t)), client(std::move(c)),
         batches(int(std::min<qint64>(1000000, qint64(options.maxNotificationCount) + options.maxServerRequests)), options.maxQueuedBytes, options.maxMessageBytes) {
-        require(!options.program.isEmpty() && !options.program.contains(QChar::Null)
-            && options.initializeTimeoutMs > 0 && options.requestTimeoutMs > 0
+        require(options.initializeTimeoutMs > 0 && options.requestTimeoutMs > 0
             && options.shutdownTimeoutMs >= 0 && options.shutdownTimeoutMs <= 10000
             && options.maxPendingRequests > 0 && options.maxServerRequests > 0
             && options.maxMessageBytes >= 1024 && options.maxQueuedBytes >= options.maxMessageBytes
-            && options.maxNotificationCount > 0 && options.maxStderrBytes >= 0 && options.maxListItems > 0,
+            && options.maxNotificationCount > 0 && options.maxListItems > 0,
             "Invalid MCP process or resource limits", ErrorCode::InvalidArgument);
-        for (const auto& arg : options.arguments) require(!arg.contains(QChar::Null), "NUL in MCP process argument", ErrorCode::InvalidArgument);
         require(client.implementation["name"].isString() && !client.implementation["name"].toString().isEmpty()
             && client.implementation["version"].isString(), "Invalid MCP client implementation", ErrorCode::InvalidArgument);
         const QStringList supported{"2025-11-25", "2025-06-18", "2025-03-26"};
@@ -114,7 +109,7 @@ public:
         { std::lock_guard lock(p->mutex); p->result = std::move(value); p->error = error; p->done = true; }
         p->changed.notify_all();
     }
-    QJsonObject perform(QString method, QJsonObject params, CancellationToken token, ProgressCallback progress, int timeout, bool initialize = false) {
+    QJsonObject perform(QString method, QJsonObject params, CancellationToken token, ProgressCallback progress, int timeout, bool initialize = false, quint64 expectedGeneration = 0) {
         token.throwIfCancelled();
         require(!method.isEmpty() && (initialize || (method != "initialize" && !method.startsWith("notifications/"))),
             "Invalid MCP request method", ErrorCode::InvalidArgument);
@@ -130,6 +125,7 @@ public:
         {
             std::lock_guard lock(mutex);
             require(initialize || initialized, "MCP connection is not initialized", ErrorCode::ShuttingDown);
+            require(!expectedGeneration || generation == expectedGeneration, "MCP session changed; refresh tool definitions", ErrorCode::RuntimeFailure);
             enqueueLocked(p->frame, p);
         }
         try {
@@ -157,19 +153,11 @@ public:
             throw;
         }
     }
-    void write(QProcess& process, const QByteArray& frame) {
-        require(process.bytesToWrite() + frame.size() <= options.maxQueuedBytes,
-            "MCP subprocess stopped consuming its input", ErrorCode::ResourceLimit);
-        qint64 offset = 0;
-        while (offset < frame.size()) {
-            const auto size = process.write(frame.constData() + offset, frame.size() - offset);
-            require(size > 0, "MCP process write failed", ErrorCode::RuntimeFailure); offset += size;
-        }
+    void write(const QByteArray& frame) { transport->send(frame); }
+    void reply(const QJsonObject& message) {
+        if (const auto frame = batches.response(message)) write(detail::encodeValue(*frame, options.maxMessageBytes));
     }
-    void reply(QProcess& process, const QJsonObject& message) {
-        if (const auto frame = batches.response(message)) write(process, detail::encodeValue(*frame, options.maxMessageBytes));
-    }
-    void handle(QProcess& process, QThreadPool& handlers, const QByteArray& bytes) {
+    void handle(QThreadPool& handlers, const QByteArray& bytes) {
         QStringDecoder decoder(QStringDecoder::Utf8); const QString decoded = decoder(bytes);
         require(!decoder.hasError(), "MCP frame is not valid UTF-8");
         QJsonParseError parse; const auto document = QJsonDocument::fromJson(bytes, &parse);
@@ -190,8 +178,8 @@ public:
             require(negotiated == "2025-03-26" && !array.isEmpty(), "MCP batches require protocol 2025-03-26");
             require(array.size() <= options.maxNotificationCount, "MCP batch item limit reached", ErrorCode::ResourceLimit);
             const auto prepared = batches.prepare(array);
-            if (prepared.immediate) write(process, detail::encodeValue(*prepared.immediate, options.maxMessageBytes));
-            for (const auto& item : prepared.messages) handle(process, handlers, QJsonDocument(item).toJson(QJsonDocument::Compact));
+            if (prepared.immediate) write(detail::encodeValue(*prepared.immediate, options.maxMessageBytes));
+            for (const auto& item : prepared.messages) handle(handlers, QJsonDocument(item).toJson(QJsonDocument::Compact));
             return;
         }
         require(document.isObject(), "MCP requires a JSON-RPC object or negotiated legacy batch");
@@ -202,29 +190,29 @@ public:
                 && !message.contains("result") && !message.contains("error"), "Invalid MCP request or notification");
             const auto method = message["method"].toString();
             if (message.contains("params") && !message["params"].isObject()) {
-                if (message.contains("id")) { key(message["id"]); reply(process, rpcError(message["id"], -32602, "Expected object params")); return; }
+                if (message.contains("id")) { key(message["id"]); reply(rpcError(message["id"], -32602, "Expected object params")); return; }
                 throw Error(ErrorCode::ProtocolError, "MCP notification params must be an object");
             }
             const auto params = message["params"].toObject();
             if (message.contains("id")) {
                 const auto requestKey = key(message["id"]);
                 require(!incoming.contains(requestKey), "MCP server reused an active request ID");
-                if (method == "ping") { reply(process, {{"jsonrpc", "2.0"}, {"id", message["id"]}, {"result", QJsonObject{}}}); return; }
+                if (method == "ping") { reply({{"jsonrpc", "2.0"}, {"id", message["id"]}, {"result", QJsonObject{}}}); return; }
                 bool ready; QJsonArray roots;
                 { std::lock_guard lock(mutex); ready = initialized; roots = client.roots; }
-                if (!ready) { reply(process, rpcError(message["id"], -32002, "Client not initialized")); return; }
-                if (method == "roots/list") { reply(process, {{"jsonrpc", "2.0"}, {"id", message["id"]}, {"result", QJsonObject{{"roots", roots}}}}); return; }
+                if (!ready) { reply(rpcError(message["id"], -32002, "Client not initialized")); return; }
+                if (method == "roots/list") { reply({{"jsonrpc", "2.0"}, {"id", message["id"]}, {"result", QJsonObject{{"roots", roots}}}}); return; }
                 const auto found = client.requestHandlers.find(method);
                 const auto capability = method == "sampling/createMessage" ? "sampling" : method == "elicitation/create" ? "elicitation" : "experimental";
                 if (found == client.requestHandlers.end() || !client.capabilities.contains(capability)) {
-                    reply(process, rpcError(message["id"], -32601, "Client method not supported")); return;
+                    reply(rpcError(message["id"], -32601, "Client method not supported")); return;
                 }
                 if (incoming.size() >= size_t(options.maxServerRequests)) {
-                    reply(process, rpcError(message["id"], -32000, "Client request capacity reached")); return;
+                    reply(rpcError(message["id"], -32000, "Client request capacity reached")); return;
                 }
                 Incoming request{message["id"], {}}; incoming.emplace(requestKey, request);
                 auto self = shared_from_this(); auto handler = found->second;
-                handlers.start([self, requestKey, request, handler, params] {
+                handlers.start([self, requestKey, request, handler, params, epoch = handlerEpoch] {
                     QJsonObject response;
                     try {
                         request.cancellation.throwIfCancelled();
@@ -233,7 +221,7 @@ public:
                     } catch (const RpcError& e) { response = rpcError(request.id, e.rpcCode(), QString::fromUtf8(e.what()), e.data()); }
                     catch (const std::exception& e) { response = rpcError(request.id, -32603, QString::fromUtf8(e.what()).left(1024)); }
                     catch (...) { response = rpcError(request.id, -32603, "Host request handler failed"); }
-                    std::lock_guard lock(self->mutex); self->completions.push_back({requestKey, std::move(response)});
+                    std::lock_guard lock(self->mutex); self->completions.push_back({requestKey, std::move(response), epoch});
                 });
                 return;
             }
@@ -242,7 +230,7 @@ public:
                 const auto found = incoming.find(requestKey);
                 if (found != incoming.end()) {
                     found->second.cancellation.cancel();
-                    if (const auto frame = batches.cancel(requestKey)) write(process, detail::encodeValue(*frame, options.maxMessageBytes));
+                    if (const auto frame = batches.cancel(requestKey)) write(detail::encodeValue(*frame, options.maxMessageBytes));
                 }
             } else if (method == "notifications/progress") {
                 const auto token = key(params["progressToken"]); const auto found = active.find(token);
@@ -283,24 +271,48 @@ public:
         else if (Clock::now() >= p->deadline)
             error = std::make_exception_ptr(Error(ErrorCode::Timeout,
                 "MCP " + p->method.left(128) + " response arrived after the request deadline"));
+        if (p->internal) {
+            if (error) { finish(p, {}, error); std::rethrow_exception(error); }
+            try { acceptInitialize(message["result"].toObject()); }
+            catch (...) { finish(p, {}, std::current_exception()); throw; }
+        }
         finish(p, message["result"].toObject(), error);
     }
+    void acceptInitialize(QJsonObject infoValue) {
+        require(infoValue["protocolVersion"].isString() && client.protocolVersions.contains(infoValue["protocolVersion"].toString()),
+            "MCP server selected an unsupported protocol version");
+        const auto implementation = infoValue["serverInfo"].toObject();
+        require(infoValue["capabilities"].isObject() && implementation["name"].isString()
+            && implementation["version"].isString() && (!infoValue.contains("instructions") || infoValue["instructions"].isString()), "Invalid MCP initialize result");
+        std::lock_guard lock(mutex); info = std::move(infoValue);
+        enqueueLocked(encode(notification("notifications/initialized"), options.maxMessageBytes));
+        initialized = true; ++generation;
+    }
+    void restart(std::exception_ptr error) {
+        std::deque<Outgoing> queue;
+        { std::lock_guard lock(mutex); initialized = false; queue.swap(outgoing); queuedBytes = 0;
+          notifications.clear(); notificationBytes = 0; completions.clear(); }
+        for (auto& [id, request] : active) finish(request, {}, error);
+        active.clear();
+        for (auto& packet : queue) if (packet.request) finish(packet.request, {}, error);
+        for (auto& [id, request] : incoming) request.cancellation.cancel();
+        incoming.clear(); batches.clear(); ++handlerEpoch;
+        transport->reset();
+        auto p = std::make_shared<Pending>(); p->id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+        p->method = "initialize"; p->internal = true;
+        p->deadline = Clock::now() + std::chrono::milliseconds(options.initializeTimeoutMs);
+        { std::lock_guard lock(mutex); ++pendingCount; }
+        active.emplace("s:" + p->id, p);
+        write(encode({{"jsonrpc", "2.0"}, {"id", p->id}, {"method", "initialize"}, {"params", QJsonObject{
+            {"protocolVersion", client.protocolVersions.first()}, {"capabilities", client.capabilities}, {"clientInfo", client.implementation}}}}, options.maxMessageBytes));
+    }
     void run(std::shared_ptr<std::promise<void>> startup) {
-        QProcess process; QThreadPool handlers; handlers.setMaxThreadCount(options.maxServerRequests);
-        bool announced = false; qint64 processGroup = 0; std::exception_ptr failure;
+        QThreadPool handlers; handlers.setMaxThreadCount(options.maxServerRequests);
+        bool announced = false; std::exception_ptr failure;
         try {
-            process.setProcessEnvironment(options.environment);
-            process.setWorkingDirectory(options.workingDirectory);
-            process.setProcessChannelMode(QProcess::SeparateChannels);
-#ifdef Q_OS_UNIX
-            process.setUnixProcessParameters(QProcess::UnixProcessFlag::CreateNewSession | QProcess::UnixProcessFlag::CloseFileDescriptors);
-#endif
-            process.start(options.program, options.arguments);
-            require(process.waitForStarted(options.initializeTimeoutMs), "Cannot start MCP server: " + process.errorString(), ErrorCode::RuntimeUnavailable);
-            processGroup = process.processId();
+            transport->start();
             { std::lock_guard lock(mutex); connected = true; }
             startup->set_value(); announced = true;
-            QByteArray input;
             while (!stopping) {
                 std::deque<Outgoing> queue; std::deque<Completion> completed;
                 { std::lock_guard lock(mutex); queue.swap(outgoing); queuedBytes = 0; completed.swap(completions); }
@@ -316,38 +328,37 @@ public:
                     } else active.emplace("s:" + p->id, p);
                     p->frame.clear();
                 }
-                for (const auto& packet : queue) if (!packet.frame.isEmpty()) write(process, packet.frame);
+                for (const auto& packet : queue) if (!packet.frame.isEmpty()) write(packet.frame);
                 for (const auto& completion : completed) {
+                    if (completion.epoch != handlerEpoch) continue;
                     const auto it = incoming.find(completion.key);
                     if (it == incoming.end()) continue;
-                    if (!it->second.cancellation.isCancelled()) reply(process, completion.message);
+                    if (!it->second.cancellation.isCancelled()) reply(completion.message);
                     incoming.erase(it);
                 }
                 for (auto it = active.begin(); it != active.end();) {
                     auto p = it->second; const bool expired = Clock::now() >= p->deadline;
                     if (!expired && !p->cancellation.isCancelled() && !p->abandoned.isCancelled()) { ++it; continue; }
-                    if (p->method != "initialize") write(process, encode(notification("notifications/cancelled",
+                    if (p->method != "initialize") write(encode(notification("notifications/cancelled",
                         {{"requestId", p->id}, {"reason", expired ? "Request timed out" : "Request cancelled"}}), options.maxMessageBytes));
                     it = active.erase(it);
                     finish(p, {}, std::make_exception_ptr(Error(expired ? ErrorCode::Timeout : ErrorCode::Cancelled,
                         "MCP " + p->method.left(128) + (expired ? " request timed out; remote outcome may be unknown" : " request cancelled; remote outcome may be unknown"))));
+                    if (p->internal) throw Error(ErrorCode::Timeout, "MCP session reinitialization timed out");
                 }
-                process.waitForReadyRead(10);
-                const auto diagnostics = process.readAllStandardError();
-                if (!diagnostics.isEmpty()) { std::lock_guard lock(mutex); stderrBytes = (stderrBytes + diagnostics).right(options.maxStderrBytes); }
-                while (process.bytesAvailable() > 0) {
-                    input += process.read(65536);
-                    qsizetype newline;
-                    while ((newline = input.indexOf('\n')) >= 0) {
-                        require(newline <= options.maxMessageBytes, "MCP frame exceeds limit", ErrorCode::ResourceLimit);
-                        const auto frame = input.first(newline); input.remove(0, newline + 1);
-                        handle(process, handlers, frame);
-                    }
-                    require(input.size() <= options.maxMessageBytes, "MCP frame exceeds limit", ErrorCode::ResourceLimit);
+                const auto events = transport->poll();
+                { std::lock_guard lock(mutex); stderrBytes = transport->diagnostics(); }
+                auto expired = std::find_if(events.begin(), events.end(), [](const auto& e) { return e.sessionExpired; });
+                if (expired != events.end()) { restart(expired->error); continue; }
+                for (const auto& event : events) {
+                    if (event.error) {
+                        if (event.requestKey.isEmpty()) std::rethrow_exception(event.error);
+                        const auto found = active.find(event.requestKey);
+                        if (found == active.end()) continue;
+                        auto p = found->second; active.erase(found); finish(p, {}, event.error);
+                        if (p->internal) std::rethrow_exception(event.error);
+                    } else handle(handlers, event.message);
                 }
-                if (process.state() == QProcess::NotRunning)
-                    throw Error(input.isEmpty() ? ErrorCode::RuntimeFailure : ErrorCode::ProtocolError,
-                        input.isEmpty() ? "MCP server exited (code " + QString::number(process.exitCode()) + ")" : "MCP server exited with an unterminated frame");
             }
             throw Error(ErrorCode::ShuttingDown, "MCP connection was closed");
         } catch (...) { failure = std::current_exception(); }
@@ -358,33 +369,7 @@ public:
         active.clear();
         for (auto& packet : queue) if (packet.request) finish(packet.request, {}, failure);
         for (auto& [id, request] : incoming) request.cancellation.cancel();
-        if (process.state() != QProcess::NotRunning) {
-            process.closeWriteChannel();
-            if (!process.waitForFinished(options.shutdownTimeoutMs)) {
-#ifdef Q_OS_UNIX
-                if (processGroup > 0) ::kill(-pid_t(processGroup), SIGTERM);
-#else
-                process.terminate();
-#endif
-                if (!process.waitForFinished(options.shutdownTimeoutMs)) {
-#ifdef Q_OS_UNIX
-                    if (processGroup > 0) ::kill(-pid_t(processGroup), SIGKILL);
-#else
-                    process.kill();
-#endif
-                    process.waitForFinished(1000);
-                }
-            }
-        }
-#ifdef Q_OS_UNIX
-        // A server can exit while its children retain the pipes. Its own newly
-        // created process group remains ours to clean up after closing the server.
-        if (processGroup > 0 && ::kill(-pid_t(processGroup), SIGTERM) == 0) {
-            const auto deadline = Clock::now() + std::chrono::milliseconds(options.shutdownTimeoutMs);
-            while (::kill(-pid_t(processGroup), 0) == 0 && Clock::now() < deadline) std::this_thread::sleep_for(10ms);
-            ::kill(-pid_t(processGroup), SIGKILL);
-        }
-#endif
+        transport->close();
         // Host callbacks must cooperate with their cancellation token, like agent tools.
         handlers.waitForDone();
         incoming.clear(); batches.clear();
@@ -396,52 +381,48 @@ public:
     }
 };
 
-StdioClient::StdioClient(StdioOptions options, ClientOptions client)
-    : d(std::make_shared<Impl>(std::move(options), std::move(client))) {
+Client::Client(std::unique_ptr<detail::ClientTransport> transport, ClientLimits options, ClientOptions client)
+    : d(std::make_shared<Impl>(std::move(transport), std::move(options), std::move(client))) {
     auto startup = std::make_shared<std::promise<void>>(); auto started = startup->get_future();
     d->worker = std::thread([impl = d, startup] { impl->run(startup); });
     try {
         started.get();
         auto info = d->perform("initialize", {{"protocolVersion", d->client.protocolVersions.first()},
             {"capabilities", d->client.capabilities}, {"clientInfo", d->client.implementation}}, {}, {}, d->options.initializeTimeoutMs, true);
-        require(info["protocolVersion"].isString() && d->client.protocolVersions.contains(info["protocolVersion"].toString()),
-            "MCP server selected an unsupported protocol version");
-        const auto implementation = info["serverInfo"].toObject();
-        require(info["capabilities"].isObject() && implementation["name"].isString()
-            && implementation["version"].isString() && (!info.contains("instructions") || info["instructions"].isString()), "Invalid MCP initialize result");
-        std::lock_guard lock(d->mutex); d->info = std::move(info);
-        d->enqueueLocked(encode(notification("notifications/initialized"), d->options.maxMessageBytes)); d->initialized = true;
+        d->acceptInitialize(std::move(info));
     } catch (...) { d->stop(); throw; }
 }
-StdioClient::~StdioClient() { close(); }
-void StdioClient::close() { d->stop(); }
-bool StdioClient::isConnected() const { std::lock_guard lock(d->mutex); return d->connected && d->initialized && !d->stopping; }
-QByteArray StdioClient::stderrTail() const { std::lock_guard lock(d->mutex); return d->stderrBytes; }
-QJsonObject StdioClient::serverInfo() const { std::lock_guard lock(d->mutex); return d->info["serverInfo"].toObject(); }
-QJsonObject StdioClient::serverCapabilities() const { std::lock_guard lock(d->mutex); return d->info["capabilities"].toObject(); }
-QString StdioClient::protocolVersion() const { std::lock_guard lock(d->mutex); return d->info["protocolVersion"].toString(); }
-QString StdioClient::instructions() const { std::lock_guard lock(d->mutex); return d->info["instructions"].toString(); }
-QList<QJsonObject> StdioClient::takeNotifications() { std::lock_guard lock(d->mutex); auto result = std::move(d->notifications); d->notifications.clear(); d->notificationBytes = 0; return result; }
-void StdioClient::setRoots(QJsonArray roots) {
+Client::~Client() { close(); }
+quint64 Client::connectionGeneration() const { std::lock_guard lock(d->mutex); return d->generation; }
+void Client::close() { d->stop(); }
+bool Client::isConnected() const { std::lock_guard lock(d->mutex); return d->connected && d->initialized && !d->stopping; }
+QByteArray Client::stderrTail() const { std::lock_guard lock(d->mutex); return d->stderrBytes; }
+QJsonObject Client::serverInfo() const { std::lock_guard lock(d->mutex); return d->info["serverInfo"].toObject(); }
+QJsonObject Client::serverCapabilities() const { std::lock_guard lock(d->mutex); return d->info["capabilities"].toObject(); }
+QString Client::protocolVersion() const { std::lock_guard lock(d->mutex); return d->info["protocolVersion"].toString(); }
+QString Client::instructions() const { std::lock_guard lock(d->mutex); return d->info["instructions"].toString(); }
+QList<QJsonObject> Client::takeNotifications() { std::lock_guard lock(d->mutex); auto result = std::move(d->notifications); d->notifications.clear(); d->notificationBytes = 0; return result; }
+void Client::setRoots(QJsonArray roots) {
     validateRoots(roots); const auto frame = encode(notification("notifications/roots/list_changed"), d->options.maxMessageBytes);
     require(QJsonDocument(roots).toJson(QJsonDocument::Compact).size() + 256 <= d->options.maxMessageBytes, "MCP roots exceed message limit", ErrorCode::ResourceLimit);
     std::lock_guard lock(d->mutex);
     if (roots == d->client.roots) return;
     d->enqueueLocked(frame); d->client.roots = std::move(roots);
 }
-QJsonObject StdioClient::request(QString method, QJsonObject params, CancellationToken token, ProgressCallback progress, int timeoutMs) {
-    auto impl = d; return impl->perform(std::move(method), std::move(params), std::move(token), std::move(progress), timeoutMs);
+QJsonObject Client::request(QString method, QJsonObject params, CancellationToken token, ProgressCallback progress, int timeoutMs, quint64 expectedGeneration) {
+    auto impl = d; return impl->perform(std::move(method), std::move(params), std::move(token), std::move(progress), timeoutMs, false, expectedGeneration);
 }
-void StdioClient::notify(QString method, QJsonObject params) {
+void Client::notify(QString method, QJsonObject params) {
     require(method.startsWith("notifications/") && method != "notifications/initialized" && method != "notifications/cancelled"
         && method != "notifications/roots/list_changed", "Reserved or invalid MCP notification", ErrorCode::InvalidArgument);
     auto frame = encode(notification(method, params), d->options.maxMessageBytes);
     std::lock_guard lock(d->mutex); d->enqueueLocked(std::move(frame));
 }
-void StdioClient::requireCapability(const QString& capability) const {
+void Client::requireCapability(const QString& capability) const {
     require(serverCapabilities()[capability].isObject(), "MCP server did not negotiate capability: " + capability);
 }
-QJsonArray StdioClient::list(const QString& capability, const QString& method, const QString& field, CancellationToken token) {
+QJsonArray Client::list(const QString& capability, const QString& method, const QString& field, CancellationToken token) {
+    const auto generation = connectionGeneration();
     requireCapability(capability); QJsonArray items; QJsonObject params; QSet<QString> cursors, names;
     qsizetype totalBytes = 0;
     const auto deadline = Clock::now() + std::chrono::milliseconds(d->options.requestTimeoutMs);
@@ -450,6 +431,7 @@ QJsonArray StdioClient::list(const QString& capability, const QString& method, c
         const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - Clock::now()).count();
         require(remaining > 0, "MCP list exceeded its deadline", ErrorCode::Timeout);
         const auto response = request(method, params, token, {}, int(remaining));
+        require(connectionGeneration() == generation, "MCP session changed during pagination", ErrorCode::RuntimeFailure);
         totalBytes += QJsonDocument(response).toJson(QJsonDocument::Compact).size();
         require(totalBytes <= d->options.maxQueuedBytes, "MCP paginated list exceeds its byte limit", ErrorCode::ResourceLimit);
         require(response[field].isArray(), "MCP list result is missing " + field);
@@ -469,20 +451,20 @@ QJsonArray StdioClient::list(const QString& capability, const QString& method, c
         cursors.insert(response["nextCursor"].toString()); params["cursor"] = response["nextCursor"];
     }
 }
-QJsonArray StdioClient::listTools(CancellationToken token) { return list("tools", "tools/list", "tools", token); }
-QJsonArray StdioClient::listResources(CancellationToken token) { return list("resources", "resources/list", "resources", token); }
-QJsonArray StdioClient::listResourceTemplates(CancellationToken token) { return list("resources", "resources/templates/list", "resourceTemplates", token); }
-QJsonArray StdioClient::listPrompts(CancellationToken token) { return list("prompts", "prompts/list", "prompts", token); }
-QJsonObject StdioClient::callTool(const QString& name, QJsonObject arguments, CancellationToken token, ProgressCallback progress) {
+QJsonArray Client::listTools(CancellationToken token) { return list("tools", "tools/list", "tools", token); }
+QJsonArray Client::listResources(CancellationToken token) { return list("resources", "resources/list", "resources", token); }
+QJsonArray Client::listResourceTemplates(CancellationToken token) { return list("resources", "resources/templates/list", "resourceTemplates", token); }
+QJsonArray Client::listPrompts(CancellationToken token) { return list("prompts", "prompts/list", "prompts", token); }
+QJsonObject Client::callTool(const QString& name, QJsonObject arguments, CancellationToken token, ProgressCallback progress, quint64 expectedGeneration) {
     requireCapability("tools"); require(!name.isEmpty(), "MCP tool name is required", ErrorCode::InvalidArgument);
-    auto result = request("tools/call", {{"name", name}, {"arguments", arguments}}, token, std::move(progress));
+    auto result = request("tools/call", {{"name", name}, {"arguments", arguments}}, token, std::move(progress), 0, expectedGeneration);
     require(result["content"].isArray() && (!result.contains("isError") || result["isError"].isBool())
         && (!result.contains("structuredContent") || result["structuredContent"].isObject())
         && (!result.contains("_meta") || result["_meta"].isObject()), "Invalid MCP tool result");
     for (const auto& block : result["content"].toArray()) validateContent(block);
     return result;
 }
-QJsonObject StdioClient::readResource(const QString& uri, CancellationToken token) {
+QJsonObject Client::readResource(const QString& uri, CancellationToken token) {
     requireCapability("resources"); auto result = request("resources/read", {{"uri", uri}}, token);
     require(result["contents"].isArray(), "Invalid MCP resource result");
     for (const auto& value : result["contents"].toArray()) {
@@ -491,15 +473,15 @@ QJsonObject StdioClient::readResource(const QString& uri, CancellationToken toke
     }
     return result;
 }
-void StdioClient::subscribeResource(const QString& uri, CancellationToken token) {
+void Client::subscribeResource(const QString& uri, CancellationToken token) {
     require(serverCapabilities()["resources"].toObject()["subscribe"] == true, "MCP resource subscription was not negotiated");
     request("resources/subscribe", {{"uri", uri}}, token);
 }
-void StdioClient::unsubscribeResource(const QString& uri, CancellationToken token) {
+void Client::unsubscribeResource(const QString& uri, CancellationToken token) {
     require(serverCapabilities()["resources"].toObject()["subscribe"] == true, "MCP resource subscription was not negotiated");
     request("resources/unsubscribe", {{"uri", uri}}, token);
 }
-QJsonObject StdioClient::getPrompt(const QString& name, QJsonObject arguments, CancellationToken token) {
+QJsonObject Client::getPrompt(const QString& name, QJsonObject arguments, CancellationToken token) {
     requireCapability("prompts");
     for (auto it = arguments.begin(); it != arguments.end(); ++it) require(it.value().isString(), "MCP prompt arguments must be strings", ErrorCode::InvalidArgument);
     auto result = request("prompts/get", {{"name", name}, {"arguments", arguments}}, token);
@@ -511,4 +493,7 @@ QJsonObject StdioClient::getPrompt(const QString& name, QJsonObject arguments, C
     }
     return result;
 }
+StdioClient::StdioClient(StdioOptions options, ClientOptions client)
+    : Client(detail::stdioTransport(options), options, std::move(client)) {}
+
 }

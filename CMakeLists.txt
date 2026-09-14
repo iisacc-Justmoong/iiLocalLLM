@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(iiLocalLLM VERSION 0.6.0 LANGUAGES CXX)
+project(iiLocalLLM VERSION 0.7.0 LANGUAGES CXX)
 
 if(PROJECT_IS_TOP_LEVEL AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     if(DEFINED ENV{HOME})
@@ -47,7 +47,7 @@ add_library(iiLocalLLM SHARED iiLocalLLM.h iiLocalLLM.cpp
     service/ModelRegistry.h service/ModelRegistry.cpp ModelPull.h catalog/catalog.qrc
     runtimes/LlamaRuntime.cpp runtimes/MlxRuntime.cpp)
 target_sources(iiLocalLLM PRIVATE agent/Types.cpp agent/Tools.cpp agent/SessionStore.cpp agent/Engine.cpp agent/WorkspaceTools.cpp)
-target_sources(iiLocalLLM PRIVATE mcp/Client.cpp mcp/Server.cpp mcp/StdioServer.cpp agent/McpTools.cpp agent/McpServer.cpp)
+target_sources(iiLocalLLM PRIVATE mcp/Client.cpp mcp/StdioClientTransport.cpp mcp/HttpClient.cpp mcp/Server.cpp mcp/StdioServer.cpp agent/McpTools.cpp agent/McpServer.cpp)
 target_sources(iiLocalLLM PRIVATE agent/Api.cpp)
 target_sources(iiLocalLLM PRIVATE agent/ProjectContext.cpp agent/Compaction.cpp)
 add_library(iiLocalLLM::iiLocalLLM ALIAS iiLocalLLM)
@@ -174,6 +174,12 @@ if(BUILD_TESTING)
     add_test(NAME iiLocalLLM.agent_transport COMMAND iiLocalLLMAgentTransportTests)
     set_tests_properties(iiLocalLLM.agent_transport PROPERTIES TIMEOUT 60)
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    add_executable(iiLocalLLMMcpHttpTests tests/mcp_http_tests.cpp)
+    target_link_libraries(iiLocalLLMMcpHttpTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
+    target_compile_definitions(iiLocalLLMMcpHttpTests PRIVATE MCP_TEST_PYTHON="${Python3_EXECUTABLE}" MCP_HTTP_PEER="${CMAKE_CURRENT_SOURCE_DIR}/tests/mcp_http_peer.py")
+    set_target_properties(iiLocalLLMMcpHttpTests PROPERTIES AUTOMOC ON)
+    add_test(NAME iiLocalLLM.mcp_http_client COMMAND iiLocalLLMMcpHttpTests)
+    set_tests_properties(iiLocalLLM.mcp_http_client PROPERTIES TIMEOUT 60)
     add_executable(iiLocalLLMMcpTests tests/mcp_tests.cpp)
     target_link_libraries(iiLocalLLMMcpTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
     target_compile_definitions(iiLocalLLMMcpTests PRIVATE MCP_TEST_PYTHON="${Python3_EXECUTABLE}" MCP_TEST_PEER="${CMAKE_CURRENT_SOURCE_DIR}/tests/mcp_peer.py")
@@ -196,6 +202,9 @@ if(BUILD_TESTING)
         add_test(NAME iiLocalLLM.mcp_official COMMAND iiLocalLLMMcpOfficialSmoke
             "${IILOCALLLM_TEST_MCP_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/mcp_official_server.py")
         set_tests_properties(iiLocalLLM.mcp_official PROPERTIES TIMEOUT 60)
+        add_test(NAME iiLocalLLM.mcp_http_official COMMAND iiLocalLLMMcpOfficialSmoke
+            "${IILOCALLLM_TEST_MCP_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/mcp_official_server.py" streamable-http)
+        set_tests_properties(iiLocalLLM.mcp_http_official PROPERTIES TIMEOUT 60)
         if(UNIX)
             add_test(NAME iiLocalLLM.mcp_server_official COMMAND "${IILOCALLLM_TEST_MCP_PYTHON}" -B
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/mcp_server_smoke.py" $<TARGET_FILE:iiLocalLLMMcpServer>
@@ -281,7 +290,7 @@ install(TARGETS iiLocalLLM EXPORT iiLocalLLMTargets
 install(TARGETS iiLocalLLMService iiLocalLLMD iillm RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES iiLocalLLM.h Types.h Parameters.h Hardware.h Memory.h ModelManifest.h ModelCatalog.h ModelInfo.h ModelPull.h Runtime.h Service.h Rpc.h LocalIpcServer.h HttpApiServer.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES agent/Types.h agent/Tools.h agent/SessionStore.h agent/Engine.h agent/ProjectContext.h agent/Compaction.h agent/Api.h agent/McpTools.h agent/McpServer.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/agent)
-install(FILES mcp/Client.h mcp/Server.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mcp)
+install(FILES mcp/Client.h mcp/HttpClient.h mcp/Server.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mcp)
 install(FILES catalog/harness-parity.json DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM)
 install(FILES third_party/jsoncons/LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/licenses RENAME jsoncons.LICENSE)
 install(FILES third_party/jsoncons/A5HASH-LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/licenses RENAME jsoncons-A5HASH.LICENSE)

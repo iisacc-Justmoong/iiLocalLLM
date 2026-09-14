@@ -141,9 +141,14 @@
         "docs/MCP.md",
         "mcp/BatchReplies.h",
         "mcp/Server.cpp",
-        "tests/mcp_server_tests.cpp"
+        "tests/mcp_server_tests.cpp",
+        "mcp/HttpClient.cpp",
+        "mcp/StdioClientTransport.cpp",
+        "tests/mcp_http_tests.cpp",
+        "tests/mcp_http_peer.py",
+        "docs/MCPHTTP.md"
       ],
-      "remaining": "C++ stdio initialization, 2025 protocol negotiation, bounded concurrent JSON-RPC, progress/cancellation and process teardown implemented. Streamable HTTP, legacy SSE, authentication, reconnect and 2026-07-28 remain."
+      "remaining": "Shared C++ stdio/Streamable HTTP client, 2025 negotiation, bearer/header provider, bounded JSON/SSE, resume GET, 404 session reinitialization without POST replay and generation-bound tools implemented. Legacy SSE, OAuth workflows, proxy qualification and 2026-07-28 remain."
     },
     {
       "id": "mcp_features",
@@ -157,7 +162,9 @@
         "docs/MCP.md",
         "mcp/BatchReplies.h",
         "mcp/Server.cpp",
-        "tests/mcp_server_tests.cpp"
+        "tests/mcp_server_tests.cpp",
+        "mcp/HttpClient.cpp",
+        "tests/mcp_http_tests.cpp"
       ],
       "remaining": "Tools, resources/templates, prompts, roots, subscriptions and host-owned reverse-request callbacks implemented. Full sampling/elicitation schema and UI contracts, tasks, automatic notification refresh and broad protocol conformance remain."
     },
@@ -302,7 +309,9 @@
         "tests/compaction_tests.cpp",
         "docs/Compaction.md",
         "tests/consumer/compaction.cpp",
-        "tests/compaction_runtime_smoke.cpp"
+        "tests/compaction_runtime_smoke.cpp",
+        "mcp/HttpClient.h",
+        "docs/MCPHTTP.md"
       ],
       "remaining": "Public MCP client/server headers and a POSIX MCP executable are installed and tested through fresh C++ consumers. Complete app integration and platform qualification remain."
     },

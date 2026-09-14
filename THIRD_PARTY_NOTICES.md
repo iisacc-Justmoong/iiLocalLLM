@@ -59,3 +59,11 @@ Markdown은 [MD4C release-0.5.3](https://github.com/mity/md4c/tree/472c417005c2c
 - LibYAML은 릴리스 주기가 긴 C 파서다. 공식 태그 목록에서 안정판 0.2.5와 0.2.6-rc.1을 확인했으며 안정판을 고정했다. 압축 원본 85,055 bytes, SHA-256 `fa240dbf262be053f3898006d502d514936c818e422afdcf33921c63bed9bf2e`. frontmatter 입력·이벤트·깊이를 제한하고 alias는 거부한다.
 - CMake `ContextParsers.cmake`에서 다운로드 해시를 검사한다. Markdown 토큰화와 YAML 문법을 직접 재구현하지 않고, iiLocalLLM 고유의 경로 범위·규칙 선택·순서·출처 조합만 C++에서 처리한다. glob의 regex 컴파일·매칭은 기존 Qt/PCRE2에 맡기며 지원하는 glob 표기와 차이는 ProjectContext.md에 명시한다.
 - macOS 빌드에서 C 파서를 활성화하면서 ggml의 `.m` 파일과 SDK의 `.mm` 파일을 구분하도록 Objective-C와 Objective-C++ 언어를 명시했다. llama.cpp 원본은 수정하지 않았다.
+
+## MCP HTTP 클라이언트 (0.7.0)
+
+기존 Qt 6.8.3 Network를 재사용하여 HTTPS, HTTP 메시지 프레이밍과 소켓 처리를 맡겼다. Qt의 관리 상태·기존 배포 라이선스·추가 의존성 규모를 검토했으며 생산 패키지에 새 HTTP 또는 언어 런타임 의존성을 추가하지 않았다. 공통 JSON-RPC 처리, MCP 세션 및 SSE 이벤트 처리는 iiLocalLLM의 프로토콜 계약이다.
+
+Qt는 응답 헤더 전 EOF에서 POST를 재전송할 수 있으므로, 공개 QIODevice 및 [DoNotBufferUploadDataAttribute](https://doc.qt.io/qt-6.8/qnetworkrequest.html#Attribute-enum)를 사용하여 이미 읽힌 업로드를 되감지 못하게 한다. 중도 종료한 SSE 연결은 캐시에서 정리한다. HTTP 요청 자체의 파서를 복제하거나 Qt private API를 사용하지 않는다. Qt 구현 참조는 [v6.8.3 qhttpnetworkconnectionchannel.cpp](https://github.com/qt/qtbase/blob/v6.8.3/src/network/access/qhttpnetworkconnectionchannel.cpp)이며 이 소스를 패키지에 복사하지 않았다.
+
+공식 Python MCP SDK 1.26.0(MIT)와 해당 환경의 uvicorn은 HTTP 상호 운용 시험에만 사용한다. 자체 서명 TLS 거부 시험은 사용 가능한 OpenSSL 명령으로 build/tmp 안에 일회용 시험 인증서를 생성하며 생성된 키를 저장소·생산 패키지에 포함하지 않는다.

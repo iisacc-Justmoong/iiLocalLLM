@@ -1,5 +1,30 @@
 # 구현 검증 기록
 
+## 2026-09-14 MCP Streamable HTTP 클라이언트 (0.7.0)
+
+C++ 공통 `mcp::Client`에 stdio와 Streamable HTTP 전송을 연결했다. HTTP JSON/SSE, 호스트 자격 증명 공급자, 진행·취소, SSE GET 복원, 세션 404 재초기화와 연결 세대에 묶인 에이전트 도구를 구현했다. Qt 6.8.3 Network를 재사용하며 생산 패키지에 새 런타임 의존성을 추가하지 않았다. 검증 장비는 Apple M1 Max / macOS 27 / Qt 6.8.3이다.
+
+| 구분 | 최종 관측 결과 |
+|---|---|
+| Release 빌드·전체 CTest | 전체 타깃 빌드 성공, **35/35 통과**, 158.67초. 실제 GGUF·MLX CPU/Metal 및 에이전트·압축 추론 11개 포함 |
+| ASAN/UBSAN | llama 비활성화 Debug 빌드에서 **23/23 통과**, 37.86초. stdio/HTTP 클라이언트, MCP 서버, 공식 SDK, API·CLI·daemon 검사 포함. SDK 빌드 경고·sanitizer 오류 없음 |
+| 독립 HTTP peer | 12개 동작 사례, QTest 초기화·정리 포함 **14 passed / 0 skipped**. 8개씩 5회, 총 40개 요청에서 역방향 sampling·roots와 sampling 콜백 안의 중첩 ping 검증 |
+| 복원·오류 경계 | 초기화 중 SSE 복원, POST 재실행 없는 Last-Event-ID GET, 긴 retry 지연, 개별 요청 기한, 취소·단절, 404 세션 갱신과 이전 도구 차단 통과 |
+| 인증·입력 | 401 challenge, 리다이렉트 미추적, 독립 클라이언트 세션, 잘못된 헤더 이름·값, 큰 응답·잘못된 SSE ID, 신뢰하지 않는 인증서 거부 통과. 호스트의 전역 VerifyNone 설정에서도 인증서를 거부 |
+| 공식 SDK | Python MCP SDK **1.26.0**의 실제 stdio/Streamable HTTP 서버와 도구·구조화 결과·진행·리소스·프롬프트·역방향 roots 검증. 소스·설치 소비자 모두 통과 |
+| 새 설치 소비자 | `build/mcp-http-stage`와 독립 `build/mcp-http-consumer/build`에서 **9/9 통과**, 18.39초. 공개 ABI, HTTP MCP, 실제 로컬 요약·재개 포함 |
+| 로더·실행 파일 | 경로 override 제거 후 `build/mcp-http-stage/lib/libiiLocalLLM.0.7.0.dylib` 로딩 확인. 소스·설치 라이브러리 UUID 일치. iillm·iiLocalLLMD·iillm-mcp 모두 0.7.0. 얇은 iillm은 Qt Core/Network·시스템 라이브러리만 링크 |
+
+초기 구현은 서버가 POST 본문을 처리하고 응답 헤더 전에 연결을 끊을 때 같은 요청을 **두 번** 보냈다. 독립 peer의 `droppedPosts == 1` 검사가 먼저 실패했다. Qt의 버퍼링된 업로드 재전송을 피하도록 sequential `QIODevice`와 `DoNotBufferUploadDataAttribute`를 사용하고, 이미 읽힌 업로드의 되감기를 거부했다. 최종 검사에서는 본문 처리 후 단절·응답 헤더 후 단절 모두 POST가 한 번만 관측된다. 원격 작업의 성공 여부는 단절만으로 확정하지 않는다.
+
+동시성 시험 중에는 별도의 시험 서버 한계도 확인했다. Python 표준 HTTP 서버의 TCP 대기열 기본값 5가 동시 RPC·역방향 응답·중첩 요청의 연결 급증을 감당하지 못했다. 서버 기록과 연결 거부를 확인하고 peer 대기열을 128로 설정했다. 요청 수·결과·POST 횟수 조건은 유지했다. 최종 구현은 제한된 HTTP 관리자 풀을 재사용하며, 임시로 도입했던 매 요청 관리자 재생성과 전송 신호 기반 되감기 판정은 제거했다.
+
+최종 입력 검토에서는 이름 끝에 개행이 있는 헤더가 SDK 검증을 통과하고 Qt에서 경고와 함께 제거되는 문제를 재현했다. 전체 문자열을 검사하는 정규식 경계로 바꿔 `InvalidArgument`를 반환한다. 보완 전 전체 실행도 35/35, sanitizer 23/23, 설치 소비자 9/9였지만, 위 표는 이 보완까지 반영한 마지막 전체 실행이다. 최초 누락·중복 POST·동시 연결 실패·개행 헤더 실패 로그를 보존했다.
+
+이번 실행의 소형 모델 원문 답변 검사는 통과했지만, 아래 0.5/0.6 기록의 임의 문자열 재현 실패를 해결한 변경은 아니다. 모델 답변을 관측값으로 덮어쓰거나 검사 조건을 완화하지 않았다. 전체 하네스, legacy SSE·OAuth·2026 규격, MCP HTTP 서버와 실제 Society/Dreamscapes 발견·연동은 미완료로 유지한다. 이번 stage 설치는 전역 SDK 설치나 제품 앱 재배포를 뜻하지 않는다.
+
+공개 사용 계약은 [MCPHTTP.md](MCPHTTP.md), 남은 범위는 [HarnessParity.md](HarnessParity.md)에 있다. 재현 명령은 `cmake --build build --parallel`과 `ctest --test-dir build --output-on-failure`다. 공식 SDK·실제 모델 검사는 해당 CMake 선택 경로를 설정해야 한다. 증거는 `build/mcp-http-final-release-tests.log`, `build/mcp-http-final-sanitizer-tests.log`, `build/mcp-http-final-consumer-tests.log`, 각 `mcp-http-final-*-junit.xml`·`mcp-http-final-*-LastTest.log`, `build/mcp-http-library-uuids.log`, `build/mcp-http-cli-linkage.log`, `build/mcp-http-verification.json`에 보관한다. 실패 대조는 `build/mcp-http-red-build.log`, `build/mcp-http-second-tests.log`, `build/mcp-http-isolated-manager-tests.log`, `build/mcp-http-peer-backlog-tests.log`, `build/mcp-http-header-red-tests.log`에 있다.
+
 ## 2026-09-14 네이티브 예산·대화 압축 (0.6.0)
 
 C++ Service의 실제 템플릿·토크나이저 측정, 자동 도구 결과 축소, 여러 묶음의 로컬 모델 요약, 원본 JSONL 보존 체크포인트, 재개·분기, 원문 조회 및 C++/API/MCP 수동 압축을 연결했다. Apple M1 Max / Qt 6.8.3에서 검증했으며 새 런타임 의존성은 없다. 전체 하네스 및 Society·Dreamscapes 제품 앱 통합 완료를 의미하지 않는다.
