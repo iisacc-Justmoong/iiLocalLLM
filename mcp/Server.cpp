@@ -76,7 +76,7 @@ class ServerSession::Impl : public std::enable_shared_from_this<Impl> {
 public:
     struct Job {
         QJsonValue id, progressToken;
-        QString key, method;
+        QString key, method, channel;
         QJsonObject params;
         CancellationToken cancellation;
         Clock::time_point deadline;
@@ -114,7 +114,7 @@ public:
     std::map<QString, std::shared_ptr<Job>> jobs;
     std::map<QString, std::shared_ptr<Reverse>> reverse;
     std::map<QString, Page> pages;
-    QList<QJsonValue> outgoing;
+    QList<ServerFrame> outgoing;
     QList<QJsonObject> notifications;
     BatchReplies batches;
     qsizetype outgoingBytes = 0, notificationBytes = 0, pageBytes = 0;
@@ -156,13 +156,13 @@ public:
         workers.setMaxThreadCount(options.maxConcurrentRequests);
         initializationDeadline = Clock::now() + std::chrono::milliseconds(options.initializeTimeoutMs);
     }
-    void emitFrameLocked(const QJsonValue& message) {
-        const auto size = encodeValue(message, options.maxMessageBytes).size();
+    void emitFrameLocked(const QJsonValue& message, const QString& channel = {}) {
+        const auto size = encodeValue(message, options.maxMessageBytes).size() + channel.size() * 2;
         require(outgoingBytes + size <= options.maxQueuedBytes, "MCP server output queue is full", ErrorCode::QueueFull);
-        outgoing.append(message); outgoingBytes += size; changed.notify_all();
+        outgoing.append({message, channel}); outgoingBytes += size; changed.notify_all();
     }
-    void emitLocked(const QJsonObject& message) {
-        if (const auto frame = batches.response(message)) emitFrameLocked(*frame);
+    void emitLocked(const QJsonObject& message, const QString& channel = {}) {
+        if (const auto frame = batches.response(message)) emitFrameLocked(*frame, channel);
     }
     void stopLocked(std::exception_ptr error = {}) {
         if (closed) return;
@@ -175,8 +175,8 @@ public:
         pages.clear(); pageBytes = 0; batches.clear();
         changed.notify_all();
     }
-    void safeEmitLocked(const QJsonObject& message) {
-        try { emitLocked(message); } catch (...) { stopLocked(std::current_exception()); }
+    void safeEmitLocked(const QJsonObject& message, const QString& channel = {}) {
+        try { emitLocked(message, channel); } catch (...) { stopLocked(std::current_exception()); }
     }
     void tick() {
         std::unique_lock lock(mutex);
@@ -187,7 +187,7 @@ public:
             }
             for (const auto& [id, job] : jobs) if (!job->responded && !job->cancellation.isCancelled() && now >= job->deadline) {
                 job->responded = true; job->cancellation.cancel();
-                safeEmitLocked(rpcError(job->id, -32000, "MCP server request timed out"));
+                safeEmitLocked(rpcError(job->id, -32000, "MCP server request timed out"), job->channel);
             }
             for (auto it = pages.begin(); it != pages.end();) {
                 if (it->second.expires <= now) { pageBytes -= it->second.bytes; it = pages.erase(it); }
@@ -205,7 +205,7 @@ public:
             && (!params.contains("total") || (params["total"].isDouble() && std::isfinite(params["total"].toDouble()) && params["total"].toDouble() >= progress))
             && (!params.contains("message") || params["message"].isString()), "Invalid MCP progress update", ErrorCode::InvalidArgument);
         job->lastProgress = progress; params["progressToken"] = job->progressToken;
-        try { emitLocked(notification("notifications/progress", params)); }
+        try { emitLocked(notification("notifications/progress", params), job->channel); }
         catch (...) { stopLocked(std::current_exception()); throw; }
     }
     QJsonObject requestClient(const std::shared_ptr<Job>& parent, QString method, QJsonObject params, int timeout) {
@@ -221,7 +221,7 @@ public:
         rpcRequire(method == "ping" || (QString::fromLatin1(cap).size() && clientCaps[cap].isObject()), "Client capability was not negotiated", -32601);
         rpcRequire(!params.contains("task") && !(version == "2025-03-26" && method == "elicitation/create"), "Reverse RPC is unsupported by this protocol version", -32601);
         require(reverse.size() < size_t(options.maxReverseRequests), "Too many reverse MCP requests", ErrorCode::QueueFull);
-        emitLocked({{"jsonrpc", "2.0"}, {"id", pending->id}, {"method", method}, {"params", params}});
+        emitLocked({{"jsonrpc", "2.0"}, {"id", pending->id}, {"method", method}, {"params", params}}, parent->channel);
         reverse.emplace(pendingKey, pending);
         while (!pending->done && !closed && !parent->cancellation.isCancelled() && Clock::now() < deadline)
             changed.wait_for(lock, 10ms);
@@ -230,7 +230,7 @@ public:
             if (pending->error) std::rethrow_exception(pending->error);
             return pending->result;
         }
-        if (!closed) safeEmitLocked(notification("notifications/cancelled", {{"requestId", pending->id}, {"reason", "Request cancelled or timed out"}}));
+        if (!closed) safeEmitLocked(notification("notifications/cancelled", {{"requestId", pending->id}, {"reason", "Request cancelled or timed out"}}), parent->channel);
         parent->cancellation.throwIfCancelled();
         throw Error(closed ? ErrorCode::ShuttingDown : ErrorCode::Timeout, "MCP reverse request did not complete");
     }
@@ -308,15 +308,25 @@ public:
                 }
                 if (job->method == "resources/unsubscribe") subscriptions.remove(job->params["uri"].toString());
             }
-            try { emitLocked(response); }
+            try { emitLocked(response, job->channel); }
             catch (const Error& e) {
-                if (e.code() == ErrorCode::ResourceLimit) safeEmitLocked(rpcError(job->id, -32000, "MCP response exceeds frame limit"));
+                if (e.code() == ErrorCode::ResourceLimit) safeEmitLocked(rpcError(job->id, -32000, "MCP response exceeds frame limit"), job->channel);
                 else stopLocked(std::current_exception());
             }
         }
+        if (!closed && !job->responded && job->cancellation.isCancelled() && !job->channel.isEmpty()) {
+            // A reverse cancellation or final batch reply is already queued.
+            // Close the transport stream only after those messages, and only
+            // after the cancelled handler has stopped using its channel.
+            try {
+                const auto size = encode(QJsonObject{{"id", job->id}}, options.maxMessageBytes).size() + job->channel.size() * 2;
+                require(outgoingBytes + size <= options.maxQueuedBytes, "MCP server output queue is full", ErrorCode::QueueFull);
+                outgoing.append({QJsonValue::Undefined, job->channel, job->id}); outgoingBytes += size;
+            } catch (...) { stopLocked(std::current_exception()); }
+        }
         jobs.erase(job->key); changed.notify_all();
     }
-    void receive(const QJsonObject& message) {
+    void receive(const QJsonObject& message, const QString& channel) {
         std::unique_lock lock(mutex);
         require(!closed, "MCP server connection is closed", ErrorCode::ShuttingDown);
         QJsonValue id(QJsonValue::Null);
@@ -352,7 +362,7 @@ public:
                 if (method == "notifications/cancelled") {
                     QString requestKey; try { requestKey = key(params["requestId"]); } catch (const Error&) { return; }
                     const auto found = jobs.find(requestKey);
-                    if (found != jobs.end()) { found->second->cancellation.cancel(); if (const auto frame = batches.cancel(requestKey)) emitFrameLocked(*frame); }
+                    if (found != jobs.end()) { found->second->cancellation.cancel(); if (const auto frame = batches.cancel(requestKey)) emitFrameLocked(*frame, found->second->channel); }
                     changed.notify_all(); return;
                 }
                 const auto size = QJsonDocument(message).toJson(QJsonDocument::Compact).size();
@@ -379,9 +389,9 @@ public:
                 version = options.protocolVersions.contains(params["protocolVersion"].toString()) ? params["protocolVersion"].toString() : options.protocolVersions.first();
                 QJsonObject result{{"protocolVersion", version}, {"serverInfo", options.implementation}, {"capabilities", capabilities}};
                 if (!options.instructions.isEmpty()) result["instructions"] = options.instructions;
-                emitLocked({{"jsonrpc", "2.0"}, {"id", id}, {"result", result}}); phase = 1; return;
+                emitLocked({{"jsonrpc", "2.0"}, {"id", id}, {"result", result}}, channel); phase = 1; return;
             }
-            if (method == "ping") { emitLocked({{"jsonrpc", "2.0"}, {"id", id}, {"result", QJsonObject{}}}); return; }
+            if (method == "ping") { emitLocked({{"jsonrpc", "2.0"}, {"id", id}, {"result", QJsonObject{}}}, channel); return; }
             rpcRequire(phase == 2, "MCP connection is not initialized", -32002);
             const auto feature = method.section('/', 0, 0);
             if (QStringList{"tools", "resources", "prompts"}.contains(feature))
@@ -404,15 +414,16 @@ public:
                 rpcRequire(subscriptions.contains(params["uri"].toString()) || subscriptions.size() < options.maxNotifications, "MCP subscription limit reached", -32000);
             rpcRequire(jobs.size() < size_t(options.maxConcurrentRequests + options.maxQueuedRequests), "MCP server request queue is full", -32000);
             auto job = std::make_shared<Job>(); job->id = id; job->key = requestKey; job->method = method; job->params = params;
+            job->channel = channel;
             job->progressToken = params.value("_meta").toObject().value("progressToken");
             if (!job->progressToken.isUndefined()) { try { key(job->progressToken); } catch (const Error&) { throw RpcError(-32602, "Invalid MCP progress token"); } }
             job->deadline = Clock::now() + std::chrono::milliseconds(options.requestTimeoutMs);
             jobs.emplace(requestKey, job); auto self = shared_from_this();
             workers.start([self, job] { self->execute(job); });
-        } catch (const RpcError& e) { safeEmitLocked(rpcError(id, e.rpcCode(), QString::fromUtf8(e.what()), e.data())); }
+        } catch (const RpcError& e) { safeEmitLocked(rpcError(id, e.rpcCode(), QString::fromUtf8(e.what()), e.data()), channel); }
         catch (...) { stopLocked(std::current_exception()); throw; }
     }
-    void receiveBatch(const QJsonArray& messages) {
+    void receiveBatch(const QJsonArray& messages, const QString& channel) {
         BatchReplies::Prepared prepared;
         {
             std::lock_guard lock(mutex);
@@ -421,16 +432,16 @@ public:
             const bool legacyInit = phase == 0 && first["method"] == "initialize"
                 && first["params"].toObject()["protocolVersion"] == "2025-03-26" && options.protocolVersions.contains("2025-03-26");
             if ((!legacyInit && version != "2025-03-26") || messages.isEmpty()) {
-                safeEmitLocked(rpcError(QJsonValue::Null, -32600, "JSON-RPC batches require protocol 2025-03-26")); return;
+                safeEmitLocked(rpcError(QJsonValue::Null, -32600, "JSON-RPC batches require protocol 2025-03-26"), channel); return;
             }
             try {
                 require(messages.size() <= options.maxNotifications, "MCP batch item limit reached", ErrorCode::ResourceLimit);
                 encodeValue(messages, options.maxMessageBytes);
                 prepared = batches.prepare(messages);
-                if (prepared.immediate) emitFrameLocked(*prepared.immediate);
+                if (prepared.immediate) emitFrameLocked(*prepared.immediate, channel);
             } catch (...) { stopLocked(std::current_exception()); throw; }
         }
-        for (const auto& message : prepared.messages) receive(message);
+        for (const auto& message : prepared.messages) receive(message, channel);
     }
     void stop() {
         std::lock_guard join(joining);
@@ -450,16 +461,30 @@ ServerSession::~ServerSession() { d->stop(); }
 QString ServerSession::id() const { return d->sessionId; }
 bool ServerSession::isInitialized() const { std::lock_guard lock(d->mutex); return !d->closed && d->phase == 2; }
 bool ServerSession::isClosed() const { std::lock_guard lock(d->mutex); return d->closed; }
+QString ServerSession::protocolVersion() const { std::lock_guard lock(d->mutex); return d->version; }
 QJsonObject ServerSession::clientInfo() const { std::lock_guard lock(d->mutex); return d->info; }
 QJsonObject ServerSession::clientCapabilities() const { std::lock_guard lock(d->mutex); return d->clientCaps; }
-void ServerSession::receive(const QJsonObject& message) { std::lock_guard lock(d->receiving); d->receive(message); }
-void ServerSession::receiveBatch(const QJsonArray& messages) { std::lock_guard lock(d->receiving); d->receiveBatch(messages); }
-QList<QJsonValue> ServerSession::takeMessages(int waitMs) {
+void ServerSession::receive(const QJsonObject& message) { receive(message, {}); }
+void ServerSession::receive(const QJsonObject& message, const QString& channel) {
+    require(channel.size() <= 256, "MCP transport channel exceeds limit", ErrorCode::InvalidArgument);
+    std::lock_guard lock(d->receiving); d->receive(message, channel);
+}
+void ServerSession::receiveBatch(const QJsonArray& messages) { receiveBatch(messages, {}); }
+void ServerSession::receiveBatch(const QJsonArray& messages, const QString& channel) {
+    require(channel.size() <= 256, "MCP transport channel exceeds limit", ErrorCode::InvalidArgument);
+    std::lock_guard lock(d->receiving); d->receiveBatch(messages, channel);
+}
+QList<ServerFrame> ServerSession::takeFrames(int waitMs) {
     require(waitMs >= 0, "Invalid MCP message wait", ErrorCode::InvalidArgument);
     std::unique_lock lock(d->mutex);
     if (waitMs) d->changed.wait_for(lock, std::chrono::milliseconds(waitMs), [&] { return d->closed || !d->outgoing.isEmpty(); });
     if (d->failure) std::rethrow_exception(d->failure);
-    QList<QJsonValue> messages; messages.swap(d->outgoing); d->outgoingBytes = 0; return messages;
+    QList<ServerFrame> messages; messages.swap(d->outgoing); d->outgoingBytes = 0; return messages;
+}
+QList<QJsonValue> ServerSession::takeMessages(int waitMs) {
+    QList<QJsonValue> messages;
+    for (const auto& frame : takeFrames(waitMs)) if (!frame.message.isUndefined()) messages.append(frame.message);
+    return messages;
 }
 QList<QJsonObject> ServerSession::takeNotifications() {
     std::lock_guard lock(d->mutex); QList<QJsonObject> result; result.swap(d->notifications); d->notificationBytes = 0; return result;
@@ -477,4 +502,5 @@ void ServerSession::notify(QString method, QJsonObject params) {
     try { d->emitLocked(notification(method, params)); } catch (...) { d->stopLocked(std::current_exception()); throw; }
 }
 void ServerSession::close() { d->stop(); }
+void ServerSession::requestClose() { std::lock_guard lock(d->mutex); d->stopLocked(); }
 }

@@ -78,7 +78,7 @@ close는 SSE·전송 중인 요청을 정리하고 지정된 종료 시간 안�
 QObject와 네트워크 연결은 생성한 I/O 스레드에서 정리한다. stdio의 QProcess 수명과
 Unix 자식 프로세스 그룹 정리는 별도 전송에 남아 있다.
 
-공통 Client 및 공개 옵션 구조 변경으로 SDK/SOVERSION은 **0.7.0/0.7**이다.
+공통 Client 및 공개 옵션 구조는 0.7.0에서 도입했다. 현재 SDK/SOVERSION은 **0.8.0/0.8**이며, [인증된 HTTP 서버](MCPHTTPServer.md)도 제공한다.
 소비자는 헤더와 라이브러리를 함께 갱신해 다시 빌드해야 한다.
 
 ## 검증

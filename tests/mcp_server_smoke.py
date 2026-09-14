@@ -1,6 +1,7 @@
 """Official SDK client against the installed or built, unmodified C++ server."""
 import argparse
 import asyncio
+from contextlib import asynccontextmanager
 from datetime import timedelta
 from importlib.metadata import version
 import json
@@ -8,10 +9,52 @@ import os
 from pathlib import Path
 import tempfile
 import uuid
+import secrets
+
+import httpx
 
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
+from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.exceptions import McpError
+
+
+@asynccontextmanager
+async def transport(command, root, http):
+    if not http:
+        async with stdio_client(command) as streams:
+            yield streams
+        return
+    credential = secrets.token_urlsafe(32)
+    credentials = root / "credentials.json"
+    credentials.write_text(json.dumps({"com.iisacc.fixture": credential}))
+    credentials.chmod(0o600)
+    arguments = list(command.args)
+    if "--sessions" in arguments:
+        index = arguments.index("--sessions")
+        del arguments[index:index + 2]
+    arguments += ["--http-port", "0", "--credentials", str(credentials), "--state", str(root / "http-state")]
+    with (root / "http-server.log").open("ab") as log:
+        process = await asyncio.create_subprocess_exec(command.command, *arguments,
+            stdout=asyncio.subprocess.PIPE, stderr=log)
+        try:
+            line = await asyncio.wait_for(process.stdout.readline(), timeout=15)
+            assert line, "HTTP MCP server exited before announcing its endpoint"
+            endpoint = json.loads(line)["endpoint"]
+            async with httpx.AsyncClient(headers={"Authorization": "Bearer " + credential},
+                                         timeout=180, trust_env=False) as client:
+                async with streamable_http_client(endpoint, http_client=client) as (read, write, _):
+                    yield read, write
+        finally:
+            if process.returncode is None:
+                process.terminate()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=10)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+                raise AssertionError("HTTP MCP shutdown did not join its handlers")
+            assert process.returncode == 0, f"HTTP MCP server exited {process.returncode}"
 
 
 class ObservedSend:
@@ -53,14 +96,14 @@ def alive(pid):
         return False
 
 
-async def basic(binary, root):
+async def basic(binary, root, http=False):
     workspace = root / "workspace"
     workspace.mkdir()
     secret = "MCP_SERVER_" + uuid.uuid4().hex
     (workspace / "secret.txt").write_text(secret)
     (root / "outside.txt").write_text("NOT_EXPOSED")
     command = StdioServerParameters(command=str(binary), args=["--workspace", str(workspace)])
-    async with stdio_client(command) as (read, write):
+    async with transport(command, root, http) as (read, write):
         async with ClientSession(read, write, read_timeout_seconds=timedelta(seconds=10)) as session:
             info = await session.initialize()
             assert info.protocolVersion == "2025-11-25"
@@ -82,7 +125,7 @@ async def basic(binary, root):
                 assert error.error.code == -32602
             await session.send_ping()
     command.args += ["--allow", "Write", "--allow", "Bash"]
-    async with stdio_client(command) as (read, write):
+    async with transport(command, root, http) as (read, write):
         observer = ObservedSend(write)
         async with ClientSession(read, observer, read_timeout_seconds=timedelta(seconds=10)) as session:
             await session.initialize()
@@ -107,12 +150,12 @@ async def basic(binary, root):
                     pass
             await session.send_ping()
             assert text(await session.call_tool("Read", {"path": "created.txt"})) == secret
-    return {"official_sdk": version("mcp"), "tools": 6, "real_file_read_write": True,
+    return {"official_sdk": version("mcp"), "transport": "http" if http else "stdio", "tools": 6, "real_file_read_write": True,
             "permission_denial": True, "schema_validation": True, "workspace_boundary": True,
             "cancelled_shell_and_child_exited": True, "connection_survived_cancellation": True}
 
 
-async def native(binary, root, weights):
+async def native(binary, root, weights, http=False):
     workspace = root / "workspace"
     workspace.mkdir()
     secret = "LOCAL_" + uuid.uuid4().hex[:12]
@@ -133,7 +176,7 @@ async def native(binary, root, weights):
     async def progress(value, total, message):
         updates.append({"progress": value, "total": total, "message": message})
 
-    async with stdio_client(command) as (read, write):
+    async with transport(command, root, http) as (read, write):
         async with ClientSession(read, write, read_timeout_seconds=timedelta(seconds=150)) as session:
             await session.initialize()
             names = {tool.name for tool in (await session.list_tools()).tools}
@@ -152,8 +195,8 @@ async def native(binary, root, weights):
             assert any(message["role"] == "tool" and secret in message["text"] for message in messages)
             assert {call["id"] for call in calls} == {message["tool_call_id"] for message in messages if message["role"] == "tool"}
             assert len(updates) >= 3 and all(a["progress"] < b["progress"] for a, b in zip(updates, updates[1:]))
-    assert list((root / "sessions").glob("**/*.jsonl")), "Agent transcript was not persisted"
-    return {"official_sdk": version("mcp"), "native_model": "Qwen2.5 0.5B Q4_K_M", "run": run,
+    assert list((root / "http-state" / "sessions" if http else root / "sessions").glob("**/*.jsonl")), "Agent transcript was not persisted"
+    return {"official_sdk": version("mcp"), "transport": "http" if http else "stdio", "native_model": "Qwen2.5 0.5B Q4_K_M", "run": run,
             "progress": updates, "transcript": saved, "unpredictable_file_value_verified": True}
 
 
@@ -162,12 +205,13 @@ def main():
     parser.add_argument("binary", type=Path)
     parser.add_argument("--native", type=Path)
     parser.add_argument("--report", type=Path)
+    parser.add_argument("--http", action="store_true")
     args = parser.parse_args()
     assert version("mcp") == "1.26.0"
     with tempfile.TemporaryDirectory(prefix="mcp-server-") as directory:
         root = Path(directory)
-        report = asyncio.run(native(args.binary.resolve(), root, args.native.resolve()) if args.native
-                             else basic(args.binary.resolve(), root))
+        report = asyncio.run(native(args.binary.resolve(), root, args.native.resolve(), args.http) if args.native
+                             else basic(args.binary.resolve(), root, args.http))
     if args.report:
         args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps(report, ensure_ascii=False, indent=2))

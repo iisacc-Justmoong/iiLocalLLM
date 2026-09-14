@@ -184,9 +184,18 @@
         "docs/MCPServer.md",
         "agent/Compaction.cpp",
         "tests/compaction_tests.cpp",
-        "docs/Compaction.md"
+        "docs/Compaction.md",
+        "mcp/HttpServer.h",
+        "mcp/HttpServer.cpp",
+        "tools/McpCredentials.h",
+        "tests/mcp_http_server_tests.cpp",
+        "tests/mcp_http_server_fixture.cpp",
+        "tests/mcp_http_server_wire.py",
+        "tests/mcp_http_server_cli.py",
+        "tests/consumer/mcp_http_server.cpp",
+        "docs/MCPHTTPServer.md"
       ],
-      "remaining": "C++ per-connection sessions, POSIX stdio, app ToolRegistry export and local agent tools implemented. Streamable HTTP/SSE, OAuth, Windows stdio, task lifecycle and actual iisacc app endpoints remain."
+      "remaining": "C++ sessions, POSIX stdio, authenticated loopback Streamable HTTP, resumable SSE, CLI, app ToolRegistry export and local agent tools implemented. Remote TLS/proxy qualification, legacy SSE, OAuth, Windows stdio, task lifecycle, automatic discovery and actual iisacc app endpoints remain."
     },
     {
       "id": "api",

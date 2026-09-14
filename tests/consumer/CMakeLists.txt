@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 project(iiLocalLLMConsumer LANGUAGES CXX)
 
-find_package(iiLocalLLM 0.7.0 CONFIG REQUIRED)
+find_package(iiLocalLLM 0.8.0 CONFIG REQUIRED)
 add_executable(iiLocalLLMConsumer ../hello_world.cpp)
 target_link_libraries(iiLocalLLMConsumer PRIVATE iiLocalLLM::iiLocalLLM)
 set_target_properties(iiLocalLLMConsumer PROPERTIES CXX_EXTENSIONS OFF)
@@ -16,6 +16,9 @@ add_test(NAME iiLocalLLM.installed_agent_consumer COMMAND iiLocalLLMAgentConsume
 add_executable(iiLocalLLMMcpServerConsumer mcp_server.cpp)
 target_link_libraries(iiLocalLLMMcpServerConsumer PRIVATE iiLocalLLM::iiLocalLLM)
 add_test(NAME iiLocalLLM.installed_mcp_server_consumer COMMAND iiLocalLLMMcpServerConsumer)
+add_executable(iiLocalLLMMcpHttpServerConsumer mcp_http_server.cpp)
+target_link_libraries(iiLocalLLMMcpHttpServerConsumer PRIVATE iiLocalLLM::iiLocalLLM)
+add_test(NAME iiLocalLLM.installed_mcp_http_server_consumer COMMAND iiLocalLLMMcpHttpServerConsumer)
 add_executable(iiLocalLLMAgentApiConsumer api.cpp)
 target_link_libraries(iiLocalLLMAgentApiConsumer PRIVATE iiLocalLLM::iiLocalLLM)
 add_test(NAME iiLocalLLM.installed_agent_api_consumer COMMAND iiLocalLLMAgentApiConsumer)

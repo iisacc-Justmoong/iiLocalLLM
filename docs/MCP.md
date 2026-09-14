@@ -2,7 +2,7 @@
 
 0.4.0은 C++ stdio MCP 클라이언트·서버와 에이전트 도구 어댑터를 제공한다. 서버 실행 파일·앱 도구 공개·연결별 로컬 에이전트 실행은 [MCPServer.md](MCPServer.md)를 참조한다. MCP 서버가 공개한 도구·리소스·프롬프트를 읽고, 기존 ToolRegistry·권한 정책·실행 엔진에서 외부 도구를 호출한다. 생산 런타임에는 Python이나 TypeScript 의존성이 추가되지 않는다.
 
-Streamable HTTP 클라이언트와 세션 복원은 [MCPHTTP.md](MCPHTTP.md)를 참조한다. 전체 MCP 요구사항의 완료 상태는 아니다. legacy SSE·OAuth, MCP 서버의 HTTP 전송·인증, tasks, 자동 앱 발견은 남아 있다. 지원 프로토콜은 2025-11-25, 2025-06-18, 2025-03-26이다. 2026-07-28 규격은 아직 지원 목록에 넣지 않는다.
+Streamable HTTP 클라이언트와 세션 복원은 [MCPHTTP.md](MCPHTTP.md)를 참조한다. 전체 MCP 요구사항의 완료 상태는 아니다. 인증된 HTTP 서버는 [MCPHTTPServer.md](MCPHTTPServer.md)에 있다. legacy SSE·OAuth, tasks, 자동 앱 발견은 남아 있다. 지원 프로토콜은 2025-11-25, 2025-06-18, 2025-03-26이다. 2026-07-28 규격은 아직 지원 목록에 넣지 않는다.
 
 ## 연결과 수명
 

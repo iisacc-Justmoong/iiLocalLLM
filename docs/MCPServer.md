@@ -2,7 +2,7 @@
 
 `mcp::ServerSession`은 연결별 JSON-RPC 상태를 제공하고 `mcp::serveStdio`는 POSIX stdin/stdout 전송을 연결한다. `agent::mcpServerOptions`는 앱이 등록한 ToolRegistry를 기존 스키마·권한·훅을 유지하면서 MCP 도구로 공개한다. 배포 실행 파일은 `iillm-mcp`다. 생산 경로는 C++·Qt이며 공식 Python MCP SDK는 독립 교차 검증에만 사용한다.
 
-MCP 서버 전체 요구사항 중 stdio와 C++ 내장 경로를 구현한 단계다. Streamable HTTP·legacy SSE·OAuth, tasks, logging/completion 전용 API, 앱 자동 발견과 실제 Society/Dreamscapes 제품 연결은 남아 있다. Windows에서도 ServerSession을 내장할 수 있지만 이번 stdio 어댑터는 POSIX 전용이며 Windows 전송·실기기는 아직 검증하지 않았다.
+stdio·C++ 내장 서버와 0.8.0의 인증된 [Streamable HTTP 서버](MCPHTTPServer.md)를 제공한다. 전체 MCP 요구사항 중 legacy SSE·OAuth, tasks, logging/completion 전용 API, 앱 자동 발견과 실제 Society/Dreamscapes 제품 연결은 남아 있다. Windows에서도 ServerSession을 내장할 수 있지만 이번 stdio 어댑터는 POSIX 전용이며 Windows 전송·실기기는 아직 검증하지 않았다.
 
 ## 실행 파일
 
@@ -64,7 +64,7 @@ resources/subscribe 핸들러는 호스트가 해당 URI의 구독을 허용하�
 
 핸들러는 ServerRequestContext의 연결 ID·요청 ID·클라이언트 정보·기능·프로토콜 버전·취소 토큰을 받는다. requestClient는 살아 있는 부모 요청에 묶여 roots/list·sampling/createMessage·elicitation/create·ping을 전송한다. 기능을 협상하지 않았거나 해당 버전에서 불가능한 요청은 거부한다. 응답·취소·시간 초과·종료를 구분하며 자동 재실행하지 않는다. sampling/elicitation의 상세 모델·UI 처리는 호스트 책임이며 전체 적합성 검증과 task 연계는 남아 있다. 수신 알림은 takeNotifications로 호스트에 데이터로 전달한다.
 
-협상 버전은 2025-11-25·2025-06-18·2025-03-26이다. 2025-03-26에서 요구하는 JSON-RPC 배열 수신과 응답 결합을 양쪽 전송에 적용한다. 큰 결과를 한도 오류로 바꿀 때에도 해당 오류를 원래 배열 안에 유지한다. 이후 버전에서는 배열 프레임을 거부한다. 구형 서버 응답의 structuredContent·resource_link는 텍스트로 전달하고 outputSchema 광고를 생략한다. 최신 2026-07-28 규격은 아직 지원 목록에 없다.
+협상 버전은 2025-11-25·2025-06-18·2025-03-26이다. 2025-03-26에서 요구하는 JSON-RPC 배열 수신과 응답 결합을 stdio·HTTP 전송에 적용한다. 큰 결과를 한도 오류로 바꿀 때에도 해당 오류를 원래 배열 안에 유지한다. 이후 버전에서는 배열 프레임을 거부한다. 구형 서버 응답의 structuredContent·resource_link는 텍스트로 전달하고 outputSchema 광고를 생략한다. 최신 2026-07-28 규격은 아직 지원 목록에 없다.
 
 | 한도 | 기본값 |
 |---|---:|

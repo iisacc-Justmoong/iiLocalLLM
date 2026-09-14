@@ -67,3 +67,7 @@ Markdown은 [MD4C release-0.5.3](https://github.com/mity/md4c/tree/472c417005c2c
 Qt는 응답 헤더 전 EOF에서 POST를 재전송할 수 있으므로, 공개 QIODevice 및 [DoNotBufferUploadDataAttribute](https://doc.qt.io/qt-6.8/qnetworkrequest.html#Attribute-enum)를 사용하여 이미 읽힌 업로드를 되감지 못하게 한다. 중도 종료한 SSE 연결은 캐시에서 정리한다. HTTP 요청 자체의 파서를 복제하거나 Qt private API를 사용하지 않는다. Qt 구현 참조는 [v6.8.3 qhttpnetworkconnectionchannel.cpp](https://github.com/qt/qtbase/blob/v6.8.3/src/network/access/qhttpnetworkconnectionchannel.cpp)이며 이 소스를 패키지에 복사하지 않았다.
 
 공식 Python MCP SDK 1.26.0(MIT)와 해당 환경의 uvicorn은 HTTP 상호 운용 시험에만 사용한다. 자체 서명 TLS 거부 시험은 사용 가능한 OpenSSL 명령으로 build/tmp 안에 일회용 시험 인증서를 생성하며 생성된 키를 저장소·생산 패키지에 포함하지 않는다.
+
+## MCP HTTP 서버 (0.8.0)
+
+기존 [cpp-httplib 0.54.1](https://github.com/yhirose/cpp-httplib/tree/v0.54.1)의 HTTP 서버·동적 worker pool·chunked content provider를 사용한다. MIT 원문과 기존 고정 해시를 유지한다. 별도 네트워크 파서·TLS 라이브러리·Python 생산 서버를 도입하지 않는다. 연결별 MCP 상태, 인증 principal과 세션 연결, SSE 재개 기록 및 상한은 iiLocalLLM의 고유 전송 계약으로 구현했다. 암호 해시와 UUID에는 기존 Qt Core를 사용한다. 공식 Python MCP SDK 1.26.0 및 httpx는 독립 HTTP 클라이언트 시험에만 사용한다.

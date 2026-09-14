@@ -1,5 +1,33 @@
 # 구현 검증 기록
 
+## 2026-09-14 인증된 MCP HTTP 서버 (0.8.0)
+
+C++ `mcp::HttpServer`와 `iillm-mcp --http-port`를 추가했다. 인증 principal에 묶인 세션, 요청별 SSE·재개 기록, 독립 알림 GET, 명시적 취소, 역방향 요청, 구형 배열, 용량·수명 제한을 기존 ServerSession에 연결했다. cpp-httplib 0.54.1과 Qt Core를 재사용하며 생산 Python 서버를 추가하지 않았다. 검증 환경은 Apple arm64 / macOS 27 / Qt 6.8.3이다.
+
+| 구분 | 최종 관측 결과 |
+|---|---|
+| Release 전체 빌드·CTest | 빌드 성공, **39/40 통과**, 132.81초. 실패 1건은 아래 모델 원문 재현 검사 |
+| 새 HTTP 서버 검사 | 서버·독립 wire·CLI·공식 SDK·실제 HTTP 추론 **5개 CTest 항목 모두 통과** |
+| 독립 stdlib HTTP peer | **7개 사례 통과**. 인증·Origin·Host·UTF-8·상한·CORS, POST 재실행 없는 GET 복원, 동일 progressToken 분리, 역방향 취소, 구형 배열 오류 보존, 기록/세션 만료 |
+| C++ HTTP 서버 검사 | 앱·대화 분리, 8개 동시 역방향 RPC와 중첩 ping, SSE 용량 2에서도 취소, 바인딩 충돌·8회 즉시 종료/재시작·콜백 합류 통과 |
+| CLI 자격 증명 | 비공개 파일·ID/토큰 전체 문자열·중복 토큰·symlink·작업 폴더 경계·state 잠금·다른 앱의 세션 사용 거부 통과. 잘못된 인증 설정은 Service 생성 전에 실패 |
+| 공식 Python SDK | **MCP 1.26.0**. 실제 C++ HTTP CLI에서 파일 읽기/쓰기, 정책·스키마·경로 거부, Bash와 자식 프로세스 취소, 이후 연결 사용 통과 |
+| ASAN/UBSAN | llama 비활성화 Debug 전체 **27/27 통과**, 42.73초. sanitizer 오류 및 SDK 빌드 경고 없음 |
+| 새 설치 소비자 | `build/mcp-http-server-stage`, 독립 `build/mcp-http-server-consumer/build`에서 **10/10 통과**, 35.15초. 공개 HttpServer ABI와 앱별 ToolRegistry factory 포함 |
+| 소스 HTTP 실제 추론 | Qwen2.5 0.5B Q4_K_M → Read → 임의 파일 값 `LOCAL_9c8944191291` 포함 답변. 2턴, 45 생성 토큰, 진행 이벤트 11개, 대화 기록 검증 |
+| 설치 HTTP 실제 추론 | 새 설치 iillm-mcp → 같은 모델 → Read → 다른 임의 값 `LOCAL_53737beba11c` 포함 답변. 2턴, 41 생성 토큰, 진행 이벤트 11개, 대화 기록 검증 |
+| 로딩·CLI | 경로 override 제거 후 stage의 `libiiLocalLLM.0.8.0.dylib` 로딩 확인. 소스/설치 UUID `EDD90334-2406-361B-B1B0-7B95C7946FD5` 일치. 세 실행 파일 모두 0.8.0이며 iillm의 Core/Network 전용 링크 유지 |
+
+처음에는 헤더가 없어 테스트 빌드가 실패했다. 독립 HTTP peer는 이후 취소 직후 스트림을 닫으면 구형 배열에 남은 오류 응답과 역방향 취소 알림이 사라지는 두 실패를 재현했다. JSON-RPC 밖의 channel과 cancelledRequestId를 보존하고, 핸들러 종료 시 앞선 메시지 뒤에 스트림 종료 이벤트를 전달하도록 고쳤다. wire 검사 조건을 완화하지 않았다.
+
+즉시 close 후 재시작 검사에서는 accept 스레드의 준비/종료 상태 정리가 부족함을 확인했다. 이어 최초 전체 실행은 Release 39/40, sanitizer 26/27로 모두 포트 충돌 검사에 실패했다. cpp-httplib의 SO_REUSEPORT 기본값 때문에 두 서버가 동일 포트에 바인딩되었다. 상태를 가지는 MCP 세션이 다른 서버로 배분되지 않도록 포트 공유를 끄고, 바인딩 실패와 종료 후 같은 객체를 재사용하도록 보강했다. 초기 오류와 최종 검증 로그를 각각 보존했다. 중간 C++ 알림 대기 테스트는 QTRY가 조건을 재평가하면서 알림 큐를 두 번 비워 실패하여, 수신 여부를 보존하는 대기로 수정했다.
+
+최종 Release 실패는 `agent_local_inference`다. Read의 실제 결과·Tool 기록은 `LOCAL_fd2e6cbfe577`였지만 모델은 `This is a secret message.`를 포함한 다른 문장을 답했다. 이 실행은 compactions=0, prompt_tokens=730, generated_tokens=40이다. 이번 변경에서 Engine·LlamaRuntime·해당 검사 소스는 바꾸지 않았다. 아래 0.5/0.6 기록에도 소형 모델의 원문 재현 실패가 있지만, 그것을 이번 전체 검사 통과의 대체 근거로 삼지 않는다. 실패 후 동일 검사를 통과할 때까지 반복하지 않았고 모델 답변·기대값·검사 조건도 바꾸지 않았다. 별도 소스/설치 HTTP 추론 통과와 전체 39/40을 구분한다.
+
+계약은 [MCPHTTPServer.md](MCPHTTPServer.md)에 있다. 원격 TLS/proxy·OAuth·legacy SSE·최신 규격·tasks·실제 Society/Dreamscapes 발견/연동은 남아 있으며 전체 하네스 목표는 계속 진행 중이다. 이 stage는 전역 SDK 설치나 제품 앱 재배포를 의미하지 않는다.
+
+증거: `build/mcp-http-server-final-{release,sanitizer,consumer}-tests.log`, 대응 JUnit XML과 LastTest 로그, `build/mcp-http-server-linkage.json`, `build/mcp-http-server-installed-loader.log`, `build/mcp-http-server-{native,installed-native}-result.json`, `build/mcp-http-server-verification.json`. 실패 대조는 `build/mcp-http-server-wire-red.log`, `build/mcp-http-server-lifecycle-tests.log`, `build/mcp-http-server-{release,sanitizer}-tests.log`에 있다. 새 실행 파일을 포함한 전체 빌드 후 검사했으며, 중간 타깃 전용 실행을 최종 전체 결과로 사용하지 않았다.
+
 ## 2026-09-14 MCP Streamable HTTP 클라이언트 (0.7.0)
 
 C++ 공통 `mcp::Client`에 stdio와 Streamable HTTP 전송을 연결했다. HTTP JSON/SSE, 호스트 자격 증명 공급자, 진행·취소, SSE GET 복원, 세션 404 재초기화와 연결 세대에 묶인 에이전트 도구를 구현했다. Qt 6.8.3 Network를 재사용하며 생산 패키지에 새 런타임 의존성을 추가하지 않았다. 검증 장비는 Apple M1 Max / macOS 27 / Qt 6.8.3이다.

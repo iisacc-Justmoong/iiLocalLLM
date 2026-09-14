@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(iiLocalLLM VERSION 0.7.0 LANGUAGES CXX)
+project(iiLocalLLM VERSION 0.8.0 LANGUAGES CXX)
 
 if(PROJECT_IS_TOP_LEVEL AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     if(DEFINED ENV{HOME})
@@ -47,7 +47,7 @@ add_library(iiLocalLLM SHARED iiLocalLLM.h iiLocalLLM.cpp
     service/ModelRegistry.h service/ModelRegistry.cpp ModelPull.h catalog/catalog.qrc
     runtimes/LlamaRuntime.cpp runtimes/MlxRuntime.cpp)
 target_sources(iiLocalLLM PRIVATE agent/Types.cpp agent/Tools.cpp agent/SessionStore.cpp agent/Engine.cpp agent/WorkspaceTools.cpp)
-target_sources(iiLocalLLM PRIVATE mcp/Client.cpp mcp/StdioClientTransport.cpp mcp/HttpClient.cpp mcp/Server.cpp mcp/StdioServer.cpp agent/McpTools.cpp agent/McpServer.cpp)
+target_sources(iiLocalLLM PRIVATE mcp/Client.cpp mcp/StdioClientTransport.cpp mcp/HttpClient.cpp mcp/Server.cpp mcp/HttpServer.cpp mcp/StdioServer.cpp agent/McpTools.cpp agent/McpServer.cpp)
 target_sources(iiLocalLLM PRIVATE agent/Api.cpp)
 target_sources(iiLocalLLM PRIVATE agent/ProjectContext.cpp agent/Compaction.cpp)
 add_library(iiLocalLLM::iiLocalLLM ALIAS iiLocalLLM)
@@ -180,6 +180,18 @@ if(BUILD_TESTING)
     set_target_properties(iiLocalLLMMcpHttpTests PROPERTIES AUTOMOC ON)
     add_test(NAME iiLocalLLM.mcp_http_client COMMAND iiLocalLLMMcpHttpTests)
     set_tests_properties(iiLocalLLM.mcp_http_client PROPERTIES TIMEOUT 60)
+    add_executable(iiLocalLLMMcpHttpServerTests tests/mcp_http_server_tests.cpp)
+    target_link_libraries(iiLocalLLMMcpHttpServerTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
+    set_target_properties(iiLocalLLMMcpHttpServerTests PROPERTIES AUTOMOC ON)
+    add_test(NAME iiLocalLLM.mcp_http_server COMMAND iiLocalLLMMcpHttpServerTests)
+    set_tests_properties(iiLocalLLM.mcp_http_server PROPERTIES TIMEOUT 60)
+    add_executable(iiLocalLLMMcpHttpServerFixture tests/mcp_http_server_fixture.cpp)
+    target_link_libraries(iiLocalLLMMcpHttpServerFixture PRIVATE iiLocalLLM::iiLocalLLM)
+    if(Python3_EXECUTABLE)
+        add_test(NAME iiLocalLLM.mcp_http_server_wire COMMAND "${Python3_EXECUTABLE}" -B
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/mcp_http_server_wire.py" $<TARGET_FILE:iiLocalLLMMcpHttpServerFixture>)
+        set_tests_properties(iiLocalLLM.mcp_http_server_wire PROPERTIES TIMEOUT 90)
+    endif()
     add_executable(iiLocalLLMMcpTests tests/mcp_tests.cpp)
     target_link_libraries(iiLocalLLMMcpTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
     target_compile_definitions(iiLocalLLMMcpTests PRIVATE MCP_TEST_PYTHON="${Python3_EXECUTABLE}" MCP_TEST_PEER="${CMAKE_CURRENT_SOURCE_DIR}/tests/mcp_peer.py")
@@ -192,6 +204,9 @@ if(BUILD_TESTING)
     add_test(NAME iiLocalLLM.mcp_server COMMAND iiLocalLLMMcpServerTests)
     set_tests_properties(iiLocalLLM.mcp_server PROPERTIES TIMEOUT 60)
     if(UNIX)
+        add_test(NAME iiLocalLLM.mcp_http_server_cli COMMAND "${Python3_EXECUTABLE}" -B
+            "${CMAKE_CURRENT_SOURCE_DIR}/tests/mcp_http_server_cli.py" $<TARGET_FILE:iiLocalLLMMcpServer>)
+        set_tests_properties(iiLocalLLM.mcp_http_server_cli PROPERTIES TIMEOUT 60)
         add_test(NAME iiLocalLLM.mcp_server_transport COMMAND "${Python3_EXECUTABLE}" -B
             "${CMAKE_CURRENT_SOURCE_DIR}/tests/mcp_server_transport.py" $<TARGET_FILE:iiLocalLLMMcpServer>)
         set_tests_properties(iiLocalLLM.mcp_server_transport PROPERTIES TIMEOUT 60)
@@ -210,6 +225,10 @@ if(BUILD_TESTING)
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/mcp_server_smoke.py" $<TARGET_FILE:iiLocalLLMMcpServer>
                 --report "${CMAKE_CURRENT_BINARY_DIR}/mcp-server-official-result.json")
             set_tests_properties(iiLocalLLM.mcp_server_official PROPERTIES TIMEOUT 60)
+            add_test(NAME iiLocalLLM.mcp_http_server_official COMMAND "${IILOCALLLM_TEST_MCP_PYTHON}" -B
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/mcp_server_smoke.py" $<TARGET_FILE:iiLocalLLMMcpServer>
+                --http --report "${CMAKE_CURRENT_BINARY_DIR}/mcp-http-server-official-result.json")
+            set_tests_properties(iiLocalLLM.mcp_http_server_official PROPERTIES TIMEOUT 60)
         endif()
     endif()
     add_test(NAME iiLocalLLM.parameter_catalog COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/parameter_catalog_tests.py)
@@ -245,6 +264,10 @@ if(BUILD_TESTING)
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/mcp_server_smoke.py" $<TARGET_FILE:iiLocalLLMMcpServer>
                     --native "${IILOCALLLM_TEST_CHAT_GGUF}" --report "${CMAKE_CURRENT_BINARY_DIR}/mcp-server-native-result.json")
                 set_tests_properties(iiLocalLLM.mcp_server_inference PROPERTIES TIMEOUT 240 LABELS "inference")
+                add_test(NAME iiLocalLLM.mcp_http_server_inference COMMAND "${IILOCALLLM_TEST_MCP_PYTHON}" -B
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/mcp_server_smoke.py" $<TARGET_FILE:iiLocalLLMMcpServer>
+                    --http --native "${IILOCALLLM_TEST_CHAT_GGUF}" --report "${CMAKE_CURRENT_BINARY_DIR}/mcp-http-server-native-result.json")
+                set_tests_properties(iiLocalLLM.mcp_http_server_inference PROPERTIES TIMEOUT 240 LABELS "inference")
             endif()
             add_test(NAME iiLocalLLM.chat COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/chat_smoke.py
                 $<TARGET_FILE:iiLocalLLMD> $<TARGET_FILE:iillm> "${IILOCALLLM_TEST_CHAT_GGUF}")
@@ -290,7 +313,7 @@ install(TARGETS iiLocalLLM EXPORT iiLocalLLMTargets
 install(TARGETS iiLocalLLMService iiLocalLLMD iillm RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(FILES iiLocalLLM.h Types.h Parameters.h Hardware.h Memory.h ModelManifest.h ModelCatalog.h ModelInfo.h ModelPull.h Runtime.h Service.h Rpc.h LocalIpcServer.h HttpApiServer.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES agent/Types.h agent/Tools.h agent/SessionStore.h agent/Engine.h agent/ProjectContext.h agent/Compaction.h agent/Api.h agent/McpTools.h agent/McpServer.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/agent)
-install(FILES mcp/Client.h mcp/HttpClient.h mcp/Server.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mcp)
+install(FILES mcp/Client.h mcp/HttpClient.h mcp/Server.h mcp/HttpServer.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mcp)
 install(FILES catalog/harness-parity.json DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM)
 install(FILES third_party/jsoncons/LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/licenses RENAME jsoncons.LICENSE)
 install(FILES third_party/jsoncons/A5HASH-LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/licenses RENAME jsoncons-A5HASH.LICENSE)
