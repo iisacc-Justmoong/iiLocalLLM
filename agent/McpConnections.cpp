@@ -10,7 +10,9 @@
 #include <QtCore/QUuid>
 #include <chrono>
 #include <condition_variable>
+#include <climits>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 namespace iiLocalLLM::agent {
@@ -28,6 +30,14 @@ QString string(const QJsonValue& value) {
 bool flag(const QJsonObject& object, const char* key) {
     require(!object.contains(key) || object[key].isBool(), "MCP configuration requires a boolean");
     return object[key].toBool();
+}
+std::optional<int> timeout(const QJsonObject& object, const char* key) {
+    if (!object.contains(key)) return {};
+    const auto value = object.value(key);
+    const auto integer = value.toInteger();
+    require(value.isDouble() && integer > 0 && integer <= INT_MAX
+        && value.toDouble() == double(integer), "MCP timeout must be a positive 32-bit integer in milliseconds");
+    return int(integer);
 }
 QString expand(const QJsonValue& value, const QProcessEnvironment& environment) {
     const auto input = string(value);
@@ -52,6 +62,7 @@ struct Config {
     QUrl endpoint;
     QMap<QByteArray, QByteArray> headers;
     bool disabled = false, alwaysLoad = false;
+    std::optional<int> initializeTimeoutMs, requestTimeoutMs;
     QByteArray fingerprint;
 };
 std::map<QString, Config> readConfigs(const McpConnectionOptions& options) {
@@ -76,6 +87,8 @@ std::map<QString, Config> readConfigs(const McpConnectionOptions& options) {
         require(it.value().isObject(), "MCP server definition must be an object");
         const auto object = it.value().toObject(); Config c; c.name = it.key();
         c.disabled = flag(object, "disabled"); c.alwaysLoad = flag(object, "alwaysLoad");
+        c.initializeTimeoutMs = timeout(object, "initializeTimeoutMs");
+        c.requestTimeoutMs = timeout(object, "requestTimeoutMs");
         if (object.contains("appId")) { c.appId = string(object["appId"]); require(c.appId.size() <= 256, "MCP app ID is too long"); }
         if (c.disabled) { configs.emplace(c.name, std::move(c)); continue; }
         c.type = object.contains("type") ? string(object["type"]) : "stdio";
@@ -135,6 +148,9 @@ public:
         bool dirty = true;
         ErrorCode error = ErrorCode::None;
         int httpStatus = 0;
+        QString errorPhase;
+        qint64 errorElapsedMs = 0;
+        QJsonObject requestTimeout;
         Clock::time_point retryAt{};
     };
     std::shared_ptr<ToolRegistry> registry;
@@ -175,12 +191,15 @@ public:
     }
     std::shared_ptr<mcp::Client> connect(const Config& c) {
         auto clientOptions = options.clientOptions ? options.clientOptions(c.name) : mcp::ClientOptions{};
+        auto limits = options.limits;
+        if (c.initializeTimeoutMs) limits.initializeTimeoutMs = *c.initializeTimeoutMs;
+        if (c.requestTimeoutMs) limits.requestTimeoutMs = *c.requestTimeoutMs;
         if (c.type == "stdio") {
-            mcp::StdioOptions o; static_cast<mcp::ClientLimits&>(o) = options.limits;
+            mcp::StdioOptions o; static_cast<mcp::ClientLimits&>(o) = limits;
             o.program = c.command; o.arguments = c.args; o.environment = c.environment; o.workingDirectory = c.cwd;
             return std::make_shared<mcp::StdioClient>(std::move(o), std::move(clientOptions));
         }
-        mcp::HttpOptions o; static_cast<mcp::ClientLimits&>(o) = options.limits;
+        mcp::HttpOptions o; static_cast<mcp::ClientLimits&>(o) = limits;
         o.endpoint = c.endpoint; o.headers = c.headers; o.allowInsecureHttp = options.allowInsecureHttp;
         const auto authorization = o.headers.take("authorization");
         if (!authorization.isEmpty()) {
@@ -210,6 +229,9 @@ public:
             }
         }
         if (!force && Clock::now() < entry.retryAt) return;
+        QString phase = "connect";
+        auto phaseStarted = Clock::now();
+        QJsonObject requestTimeout;
         try {
             cancellation.throwIfCancelled();
             if (!entry.client || entry.client->isClosed()) {
@@ -217,6 +239,7 @@ public:
                 entry.dirty = true;
             }
             if (force || entry.dirty || entry.generation != entry.client->connectionGeneration()) {
+                phase = "discover_tools"; phaseStarted = Clock::now();
                 QList<Tool> tools;
                 const auto generation = entry.client->connectionGeneration();
                 if (entry.client->serverCapabilities().contains("tools"))
@@ -235,12 +258,19 @@ public:
                 entry.tools = std::move(tools); entry.generation = generation; entry.dirty = false; ++entry.toolsRevision;
             }
             entry.state = "ready"; entry.error = ErrorCode::None; entry.httpStatus = 0; entry.retryAt = {};
+            entry.errorPhase.clear(); entry.errorElapsedMs = 0; entry.requestTimeout = {};
         } catch (const Error& error) {
             if (error.code() == ErrorCode::Cancelled) throw;
             entry.error = error.code(); entry.httpStatus = 0;
             if (const auto* http = dynamic_cast<const mcp::HttpError*>(&error)) entry.httpStatus = http->statusCode();
+            if (const auto* timeout = dynamic_cast<const mcp::RequestTimeoutError*>(&error))
+                requestTimeout = {{"method", timeout->method()}, {"timeout_ms", timeout->timeoutMs()},
+                    {"elapsed_ms", timeout->elapsedMs()}, {"submitted", timeout->submitted()}};
         } catch (...) { entry.error = ErrorCode::RuntimeFailure; entry.httpStatus = 0; }
         if (entry.error != ErrorCode::None) {
+            entry.errorPhase = phase;
+            entry.errorElapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - phaseStarted).count();
+            entry.requestTimeout = std::move(requestTimeout);
             entry.state = "failed"; entry.dirty = true; entry.tools.clear();
             entry.retryAt = Clock::now() + std::chrono::milliseconds(options.retryDelayMs);
         }
@@ -255,7 +285,12 @@ public:
                 {"generation", QString::number(entry.generation)}};
             if (!entry.config.appId.isEmpty()) item["app_id"] = entry.config.appId;
             item["source"] = entry.config.applicationInstance.isEmpty() ? "configuration" : "local_application";
-            if (entry.error != ErrorCode::None) item["error_code"] = enumName(entry.error);
+            if (entry.error != ErrorCode::None) {
+                item["error_code"] = enumName(entry.error);
+                item["error_phase"] = entry.errorPhase;
+                item["error_elapsed_ms"] = entry.errorElapsedMs;
+                if (!entry.requestTimeout.isEmpty()) item["request_timeout"] = entry.requestTimeout;
+            }
             if (entry.httpStatus) item["http_status"] = entry.httpStatus;
             status.append(item);
             if (entry.client) nextClients[name] = entry.client;

@@ -168,7 +168,7 @@
         "tests/discovery_tests.cpp",
         "docs/ToolDiscovery.md"
       ],
-      "remaining": "Shared C++ stdio/Streamable HTTP client, 2025 negotiation, bearer/header provider, bounded JSON/SSE, resume GET, 404 session reinitialization without POST replay and generation-bound tools implemented. Legacy SSE, OAuth workflows, proxy qualification and 2026-07-28 remain."
+      "remaining": "Shared C++ stdio/Streamable HTTP client, 2025 negotiation, bearer/header provider, bounded JSON/SSE, resume GET, 404 session reinitialization without POST replay and generation-bound tools implemented. Legacy SSE, OAuth workflows, proxy qualification and 2026-07-28 remain. Server configurations can override initialization and request deadlines. Local request deadlines expose method, elapsed time and transport submission status; original intermittent initialize failures remain under investigation."
     },
     {
       "id": "mcp_features",
@@ -372,8 +372,19 @@
     {
       "id": "observability",
       "requirement": "구조화 로그·실행 trace·사용량/비용·성능·오류 진단",
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "mcp/Client.h",
+        "mcp/Client.cpp",
+        "agent/McpConnections.cpp",
+        "tests/mcp_tests.cpp",
+        "tests/discovery_tests.cpp",
+        "tests/mcp_http_tests.cpp",
+        "tests/consumer/discovery.cpp",
+        "docs/MCP.md",
+        "docs/ToolDiscovery.md"
+      ],
+      "remaining": "Typed local MCP request deadlines and sanitized connection/discovery failure phases are implemented. Complete structured logging, run traces, usage/cost and performance diagnostics remain. Intermittent official Python peer startup failures are preserved, not marked resolved."
     },
     {
       "id": "iisacc_apps",

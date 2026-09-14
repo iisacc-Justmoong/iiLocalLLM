@@ -55,6 +55,8 @@ private slots:
     void configuredHttpToolsAndNotificationRefresh();
     void configErrorsAndCredentialsStayIsolated();
     void configuredStdioReloadAndRecovery();
+    void failedConnectionAndDiscoveryDiagnostics();
+    void perServerDeadlinesAndReload();
     void validationBeforeEffects();
     void selectionBoundsPolicyAndCompaction();
     void closeDoesNotCancelTheHostsToken();
@@ -166,6 +168,8 @@ void DiscoveryTests::configErrorsAndCredentialsStayIsolated() {
     const auto status = QJsonDocument(connections.status()).toJson();
     QVERIFY(!status.contains("very-secret-token")); QVERIFY(!status.contains("Authorization"));
     QCOMPARE(connections.status().first().toObject()["state"].toString(), "failed");
+    QCOMPARE(connections.status().first().toObject()["error_phase"], "connect");
+    QVERIFY(connections.status().first().toObject().contains("error_elapsed_ms"));
     write(path, {{"mcpServers", QJsonArray{}}});
     QVERIFY_THROWS_EXCEPTION(Error, connections.reload());
     QCOMPARE(connections.status().size(), 1);
@@ -223,7 +227,14 @@ void DiscoveryTests::validationBeforeEffects() {
         {{"type", "http"}, {"url", "https://secret@example.com/mcp"}},
         {{"type", "http"}, {"url", "https://example.com/mcp"}, {"headers", QJsonObject{{"X-App", "value\r\nInjected: header"}}}},
         {{"type", "http"}, {"url", "https://example.com/mcp"}, {"headers", QJsonObject{{"X-App\n", "value"}}}},
-        {{"command", "python3"}, {"env", QJsonObject{{"NAME\n", "value"}}}}
+        {{"command", "python3"}, {"env", QJsonObject{{"NAME\n", "value"}}}},
+        {{"command", "python3"}, {"initializeTimeoutMs", 0}},
+        {{"command", "python3"}, {"initializeTimeoutMs", -1}},
+        {{"command", "python3"}, {"requestTimeoutMs", 1.5}},
+        {{"command", "python3"}, {"requestTimeoutMs", "30000"}},
+        {{"command", "python3"}, {"requestTimeoutMs", true}},
+        {{"disabled", true}, {"initializeTimeoutMs", QJsonValue::Null}},
+        {{"command", "python3"}, {"initializeTimeoutMs", 2147483648.0}}
     };
     o.environment.remove("UNSET_DISCOVERY_VARIABLE");
     for (const auto& bad : invalid) {
@@ -235,6 +246,84 @@ void DiscoveryTests::validationBeforeEffects() {
     o.configFiles.clear();
     a::McpConnections empty(std::make_shared<a::ToolRegistry>(), o);
     QVERIFY(empty.status().isEmpty()); QCOMPARE(effects, 0); // Workspace files require explicit host selection.
+}
+void DiscoveryTests::failedConnectionAndDiscoveryDiagnostics() {
+    QTemporaryDir root; const auto path = root.filePath("mcp.json"), gate = root.filePath("release-list");
+    auto registry = std::make_shared<a::ToolRegistry>();
+    a::McpConnectionOptions o; o.workingDirectory = root.path(); o.configFiles = {path}; o.refreshIntervalMs = 0;
+    o.limits.initializeTimeoutMs = 200; o.limits.requestTimeoutMs = 150;
+    QJsonObject peer{{"command", MCP_TEST_PYTHON}, {"args", QJsonArray{"-B", MCP_TEST_PEER, "hang-initialize"}},
+        {"env", QJsonObject{{"IILOCAL_MCP_TEST_VALUE", "private-configuration"}}}};
+    write(path, {{"mcpServers", QJsonObject{{"peer", peer}}}});
+    a::McpConnections failed(registry, o);
+    auto status = failed.status().first().toObject();
+    QCOMPARE(status["state"], "failed"); QCOMPARE(status["error_code"], "timeout");
+    QCOMPARE(status["error_phase"], "connect"); QVERIFY(status["error_elapsed_ms"].toInteger() >= 200);
+    auto timeout = status["request_timeout"].toObject();
+    QCOMPARE(timeout["method"], "initialize"); QCOMPARE(timeout["timeout_ms"].toInt(), 200);
+    QVERIFY(timeout["elapsed_ms"].toInteger() >= 200); QVERIFY(timeout["submitted"].toBool());
+    QVERIFY(!QJsonDocument(status).toJson().contains("private-configuration"));
+    QVERIFY(registry->definitions().isEmpty()); failed.close();
+
+    peer["args"] = QJsonArray{"-B", MCP_TEST_PEER, "gated-list", gate};
+    write(path, {{"mcpServers", QJsonObject{{"peer", peer}}}});
+    o.limits.initializeTimeoutMs = 10000;
+    a::McpConnections discovery(registry, o);
+    status = discovery.status().first().toObject();
+    QCOMPARE(status["state"], "failed"); QCOMPARE(status["error_phase"], "discover_tools");
+    timeout = status["request_timeout"].toObject();
+    QCOMPARE(timeout["method"], "tools/list");
+    // Each page receives the remaining aggregate list budget, rounded to ms.
+    QVERIFY(timeout["timeout_ms"].toInt() > 0 && timeout["timeout_ms"].toInt() <= 150);
+    QVERIFY(timeout["elapsed_ms"].toInteger() >= timeout["timeout_ms"].toInt());
+    QVERIFY(status["error_elapsed_ms"].toInteger() >= timeout["elapsed_ms"].toInteger());
+    QVERIFY(timeout["submitted"].toBool());
+    auto client = discovery.client("peer"); QVERIFY(client && client->isConnected());
+    QVERIFY(registry->definitions().isEmpty());
+    write(gate, {}); discovery.reload();
+    status = discovery.status().first().toObject();
+    QCOMPARE(status["state"], "ready"); QCOMPARE(discovery.client("peer"), client);
+    QVERIFY(!status.contains("error_code")); QVERIFY(!status.contains("error_phase"));
+    QVERIFY(!status.contains("error_elapsed_ms")); QVERIFY(!status.contains("request_timeout"));
+    QCOMPARE(registry->definitions().size(), 2);
+    peer["command"] = root.filePath("nonexistent-server"); peer["args"] = QJsonArray{};
+    write(path, {{"mcpServers", QJsonObject{{"peer", peer}}}}); discovery.reload();
+    status = discovery.status().first().toObject();
+    QCOMPARE(status["state"], "failed"); QCOMPARE(status["error_code"], "runtime_unavailable");
+    QCOMPARE(status["error_phase"], "connect"); QVERIFY(status["error_elapsed_ms"].toInteger() >= 0);
+    QVERIFY(!status.contains("request_timeout")); QVERIFY(client->isClosed());
+}
+void DiscoveryTests::perServerDeadlinesAndReload() {
+    QTemporaryDir root; const auto path = root.filePath("mcp.json");
+    auto registry = std::make_shared<a::ToolRegistry>();
+    a::McpConnectionOptions o; o.workingDirectory = root.path(); o.configFiles = {path}; o.refreshIntervalMs = 0;
+    o.limits.initializeTimeoutMs = 100; o.limits.requestTimeoutMs = 2000;
+    QJsonObject peer{{"command", MCP_TEST_PYTHON}, {"args", QJsonArray{"-B", MCP_TEST_PEER, "delay-initialize", "0.3"}},
+        {"initializeTimeoutMs", 3000}, {"requestTimeoutMs", 75}};
+    write(path, {{"mcpServers", QJsonObject{{"slow", peer}}}});
+    a::McpConnections connections(registry, o);
+    QCOMPARE(connections.status().first().toObject()["state"], "ready");
+    auto client = connections.client("slow"); QVERIFY(client);
+    try { client->request("test/slow", {{"delay", .3}}); QFAIL("Expected per-server deadline"); }
+    catch (const m::RequestTimeoutError& error) { QCOMPARE(error.timeoutMs(), 75); }
+    peer["requestTimeoutMs"] = 1000;
+    write(path, {{"mcpServers", QJsonObject{{"slow", peer}}}}); connections.reload();
+    QVERIFY(client->isClosed()); client = connections.client("slow"); QVERIFY(client);
+    QCOMPARE(client->request("test/slow", {{"delay", .15}, {"value", "reloaded"}})["value"], "reloaded");
+    // Removing the override restores the host's short initialization budget.
+    peer.remove("initializeTimeoutMs");
+    write(path, {{"mcpServers", QJsonObject{{"slow", peer}}}}); connections.reload();
+    auto status = connections.status().first().toObject();
+    QCOMPARE(status["state"], "failed"); QCOMPARE(status["error_phase"], "connect");
+    // The same short budget also bounds QProcess startup. A process-start
+    // deadline may fail before there is an initialize RPC to describe.
+    if (status["error_code"] == "timeout")
+        QCOMPARE(status["request_timeout"].toObject()["timeout_ms"].toInt(), 100);
+    else {
+        QCOMPARE(status["error_code"], "runtime_unavailable");
+        QVERIFY(!status.contains("request_timeout"));
+    }
+    QVERIFY(client->isClosed());
 }
 void DiscoveryTests::selectionBoundsPolicyAndCompaction() {
     QTemporaryDir root; auto registry = std::make_shared<a::ToolRegistry>();

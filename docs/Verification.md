@@ -1,5 +1,36 @@
 # 구현 검증 기록
 
+## 2026-09-14 MCP 초기화 지연 재현과 구조화 진단 (0.13.2)
+
+C++ `mcp::RequestTimeoutError`에 요청 메서드·적용 기한·단조 시계 경과 시간·전송 계층 제출 여부를 보존했다. 기존 ErrorCode::Timeout 처리는 유지한다. 연결 관리자의 실패 상태는 connect/discover_tools 단계와 해당 단계의 경과 시간을 제공하고 로컬 RPC 시간 초과인 경우에만 request_timeout을 덧붙인다. 성공하면 이전 실패 정보를 지운다. 기본 기한 10초를 유지하며, 이 변경은 재현된 간헐 실패를 해결했다는 뜻이 아니다. Qt와 기존 C++ 계층을 재사용했고 새 생산 의존성이나 Python 런타임을 도입하지 않았다. 공개 오류 형식은 추가했으며 기존 구조체 레이아웃과 SOVERSION 0.13은 유지한다. 서버 정의의 initializeTimeoutMs·requestTimeoutMs로 호스트 기본값을 개별 재정의하며, ms 단위 양의 32비트 정수만 연결 전에 허용한다. 기한 변경은 reload에서 새 연결에 반영하고 삭제하면 호스트 설정을 복원한다.
+
+| 검증 | 관측 결과 |
+|---|---|
+| Release 전체 빌드·비추론 CTest | **38/38 통과**, 52.03초 |
+| ASan·UBSan 전체 | **36/36 통과**, 62.37초 |
+| 새 설치 소비자, inference 이름 제외 | **15/15 통과**, 31.25초 |
+| 소스 configured MCP 실제 추론 | **1/1 통과**, 7.18초 |
+| 설치본 configured MCP 실제 추론 | **1/1 통과**, 7.20초 |
+| 설치 API·CLI·공식 MCP stdio/HTTP | **3/3 통과** |
+
+실패 기록: 이 표의 실행에서는 없음. 기한 필드 추가 후 최초 검사는 Release 36/38·Sanitizer 35/36였으며 수정 전 회귀의 프로세스 시작/RPC 구분 실패가 양쪽에 있었다. Release agent_transport의 세션 생성도 기존 HTTP 기한을 넘어 실패했다. 수정 후 단독 대조는 Release 2/2·Sanitizer 2/2였으며 위 표의 마지막 직렬 검사와 별도 결과이다. HTTP 제품 기한은 바꾸지 않았다. 이번 Release CTest는 inference 라벨을 제외한 범위이며 전체 59개 검사 통과로 해석하지 않는다. Sanitizer는 llama 비활성 Debug와 `ASAN_OPTIONS=malloc_context_size=0` 조건이며 할당·해제 스택 이력은 꺼져 있다. 이전 0.13.1의 모델 실패 기록은 아래에 유지한다. 이번에 다시 실행하지 않은 Qwen3 입력 큐·Task 등 모델 검사의 결과를 갱신하지 않는다.
+
+initializeTimeoutMs=300을 지정한 응답 없는 loopback HTTP MCP 서버를 새 설치 daemon에 연결한 별도 시험에서는 인증된 HTTP·native IPC·CLI 세 경로의 실패 정보가 일치했다. 실제 단계 경과 시간은 315ms, initialize RPC 기한은 300ms, 경과 시간은 303ms, submitted=true였다. 인증 없는 HTTP 조회는 401로 거부됐고 토큰은 응답과 daemon 로그에 없었다. 이 시험은 모델을 로드하지 않는다. 증거는 build/mcp-deadlines-failure-wire-result.json이다. 기한 필드 추가 전 진단 설치본에서는 기본 10,000ms·요청 경과 10,011ms·단계 경과 10,029ms도 같은 세 경로에서 관측했다. 그 기록은 build/mcp-diagnostics-failure-wire-result.json에 보존한다.
+
+TDD의 초기화·일반 stdio 요청·HTTP 요청·관리자 단계 진단 4개 회귀는 구현 전 모두 실패했다. 새 진단에서 tools/list의 실제 페이지 기한이 149ms로 관측되어 원래 전체 한도 150ms와 같다고 작성한 시험을 바로잡았다. HTTP 연결 거부를 반드시 특정 예외 형식으로 끝난다고 가정한 시험도 제거하고, 존재하지 않는 실행 파일로 비-RPC 실패의 분리를 검증했다. 100ms 호스트 기한 복원 검사는 프로세스 시작에서 먼저 소진되는 RuntimeUnavailable과 initialize RPC 시간 초과를 구분하도록 바로잡았다. 이후 최종 시험은 응답 없는 초기화, 목록 지연, 같은 연결의 목록 복구, 오류 정보 삭제, 인증 정보 제외와 기존 취소·늦은 응답·자동 재전송 금지를 검사한다. 초기 red/green 기록은 build/mcp-startup-diagnosis/에 그대로 보존하며 시험 작성 오류를 제품 결함으로 계산하지 않는다. 서버별 기한 필드 회귀 2개도 필드가 없던 설치 라이브러리에 새 시험을 링크하여 실패를 확인했다. 최종 검사는 지연된 초기화의 허용, 서버별 요청 기한, reload 후 새 기한, 삭제 후 호스트 기본값 복원, 잘못된 타입·범위를 검증한다. build/mcp-deadlines-red/red.log에 변경 전 결과가 있다.
+
+수정 전 소스 0d18f0a의 공식 Python MCP 1.26.0 시험을 사전에 정한 30회 반복했다. 28회 통과했고 0번째·2번째는 initialize 시간 초과로 각각 12,538.46ms·11,174.19ms에 종료됐다. 기존 실행 파일·원래 서버·기본 10초를 사용했으며 Service 모델 로딩은 없었다. 반복을 성공할 때까지 연장하지 않았다. 원본 결과는 build/mcp-startup-diagnosis/original-1/에 있다.
+
+별도 진단에서는 client 송신과 peer 진입·import 완료·수신을 기록했다. 첫 진단의 0~3번째는 Python import 완료 전에 기한이 소진됐다. 계측 전송 사례 1·3에서는 initialize가 각각 약 145ms·148ms에 제출됐고 종료 시 QProcess 잔여 송신 바이트는 0이었다. 4~29번째의 서버 종료는 진단 wrapper가 AsyncFile iterator를 잘못 호출한 결함이므로 SDK 실패에서 제외한다. wrapper를 고친 다음 진단 30회(라이브러리 전송 15회·계측 복사본 15회)는 모두 성공했다. 이때 초기화는 414.96~856.08ms, 전체 도구 호출·종료는 502.77~1,269.11ms였다. wrapper와 roots 구성이 원래 시험과 다르므로 이 결과를 원본 실패의 해결 증거로 합치지 않는다. run-1/run-2의 원문과 집계를 보존한다.
+
+원래 공식 서버 코드에 Python -X importtime과 shell exec wrapper를 적용한 별도 10회 검사(실행 사이 15초)에서는 6회 성공·4회 initialize 시간 초과가 관측됐다. 5초를 넘긴 실행에는 해당 Python 자식만 1초간 sample을 수행했다. 실패한 0·2·3·8번째의 샘플은 각각 read 최상위 스택 55·83·80·65개를 기록했고 Python import 호출 경로 안의 파일 읽기였다. 0·2·8번째는 FastMCP import 완료 기록이 없었으며, 3번째는 FastMCP 완료 뒤의 추가 import도 기록됐다. 기록된 import self 시간의 합은 각각 9.021·9.439·10.343·9.072초이며 완료되지 않은 import를 포함한 전체 초기화 시간과 같지 않다. 이는 계측을 추가한 별도 진단으로, 샘플링 영향과 원래 무계측 시험을 구분한다. 원문·스택·명령·집계는 build/mcp-startup-diagnosis/import-profile-1/에 있다. 이 관측은 계측된 일부 실패에서 peer import 지연이 있었다는 근거다. 계측하지 않은 원본 실패 모두의 원인이나 운영체제·저장 장치의 지연 원인은 아직 확정하지 않는다. Qt 6.8.3의 [QProcess Unix 구현](https://github.com/qt/qtbase/blob/v6.8.3/src/corelib/io/qprocess_unix.cpp#L1066-L1105)은 준비 대기 중 송신 가능 이벤트도 처리하며, 현재 기록에서 송신 버퍼 정체를 원인으로 확정하지 않았다. 분석본의 [MCP 연결 기한](https://github.com/Exhen/claude-code-2.1.88/blob/c8cd253554319f32ff64ff7000636199f720c9bc/source/src/services/mcp/client.ts#L433-L435)은 기본 30초와 MCP_TIMEOUT을 사용하지만 iiLocalLLM은 기존 C++ 옵션의 별도 계약을 유지한다.
+
+서버별 기한 필드를 추가하기 전 중간 검사는 Release 비추론 37/38·Sanitizer 35/36·설치 소비자 14/15였고, 각 환경에서 공식 stdio 서버의 초기화가 한 번씩 실패했다. 그 결과를 최종 검사에 합치지 않으며 build/mcp-diagnostics-*와 당시의 stage·소비자를 보존한다.
+
+최종 설치는 build/mcp-deadlines-stage, 새 소비자는 build/mcp-deadlines-consumer/build이다. 공개 헤더 34개, 소스·설치 바이너리 SHA-256 및 UUID, 실제 설치 라이브러리 로딩, 세 실행 파일의 0.13.2 버전과 Qt Core/Network만 사용하는 CLI를 확인했다. 라이브러리 SHA-256은 `cd401b2249bca7d5780dbdd37bb277042dc6bc0e3f1e5cbd76d447b9242cb697`이고 UUID는 `D5492472-8B1E-31BD-BAB1-AE45B15C2D68`이다. 마지막 검증 기록을 설치 문서에 반영하고 같은 바이너리에서 파일 일치를 다시 검사했다. 실제 왕복 검사를 문서만 바뀐 이유로 반복하지 않는다.
+
+전체 명령·JUnit·로그·실패 원문·파일 동일성은 build/mcp-deadlines-verification.json과 mcp-deadlines-*에 보관한다. SDK의 별도 설치본까지 검증했으며 기본 SDK 설치나 앱·기기 재배포는 이번 단계에서 수행하지 않았다. iPhone은 사용자 지시로 제외하며 전체 하네스 목표는 진행 중이다. 계약은 [MCP.md](MCP.md), [ToolDiscovery.md](ToolDiscovery.md), 범위는 [HarnessParity.md](HarnessParity.md)를 참조한다.
+
 ## 2026-09-14 네이티브 도구 관측의 구조화 결과 보존 (0.13.1)
 
 ServiceModel이 도구의 text만 모델에 전달해 data를 누락하던 결함을 수정했다. 이제 tool content는 text·data·is_error를 담은 JSON 관측이며 구조화 결과만 있는 앱 도구, 부분 읽기·검색 잘림·셸 종료 코드·중단 여부가 모델 입력에 포함된다. 원문 공백·줄바꿈·따옴표와 중첩 값은 보존하고 Message.metadata는 제외하며 도구가 data 안에 포함한 metadata 값은 보존한다. 측정과 생성이 같은 변환을 사용하여 구조화 결과가 실제 컨텍스트 예산에 반영된다. 기존 Qt JSON과 C++ 어댑터를 사용하며 새 생산 의존성은 없다.

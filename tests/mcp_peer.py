@@ -58,6 +58,10 @@ for line in sys.stdin.buffer:
         else:
             unexpected_responses += 1
     elif method == "initialize":
+        if mode == "hang-initialize":
+            continue
+        if mode == "delay-initialize":
+            time.sleep(float(sys.argv[2]))
         version = "2099-01-01" if mode == "bad-version" else "2025-03-26" if mode == "legacy" else "2025-06-18" if mode == "older" else params["protocolVersion"]
         capabilities = {} if mode == "no-capabilities" else {
             "tools": {"listChanged": True}, "resources": {"subscribe": True}, "prompts": {}}
@@ -109,6 +113,8 @@ for line in sys.stdin.buffer:
         send({"jsonrpc": "2.0", "method": "notifications/tools/list_changed"})
         result(id_, {})
     elif method == "tools/list":
+        if mode == "gated-list" and not os.path.isfile(sys.argv[2]):
+            continue
         descriptor = {"name": "echo" if not params.get("cursor") else "other", "description": "도구 설명",
                       "inputSchema": {"type": "object", "properties": {"value": {"type": "string"}}, "required": ["value"]},
                       "outputSchema": {"type": "object", "properties": {"value": {"type": "string"}}, "required": ["value"]},

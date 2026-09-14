@@ -34,7 +34,9 @@ public:
     McpConnections& operator=(const McpConnections&) = delete;
     void reload(CancellationToken = {});
     void refresh(CancellationToken = {});
-    // Diagnostics omit configuration values, remote instructions and error text.
+    // Failure diagnostics include the last attempted phase and its elapsed time;
+    // local RPC deadlines also include RequestTimeoutError fields. Cleared on
+    // successful recovery. Omit configuration values, instructions and error text.
     QJsonArray status() const;
     // Remote notification payloads are untrusted data and are not diagnostics.
     QList<QJsonObject> takeNotifications();

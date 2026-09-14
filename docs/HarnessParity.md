@@ -35,7 +35,7 @@
 | frontends | CLI interactive/headless·구조화 입출력·앱용 상태/이벤트·LVRS UI 바인딩 | pending |
 | remote | 원격/bridge 실행·인증·연결 복원·메시지 라우팅 | pending |
 | settings | 프로젝트/사용자/관리 설정 우선순위·기능 gate·환경·migration | pending |
-| observability | 구조화 로그·실행 trace·사용량/비용·성능·오류 진단 | pending |
+| observability | 구조화 로그·실행 trace·사용량/비용·성능·오류 진단 | partial |
 | iisacc_apps | Society·Dreamscapes·Congregation·Thinking Space 실제 consumer 연동 검증 | partial |
 | packaging | 공개 헤더·CMake export·daemon/CLI·설치 consumer·플랫폼 검증 | partial |
 | conditional | 분석본의 내부/조건부 기능: 실제 구현 확보 범위와 iiLocalLLM 대응을 개별 검증 | pending |
@@ -74,3 +74,5 @@
 0.13.0은 prompt/notification의 대화별 영속 입력 큐, now/next/later 우선순위, 같은 종류 묶음, 중단된 도구 이력 복구와 저장 후 확인 실패의 중복 방지를 추가한다. C++·인증된 API·CLI·MCP에서 실행 중 입력을 받고 유휴 큐는 명시적으로 시작한다. 자동 유휴 기동, 셸 완료 알림 생산, 첨부·slash/bash 입력 모드·수신 에이전트 지정·Sleep 깨우기와 팀 mailbox는 남아 있어 tasks/execution/API는 partial이다. [InputQueue.md](InputQueue.md), [Verification.md](Verification.md)를 참조한다.
 
 0.13.1은 ServiceModel에서 누락하던 도구 data와 오류 상태를 JSON 관측으로 전달하고 동일 입력으로 예산을 측정한다. 실제 입력·KV 캐시 대조와 모델 수락은 [Verification.md](Verification.md)에 분리 기록하며 execution/providers/tools는 partial을 유지한다.
+
+0.13.2는 MCP 로컬 요청 기한의 구조화 오류와 연결·도구 발견 단계별 상태 진단 및 서버별 설정 기한을 추가한다. 관측성은 이 범위에 한해 partial이며 초기화 간헐 실패의 해결이나 전체 trace·비용 진단 완료를 뜻하지 않는다. [MCP.md](MCP.md), [ToolDiscovery.md](ToolDiscovery.md), [Verification.md](Verification.md)를 참조한다.

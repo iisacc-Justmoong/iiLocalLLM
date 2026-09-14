@@ -120,7 +120,13 @@ private slots:
             checkError([&] { client.request("test/wait", {}, token, [&](const auto&) { started.set_value(); }); }, ErrorCode::Cancelled);
         });
         QVERIFY(ready.wait_for(2s) == std::future_status::ready); token.cancel(); work.get();
-        checkError([&] { client.request("test/wait", {}, {}, {}, 100); }, ErrorCode::Timeout);
+        try { client.request("test/wait", {}, {}, {}, 100); QFAIL("Expected HTTP request timeout"); }
+        catch (const Error& error) {
+            const auto* timeout = dynamic_cast<const m::RequestTimeoutError*>(&error);
+            QVERIFY(timeout); QCOMPARE(timeout->code(), ErrorCode::Timeout);
+            QCOMPARE(timeout->method(), "test/wait"); QCOMPARE(timeout->timeoutMs(), 100);
+            QVERIFY(timeout->elapsedMs() >= 100); QVERIFY(timeout->submitted());
+        }
         QTRY_COMPARE(client.request("test/state")["cancelled"].toInt(), 2);
         checkError([&] { client.request("test/disconnect"); }, ErrorCode::RuntimeFailure);
         QCOMPARE(client.request("test/state")["disconnectPosts"].toInt(), 1);

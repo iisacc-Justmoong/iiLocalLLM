@@ -54,6 +54,14 @@
 
 ## C++ 호스트와 수명
 
+각 서버 정의는 선택적으로 `initializeTimeoutMs`와 `requestTimeoutMs`를 지정할 수 있다. 단위는 ms이고 1~2,147,483,647의 정수만 받는다. 생략하면 C++ 호스트의 `limits`를 상속한다. 예를 들어 Python 서버 정의에 `"initializeTimeoutMs": 30000`을 추가하면 그 서버의 시작과 초기화 RPC 각각에 30초를 적용한다. stdio·HTTP 모두 같은 설정을 사용하며 전체 파일 검증을 통과한 뒤에만 연결한다. 설정값 변경은 명시적 reload 때 새 연결로 반영하고 항목을 삭제하면 호스트 기본값을 복원한다. 실행 중인 앱의 자동 등록은 기한을 제공하지 않으며 호스트 limits를 따른다. 이 필드는 iiLocalLLM의 설정 확장이다.
+
+실패 상태는 `error_phase`와 `error_elapsed_ms`를 제공한다. `connect`는 호스트 콜백·전송 시작·초기화 및 실패 정리까지, `discover_tools`는 목록 페이지 조회·어댑터 및 스키마 준비를 포함한다. 따라서 단계 경과 시간은 개별 RPC 기한과 같지 않다. 로컬 RPC 기한이 소진된 경우에만 `request_timeout`에 `method`, `timeout_ms`, `elapsed_ms`, `submitted`를 덧붙인다. `submitted=true`는 클라이언트 전송 계층에 제출했다는 뜻이며 서버의 수신·실행을 증명하지 않는다. 재시도 대기 중에는 마지막 실패 정보를 유지하고 성공하면 지운다. 인증된 `agent.mcp.status`의 C++·native IPC·HTTP·CLI 응답은 같은 상태를 전달한다.
+
+`ClientLimits::initializeTimeoutMs` 기본 10,000ms와 `requestTimeoutMs` 기본 60,000ms는 유지한다. stdio 프로세스 시작과 initialize RPC는 각각 초기화 기한을 적용하므로 생성자 전체가 10초 이내라고 보장하지 않는다. 필요하면 C++ 호스트의 `McpConnectionOptions::limits` 또는 저수준 클라이언트 옵션으로 지정한다. 분석본의 연결 기본값 30초 및 `MCP_TIMEOUT` 환경 변수와는 별도 계약이며, iiLocalLLM은 이 환경 변수를 자동으로 읽지 않는다.
+
+목록의 `request_timeout.timeout_ms`는 전체 목록 기한에서 이미 쓴 시간을 뺀 해당 페이지의 실제 RPC 기한이다. 원래 설정값과 수 ms 차이가 나거나 뒤 페이지에서 더 작아질 수 있다. 목록 전체 기한이 다음 요청 전에 끝난 경우에는 기존 `ErrorCode::Timeout`과 단계 진단만 제공한다.
+
 ```cpp
 #include <agent/McpConnections.h>
 #include <agent/Engine.h>

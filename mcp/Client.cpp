@@ -24,6 +24,10 @@ using namespace detail;
 }
 RpcError::RpcError(int code, const QString& message, QJsonValue data)
     : Error(ErrorCode::ProtocolError, message), code_(code), data_(std::move(data)) {}
+RequestTimeoutError::RequestTimeoutError(QString method, int timeoutMs, qint64 elapsedMs, bool submitted)
+    : Error(ErrorCode::Timeout, "MCP " + method.left(128) + (submitted
+        ? " request timed out; remote outcome may be unknown" : " request stopped before transmission")),
+      method_(method.left(128)), timeoutMs_(timeoutMs), elapsedMs_(elapsedMs), submitted_(submitted) {}
 
 class Client::Impl : public std::enable_shared_from_this<Impl> {
 public:
@@ -33,7 +37,9 @@ public:
         QByteArray frame;
         CancellationToken cancellation;
         CancellationToken abandoned;
+        Clock::time_point started = Clock::now();
         Clock::time_point deadline;
+        int timeoutMs = 0;
         bool progressEnabled = false;
         double lastProgress = -1;
         std::mutex mutex;
@@ -43,6 +49,10 @@ public:
         std::exception_ptr error;
         bool done = false;
         bool internal = false;
+        std::exception_ptr timeoutError(bool submitted) const {
+            return std::make_exception_ptr(RequestTimeoutError(method, timeoutMs,
+                std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started).count(), submitted));
+        }
     };
     struct Outgoing { QByteArray frame; std::shared_ptr<Pending> request; };
     struct Incoming { QJsonValue id; CancellationToken cancellation; };
@@ -116,7 +126,8 @@ public:
         require(timeout >= 0, "MCP timeout cannot be negative", ErrorCode::InvalidArgument);
         auto p = std::make_shared<Pending>(); p->id = QUuid::createUuid().toString(QUuid::WithoutBraces);
         p->method = method; p->cancellation = token; p->progressEnabled = bool(progress);
-        p->deadline = Clock::now() + std::chrono::milliseconds(timeout ? timeout : options.requestTimeoutMs);
+        p->timeoutMs = timeout ? timeout : options.requestTimeoutMs;
+        p->deadline = p->started + std::chrono::milliseconds(p->timeoutMs);
         require(!params.contains("_meta") || params["_meta"].isObject(), "MCP _meta must be an object", ErrorCode::InvalidArgument);
         auto meta = params.value("_meta").toObject();
         require(!meta.contains("progressToken"), "Pass a progress callback instead of a manual progressToken", ErrorCode::InvalidArgument);
@@ -300,7 +311,8 @@ public:
         transport->reset();
         auto p = std::make_shared<Pending>(); p->id = QUuid::createUuid().toString(QUuid::WithoutBraces);
         p->method = "initialize"; p->internal = true;
-        p->deadline = Clock::now() + std::chrono::milliseconds(options.initializeTimeoutMs);
+        p->timeoutMs = options.initializeTimeoutMs;
+        p->deadline = p->started + std::chrono::milliseconds(p->timeoutMs);
         { std::lock_guard lock(mutex); ++pendingCount; }
         active.emplace("s:" + p->id, p);
         write(encode({{"jsonrpc", "2.0"}, {"id", p->id}, {"method", "initialize"}, {"params", QJsonObject{
@@ -322,7 +334,7 @@ public:
                     auto p = packet.request;
                     if (p->cancellation.isCancelled() || p->abandoned.isCancelled() || Clock::now() >= p->deadline) {
                         const bool expired = Clock::now() >= p->deadline;
-                        finish(p, {}, std::make_exception_ptr(Error(expired ? ErrorCode::Timeout : ErrorCode::Cancelled,
+                        finish(p, {}, expired ? p->timeoutError(false) : std::make_exception_ptr(Error(ErrorCode::Cancelled,
                             "MCP " + p->method.left(128) + " request stopped before transmission")));
                         packet.frame.clear();
                     } else active.emplace("s:" + p->id, p);
@@ -342,9 +354,10 @@ public:
                     if (p->method != "initialize") write(encode(notification("notifications/cancelled",
                         {{"requestId", p->id}, {"reason", expired ? "Request timed out" : "Request cancelled"}}), options.maxMessageBytes));
                     it = active.erase(it);
-                    finish(p, {}, std::make_exception_ptr(Error(expired ? ErrorCode::Timeout : ErrorCode::Cancelled,
-                        "MCP " + p->method.left(128) + (expired ? " request timed out; remote outcome may be unknown" : " request cancelled; remote outcome may be unknown"))));
-                    if (p->internal) throw Error(ErrorCode::Timeout, "MCP session reinitialization timed out");
+                    const auto error = expired ? p->timeoutError(true) : std::make_exception_ptr(Error(ErrorCode::Cancelled,
+                        "MCP " + p->method.left(128) + " request cancelled; remote outcome may be unknown"));
+                    finish(p, {}, error);
+                    if (p->internal) std::rethrow_exception(error);
                 }
                 const auto events = transport->poll();
                 { std::lock_guard lock(mutex); stderrBytes = transport->diagnostics(); }

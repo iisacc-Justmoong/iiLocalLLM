@@ -13,6 +13,21 @@ private:
     int code_;
     QJsonValue data_;
 };
+// A locally enforced RPC deadline. Submission means transport acceptance, not
+// peer receipt or execution. Times exclude process startup and shutdown.
+class IILOCALLLM_EXPORT RequestTimeoutError : public Error {
+public:
+    RequestTimeoutError(QString method, int timeoutMs, qint64 elapsedMs, bool submitted);
+    QString method() const { return method_; }
+    int timeoutMs() const noexcept { return timeoutMs_; }
+    qint64 elapsedMs() const noexcept { return elapsedMs_; }
+    bool submitted() const noexcept { return submitted_; }
+private:
+    QString method_;
+    int timeoutMs_;
+    qint64 elapsedMs_;
+    bool submitted_;
+};
 using ProgressCallback = std::function<void(const QJsonObject&)>;
 using RequestHandler = std::function<QJsonObject(const QJsonObject&, const CancellationToken&)>;
 struct ClientLimits {
@@ -35,7 +50,7 @@ struct StdioOptions : ClientLimits {
 };
 namespace detail { class ClientTransport; }
 struct ClientOptions {
-    QJsonObject implementation{{"name", "iiLocalLLM"}, {"version", "0.13.1"}};
+    QJsonObject implementation{{"name", "iiLocalLLM"}, {"version", "0.13.2"}};
     QStringList protocolVersions{"2025-11-25", "2025-06-18", "2025-03-26"};
     QJsonArray roots;
     // Optional host-owned handlers. Capability objects must match the handlers.

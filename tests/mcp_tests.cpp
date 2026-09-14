@@ -89,10 +89,24 @@ private slots:
             QCOMPARE(e.code(), ErrorCode::Timeout);
             QVERIFY(QString::fromUtf8(e.what()).contains("test/slow"));
             QVERIFY(!QString::fromUtf8(e.what()).contains("private-argument"));
+            const auto* timeout = dynamic_cast<const m::RequestTimeoutError*>(&e);
+            QVERIFY(timeout);
+            QCOMPARE(timeout->method(), "test/slow"); QCOMPARE(timeout->timeoutMs(), 30);
+            QVERIFY(timeout->elapsedMs() >= 30); QVERIFY(timeout->submitted());
         }
         QCOMPARE(client.request("test/state")["cancelled"].toInt(), 2);
         std::this_thread::sleep_for(200ms); // The independent peer deliberately sends late replies.
         QVERIFY(client.request("ping").isEmpty()); QVERIFY(client.isConnected());
+    }
+    void initializationTimeoutDetails() {
+        auto o = options("hang-initialize"); o.initializeTimeoutMs = 200;
+        try { m::StdioClient client(o); QFAIL("Expected initialization timeout"); }
+        catch (const Error& e) {
+            const auto* timeout = dynamic_cast<const m::RequestTimeoutError*>(&e);
+            QVERIFY(timeout); QCOMPARE(timeout->code(), ErrorCode::Timeout);
+            QCOMPARE(timeout->method(), "initialize"); QCOMPARE(timeout->timeoutMs(), 200);
+            QVERIFY(timeout->elapsedMs() >= 200); QVERIFY(timeout->submitted());
+        }
     }
     void rootsAndReverseRequests() {
         QTemporaryDir directory; m::ClientOptions config;
