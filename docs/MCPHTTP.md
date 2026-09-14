@@ -93,3 +93,7 @@ Streamable HTTP 서버를 별도 프로세스로 띄워 초기화, 도구, 구�
 리소스, 프롬프트, 역방향 roots 및 에이전트 registry 어댑터를 검증한다. 설치 consumer에도
 같은 시험을 적용한다. 이 Python 의존성은 시험 전용이며 생산 패키지에는 포함하지 않는다.
 실행 결과는 [Verification.md](Verification.md)에 기록한다.
+
+## 0.9.0 MCP 연결 관리와 도구 검색
+
+호스트가 지정한 MCP 설정 파일의 연결·복구, 대화별 `ToolSearch`, 인증된 `agent.mcp.status` 및 CLI 옵션을 추가했다. 설정과 실행 권한, 수명 및 미지원 범위는 [ToolDiscovery.md](ToolDiscovery.md)를 참조한다.

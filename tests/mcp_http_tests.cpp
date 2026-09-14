@@ -48,7 +48,7 @@ private slots:
         QCOMPARE(tools[0].execute({{"value", "adapter"}}, {}).data["value"].toString(), "adapter");
         auto state = client->request("test/state");
         QCOMPARE(state["initializations"].toInt(), 1); QVERIFY(state["headersValid"].toBool());
-        client->close(); QVERIFY(!client->isConnected());
+        client->close(); QVERIFY(!client->isConnected()); QVERIFY(client->isClosed());
     }
     void sseReverseRequestsProgressAndConcurrency() {
         Peer peer;
@@ -137,6 +137,7 @@ private slots:
         try { client->request("test/expire"); QFAIL("Expected expired session"); }
         catch (const m::HttpError& e) { QCOMPARE(e.statusCode(), 404); }
         QCOMPARE(oldRequest.get(), 404);
+        QVERIFY(!client->isClosed());
         QTRY_VERIFY(client->isConnected() && client->connectionGeneration() == 2);
         auto state = client->request("test/state");
         QCOMPARE(state["initializations"].toInt(), 2); QCOMPARE(state["expirePosts"].toInt(), 1);

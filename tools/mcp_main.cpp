@@ -1,4 +1,5 @@
 #include "agent/McpServer.h"
+#include "agent/McpConnections.h"
 #include "mcp/HttpServer.h"
 #include "McpCredentials.h"
 #include <QtCore/QCommandLineParser>
@@ -13,11 +14,14 @@
 namespace { volatile std::sig_atomic_t interrupted = 0; void interrupt(int) { interrupted = 1; } }
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.8.0");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.9.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},
         {"allow", "Allow a tool name or wildcard; repeat for more rules. Read-only tools are allowed by default.", "pattern"},
+        {"mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
+        {"mcp-project", "Load workspace/.mcp.json after explicit MCP configuration files."},
+        {"mcp-eager", "Publish all configured MCP tools to the agent without ToolSearch."},
         {"artifacts", "Directory for large tool results.", "path"},
         {"model", "Enable the local agent using an installed model:// URI.", "uri"},
         {"models", "Installed model catalog directory; required with --model.", "path"},
@@ -72,6 +76,12 @@ int main(int argc, char** argv) {
         if (agent) rules.append({"iiLocalLLM.agent.run", a::PermissionBehavior::Allow});
         auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::DontAsk, rules);
         auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, workspace);
+        a::McpConnectionOptions connectionOptions; connectionOptions.workingDirectory = workspace;
+        for (const auto& path : parser.values("mcp-config")) connectionOptions.configFiles.append(QFileInfo(path).absoluteFilePath());
+        if (parser.isSet("mcp-project")) connectionOptions.configFiles.append(".mcp.json");
+        connectionOptions.deferTools = !parser.isSet("mcp-eager");
+        std::unique_ptr<a::McpConnections> connections;
+        if (!connectionOptions.configFiles.isEmpty()) connections = std::make_unique<a::McpConnections>(registry, std::move(connectionOptions));
         std::unique_ptr<iiLocalLLM::Service> service;
         a::McpServerOptions options; options.workingDirectory = workspace; options.appId = "com.iisacc.iiLocalLLM";
         options.artifactsDirectory = http ? QDir(privateState).filePath("artifacts")

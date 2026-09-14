@@ -396,6 +396,7 @@ Client::~Client() { close(); }
 quint64 Client::connectionGeneration() const { std::lock_guard lock(d->mutex); return d->generation; }
 void Client::close() { d->stop(); }
 bool Client::isConnected() const { std::lock_guard lock(d->mutex); return d->connected && d->initialized && !d->stopping; }
+bool Client::isClosed() const { return d->stopping.load(); }
 QByteArray Client::stderrTail() const { std::lock_guard lock(d->mutex); return d->stderrBytes; }
 QJsonObject Client::serverInfo() const { std::lock_guard lock(d->mutex); return d->info["serverInfo"].toObject(); }
 QJsonObject Client::serverCapabilities() const { std::lock_guard lock(d->mutex); return d->info["capabilities"].toObject(); }

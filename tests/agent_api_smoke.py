@@ -10,6 +10,7 @@ import re
 import secrets
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 
@@ -59,6 +60,11 @@ def main():
             model = "model://api-fixture"
         base = [str(args.daemon), "--socket", str(endpoint), "--http-port", "0", "--models-root", str(catalog),
                 "--context-tokens", "4096", "--agent-workspace", str(workspace), "--agent-state", str(state), "--agent-credentials", str(credentials)]
+        if not args.model:
+            config = root / "mcp.json"
+            config.write_text(json.dumps({"mcpServers": {"fixture": {"command": sys.executable,
+                "args": ["-B", str(Path(__file__).with_name("mcp_peer.py").resolve())], "appId": "com.iisacc.fixture"}}}))
+            base += ["--agent-mcp-config", str(config)]
         environment = dict(os.environ)
         environment.pop("DYLD_LIBRARY_PATH", None)
         environment.pop("DYLD_FRAMEWORK_PATH", None)
@@ -148,6 +154,22 @@ def main():
             info = cli("agent.info")
             assert info["client_id"] == "society"
             assert "agent.sessions.compact" in info["methods"] and info["auto_compact_enabled"] is True
+            assert "agent.mcp.status" in info["methods"] and info["tool_search_enabled"] is True
+            connections = cli("agent.mcp.status")
+            assert native("agent.mcp.status")[-1]["result"] == connections
+            assert http(port, "agent.mcp.status")[1]["result"] == connections
+            assert http(port, "agent.mcp.status", auth="wrong")[0] == 401
+            assert http(port, "agent.mcp.status", {"reload": True})[0] == 400
+            if not args.model:
+                item, = connections["servers"]
+                assert item["state"] == "ready" and item["tool_count"] == 2 and item["deferred"] is True, connections
+                assert item["app_id"] == "com.iisacc.fixture" and "command" not in item
+                query = subprocess.run([str(args.cli), "--socket", str(endpoint), "--auth-file", str(client_token), "agent", "mcp"],
+                    capture_output=True, text=True, timeout=20, env=environment)
+                assert query.returncode == 0 and json.loads(query.stdout) == connections, (query.stdout, query.stderr)
+            else:
+                assert connections == {"servers": []}
+            evidence["checks"] += ["mcp_status_http_native_cli", "mcp_status_authentication", "no_remote_config_reload"]
             session = cli("agent.sessions.create", {"model": model})["session_id"]
             assert native("agent.sessions.get", {"session_id": session})[-1]["result"]["session_id"] == session
             assert http(port, "agent.sessions.get", {"session_id": session}, auth=other)[0] == 404

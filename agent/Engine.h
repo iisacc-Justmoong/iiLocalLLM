@@ -3,6 +3,7 @@
 #include "SessionStore.h"
 #include "ProjectContext.h"
 #include "Compaction.h"
+#include "ToolSearch.h"
 #include "../Service.h"
 
 namespace iiLocalLLM::agent {
@@ -17,6 +18,7 @@ struct EngineOptions {
     PermissionCallback permission;
     ProjectContextOptions projectContext;
     CompactionOptions compaction;
+    ToolSearchOptions toolSearch;
 };
 class IILOCALLLM_EXPORT Engine {
 public:

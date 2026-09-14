@@ -88,7 +88,7 @@ private:
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
-    app.setApplicationName(QStringLiteral("iillm")); app.setApplicationVersion(QStringLiteral("0.8.0"));
+    app.setApplicationName(QStringLiteral("iillm")); app.setApplicationVersion(QStringLiteral("0.9.0"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("Native IPC client of iiLocalLLMD. Inference runs only in the daemon."));
     parser.addHelpOption(); parser.addVersionOption();
@@ -101,7 +101,7 @@ int main(int argc, char** argv)
         {"auth-file", "Private file containing the app token for rpc.", "file"},
         {"defaults", "Include literal defaults in parameter exports"},
         {"redact", "Redact sensitive fields in parameter exports"}});
-    parser.addPositionalArgument("command", "run MODEL [PROMPT] | models | pull MODEL | ps | parameters [GROUP [FILE]] | rpc METHOD [FILE]");
+    parser.addPositionalArgument("command", "run MODEL [PROMPT] | models | pull MODEL | ps | parameters [GROUP [FILE]] | rpc METHOD [FILE] | agent mcp");
     parser.addPositionalArgument("arguments", "Model reference and optional prompt", "[arguments...]");
     parser.process(app);
     const auto args = parser.positionalArguments();
@@ -122,7 +122,13 @@ int main(int argc, char** argv)
                 throw std::runtime_error("Configuration file must contain a JSON object");
             return document.object();
         };
-        if (command == "rpc") {
+        if (command == "agent") {
+            if (args.size() != 2 || args[1] != "mcp" || !parser.isSet("auth-file"))
+                throw std::runtime_error("Usage: iillm --auth-file FILE agent mcp");
+            const auto token = QString::fromUtf8(iiLocalLLMClient::readPrivateFile(parser.value("auth-file"), 512)).trimmed();
+            if (token.size() < 32 || token.size() > 256) throw std::runtime_error("Invalid app token length");
+            printJson(client.call("agent.mcp.status", {}, {}, 300000, token));
+        } else if (command == "rpc") {
             if (args.size() < 2 || args.size() > 3 || !parser.isSet("auth-file"))
                 throw std::runtime_error("Usage: iillm --auth-file FILE rpc METHOD [PARAMS_JSON_FILE]");
             const auto token = QString::fromUtf8(iiLocalLLMClient::readPrivateFile(parser.value("auth-file"), 512)).trimmed();
@@ -222,7 +228,7 @@ int main(int argc, char** argv)
                 }
             } catch (...) { try { close(); } catch (...) {} throw; }
             close();
-        } else throw std::runtime_error("Unknown command. Use run, models, pull, ps, parameters or rpc.");
+        } else throw std::runtime_error("Unknown command. Use run, models, pull, ps, parameters, rpc or agent mcp.");
         return interrupted ? 130 : 0;
     } catch (const std::exception& error) {
         std::cerr << "iillm: " << error.what() << '\n';

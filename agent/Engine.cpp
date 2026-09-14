@@ -33,7 +33,10 @@ public:
             || this->options.compaction.triggerFraction >= 1 || this->options.compaction.keepRecentGroups < 1
             || this->options.compaction.keepRecentGroups > 128 || this->options.compaction.summaryMaxTokens < 16
             || this->options.compaction.summaryMaxTokens > 8192 || this->options.compaction.maxSummaryPasses < 1
-            || this->options.compaction.maxSummaryPasses > 64)
+            || this->options.compaction.maxSummaryPasses > 64
+            || this->options.toolSearch.maxResults < 1 || this->options.toolSearch.maxResults > 100
+            || this->options.toolSearch.maxActiveTools < this->options.toolSearch.maxResults
+            || this->options.toolSearch.maxActiveTools > 4096)
             throw Error(ErrorCode::InvalidArgument, "Invalid agent engine configuration");
         pool.setMaxThreadCount(this->options.maxConcurrentRuns);
     }
@@ -105,7 +108,8 @@ public:
                 const auto turnRegistry = registry->snapshot();
                 const bool hasTranscriptTool = !session.compactions.isEmpty();
                 if (hasTranscriptTool) detail::addTranscriptTool(*turnRegistry, session);
-                ModelRequest base{session.model, session.systemPrompt, {}, turnRegistry->definitions(false), request.generation, session.id};
+                detail::prepareToolDiscovery(*turnRegistry, session, options.toolSearch);
+                ModelRequest base{session.model, session.systemPrompt, {}, turnRegistry->definitions(), request.generation, session.id};
                 const auto context = loadProjectContext(session.workingDirectory, projectContextPaths(session.messages), options.projectContext, token);
                 if (!context.files.isEmpty()) base.messages.append(context.message());
                 if (context.fingerprint != lastContextFingerprint) {
@@ -114,7 +118,7 @@ public:
                 }
                 auto modelRequest = base; modelRequest.messages.append(modelMessages(session));
                 if (compactOnly || detail::needsCompaction(*model, modelRequest, options.compaction, token)) {
-                    if (!hasTranscriptTool) { detail::addTranscriptTool(*turnRegistry, session); base.tools = turnRegistry->definitions(false); }
+                    if (!hasTranscriptTool) { detail::addTranscriptTool(*turnRegistry, session); base.tools = turnRegistry->definitions(); }
                     send({EventKind::CompactionStarted, runId, session.id, {}, {}, {{"trigger", compactOnly ? "manual" : "automatic"}}});
                     auto beforeCompact = hooks(HookKind::BeforeCompact, compactInstructions);
                     if (beforeCompact.block) throw Error(ErrorCode::InvalidArgument, "Before-compact hook blocked compaction: " + beforeCompact.feedback);
@@ -277,6 +281,9 @@ ConversationRequest conversationRequest(const ModelRequest& request) {
         "Do not add an introduction, explanation, example value, or Markdown code fence. Otherwise, give a concise answer after completing the work.");
     if (request.summarizing) { instruction = request.systemPrompt; conversation.toolChoice = "none"; conversation.tools = {}; }
     else if (!request.systemPrompt.isEmpty()) instruction = request.systemPrompt + "\n\n" + instruction;
+    if (!request.summarizing && std::any_of(request.tools.begin(), request.tools.end(), [](const auto& tool) { return tool.name == "ToolSearch"; }))
+        instruction += " ToolSearch only discovers tool definitions; its response is not a file or a completed action. "
+            "After finding a tool, call it to obtain the actual task data before giving your final answer.";
     conversation.messages.append(QJsonObject{{"role", "system"}, {"content", instruction}});
     for (const auto& message : request.messages) {
         for (const auto& value : message.content) {

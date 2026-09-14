@@ -142,3 +142,7 @@ status는 현재 프로세스에서 진행 중인 요청만 조회한다. 완료
 ## 수동 대화 압축 (0.6.0)
 
 `agent.sessions.compact`는 `session_id`, 선택적 `instructions`, `options`를 받는다. 기존 실행과 동일한 인증·세션 독점·큐·요청 기한·상태 조회·취소를 사용하며 `RunResult`를 반환한다. 성공 시 `turns`는 0, `text`는 요약이다. `compaction_started`, `compaction_progress`, `compacted` 이벤트를 기존 스트림으로 전달한다. `agent.sessions.get`에는 원본 메시지 페이지와 `compaction_count`, 최근 `compaction`이 포함된다. `agent.info.auto_compact_enabled`로 호스트 설정을 확인한다. 자동 압축은 기본 켜짐이며 `--agent-no-auto-compact`로 끌 수 있다. 자세한 예산·영속성·실패 계약은 [Compaction.md](Compaction.md)를 따른다.
+
+## 0.9.0 MCP 연결 관리와 도구 검색
+
+호스트가 지정한 MCP 설정 파일의 연결·복구, 대화별 `ToolSearch`, 인증된 `agent.mcp.status` 및 CLI 옵션을 추가했다. 설정과 실행 권한, 수명 및 미지원 범위는 [ToolDiscovery.md](ToolDiscovery.md)를 참조한다.

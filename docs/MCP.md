@@ -78,3 +78,7 @@ iiLocalLLM.mcp_official은 공식 SDK 서버의 도구·자료·프롬프트·�
 ## 프로젝트 지침 경로 (0.5.0)
 
 `iiLocalLLM.agent.run`의 선택적 `context_paths`는 최대 128개 workspace 파일 경로를 받는다. 지침을 첫 모델 호출 전에 적용하며 연결별 Engine 세션에만 범위를 유지한다. 잘못된 경로·루트 이탈은 isError 결과이고, workspace의 파일을 읽은 경우에도 다음 모델 호출부터 하위 지침을 적용한다. `instructions_loaded`는 기존 MCP progress의 `iisacc/agentEvent`로 전달된다. [ProjectContext.md](ProjectContext.md)의 순서·상한·미구현 항목을 함께 참조한다.
+
+## 0.9.0 MCP 연결 관리와 도구 검색
+
+호스트가 지정한 MCP 설정 파일의 연결·복구, 대화별 `ToolSearch`, 인증된 `agent.mcp.status` 및 CLI 옵션을 추가했다. 설정과 실행 권한, 수명 및 미지원 범위는 [ToolDiscovery.md](ToolDiscovery.md)를 참조한다.

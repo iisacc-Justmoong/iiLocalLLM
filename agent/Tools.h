@@ -18,6 +18,9 @@ public:
     ToolRegistry& operator=(const ToolRegistry&) = delete;
     void add(Tool tool);
     void remove(const QString& name);
+    // Validate first, then atomically replace an owned set. Collisions with
+    // retained tools leave the registry unchanged. Existing snapshots survive.
+    void replace(const QStringList& removeNames, QList<Tool> additions);
     QList<ToolDefinition> definitions(bool includeDeferred = true) const;
     Tool get(const QString& name) const;
     // Freeze definitions, validators and handlers together for one model/tool turn.

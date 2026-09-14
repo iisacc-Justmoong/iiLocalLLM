@@ -25,7 +25,7 @@
 | mcp_features | 도구·리소스·프롬프트·roots·sampling·elicitation·진행/취소·구독·tasks | partial |
 | mcp_server | iiLocalLLM 및 앱 기능을 MCP로 제공·세션 격리·권한·동시성·구조화 결과 | partial |
 | api | C++ SDK·기존 native IPC·HTTP/SSE 에이전트 API·OpenAI 도구 호환 | partial |
-| discovery | 앱 manifest·MCP/API 자동 인식·기능 협상·tool search·지연 공개 | pending |
+| discovery | 앱 manifest·MCP/API 자동 인식·기능 협상·tool search·지연 공개 | partial |
 | skills | SKILL.md·메타데이터·인라인/fork 실행·허용 도구·검색·설치 | pending |
 | plugins | manifest·명령/스킬/에이전트/훅/MCP/LSP 등록·버전/캐시·설치/갱신 | pending |
 | hooks | 전체 생명주기·C++ 콜백·명령·HTTP·모델/에이전트·입력 변경·결과/차단 | partial |
@@ -60,3 +60,5 @@
 0.5.0은 workspace 지침·Markdown import·YAML 경로 규칙·실제 모델 입력 조합과 인증된 API 조회를 추가한다. MCP 실행도 `context_paths`를 지원한다. [ProjectContext.md](ProjectContext.md)에 대응 범위를 기록하며 managed/user 지침·첨부·요약·microcompact·캐시는 남아 있다.
 
 0.6.0은 실제 네이티브 예산 측정, 오래된 도구 결과 축소, 여러 묶음의 로컬 모델 요약, 원본 보존 체크포인트·재개·분기, 원문 조회 도구, 압축 훅 및 API/MCP 수동 호출을 추가한다. [Compaction.md](Compaction.md)에 정확한 범위와 실패 계약을 기록한다. 세션 메모리·첨부 재주입·reactive overflow 복구·서버 캐시 편집 및 전체 앱 연동은 남아 있으므로 context/sessions는 partial을 유지한다.
+
+0.9.0은 호스트가 지정한 MCP 설정 연결·복구, 목록 변경 반영, 대화별 ToolSearch와 선택 상태의 재개·분기·압축 복구, 스키마·연결 변경 시 선택 무효화, 인증된 MCP 상태 API/CLI를 추가한다. 앱 manifest·설치 앱 자동 발견, 전체 설정 계층, 공급자별 검색 최적화 및 실제 Society/Dreamscapes endpoint 연동은 남아 있다. [ToolDiscovery.md](ToolDiscovery.md)를 참조한다.

@@ -90,3 +90,7 @@ stdio는 응답이 없는 유휴 상태에도 출력 파이프의 연결 종료�
 ## 수동 대화 압축 (0.6.0)
 
 Engine을 설정한 서버는 `iiLocalLLM.agent.compact`를 제공한다. 선택적 `instructions`만 받으며 현재 MCP 연결의 기존 대화를 요약한다. 다른 session_id나 new_session을 받지 않는다. 같은 연결의 `iiLocalLLM.agent.session`에 압축 수와 최근 체크포인트가 나타난다. 실행·취소·진행·정책 경로는 agent.run과 같다. 원본 기록과 자동 압축의 계약은 [Compaction.md](Compaction.md)에 있다.
+
+## 0.9.0 MCP 연결 관리와 도구 검색
+
+호스트가 지정한 MCP 설정 파일의 연결·복구, 대화별 `ToolSearch`, 인증된 `agent.mcp.status` 및 CLI 옵션을 추가했다. 설정과 실행 권한, 수명 및 미지원 범위는 [ToolDiscovery.md](ToolDiscovery.md)를 참조한다.

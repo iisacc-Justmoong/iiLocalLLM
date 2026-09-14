@@ -35,7 +35,7 @@ struct StdioOptions : ClientLimits {
 };
 namespace detail { class ClientTransport; }
 struct ClientOptions {
-    QJsonObject implementation{{"name", "iiLocalLLM"}, {"version", "0.8.0"}};
+    QJsonObject implementation{{"name", "iiLocalLLM"}, {"version", "0.9.0"}};
     QStringList protocolVersions{"2025-11-25", "2025-06-18", "2025-03-26"};
     QJsonArray roots;
     // Optional host-owned handlers. Capability objects must match the handlers.
@@ -55,6 +55,8 @@ public:
     QString protocolVersion() const;
     QString instructions() const;
     bool isConnected() const;
+    // Terminal shutdown, unlike temporary HTTP session reinitialization.
+    bool isClosed() const;
     QByteArray stderrTail() const;
     quint64 connectionGeneration() const;
     // Notifications are data for the host; they never execute agent instructions.

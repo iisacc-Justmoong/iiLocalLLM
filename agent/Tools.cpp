@@ -59,6 +59,20 @@ void ToolRegistry::add(Tool tool) {
         throw Error(ErrorCode::AlreadyExists, "Tool already registered: " + tool.definition.name);
 }
 void ToolRegistry::remove(const QString& name) { std::unique_lock lock(d->mutex); d->tools.erase(name); }
+void ToolRegistry::replace(const QStringList& names, QList<Tool> tools) {
+    ToolRegistry additions;
+    for (auto& tool : tools) additions.add(std::move(tool));
+    std::map<QString, std::shared_ptr<const Entry>> replacement;
+    {
+        std::unique_lock lock(d->mutex);
+        replacement = d->tools;
+        for (const auto& name : names) replacement.erase(name);
+        for (const auto& [name, entry] : additions.d->tools)
+            if (!replacement.emplace(name, entry).second)
+                throw Error(ErrorCode::AlreadyExists, "Tool already registered: " + name);
+        d->tools.swap(replacement);
+    } // Release removed handlers outside the registry lock.
+}
 QList<ToolDefinition> ToolRegistry::definitions(bool all) const {
     std::shared_lock lock(d->mutex); QList<ToolDefinition> out;
     for (const auto& [name, entry] : d->tools) if (all || !entry->tool.definition.deferred) out.append(entry->tool.definition);

@@ -65,3 +65,7 @@ pull은 현재 모델 설치/생성과 같은 FIFO에서 실행되므로 긴 다
 `iillm parameters`는 그룹을, `iillm parameters GROUP`은 상세 타입·기본값·제약·소스를 출력한다. `iillm parameters GROUP FILE`은 JSON 파일을 검증하여 원본 형식으로 출력한다. `--defaults`와 `--redact`를 지원한다. 데몬에 연결하되 모델은 필요 없다.
 
 `run --options FILE`은 공통 생성 옵션 JSON을 읽는다. 명시한 `--temperature`와 `--max-tokens`만 파일 값을 덮어쓰며, 파일 크기는 최대 1 MiB이다. [Parameters.md](Parameters.md)에 추론·학습·파인튜닝 객체 및 실행 가능한 필드가 정리되어 있다.
+
+## 0.9.0 MCP 연결 관리와 도구 검색
+
+호스트가 지정한 MCP 설정 파일의 연결·복구, 대화별 `ToolSearch`, 인증된 `agent.mcp.status` 및 CLI 옵션을 추가했다. 설정과 실행 권한, 수명 및 미지원 범위는 [ToolDiscovery.md](ToolDiscovery.md)를 참조한다.

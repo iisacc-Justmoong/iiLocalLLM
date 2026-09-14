@@ -1,5 +1,27 @@
 # 구현 검증 기록
 
+## 2026-09-14 MCP 설정 연결과 대화별 도구 검색 (0.9.0)
+
+C++ `McpConnections`에 호스트가 지정한 stdio/Streamable HTTP 설정 연결, 환경변수 치환, 서버별 실패 격리, 도구 목록 변경 알림·연결 복구, 명시적 설정 reload를 구현했다. `ToolSearch`는 대화별 선택·원본 JSONL 복구·턴 snapshot·스키마/연결 변경 무효화를 제공한다. 인증된 상태 API, 얇은 CLI, MCP 서버의 설정 기반 도구 중계도 연결했다. 기존 Qt와 MCP/Schema 코드를 재사용하며 새 생산 런타임 의존성은 없다. 환경은 Apple M1 Max / macOS 27 / Qt 6.8.3이다.
+
+| 검증 | 최종 관측 결과 |
+|---|---|
+| Release 전체 빌드·CTest | 전체 타깃 빌드 성공, **44/45 통과**, 150.27초. 실제 추론 14개 항목 포함. 검색 후 연속 호출 1건 실패 |
+| ASAN/UBSAN | llama 비활성화 Debug 전체 빌드 및 **30/30 통과**, 44.67초. sanitizer 오류 없음 |
+| C++ 검색·연결 회귀 | 10개 동작 사례 통과(QTest 초기화·정리 포함 12 passed). 선택 격리·resume/fork·압축·한 턴 조기 호출·변경 스키마·권한·원자적 교체·설정 검증·HTTP 알림·stdio 재연결·호스트 토큰 보존 검사 |
+| 실제 설정 기반 MCP 추론 | Qwen2.5 0.5B Q4_K_M + 공식 Python MCP SDK 1.26.0 서버. eager 모드에서 고정/임의 파일 값 2개 모두 실제 도구 호출·진행 이벤트·최종 답 검증. 소스와 설치본 모두 통과 |
+| 별도 설치 소비자 | `build/discovery-stage`, `build/discovery-consumer/build`에서 **12/13 통과**, 29.13초. 설치본에서도 동일한 검색 연속 호출 1건 실패 |
+| API·CLI·중계 | 실제 daemon의 HTTP/native IPC/CLI 상태 조회·인증 거부·원격 reload 거부, 공식 SDK의 stdio/HTTP MCP 도구 중계·허가 없는 도구 거부 통과. 설치된 daemon/CLI/HTTP MCP 중계도 별도 통과 |
+| 설치·로더·ABI | 실제 `discovery-stage/lib/libiiLocalLLM.0.9.0.dylib` 로딩, 소스/설치 UUID 일치. iillm·iiLocalLLMD·iillm-mcp 0.9.0 확인. 얇은 iillm은 iiLocalLLM/llama/ggml을 링크하지 않음 |
+
+**남은 실패:** `iiLocalLLM.discovery_inference`와 설치본의 대응 검사다. 고정 Qwen2.5 0.5B 모델은 ToolSearch를 호출하고 도구를 선택하지만 두 번째 모델 턴에서 검색 안내를 최종 답으로 끝낸다. 실제 `mcp__fixture__read_secret` 호출을 하지 않으므로 검사 실패를 유지했다. 첫 구현은 긴 검색 스키마 JSON을 답에 복사했다. 전체 스키마를 구조화 데이터와 다음 턴 tools에 보존하고 모델 본문을 짧게 바꾼 뒤에도 연속 호출 능력 검증은 통과하지 못했다. 모델 답을 대신 만들거나 검색 이후 호출을 호스트가 강제로 삽입하지 않았으며, 검사를 성공으로 표시하지 않았다.
+
+같은 모델에서 `deferTools=false` / `--agent-mcp-eager` / `--mcp-eager`로 도구를 처음부터 제공하는 경로는 실제 MCP 호출과 최종 값 검증에 성공했다. 이는 자동 검색 연속 호출의 성공 증거가 아니므로 구분한다. 검색 기능의 모델별 적합성, 앱 manifest/설치 앱 자동 발견, 전체 설정 계층·OAuth·legacy SSE·tasks 및 실제 Society/Dreamscapes endpoint 연동은 남아 있다. 전체 하네스 목표는 진행 중이다.
+
+TDD의 누락 헤더 빌드 실패, Bearer 헤더 연결 실패와 네이티브 검색 실패를 보존했다. 마지막 검토에서는 종료 시 이미 끝난 갱신 요청의 호스트 취소 토큰까지 취소하는 문제를 재현했다. 연결을 직접 종료하고 호스트 토큰은 변경하지 않도록 고친 후 해당 회귀 검사가 통과했다. 그 수정까지 포함하여 위 전체 빌드·검사를 다시 실행했다. 소스/설치 검증에서는 DYLD_LIBRARY_PATH, DYLD_FRAMEWORK_PATH, DYLD_FALLBACK_LIBRARY_PATH, LIBRARY_PATH를 제거했다. 별도 stage 검증은 전역 SDK 설치나 제품 앱 재배포를 의미하지 않는다.
+
+사용 계약은 [ToolDiscovery.md](ToolDiscovery.md)이다. 증거는 `build/discovery-final-{release,sanitizer,consumer}-tests.log`, 대응 JUnit XML·LastTest 기록, `build/discovery-linkage.json`, `build/discovery-installed-loader.log`, `build/discovery-installed-api-result.json`, `build/discovery-installed-mcp-result.json`, `build/discovery-verification.json`에 보관한다. 초기 실패는 `build/discovery-red-build.log`, `build/discovery-tests-first.log`, `build/discovery-focused-tests.log`, `build/discovery-cancellation-red.log`이며 수정 대조는 `build/discovery-cancellation-green.log`에 있다. 전체 검사는 `cmake --build build --parallel`과 `ctest --test-dir build --output-on-failure`로 재현하며 공식 SDK와 고정 모델 경로는 CMake의 선택 검사 옵션으로 지정한다.
+
 ## 2026-09-14 인증된 MCP HTTP 서버 (0.8.0)
 
 C++ `mcp::HttpServer`와 `iillm-mcp --http-port`를 추가했다. 인증 principal에 묶인 세션, 요청별 SSE·재개 기록, 독립 알림 GET, 명시적 취소, 역방향 요청, 구형 배열, 용량·수명 제한을 기존 ServerSession에 연결했다. cpp-httplib 0.54.1과 Qt Core를 재사용하며 생산 Python 서버를 추가하지 않았다. 검증 환경은 Apple arm64 / macOS 27 / Qt 6.8.3이다.

@@ -10,6 +10,7 @@ from pathlib import Path
 import tempfile
 import uuid
 import secrets
+import sys
 
 import httpx
 
@@ -200,18 +201,40 @@ async def native(binary, root, weights, http=False):
             "progress": updates, "transcript": saved, "unpredictable_file_value_verified": True}
 
 
+async def managed(binary, root, http=False):
+    workspace = root / "workspace"
+    workspace.mkdir()
+    (workspace / ".mcp.json").write_text(json.dumps({"mcpServers": {"fixture": {"command": sys.executable,
+        "args": ["-B", str(Path(__file__).with_name("mcp_peer.py").resolve())], "appId": "com.iisacc.fixture"}}}))
+    command = StdioServerParameters(command=str(binary), args=["--workspace", str(workspace),
+        "--mcp-project", "--allow", "mcp__fixture__echo"])
+    async with transport(command, root, http) as (read, write):
+        async with ClientSession(read, write, read_timeout_seconds=timedelta(seconds=10)) as session:
+            await session.initialize()
+            names = {tool.name for tool in (await session.list_tools()).tools}
+            assert {"mcp__fixture__echo", "mcp__fixture__other"} <= names
+            value = "DISCOVERY_" + secrets.token_hex(8)
+            result = await session.call_tool("mcp__fixture__echo", {"value": value})
+            assert not result.isError and result.structuredContent == {"value": value}, result
+            denied = await session.call_tool("mcp__fixture__other", {"value": "denied"})
+            assert denied.isError
+    return {"official_sdk": version("mcp"), "transport": "http" if http else "stdio",
+            "configured_mcp_forwarding": True, "remote_annotations_do_not_grant_permission": True}
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("binary", type=Path)
     parser.add_argument("--native", type=Path)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--http", action="store_true")
+    parser.add_argument("--managed", action="store_true")
     args = parser.parse_args()
     assert version("mcp") == "1.26.0"
     with tempfile.TemporaryDirectory(prefix="mcp-server-") as directory:
         root = Path(directory)
         report = asyncio.run(native(args.binary.resolve(), root, args.native.resolve(), args.http) if args.native
-                             else basic(args.binary.resolve(), root, args.http))
+                             else managed(args.binary.resolve(), root, args.http) if args.managed else basic(args.binary.resolve(), root, args.http))
     if args.report:
         args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     print(json.dumps(report, ensure_ascii=False, indent=2))

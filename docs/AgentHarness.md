@@ -84,3 +84,7 @@ MCP 서버는 [MCPServer.md](MCPServer.md)의 C++ ToolRegistry 공개와 연결�
 ## 대화 압축 (0.6.0)
 
 매 모델 호출 전 네이티브 입력 예산을 확인하고 오래된 도구 결과 축소·대화 요약을 수행한다. `Engine::compact()`는 수동 요약을 같은 실행 큐에 제출한다. 원본 메시지와 별도 압축 체크포인트를 저장하고 재개·분기 시 모델 뷰만 복원한다. `Session`·`ToolContext`·`RunUsage`·`Model` 인터페이스는 0.6 ABI를 사용한다. 옵션·저장 형식·원문 조회·훅·검증 한계는 [Compaction.md](Compaction.md)에 있다.
+
+## 0.9.0 MCP 연결 관리와 도구 검색
+
+호스트가 지정한 MCP 설정 파일의 연결·복구, 대화별 `ToolSearch`, 인증된 `agent.mcp.status` 및 CLI 옵션을 추가했다. 설정과 실행 권한, 수명 및 미지원 범위는 [ToolDiscovery.md](ToolDiscovery.md)를 참조한다.

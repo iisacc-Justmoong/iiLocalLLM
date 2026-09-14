@@ -1,5 +1,6 @@
 #include "agent/Engine.h"
 #include "agent/McpTools.h"
+#include "agent/McpConnections.h"
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -13,7 +14,11 @@ using namespace iiLocalLLM;
 namespace a = iiLocalLLM::agent;
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
-    if (argc != 2 && argc != 4) return 2;
+    if (argc != 2 && argc != 4 && argc != 5) return 2;
+    const bool remote = argc >= 4;
+    const bool configured = argc == 5;
+    const bool discovery = argc == 5 && QString::fromLocal8Bit(argv[4]) == "--discovery";
+    if (configured && !discovery && QString::fromLocal8Bit(argv[4]) != "--configured-eager") return 2;
     try {
         QTemporaryDir root(QDir::current().filePath("agent-native-XXXXXX"));
         if (!root.isValid()) throw std::runtime_error("Cannot create native agent fixture");
@@ -40,8 +45,20 @@ int main(int argc, char** argv) {
         Service service(serviceOptions);
         (void)service.loadModel({"model://agent-fixture", 4096}).get();
         auto registry = std::make_shared<a::ToolRegistry>();
+        std::unique_ptr<a::McpConnections> connections;
         QString toolName = "Read";
-        if (argc == 4) {
+        if (configured) {
+            const auto path = root.filePath("mcp.json"); QFile config(path);
+            if (!config.open(QIODevice::WriteOnly)) throw std::runtime_error("Cannot write MCP fixture config");
+            config.write(QJsonDocument(QJsonObject{{"mcpServers", QJsonObject{{"fixture", QJsonObject{
+                {"command", QString::fromLocal8Bit(argv[2])}, {"args", QJsonArray{"-B", QString::fromLocal8Bit(argv[3]), input.fileName()}},
+                {"appId", "com.iisacc.fixture"}}}}}}).toJson()); config.close();
+            a::McpConnectionOptions o; o.workingDirectory = workspace; o.configFiles = {path};
+            o.deferTools = discovery;
+            connections = std::make_unique<a::McpConnections>(registry, o);
+            if (connections->status().first().toObject()["state"] != "ready") throw std::runtime_error("Configured MCP peer did not connect");
+            toolName = "mcp__fixture__read_secret";
+        } else if (remote) {
             mcp::StdioOptions transport; transport.program = QString::fromLocal8Bit(argv[2]);
             transport.arguments = {"-B", QString::fromLocal8Bit(argv[3]), input.fileName()};
             auto client = std::make_shared<mcp::StdioClient>(transport);
@@ -53,16 +70,19 @@ int main(int argc, char** argv) {
             for (const auto& tool : registry->definitions()) if (tool.name != toolName) registry->remove(tool.name);
         }
         a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
-        a::Engine engine(std::make_shared<a::ServiceModel>(service), registry, std::make_shared<a::RulePolicy>(), options);
+        a::Engine engine(std::make_shared<a::ServiceModel>(service), registry, std::make_shared<a::RulePolicy>(
+            a::PermissionMode::DontAsk, QList<a::PermissionRule>{{toolName, a::PermissionBehavior::Allow}}), options);
         for (const auto& secret : secrets) {
             if (!input.open(QIODevice::WriteOnly | QIODevice::Truncate) || input.write(secret.toUtf8()) < 1)
                 throw std::runtime_error("Cannot write secret");
             input.close();
             auto session = engine.createSession("model://agent-fixture", workspace);
-            a::RunRequest request{session.id, argc == 4
+            a::RunRequest request{session.id, discovery
+                ? "First call ToolSearch with query select:mcp__fixture__read_secret. Then call mcp__fixture__read_secret to read the secret. Then return its exact value as your final answer. Do not guess."
+                : remote
                 ? "Use the mcp__fixture__read_secret tool to read the secret. Then return its exact value as your final answer. Do not guess."
                 : "Use the Read tool to read secret.txt. Then return the exact file contents as your final answer. Do not guess."};
-            request.generation.temperature = 0; request.generation.maxTokens = 512; request.maxTurns = 4;
+            request.generation.temperature = 0; request.generation.maxTokens = 512; request.maxTurns = discovery ? 6 : 4;
             bool read = false; int progress = 0;
             auto result = engine.run(request, [&](const a::Event& event) {
                 if (event.kind == a::EventKind::ToolStarted && event.data["name"] == toolName) read = true;
@@ -73,7 +93,14 @@ int main(int argc, char** argv) {
                 throw std::runtime_error(("Local model/tool/final answer acceptance failed: " + result.errorMessage + " / " + result.text).toStdString());
             if (!a::pendingToolCalls(engine.session(session.id).messages).isEmpty()) throw std::runtime_error("Unpaired tool calls");
             if (result.usage.generatedTokens < 1 || result.turns < 2) throw std::runtime_error("Missing inference evidence");
-            if (argc == 4 && progress < 2) throw std::runtime_error("Missing MCP progress evidence");
+            if (remote && progress < 2) throw std::runtime_error("Missing MCP progress evidence");
+            if (discovery) {
+                const auto messages = engine.session(session.id).messages;
+                bool selected = false;
+                for (const auto& message : messages) if (message.role == a::MessageRole::Tool && !message.isError
+                    && !message.metadata["iilocal.tool_search"].toObject()["entries"].toArray().isEmpty()) selected = true;
+                if (!selected || result.turns < 3) throw std::runtime_error("Missing successful native ToolSearch evidence");
+            }
             std::cout << "Native local model selected " << toolName.toStdString() << ", consumed the actual file value, and completed the agent turn.\n";
         }
         return 0;

@@ -4,11 +4,13 @@
 #include <QtCore/QMap>
 
 namespace iiLocalLLM::agent {
+class McpConnections;
 struct ApiOptions {
     QString workingDirectory;
     QString stateDirectory; // Private directory disjoint from the tool workspace.
     QMap<QString, QString> clientTokens; // Stable app/client ID -> secret (at least 32 bytes).
     EngineOptions engine; // sessionsDirectory is assigned per authenticated client.
+    std::shared_ptr<McpConnections> mcp; // Optional host-owned, shared MCP catalog.
     int maxConcurrentRequests = 8;
     int maxQueuedRequests = 32;
     int maxSessionsPerClient = 1024;

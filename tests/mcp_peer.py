@@ -75,7 +75,8 @@ for line in sys.stdin.buffer:
     elif method == "ping":
         result(id_, {})
     elif method == "test/state":
-        result(id_, {"cancelled": len(cancelled), "rootsChanges": roots_changes, "pid": os.getpid(), "unexpectedResponses": unexpected_responses, "batchResponses": batch_responses})
+        result(id_, {"cancelled": len(cancelled), "rootsChanges": roots_changes, "pid": os.getpid(), "unexpectedResponses": unexpected_responses, "batchResponses": batch_responses,
+                     "cwd": os.getcwd(), "configuredValue": os.environ.get("IILOCAL_MCP_TEST_VALUE")})
     elif method == "test/batch":
         send([{"jsonrpc": "2.0", "id": id_, "result": {"batch": True}},
               {"jsonrpc": "2.0", "method": "notifications/tools/list_changed"},

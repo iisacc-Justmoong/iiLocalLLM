@@ -2,6 +2,7 @@
 #include "IpcEndpoint.h"
 #include "PrivateFile.h"
 #include <agent/Api.h>
+#include <agent/McpConnections.h>
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
@@ -29,7 +30,7 @@ int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("iiLocalLLMD"));
-    app.setApplicationVersion(QStringLiteral("0.8.0"));
+    app.setApplicationVersion(QStringLiteral("0.9.0"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("iiLocalLLM local JSON IPC service"));
     parser.addHelpOption(); parser.addVersionOption();
@@ -49,6 +50,9 @@ int main(int argc, char** argv)
         {"agent-state", "Private agent state directory outside the workspace.", "directory"},
         {"agent-credentials", "Private JSON object mapping client IDs to distinct random tokens (32..256 URL-safe characters).", "file"},
         {"agent-allow", "Allow a tool name or wildcard; repeat for more rules. Read-only tools are allowed by default.", "pattern"},
+        {"agent-mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
+        {"agent-mcp-project", "Load workspace/.mcp.json after explicit MCP configuration files."},
+        {"agent-mcp-eager", "Publish all configured MCP tools to the model without ToolSearch."},
         {"agent-no-auto-compact", "Disable automatic agent conversation compaction; explicit compact requests remain available."},
         {"agent-no-project-context", "Disable automatic project instruction loading for the agent API."},
         {"agent-context-exclude", "Exclude a workspace-relative instruction glob; repeat for more patterns.", "pattern"},
@@ -75,7 +79,8 @@ int main(int argc, char** argv)
         namespace a = iiLocalLLM::agent;
         std::optional<a::ApiOptions> agentConfig;
         if (parser.isSet("agent-workspace") || parser.isSet("agent-state") || parser.isSet("agent-credentials") || parser.isSet("agent-allow")
-            || parser.isSet("agent-no-auto-compact") || parser.isSet("agent-no-project-context") || parser.isSet("agent-context-exclude")) {
+            || parser.isSet("agent-no-auto-compact") || parser.isSet("agent-no-project-context") || parser.isSet("agent-context-exclude")
+            || parser.isSet("agent-mcp-config") || parser.isSet("agent-mcp-project") || parser.isSet("agent-mcp-eager")) {
             if (!parser.isSet("agent-workspace") || !parser.isSet("agent-state") || !parser.isSet("agent-credentials"))
                 throw std::runtime_error("Agent API requires --agent-workspace, --agent-state and --agent-credentials together");
             a::ApiOptions config; config.workingDirectory = QFileInfo(parser.value("agent-workspace")).canonicalFilePath();
@@ -142,6 +147,11 @@ int main(int argc, char** argv)
         std::shared_ptr<iiLocalLLM::agent::Api> agent;
         if (agentConfig) {
             auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, agentConfig->workingDirectory);
+            a::McpConnectionOptions connections; connections.workingDirectory = agentConfig->workingDirectory;
+            for (const auto& path : parser.values("agent-mcp-config")) connections.configFiles.append(QFileInfo(path).absoluteFilePath());
+            if (parser.isSet("agent-mcp-project")) connections.configFiles.append(".mcp.json");
+            connections.deferTools = !parser.isSet("agent-mcp-eager");
+            if (!connections.configFiles.isEmpty()) agentConfig->mcp = std::make_shared<a::McpConnections>(registry, std::move(connections));
             QList<a::PermissionRule> rules;
             for (const auto& name : parser.values("agent-allow")) rules.append({name, a::PermissionBehavior::Allow});
             auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::DontAsk, rules);

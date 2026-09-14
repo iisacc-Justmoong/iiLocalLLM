@@ -146,7 +146,10 @@
         "mcp/StdioClientTransport.cpp",
         "tests/mcp_http_tests.cpp",
         "tests/mcp_http_peer.py",
-        "docs/MCPHTTP.md"
+        "docs/MCPHTTP.md",
+        "agent/McpConnections.cpp",
+        "tests/discovery_tests.cpp",
+        "docs/ToolDiscovery.md"
       ],
       "remaining": "Shared C++ stdio/Streamable HTTP client, 2025 negotiation, bearer/header provider, bounded JSON/SSE, resume GET, 404 session reinitialization without POST replay and generation-bound tools implemented. Legacy SSE, OAuth workflows, proxy qualification and 2026-07-28 remain."
     },
@@ -225,8 +228,22 @@
     {
       "id": "discovery",
       "requirement": "앱 manifest·MCP/API 자동 인식·기능 협상·tool search·지연 공개",
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "agent/ToolSearch.cpp",
+        "agent/McpConnections.cpp",
+        "agent/Engine.cpp",
+        "agent/Api.cpp",
+        "tools/service_main.cpp",
+        "tools/mcp_main.cpp",
+        "tests/discovery_tests.cpp",
+        "tests/agent_runtime_smoke.cpp",
+        "tests/agent_api_smoke.py",
+        "tests/mcp_server_smoke.py",
+        "tests/consumer/discovery.cpp",
+        "docs/ToolDiscovery.md"
+      ],
+      "remaining": "Host-authorized stdio/Streamable HTTP config, environment expansion, tool-list refresh, connection recovery, per-session ToolSearch, persisted selection and authenticated status implemented. App manifests, installed-app/network discovery, full managed/user/plugin config scopes, provider-specific auto thresholds/tool references and actual Society/Dreamscapes endpoints remain. Pinned Qwen2.5 0.5B discovery-to-action inference still fails; configured eager MCP inference works. Model qualification remains open."
     },
     {
       "id": "skills",

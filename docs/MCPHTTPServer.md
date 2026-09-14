@@ -66,3 +66,7 @@ Host는 실제 포트의 127.0.0.1 또는 localhost만 허용한다. Origin이 �
 SSE 외에 네 개의 HTTP worker 여유를 두어 취소·역방향 응답·DELETE를 처리한다. 세션·스트림 한도는 429다. 오래된 완료 스트림은 보존 기한 또는 용량 압박에서 제거한다. 이벤트 데이터는 세션 전체에서 오래된 순으로 제거하며, reader가 뒤처지면 누락 데이터를 건너뛰지 않고 연결을 종료한다. 유휴 만료는 reader와 미완료 요청이 모두 없는 세션에 적용한다. 취소가 끝나지 않은 호스트 작업은 종료 합류와 세션 용량 회수를 지연시킨다. 새 정리 스레드를 만들 수 없는 자원 오류에서는 닫힌 세션을 계속 용량에 산입하고 서버 close에서 합류한다.
 
 TLS listener·원격 proxy 배치·OAuth·legacy SSE·2026 규격·tasks·자동 앱 발견은 이 구현의 지원 범위에 포함되지 않는다. 실제 Society/Dreamscapes 제품 등록·배포도 별도 작업이다. 표준 기준은 [MCP 2025-11-25 전송 규격](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports)이며, 검증 결과는 [Verification.md](Verification.md)에 기록한다.
+
+## 0.9.0 MCP 연결 관리와 도구 검색
+
+호스트가 지정한 MCP 설정 파일의 연결·복구, 대화별 `ToolSearch`, 인증된 `agent.mcp.status` 및 CLI 옵션을 추가했다. 설정과 실행 권한, 수명 및 미지원 범위는 [ToolDiscovery.md](ToolDiscovery.md)를 참조한다.

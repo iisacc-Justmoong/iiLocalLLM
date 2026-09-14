@@ -1,4 +1,5 @@
 #include "Api.h"
+#include "McpConnections.h"
 #include "../Parameters.h"
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
@@ -47,7 +48,7 @@ QStringList contextPaths(const QJsonObject& parameters, int limit) {
     return paths;
 }
 QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.sessions.list", "agent.sessions.get",
-    "agent.sessions.fork", "agent.sessions.compact", "agent.context.get", "agent.run", "agent.cancel", "agent.status"}; }
+    "agent.sessions.fork", "agent.sessions.compact", "agent.context.get", "agent.mcp.status", "agent.run", "agent.cancel", "agent.status"}; }
 QJsonObject sessionObject(const Session& s, int offset = 0, int limit = 0) {
     require(offset <= s.messages.size(), "Message offset exceeds the session length");
     QJsonArray messages;
@@ -134,7 +135,12 @@ public:
         if (method == "agent.info") {
             fields(p, {}); QJsonArray names; for (const auto& name : methods()) names.append(name);
             return QJsonObject{{"protocol", "iisacc.agent/1"}, {"client_id", client->id}, {"methods", names}, {"max_turns", options.maxTurns},
-                {"working_directory", options.workingDirectory}, {"project_context_enabled", options.engine.projectContext.enabled}, {"auto_compact_enabled", options.engine.compaction.automatic}};
+                {"working_directory", options.workingDirectory}, {"project_context_enabled", options.engine.projectContext.enabled},
+                {"auto_compact_enabled", options.engine.compaction.automatic}, {"tool_search_enabled", options.engine.toolSearch.enabled}};
+        }
+        if (method == "agent.mcp.status") {
+            fields(p, {});
+            return QJsonObject{{"servers", options.mcp ? options.mcp->status() : QJsonArray{}}};
         }
         if (method == "agent.sessions.create") {
             fields(p, {"model", "system"}); const auto model = text(p, "model"), prompt = text(p, "system", false);
