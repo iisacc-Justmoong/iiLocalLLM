@@ -34,7 +34,7 @@ int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("iiLocalLLMD"));
-    app.setApplicationVersion(QStringLiteral("0.19.0"));
+    app.setApplicationVersion(QStringLiteral("0.20.0"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("iiLocalLLM local JSON IPC service"));
     parser.addHelpOption(); parser.addVersionOption();
@@ -55,6 +55,7 @@ int main(int argc, char** argv)
         {"agent-credentials", "Private JSON object mapping client IDs to distinct random tokens (32..256 URL-safe characters).", "file"},
         {"agent-allow", "Allow a tool permission rule, e.g. Write(src/**), Bash(git status:*) or Skill(review); repeat for more rules. Read-only tools are allowed by default.", "pattern"},
         {"agent-permission-settings", "Private host configuration outside the workspace for layered permission settings.", "file"},
+        {"agent-add-dir", "Additional file working directory; repeat. Does not enable disk settings without --agent-permission-settings.", "directory"},
         {"agent-mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
         {"agent-mcp-project", "Load workspace/.mcp.json after explicit MCP configuration files."},
         {"agent-mcp-eager", "Publish all configured MCP tools to the model without ToolSearch."},
@@ -99,7 +100,7 @@ int main(int argc, char** argv)
             || parser.isSet("agent-mcp-config") || parser.isSet("agent-mcp-project") || parser.isSet("agent-mcp-eager")
             || parser.isSet("agent-apps-dir") || parser.isSet("agent-no-apps") || parser.isSet("agent-no-tasks") || parser.isSet("agent-no-background")
             || parser.isSet("agent-no-skills") || parser.isSet("agent-skills-dir") || parser.isSet("agent-no-subagents") || parser.isSet("agent-subagent-options")
-            || parser.isSet("agent-profiles") || parser.isSet("no-agent-profiles") || parser.isSet("agent-permission-settings")) {
+            || parser.isSet("agent-profiles") || parser.isSet("no-agent-profiles") || parser.isSet("agent-permission-settings") || parser.isSet("agent-add-dir")) {
             if (parser.isSet("agent-apps-dir") && parser.isSet("agent-no-apps"))
                 throw std::runtime_error("--agent-apps-dir and --agent-no-apps cannot be combined");
             if (parser.isSet("agent-apps-dir") && parser.value("agent-apps-dir").isEmpty())
@@ -142,7 +143,7 @@ int main(int argc, char** argv)
                 throw std::runtime_error("--agent-permission-settings requires a file");
             QList<a::PermissionRule> rules;
             for(const auto& value:parser.values("agent-allow"))rules.append({value,a::PermissionBehavior::Allow});
-            agentPolicy=iiLocalLLMClient::permissionConfig(parser.value("agent-permission-settings"),config.workingDirectory,rules);
+            agentPolicy=iiLocalLLMClient::permissionConfig(parser.value("agent-permission-settings"),config.workingDirectory,rules,{},parser.values("agent-add-dir"));
             agentConfig = std::move(config);
         }
         iiLocalLLM::Service service(options, {parser.value(QStringLiteral("mlx-python")), worker});
@@ -192,7 +193,6 @@ int main(int argc, char** argv)
             if (!parser.isSet("agent-no-background")) shells = std::make_shared<a::ShellTasks>(agentConfig->workingDirectory,
                 QDir(agentConfig->stateDirectory).filePath("shells"));
 #endif
-            auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, agentConfig->workingDirectory, shells);
             a::McpConnectionOptions connections; connections.workingDirectory = agentConfig->workingDirectory;
             for (const auto& path : parser.values("agent-mcp-config")) connections.configFiles.append(QFileInfo(path).absoluteFilePath());
             if (parser.isSet("agent-mcp-project")) connections.configFiles.append(".mcp.json");
@@ -201,6 +201,12 @@ int main(int argc, char** argv)
             if (!parser.isSet("agent-no-apps")) connections.localApplicationsDirectory = iiLocalLLM::mcp::localApplicationsDirectory();
 #endif
             if (parser.isSet("agent-apps-dir")) connections.localApplicationsDirectory = QFileInfo(parser.value("agent-apps-dir")).absoluteFilePath();
+            QStringList privatePaths{agentConfig->stateDirectory};
+            for(const auto& key:{"agent-credentials","agent-permission-settings","agent-profiles","agent-subagent-options"})
+                if(parser.isSet(key))privatePaths.append(parser.value(key));
+            for(const auto& file:connections.configFiles)privatePaths.append(QDir::isAbsolutePath(file)?file:QDir(agentConfig->workingDirectory).filePath(file));
+            if(!connections.localApplicationsDirectory.isEmpty())privatePaths.append(connections.localApplicationsDirectory);
+            auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, agentConfig->workingDirectory, shells,privatePaths);
             if (!connections.configFiles.isEmpty() || !connections.localApplicationsDirectory.isEmpty())
                 agentConfig->mcp = std::make_shared<a::McpConnections>(registry, std::move(connections));
             agent = std::make_shared<a::Api>(std::make_shared<a::ServiceModel>(service), registry, agentPolicy, std::move(*agentConfig));

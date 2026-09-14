@@ -114,8 +114,8 @@ private slots:
         QVERIFY(QFile::setPermissions(path,{}));QVERIFY_THROWS_EXCEPTION(Error,p.snapshot());QVERIFY(QFile::setPermissions(path,QFileDevice::ReadOwner|QFileDevice::WriteOwner));
 #endif
         o.maxFileBytes=16;a::SettingsPermissionPolicy tiny(o);QVERIFY_THROWS_EXCEPTION(Error,tiny.snapshot());
-        o.maxFileBytes=1024;o.inlineSettings={{"permissions",QJsonObject{{"additionalDirectories",QJsonArray{root.filePath("outside")}}}}};
-        a::SettingsPermissionPolicy unsupported(o);QVERIFY(unsupported.snapshot().unsupportedFeatures.contains("permissions.additionalDirectories"));
+        o.maxFileBytes=1024;o.inlineSettings={{"permissions",QJsonObject{{"unknownDirectories",QJsonArray{root.filePath("outside")}}}}};
+        a::SettingsPermissionPolicy unsupported(o);QVERIFY(unsupported.snapshot().unsupportedFeatures.contains("permissions.unknownDirectories"));
         QVERIFY_THROWS_EXCEPTION(Error,unsupported.decide(writeTool(),{{"path","file"}},c));
     }
     void hostilePatternsAreBoundedAndCancellationPropagates() {

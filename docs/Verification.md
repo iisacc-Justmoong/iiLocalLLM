@@ -1,5 +1,42 @@
 # 구현 검증 기록
 
+## 2026-09-15 C++ 추가 작업 디렉터리 (0.20.0)
+
+`permissions.additionalDirectories`와 daemon의 `--agent-add-dir`·MCP의 `--add-dir`을 C++ 파일 도구·권한 판정·자식 에이전트에 연결했다. 현재 경로와 출처·상태는 인증 API·IPC CLI·MCP에서 조회하고 모델의 각 턴에도 전달한다. 설정 삭제는 다음 호출에 반영한다. 도구 권한·호스트 비공개 경로·자식 도구 범위는 추가 디렉터리 안에도 적용한다. 새 생산 의존성은 없으며 Qt와 C++ 실행기를 재사용한다. Python은 검증 클라이언트다. 정확한 계약은 [WorkingDirectories.md](WorkingDirectories.md)를 따른다.
+
+| 검증 경계 | 관측 결과 |
+|---|---|
+| Release 전체 검사, inference 라벨 제외 | 49/49, 87.22초 |
+| ASan·UBSan, llama 비활성 Debug | 47/47, 86.45초; 런타임 오류 보고 없음 |
+| 별도 설치 소비자 | 18/18, 12.04초 |
+| 실제 Qwen3 8B의 추가 디렉터리 Write | 소스 2/2, 설치본 2/2; 각각 허용·철회 후 거부, 실제 Write 각 1회 |
+| 인증 HTTP·IPC CLI·MCP HTTP·공식 SDK stdio | 소스·설치본 통과; 설정/CLI 경로·읽기·쓰기·검색·철회·세션 격리 확인 |
+| 잘못된 호스트 설정 | 소스·설치본 각각 15개 시작 전 거부 |
+| 대소문자 변형 비공개 경로 | Release·sanitizer·설치 소비자·MCP에서 거부 확인; 조건부 검사의 실행 여부 기록 |
+| 설치·ABI·로더 | 공개 헤더 39개·문서·catalog·의존성 소스/라이선스 일치; 실제 0.20 라이브러리 로딩 |
+
+전체 검사는 직렬로 실행했다. inference 라벨을 제외한 Release 결과를 모든 모델의 동작 정확도로 해석하지 않는다. ASan/UBSan은 C·C++ 계측을 유지하고 `ASAN_OPTIONS=malloc_context_size=0`, `UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`로 실행한다. 이전 단계의 최초 Bash 파서 호출 warm-up은 그대로이며 100ms 제품 한도를 바꾸지 않았다. 최초 호출 성능이 해결됐다는 증거는 아니다.
+
+C++ 검사는 출처별 디렉터리 합침·상대 경로 기준·명시적 홈·중복·미존재/일반 파일·한도·취소, 실제 Read/Write/Edit·Bash 리다이렉션·Glob/Grep, 현재 정책 철회와 호출자 경로 주입 거부를 포함한다. 비공개 저장소와 현재 세션 artifact의 읽기 전용 경계를 검사한다. 자식 에이전트는 현재 추가 경로를 모델 문맥에서 확인하고 실제 Write를 수행하며, 읽기 전용 프로파일 및 경로 철회 후에는 파일을 만들지 않는다. 이 자식 검사는 결정적인 C++ Model 대역을 사용한다. 추가 디렉터리에서 실제 모델을 사용하는 부모·자식 위임 전체를 검증한 결과는 아니다.
+
+처음의 세 회귀는 기존 workspace 범위, 미지원 additionalDirectories, Glob 스키마 때문에 실패했다. 구현 후 별도 링크 교체 검사는 추가 디렉터리의 심볼릭 링크를 바꾸면 새 대상이 읽히는 문제를 재현했다. 같은 출처·설정 SHA·입력은 최초 canonical 대상에 묶고, 설정 바이트가 바뀔 때 다시 바인딩하도록 수정했다. 명시적 CLI 경로는 정책 객체의 수명 동안 바인딩한다. 이전 대상의 직접 경로 권한은 유지하고 새로운 링크 대상은 거부한다. 실행 callback에서 대상을 교체하는 경우도 거부한다. 바인딩 표는 현재 입력만 보관하고 성공한 snapshot의 검증이 끝나야 교체한다. 수정 전 `working-directories-red.log/xml`, `working-directories-binding-red.log/xml`과 수정 후·최종 검사를 보존한다.
+
+같은 경로를 파일 설정과 CLI에서 지정한 뒤 파일 설정을 삭제하는 회귀도 처음에는 실패했다. 중복 입력을 일찍 생략하면서 CLI의 최초 바인딩까지 누락한 원인이었다. 조회 항목은 중복 제거하되 출처별 바인딩은 모두 보관하도록 수정했다. 파일 설정의 새 SHA가 다른 대상을 명시적으로 허용해도 CLI의 원래 대상은 유지하며, 파일 설정을 삭제하면 새 대상의 접근은 다시 거부한다. `working-directories-duplicate-binding-red.log/xml`과 수정 후 회귀·전체 검사를 보존한다. 이 수정 전에 통과한 검사·모델 결과·라이브러리는 `working-directories-initial-qualification/`에 따로 남기고, 수정된 생산 라이브러리로 전체 검증을 다시 수행했다.
+
+현재 macOS 볼륨은 파일명의 대소문자를 구분하지 않는다. MCP의 인증 파일을 대문자 경로로 요청하는 회귀와 C++의 비공개 디렉터리 대문자 읽기·새 파일 쓰기가 모두 거부됐다. 해당 우회는 재현되지 않았고 이를 이유로 생산 코드를 변경하지 않았다. 최종 전체 검사에는 보강한 C++ 검사와 wire 결과의 실행 여부 기록이 포함된다. wire 보고서의 `private_case_variant_checked`가 true인지도 확인하여 조건부 검사가 생략되지 않았음을 기록한다.
+
+실제 모델 검사는 원래 workspace 밖의 `shared/out/allowed.txt`에 예측 불가능한 요청 값을 정확히 쓰도록 한다. 그 다음 설정에서 shared의 권한 범위를 삭제하고 별도의 세션에서 `shared/out/blocked.txt` 쓰기를 요청한다. 경로용 Allow 규칙은 유지하지만 두 번째 실행은 `Path is outside the configured working directories`를 반환하고 파일이 없어야 통과한다. 소스·설치본 모두 두 실행이 completed이고 실제 Write 각 1회를 관측했다. CLI가 추가한 별도 경로는 파일 설정 철회 후에도 유지한다.
+
+MCP HTTP·공식 Python MCP SDK 1.26.0 stdio는 실제 추가 경로 쓰기와 철회 후 거부를 검사한다. HTTP는 Read/Glob/Grep, 호스트 인증·설정·state 비공개, 추가 디렉터리의 `.claude/settings.json` 보호도 검사한다. CLI 경로만 사용한 새 MCP 호스트에서는 디스크 설정 출처가 비어 있고 ambient 프로젝트 Write 규칙이 활성화되지 않는다. API는 다른 앱의 대화 404·잘못된 토큰 401·원격 mode/경로 주입 400을 확인한다. MCP 파일 검사와 위 실제 Qwen3 추론은 별도 경계이다.
+
+모델은 Qwen3 8B Q4_K_M, 5,027,783,488바이트, SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`이다. 가중치 해시를 별도로 다시 확인했다. 컨텍스트 8192·최대 출력 1024토큰·temperature 0, `enable_thinking=false`, `tool_grammar=false`이다. 해시 검증을 유지한 daemon 시작 시간은 소스 53.292초, 설치본 53.454초이며 전체 모델/wire 검사는 각각 67.772초, 69.586초였다. 모델 초기화 성능은 계속 별도 개선 대상이다.
+
+설치 prefix는 `build/working-directories-stage`, 소비자는 `build/working-directories-consumer/build`이다. 라이브러리 SHA-256 `9e3f833c362ab3cb23cb613a3d0fc5210216a37182b9cf3600e33d1660973954`, Mach-O UUID `5BF8F868-9909-3D01-8E37-F379496FC3DE`가 소스와 설치본에서 일치한다. CLI·daemon·MCP의 버전은 0.20.0이다. CLI 바이너리는 바이트 단위로 같고, daemon/MCP는 CMake 설치의 RPATH 변경을 별도 소스 복사본에 적용한 뒤 설치본 SHA와 대조한다. UUID도 같다. CLI가 추론 라이브러리를 링크하지 않고 의존성 C 심볼이 비공개임을 확인한다. 문서 최종 갱신도 같은 prefix에 설치하고 원본과 비교한다.
+
+라이브러리 경로 환경변수를 제거하고 최종 검사 임시 데이터·앱 발견 경로를 build 아래로 격리했다. 명령·JUnit·모델 결과·설치 대조·변경 파일 해시는 `build/working-directories-verification.json`, 원격 게시 확인은 `working-directories-publication.json`에 남긴다. 공개 ABI는 0.20이므로 소비자는 헤더·라이브러리를 함께 갱신해 다시 빌드한다.
+
+slash `/add-dir` UI, 원격 경로 변경·설정 쓰기, 추가 루트 instruction 자동 로딩, 전체 검색 의미·파일별 검색 권한, Bash cwd 변경·OS 샌드박스와 나머지 하네스는 남아 있다. 모든 OS 경로 별칭·Unicode·파일 열기 경쟁 조건을 차단하거나 일반 프로그램의 부작용을 격리하는 기능은 아니다. settings/permissions/files/subagents는 계속 **partial**이다. 이 단계는 SDK 검증이며 Society·Dreamscapes와 물리 디바이스 앱을 변경하지 않았다. iPhone 제외 지시를 유지하고 전체 목표는 진행 중이다.
+
 ## 2026-09-15 C++ 계층형 권한 설정 (0.19.0)
 
 사용자·프로젝트·로컬·명시적 호스트·관리자 파일의 권한을 C++ `SettingsPermissionPolicy`에 연결했다. 출처별 경로 기준, 배열 합침·scalar 우선순위, managed-only 필터, bypass 금지와 파일 변경·삭제의 다음 호출 반영을 구현했다. 인증된 API·IPC·CLI와 MCP에서 현재 정책·출처·SHA를 조회한다. 설정 파일 자체의 쓰기 보호, 지원하지 않는 권한 필드의 실행 거부, 잘못된 호스트 설정의 모델 초기화 전 거부를 포함한다. 자세한 계약·참조와 차이는 [PermissionSettings.md](PermissionSettings.md)에 기록한다.

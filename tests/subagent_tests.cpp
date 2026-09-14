@@ -1,5 +1,6 @@
 #include "agent/Subagents.h"
 #include "agent/ShellTasks.h"
+#include "agent/PermissionSettings.h"
 #include <QtCore/QFile>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QTemporaryDir>
@@ -40,6 +41,37 @@ struct Host {
 class SubagentTests final : public QObject {
     Q_OBJECT
 private slots:
+    void childrenUseLiveAdditionalDirectoriesWithoutWideningToolScope() {
+        Host h;const auto extra=h.root.filePath("shared");QVERIFY(QDir().mkpath(extra));QVERIFY(QDir().mkpath(h.workspace+"/.claude"));
+        auto configure=[&](bool enabled) {
+            QFile file(h.workspace+"/.claude/settings.json");QVERIFY(file.open(QIODevice::WriteOnly));
+            file.write(QJsonDocument(QJsonObject{{"permissions",QJsonObject{{"additionalDirectories",enabled?QJsonArray{"../shared"}:QJsonArray{}},
+                {"allow",QJsonArray{"Write"}},{"defaultMode","dontAsk"}}}}).toJson());
+        };
+        configure(true);a::PermissionSettingsOptions p;p.workingDirectory=h.workspace;h.policy=std::make_shared<a::SettingsPermissionPolicy>(p);
+        a::registerWorkspaceTools(*h.registry,h.workspace);h.engineOptions.projectContext.enabled=true;
+        a::SubagentDefinition writer;writer.name="writer";writer.description="writer";writer.tools={"Write"};
+        auto reader=writer;reader.name="reader";reader.readOnly=true;h.options.definitions={writer,reader};
+        QString target="../shared/first.txt";bool expectDirectories=true,denied=false;
+        h.model->next=[&](const auto& request,const auto&) {
+            bool found=false;for(const auto& message:request.messages)found|=message.metadata["iilocal.working_directories"].toBool();
+            if(found!=expectDirectories)throw std::runtime_error("Incorrect live working-directory prompt context");
+            if(request.messages.last().role==a::MessageRole::Tool) {
+                denied=request.messages.last().isError;
+                if(!request.messages.last().metadata.value("iilocal.context_paths").toArray().isEmpty())throw std::runtime_error("Additional directory expanded project instruction scope");
+                return a::ModelReply{denied?"DENIED":"DONE",{}};
+            }
+            return a::ModelReply{{},{{"write","Write",{{"path",target},{"content","CHILD_SHARED_VALUE"}}}}};
+        };
+        auto agents=h.start();const auto parent=h.parent();
+        auto result=agents->run(h.context(parent),{{"prompt","write"},{"subagent_type","writer"}});
+        QVERIFY2(!result.isError,qPrintable(result.text));QVERIFY(!denied);QVERIFY(QFileInfo::exists(extra+"/first.txt"));
+        target="../shared/reader.txt";result=agents->run(h.context(parent),{{"prompt","write"},{"subagent_type","reader"}});
+        QVERIFY(!result.isError);QVERIFY(denied);QVERIFY(!QFileInfo::exists(extra+"/reader.txt"));
+        configure(false);expectDirectories=false;target="../shared/revoked.txt";
+        result=agents->run(h.context(parent),{{"prompt","write"},{"subagent_type","writer"}});
+        QVERIFY(!result.isError);QVERIFY(denied);QVERIFY(!QFileInfo::exists(extra+"/revoked.txt"));
+    }
     void subagentHooksAreScopedAndCanRequireAnotherTurn() {
         Host h;int starts=0,stops=0,parentStops=0;QString childId;std::shared_ptr<a::Subagents> agents;
         h.engineOptions.hooks.append([&](const a::HookInput& input,const CancellationToken&){

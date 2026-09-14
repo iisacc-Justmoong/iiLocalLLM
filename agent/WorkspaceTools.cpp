@@ -12,6 +12,7 @@
 #include <QtCore/QRegularExpression>
 #include <QtCore/QUuid>
 #include <mutex>
+#include <algorithm>
 
 namespace iiLocalLLM::agent {
 namespace {
@@ -39,10 +40,19 @@ bool inside(const QString& path, const QString& root) {
 class Workspace {
 public:
     QString root;
+    QStringList privatePaths;
     std::shared_ptr<ShellTasks> shells;
     struct ReadState { QByteArray digest; bool complete; };
     std::mutex mutex;
     QHash<QString, ReadState> reads;
+    bool isPrivate(const QString& path) const {
+        return std::any_of(privatePaths.cbegin(),privatePaths.cend(),[&](const auto& denied) {
+            return inside(path,denied)||inside(path,QFileInfo(denied).canonicalFilePath());
+        });
+    }
+    QJsonObject contextPaths(const QString& path) const {
+        return inside(path,root)?QJsonObject{{"iilocal.context_paths",QJsonArray{path}}}:QJsonObject{};
+    }
     QString key(const ToolContext& c, const QString& path) const { return c.sessionId + QChar(0) + QString::number(c.contextRevision) + QChar(0) + path; }
     QString resolve(QString path, const ToolContext& c, bool write = false) const {
         require(c.workingDirectory.isEmpty() || QFileInfo(c.workingDirectory).canonicalFilePath() == root,
@@ -66,13 +76,19 @@ public:
             }
             canonical = QDir(ancestor.canonicalFilePath()).filePath(tail.join('/'));
         }
-        const auto artifacts = write ? QString() : QFileInfo(c.artifactsDirectory).canonicalFilePath();
+        const auto artifactRoot=c.artifactsDirectory.isEmpty()?QString():QFileInfo(c.artifactsDirectory).absoluteFilePath();
+        const auto canonicalArtifacts=artifactRoot.isEmpty()?QString():QFileInfo(artifactRoot).canonicalFilePath();
+        if(write)require(!inside(path,artifactRoot)&&!inside(canonical,canonicalArtifacts),"Tool artifacts are read-only to workspace tools");
+        const auto artifacts = write ? QString() : canonicalArtifacts;
         if (shells && shells->containsStatePath(canonical)) {
             require(!write && shells->ownsOutput(c.sessionId, canonical), "Shell state is private; only this session's output files can be read");
             return canonical;
         }
-        require(inside(canonical, root) || inside(canonical, artifacts), "Path is outside the configured workspace");
-        if (write) require(canonical != root, "Cannot replace the workspace root");
+        const bool ownArtifact=inside(canonical,artifacts);
+        require((!isPrivate(path)&&!isPrivate(canonical))||ownArtifact,"Host-private path is inaccessible to workspace tools");
+        auto covered=[&](const QString& value) {return inside(value,root)||std::any_of(c.workingDirectories.cbegin(),c.workingDirectories.cend(),[&](const auto& directory){return inside(value,directory);});};
+        require((covered(path)&&covered(canonical))||ownArtifact, "Path is outside the configured working directories");
+        if (write) require(canonical != root&&!c.workingDirectories.contains(canonical), "Cannot replace a working directory root");
         return canonical;
     }
     void remember(const ToolContext& c, const QString& path, const QByteArray& bytes, bool complete = true) {
@@ -108,15 +124,15 @@ public:
     }
     static QString uuid() { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
 };
-void preparePath(Tool& tool, const std::shared_ptr<Workspace>& workspace, bool write) {
-    tool.prepare = [workspace, write, definition = tool.definition, execute = tool.execute](const QJsonObject& args, const ToolContext& context) {
+void preparePath(Tool& tool, const std::shared_ptr<Workspace>& workspace, bool write,QString defaultPath={}) {
+    tool.prepare = [workspace, write, defaultPath, definition = tool.definition, execute = tool.execute](const QJsonObject& args, const ToolContext& context) {
         QString path;
-        { std::lock_guard lock(workspace->mutex); path = workspace->resolve(args["path"].toString(), context, write); }
+        { std::lock_guard lock(workspace->mutex); path = workspace->resolve(args["path"].toString(defaultPath), context, write); }
         auto preview = definition; preview.metadata["canonical_path"] = path;
-        return PreparedTool{std::move(preview), [workspace, write, execute, args, context, path] {
+        return PreparedTool{std::move(preview), [workspace, write, defaultPath, execute, args, context, path] {
             {
                 std::lock_guard lock(workspace->mutex);
-                require(workspace->resolve(args["path"].toString(), context, write) == path
+                require(workspace->resolve(args["path"].toString(defaultPath), context, write) == path
                     && workspace->resolve(path, context, write) == path, "File permission target changed before execution");
             }
             auto frozen = args; frozen["path"] = path;
@@ -129,10 +145,20 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
     registerWorkspaceTools(registry, workspaceRoot, {});
 }
 void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot, std::shared_ptr<ShellTasks> shells) {
+    registerWorkspaceTools(registry,workspaceRoot,std::move(shells),{});
+}
+void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot, std::shared_ptr<ShellTasks> shells,const QStringList& privatePaths) {
     auto workspace = std::make_shared<Workspace>(); workspace->root = QFileInfo(workspaceRoot).canonicalFilePath();
     require(!workspace->root.isEmpty() && QFileInfo(workspace->root).isDir(), "Workspace must be an existing directory");
     require(!shells || shells->workspace() == workspace->root, "Shell manager belongs to a different workspace");
     workspace->shells = shells;
+    require(privatePaths.size()<=128,"Too many host-private paths");
+    for(const auto& path:privatePaths) {
+        require(!path.isEmpty()&&!path.contains(QChar::Null)&&path.size()<=4096,"Invalid host-private path");
+        workspace->privatePaths.append(QDir::cleanPath(QFileInfo(path).absoluteFilePath()));
+        const auto canonical=QFileInfo(path).canonicalFilePath();if(!canonical.isEmpty())workspace->privatePaths.append(canonical);
+    }
+    workspace->privatePaths.removeDuplicates();
     Tool read;
     read.definition = {"Read", "Read a UTF-8 file (up to 1 MiB). Read the full file before editing it.",
         inputSchema({{"path", stringSchema()}, {"offset", integerSchema(1, 1000000)}, {"limit", integerSchema(1, 20000)}}, {"path"}), {}, true, true};
@@ -146,9 +172,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         for (qsizetype n = offset - 1; n < lines.size() && n < qsizetype(offset - 1) + limit; ++n) output.append(lines[n]);
         const bool complete = offset == 1 && limit >= lines.size();
         workspace->remember(c, path, bytes, complete);
-        const QJsonObject contextPaths = path == workspace->root || path.startsWith(workspace->root + '/')
-            ? QJsonObject{{"iilocal.context_paths", QJsonArray{path}}} : QJsonObject{};
-        return ToolResult{output.join('\n'), {{"path", path}, {"offset", offset}, {"lines", output.size()}, {"complete", complete}}, false, {}, contextPaths};
+        return ToolResult{output.join('\n'), {{"path", path}, {"offset", offset}, {"lines", output.size()}, {"complete", complete}}, false, {}, workspace->contextPaths(path)};
     }; read.definition.metadata = {{"source", "builtin.workspace"}}; preparePath(read, workspace, false); registry.add(std::move(read));
     Tool write;
     write.definition = {"Write", "Write a UTF-8 file. Existing files must have been read completely and remain unchanged.",
@@ -159,7 +183,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         std::optional<QByteArray> before;
         if (QFileInfo::exists(path)) before = workspace->writable(c, path);
         const auto backup = workspace->write(c, path, a["content"].toString().toUtf8(), before);
-        return ToolResult{"Wrote " + path, {{"path", path}, {"backup_path", backup}}, false, {}, {{"iilocal.context_paths", QJsonArray{path}}}};
+        return ToolResult{"Wrote " + path, {{"path", path}, {"backup_path", backup}}, false, {}, workspace->contextPaths(path)};
     }; write.definition.metadata = {{"source", "builtin.workspace"}}; preparePath(write, workspace, true); registry.add(std::move(write));
     Tool edit;
     edit.definition = {"Edit", "Replace exact text in a previously read UTF-8 file. Multiple matches require replace_all=true.",
@@ -174,23 +198,25 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         require(matches > 0, "old_string was not found"); require(matches == 1 || a["replace_all"].toBool(), "Multiple matches require replace_all=true");
         text.replace(old, replacement);
         const auto backup = workspace->write(c, path, text.toUtf8(), before);
-        return ToolResult{"Edited " + path, {{"path", path}, {"replacements", matches}, {"backup_path", backup}}, false, {}, {{"iilocal.context_paths", QJsonArray{path}}}};
+        return ToolResult{"Edited " + path, {{"path", path}, {"replacements", matches}, {"backup_path", backup}}, false, {}, workspace->contextPaths(path)};
     }; edit.definition.metadata = {{"source", "builtin.workspace"}}; preparePath(edit, workspace, true); registry.add(std::move(edit));
     Tool glob;
-    glob.definition = {"Glob", "List matching relative file paths in the workspace (up to 1000 results).",
-        inputSchema({{"pattern", stringSchema()}}, {"pattern"}), {}, true, true};
+    glob.definition = {"Glob", "List matching file paths relative to path (default: workspace). path must be an authorized working directory. Up to 1000 results and 10000 scanned files.",
+        inputSchema({{"pattern", stringSchema()},{"path",stringSchema()}}, {"pattern"}), {}, true, true};
     glob.execute = [workspace](const QJsonObject& a, const ToolContext& c) {
-        workspace->resolve(".", c);
+        const auto root=workspace->resolve(a["path"].toString("."),c);require(QFileInfo(root).isDir(),"Glob path must be a directory");
         const auto regex = QRegularExpression(QRegularExpression::wildcardToRegularExpression(a["pattern"].toString()));
         require(regex.isValid(), "Invalid glob pattern"); QStringList paths;
-        QDirIterator iterator(workspace->root, QDir::Files | QDir::NoSymLinks, QDirIterator::Subdirectories);
-        while (iterator.hasNext() && paths.size() < 1000) {
-            c.cancellation.throwIfCancelled(); const auto path = iterator.next(); const auto relative = QDir(workspace->root).relativeFilePath(path);
-            if ((!workspace->shells || !workspace->shells->containsStatePath(path)) && regex.match(relative).hasMatch()) paths.append(relative);
+        QDirIterator iterator(root, QDir::Files | QDir::NoSymLinks, QDirIterator::Subdirectories);int visited=0;
+        while (iterator.hasNext() && paths.size() < 1000 && visited++<10000) {
+            c.cancellation.throwIfCancelled(); const auto path = iterator.next(); const auto relative = QDir(root).relativeFilePath(path);
+            if(workspace->isPrivate(path)||(workspace->shells&&workspace->shells->containsStatePath(path)))continue;
+            try { workspace->resolve(path,c); } catch(const Error&) { continue; }
+            if (regex.match(relative).hasMatch()) paths.append(relative);
         }
         paths.sort(); QJsonArray values; for (const auto& path : paths) values.append(path);
-        return ToolResult{paths.join('\n'), {{"paths", values}, {"truncated", iterator.hasNext()}}};
-    }; glob.definition.metadata = {{"source", "builtin.workspace"}}; registry.add(std::move(glob));
+        return ToolResult{paths.join('\n'), {{"paths", values}, {"truncated", iterator.hasNext()},{"root",root}}};
+    }; glob.definition.metadata = {{"source", "builtin.workspace"}}; preparePath(glob,workspace,false,".");registry.add(std::move(glob));
     Tool grep;
     grep.definition = {"Grep", "Search a regular expression in UTF-8 workspace files (up to 100 matches, 1 MiB per file).",
         inputSchema({{"pattern", stringSchema()}, {"path", stringSchema()}}, {"pattern"}), {}, true, true};
@@ -204,7 +230,8 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         QStringList matches; QJsonArray values;
         for (const auto& path : files) {
             c.cancellation.throwIfCancelled();
-            if (workspace->shells && workspace->shells->containsStatePath(path)) continue;
+            if(workspace->isPrivate(path)||(workspace->shells&&workspace->shells->containsStatePath(path)))continue;
+            try { workspace->resolve(path,c); } catch(const Error&) { continue; }
             if (QFileInfo(path).size() > maxFileBytes) continue;
             QString text; try { text = decode(readFile(path)); } catch (const Error&) { continue; }
             const auto lines = text.split('\n');
@@ -216,7 +243,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
             if (matches.size() >= 100) break;
         }
         return ToolResult{matches.join('\n'), {{"matches", values}, {"limit_reached", matches.size() >= 100}}};
-    }; grep.definition.metadata = {{"source", "builtin.workspace"}}; registry.add(std::move(grep));
+    }; grep.definition.metadata = {{"source", "builtin.workspace"}}; preparePath(grep,workspace,false,".");registry.add(std::move(grep));
     Tool shell;
     shell.definition = {"Bash", "Execute a shell command in the workspace; this requires tool permission and is not an OS sandbox.",
         inputSchema({{"command", QJsonObject{{"type", "string"}, {"minLength", 1}}}, {"timeout_ms", integerSchema(1, 600000)}}, {"command"})};

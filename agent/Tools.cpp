@@ -6,6 +6,7 @@
 #include <QtCore/QRegularExpression>
 #include <QtCore/QSaveFile>
 #include <QtCore/QDir>
+#include <QtCore/QFileInfo>
 #include <QtCore/QUuid>
 #include <map>
 #include <shared_mutex>
@@ -97,6 +98,15 @@ void ToolRegistry::validateInput(const QString& name, const QJsonObject& input) 
 void ToolRegistry::validateOutput(const QString& name, const QJsonObject& output) const {
     resolve(name)->validateOutput(output);
 }
+QStringList PermissionPolicy::workingDirectories(const ToolContext& context) const {
+    context.cancellation.throwIfCancelled();QStringList paths;
+    if(!context.workingDirectory.isEmpty()) {
+        paths.append(QDir::cleanPath(QFileInfo(context.workingDirectory).absoluteFilePath()));
+        const auto canonical=QFileInfo(context.workingDirectory).canonicalFilePath();
+        if(!canonical.isEmpty())paths.append(canonical);
+    }
+    paths.removeDuplicates();return paths;
+}
 RulePolicy::RulePolicy(PermissionMode mode, QList<PermissionRule> rules) : mode_(mode) {
     QStringList all;
     for (const auto& rule : rules) { for (const auto& pattern : parsePermissionRules({rule.toolPattern})) { auto item=rule;item.toolPattern=pattern;rules_.append(item); all.append(pattern); } }
@@ -109,7 +119,8 @@ QJsonObject RulePolicy::describe(const ToolContext& context) const {
     QJsonArray rules;
     for(const auto& rule:rules_)rules.append(QJsonObject{{"rule",rule.toolPattern},{"behavior",rule.behavior==PermissionBehavior::Allow?"allow":rule.behavior==PermissionBehavior::Deny?"deny":"ask"},
         {"source",rule.source.isEmpty()?QString("host"):rule.source},{"root_directory",rule.rootDirectory},{"settings_syntax",rule.settingsSyntax}});
-    return {{"provider","rules"},{"mode",mode},{"rules",rules},{"inspection_supported",true}};
+    return {{"provider","rules"},{"mode",mode},{"rules",rules},{"inspection_supported",true},
+        {"working_directories",QJsonArray::fromStringList(workingDirectories(context))}};
 }
 PermissionDecision RulePolicy::decide(const ToolDefinition& tool, const QJsonObject& args, const ToolContext& context) const {
     std::optional<PermissionBehavior> matched;
@@ -142,7 +153,8 @@ bool ToolRunner::concurrencySafe(const ToolCall& call) const {
         return options_.hooks.isEmpty() && (tool.canRunConcurrently ? tool.canRunConcurrently(call.arguments) : tool.definition.concurrencySafe);
     } catch (...) { return false; }
 }
-ToolResult ToolRunner::run(ToolCall call, const ToolContext& context, const EventCallback& callback) const {
+ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, const EventCallback& callback) const {
+    auto context=suppliedContext;
     ToolResult result;
     try {
         context.cancellation.throwIfCancelled();
@@ -158,6 +170,7 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& context, const Even
         }
         entry->validateInput(call.arguments);
         if (tool.validate) tool.validate(call.arguments, context);
+        context.workingDirectories=policy_->workingDirectories(context);
         const auto prepared = tool.prepare ? tool.prepare(call.arguments, context)
             : PreparedTool{tool.definition, [&] { return tool.execute(call.arguments, context); }};
         if (!prepared.execute || prepared.definition.name != tool.definition.name

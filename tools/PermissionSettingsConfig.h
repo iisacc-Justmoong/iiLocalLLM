@@ -10,9 +10,15 @@ namespace iiLocalLLMClient {
 // Remote callers can inspect the result; they cannot provide this file or mode.
 inline std::shared_ptr<const iiLocalLLM::agent::PermissionPolicy> permissionConfig(
     const QString& path,const QString& workspace,QList<iiLocalLLM::agent::PermissionRule> cli,
-    QList<iiLocalLLM::agent::PermissionRule> host={}) {
+    QList<iiLocalLLM::agent::PermissionRule> host={},const QStringList& additionalDirectories={}) {
     using namespace iiLocalLLM; namespace a=agent;
-    if(path.isEmpty())return std::make_shared<a::RulePolicy>(a::PermissionMode::DontAsk,cli+host);
+    if(path.isEmpty()) {
+        if(additionalDirectories.isEmpty())return std::make_shared<a::RulePolicy>(a::PermissionMode::DontAsk,cli+host);
+        a::PermissionSettingsOptions options;options.workingDirectory=workspace;options.enabledSources.clear();
+        options.fallbackMode=a::PermissionMode::DontAsk;options.additionalDirectories=additionalDirectories;
+        auto policy=std::make_shared<a::SettingsPermissionPolicy>(options,std::move(cli),std::move(host));
+        (void)policy->snapshot();return policy;
+    }
     const auto canonical=QFileInfo(path).canonicalFilePath();
     if(canonical.isEmpty()||canonical==workspace||canonical.startsWith(workspace.endsWith('/')?workspace:workspace+'/'))
         throw Error(ErrorCode::InvalidArgument,"Permission settings host configuration must be outside the workspace");
@@ -22,6 +28,7 @@ inline std::shared_ptr<const iiLocalLLM::agent::PermissionPolicy> permissionConf
     const QSet<QString> known{"user_directory","managed_directory","home_directory","enabled_sources","flag_files","settings","mode"};
     for(auto i=object.begin();i!=object.end();++i)if(!known.contains(i.key()))throw Error(ErrorCode::InvalidArgument,"Unknown permission settings host field: "+i.key());
     a::PermissionSettingsOptions options;options.workingDirectory=workspace;options.fallbackMode=a::PermissionMode::DontAsk;
+    options.additionalDirectories=additionalDirectories;
     auto text=[](const QJsonValue& value) {
         if(!value.isString()||value.toString().trimmed().isEmpty()||value.toString().size()>4096||value.toString().contains(QChar::Null))
             throw Error(ErrorCode::InvalidArgument,"Invalid permission settings host string");

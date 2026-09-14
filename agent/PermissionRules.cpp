@@ -43,7 +43,12 @@ bool glob(const QString& pattern, const QString& value) {
 bool toolMatch(const QString& pattern, const QString& name) {
     return glob(pattern, name) || (pattern.startsWith("mcp__") && !pattern.mid(5).contains("__") && name.startsWith(pattern + "__"));
 }
-bool inside(const QString& path, const QString& root) { return !root.isEmpty() && (path == root || path.startsWith(root + '/')); }
+bool inside(const QString& path, const QString& root) { return !root.isEmpty() && (path == root || path.startsWith(root.endsWith('/')?root:root + '/')); }
+bool inWorkingDirectories(const QString& path,const ToolContext& context) {
+    if(path.isEmpty())return false;
+    if(inside(path,QFileInfo(context.workingDirectory).canonicalFilePath()))return true;
+    return std::any_of(context.workingDirectories.cbegin(),context.workingDirectories.cend(),[&](const auto& root){return inside(path,root);});
+}
 QString canonicalTarget(QString path) {
     QStringList suffix;
     while (!QFileInfo::exists(path)) {
@@ -75,7 +80,7 @@ bool fileMatch(const QString& content, const QString& path, const ToolContext& c
     const auto canonical = canonicalTarget(lexical);
     auto pattern = QDir::isAbsolutePath(content) ? content : QDir(root).filePath(content);
     pattern = QDir::cleanPath(pattern);
-    if (allow) return inside(lexical, root) && inside(canonical, root) && pathGlob(pattern, lexical) && pathGlob(pattern, canonical);
+    if (allow) return inWorkingDirectories(lexical, context) && inWorkingDirectories(canonical, context) && pathGlob(pattern, lexical) && pathGlob(pattern, canonical);
     return pathGlob(pattern, lexical) || (!canonical.isEmpty() && pathGlob(pattern, canonical));
 }
 bool named(const Rule& rule, const QString& name) {
@@ -167,7 +172,7 @@ bool fileRulesMatch(const QList<Rule>& rules,const QString& name,const QString& 
     const auto root=QFileInfo(context.workingDirectory).canonicalFilePath();
     const auto lexical=QDir::cleanPath(QDir::isAbsolutePath(path)?path:QDir(root).filePath(path));
     const auto canonical=canonicalTarget(lexical);
-    if(allow)return inside(lexical,root)&&inside(canonical,root)&&settingsPathMatch(rules,name,lexical,context)&&settingsPathMatch(rules,name,canonical,context);
+    if(allow)return inWorkingDirectories(lexical,context)&&inWorkingDirectories(canonical,context)&&settingsPathMatch(rules,name,lexical,context)&&settingsPathMatch(rules,name,canonical,context);
     return settingsPathMatch(rules,name,lexical,context)||(!canonical.isEmpty()&&settingsPathMatch(rules,name,canonical,context));
 }
 bool valueMatch(const Rule& rule, const QString& name, const QJsonObject& args, const ToolContext& context, bool allow) {
@@ -293,7 +298,7 @@ Shell inspectShell(const QString& text, const ToolContext& context) {
     for (const auto& redirect : result.redirects) {
         const auto rootPath = QFileInfo(context.workingDirectory).canonicalFilePath();
         const auto path = QDir::cleanPath(QDir::isAbsolutePath(redirect.path) ? redirect.path : QDir(rootPath).filePath(redirect.path));
-        if (context.workingDirectory.isEmpty() || !inside(path, rootPath) || !inside(canonicalTarget(path), rootPath)) result.safe = false;
+        if (context.workingDirectory.isEmpty() || !inWorkingDirectories(path, context) || !inWorkingDirectories(canonicalTarget(path), context)) result.safe = false;
     }
     return result;
 }

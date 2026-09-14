@@ -1,5 +1,9 @@
 # iillm과 iiLocalLLMD
 
+0.20.0의 daemon은 `--agent-add-dir DIR`, MCP 호스트는 `--add-dir DIR`를 반복하여
+추가 작업 디렉터리를 지정한다. 디스크 설정은 별도의 permission-settings 옵션으로
+선택한다. `agent permissions get` 조회와 범위·수명은 [WorkingDirectories.md](WorkingDirectories.md)를 따른다.
+
 `iillm → Native IPC → iiLocalLLMD → Runtime` 관계이다. iillm은 Qt Core/Network만 링크하며 SDK의 Service나 추론 런타임을 생성하지 않는다. daemon 연결이 없으면 명시적인 연결 오류로 종료한다. `iiLocalLLMD`와 기존 `iilocal-llm-service`는 동일 서비스 진입점이다.
 
 ```sh

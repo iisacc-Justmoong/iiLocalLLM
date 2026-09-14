@@ -1,5 +1,9 @@
 # 에이전트 HTTP·native IPC API
 
+0.20.0의 `agent.permissions.get`은 호스트가 선택한 `working_directories`와 출처별
+`additional_directories`도 반환한다. 원격 입력으로 경로 권한을 추가하지 않는다.
+실행·자식·철회·비공개 경로 계약은 [WorkingDirectories.md](WorkingDirectories.md)를 따른다.
+
 `agent::Api`는 C++ `Engine`을 HTTP와 native IPC에서 함께 제공한다. 같은 인증키로 접속한 앱은 두 전송에서 같은 영속 세션을 사용한다. 앱마다 별도의 세션 저장소를 두며, 다른 앱의 세션 및 진행 중 요청 ID는 조회·취소할 수 없다. 프로토콜 식별자는 `iisacc.agent/1`이다. MCP JSON-RPC나 OpenAI Chat Completions와는 별도의 iiLocalLLM RPC 계약이다.
 
 현재 API는 인증, 영속 대화, 연결이 유지되는 에이전트 실행·이벤트·취소, 작업·Todo 상태, 백그라운드 셸과 영속 입력 큐 제어를 제공한다. **전체 Claude 하네스 호환이나 모든 제품 연동의 완료를 뜻하지 않는다.** 백그라운드 에이전트 실행, 자동 유휴 기동·완료 알림, 파일 rewind, artifact 복제 등은 대응표의 미완료 항목이다.

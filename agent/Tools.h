@@ -58,6 +58,7 @@ public:
     virtual ~PermissionPolicy() = default;
     virtual PermissionDecision decide(const ToolDefinition&, const QJsonObject&, const ToolContext&) const = 0;
     virtual QJsonObject describe(const ToolContext&) const { return {{"provider","custom"},{"inspection_supported",false}}; }
+    virtual QStringList workingDirectories(const ToolContext&) const;
 };
 class IILOCALLLM_EXPORT RulePolicy final : public PermissionPolicy {
 public:
@@ -101,10 +102,15 @@ private:
     std::shared_ptr<const PermissionPolicy> policy_;
     ToolRunnerOptions options_;
 };
-// Read, Write, Edit, Glob, Grep and Bash. Paths are restricted to the canonical workspace.
+// Read, Write, Edit, Glob, Grep and Bash. File paths are restricted to the original
+// workspace and the current policy's trusted working-directory snapshot.
 // Bash is a permission-controlled process, not an OS sandbox.
 IILOCALLLM_EXPORT void registerWorkspaceTools(ToolRegistry&, const QString& workspaceRoot);
 class ShellTasks;
 // Opt in to host-owned background Bash, TaskOutput, TaskStop and ShellTaskList.
 IILOCALLLM_EXPORT void registerWorkspaceTools(ToolRegistry&, const QString& workspaceRoot, std::shared_ptr<ShellTasks>);
+// Host-private files/directories remain inaccessible from workspace file/search tools,
+// including through additional roots. Only this session's own artifacts/shell output can be read.
+IILOCALLLM_EXPORT void registerWorkspaceTools(ToolRegistry&, const QString& workspaceRoot,
+    std::shared_ptr<ShellTasks>, const QStringList& privatePaths);
 }

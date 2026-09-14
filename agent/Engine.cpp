@@ -278,6 +278,15 @@ public:
                 detail::prepareToolDiscovery(*turnRegistry, session, options.toolSearch);
                 filterTools();
                 ModelRequest base{session.model, session.systemPrompt, {}, turnRegistry->definitions(), request.generation, session.id};
+                const ToolContext directoryContext{session.id,runId,session.workingDirectory,{},token};
+                const auto directories=policy->workingDirectories(directoryContext);
+                if(std::any_of(directories.cbegin(),directories.cend(),[&](const auto& path){return path!=session.workingDirectory;})) {
+                    Message paths;paths.role=MessageRole::User;
+                    paths.text="Host working directories follow as JSON. Relative tool paths use working_directory. Tool permission rules still apply.\n"
+                        +QString::fromUtf8(QJsonDocument(QJsonObject{{"working_directory",session.workingDirectory},
+                            {"working_directories",QJsonArray::fromStringList(directories)}}).toJson(QJsonDocument::Compact));
+                    paths.metadata={{"iilocal.working_directories",true}};base.messages.append(std::move(paths));
+                }
                 if (!skillContext.text.isEmpty()) base.messages.append(skillContext);
                 if (auto state = taskContext(session.id, token)) base.messages.append(std::move(*state));
                 if (auto state = shellContext(session, token)) base.messages.append(std::move(*state));

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(iiLocalLLM VERSION 0.19.0 LANGUAGES CXX)
+project(iiLocalLLM VERSION 0.20.0 LANGUAGES CXX)
 
 if(PROJECT_IS_TOP_LEVEL AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     if(DEFINED ENV{HOME})
@@ -226,6 +226,10 @@ if(BUILD_TESTING)
     target_link_libraries(iiLocalLLMPermissionSettingsTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
     set_target_properties(iiLocalLLMPermissionSettingsTests PROPERTIES AUTOMOC ON)
     add_test(NAME iiLocalLLM.permission_settings COMMAND iiLocalLLMPermissionSettingsTests)
+    add_executable(iiLocalLLMWorkingDirectoriesTests tests/working_directories_tests.cpp)
+    target_link_libraries(iiLocalLLMWorkingDirectoriesTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
+    set_target_properties(iiLocalLLMWorkingDirectoriesTests PROPERTIES AUTOMOC ON)
+    add_test(NAME iiLocalLLM.working_directories COMMAND iiLocalLLMWorkingDirectoriesTests)
     add_executable(iiLocalLLMSkillPermissionTests tests/skill_permission_tests.cpp)
     target_link_libraries(iiLocalLLMSkillPermissionTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
     set_target_properties(iiLocalLLMSkillPermissionTests PROPERTIES AUTOMOC ON)
@@ -334,6 +338,10 @@ if(BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/permission_settings_wire.py $<TARGET_FILE:iiLocalLLMD> $<TARGET_FILE:iillm> $<TARGET_FILE:iiLocalLLMMcpServer>
                 --report ${CMAKE_CURRENT_BINARY_DIR}/permission-settings-wire.json)
             set_tests_properties(iiLocalLLM.permission_settings_wire PROPERTIES TIMEOUT 180)
+            add_test(NAME iiLocalLLM.working_directories_wire COMMAND ${Python3_EXECUTABLE} -B
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/permission_settings_wire.py $<TARGET_FILE:iiLocalLLMD> $<TARGET_FILE:iillm> $<TARGET_FILE:iiLocalLLMMcpServer>
+                --additional-directories --report ${CMAKE_CURRENT_BINARY_DIR}/working-directories-wire.json)
+            set_tests_properties(iiLocalLLM.working_directories_wire PROPERTIES TIMEOUT 180)
         endif()
         if(IILOCALLLM_WITH_LLAMA AND IILOCALLLM_TEST_AGENT_CATALOG)
             add_executable(iiLocalLLMSubagentRuntimeSmoke tests/subagent_runtime_smoke.cpp)

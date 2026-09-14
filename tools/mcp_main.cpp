@@ -19,12 +19,13 @@
 namespace { volatile std::sig_atomic_t interrupted = 0; void interrupt(int) { interrupted = 1; } }
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.19.0");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.20.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},
         {"allow", "Allow a tool permission rule, e.g. Write(src/**), Bash(git status:*) or Skill(review); repeat for more rules. Read-only tools are allowed by default.", "pattern"},
         {"permission-settings", "Private host configuration outside the workspace for layered permission settings.", "file"},
+        {"add-dir", "Additional file working directory; repeat. Does not enable disk settings without --permission-settings.", "directory"},
         {"mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
         {"mcp-project", "Load workspace/.mcp.json after explicit MCP configuration files."},
         {"mcp-eager", "Publish all configured MCP tools to the agent without ToolSearch."},
@@ -127,13 +128,12 @@ int main(int argc, char** argv) {
             hostRules.append({"iiLocalLLM.agent.agents.stop", a::PermissionBehavior::Allow});
         }
         if(parser.isSet("permission-settings")&&parser.value("permission-settings").isEmpty())throw std::runtime_error("--permission-settings requires a file");
-        auto policy=iiLocalLLMClient::permissionConfig(parser.value("permission-settings"),workspace,rules,hostRules);
+        auto policy=iiLocalLLMClient::permissionConfig(parser.value("permission-settings"),workspace,rules,hostRules,parser.values("add-dir"));
         std::shared_ptr<a::ShellTasks> shells;
 #if defined(Q_OS_UNIX) && !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
         if (!parser.isSet("no-background")) shells = std::make_shared<a::ShellTasks>(workspace,
             !privateState.isEmpty() ? QDir(privateState).filePath("shells") : QDir(workspace).filePath(".iilocal-llm/shells"));
 #endif
-        auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, workspace, shells);
         a::McpConnectionOptions connectionOptions; connectionOptions.workingDirectory = workspace;
         for (const auto& path : parser.values("mcp-config")) connectionOptions.configFiles.append(QFileInfo(path).absoluteFilePath());
         if (parser.isSet("mcp-project")) connectionOptions.configFiles.append(".mcp.json");
@@ -142,6 +142,12 @@ int main(int argc, char** argv) {
         if (!parser.isSet("no-apps")) connectionOptions.localApplicationsDirectory = iiLocalLLM::mcp::localApplicationsDirectory();
 #endif
         if (parser.isSet("apps-dir")) connectionOptions.localApplicationsDirectory = QFileInfo(parser.value("apps-dir")).absoluteFilePath();
+        QStringList privatePaths{privateState.isEmpty()?QDir(workspace).filePath(".iilocal-llm"):privateState};
+        for(const auto& key:{"credentials","permission-settings","agent-profiles","model-options","sessions","artifacts"})
+            if(parser.isSet(key))privatePaths.append(parser.value(key));
+        for(const auto& file:connectionOptions.configFiles)privatePaths.append(QDir::isAbsolutePath(file)?file:QDir(workspace).filePath(file));
+        if(!connectionOptions.localApplicationsDirectory.isEmpty())privatePaths.append(connectionOptions.localApplicationsDirectory);
+        auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, workspace, shells,privatePaths);
         std::unique_ptr<a::McpConnections> connections;
         if (!connectionOptions.configFiles.isEmpty() || !connectionOptions.localApplicationsDirectory.isEmpty())
             connections = std::make_unique<a::McpConnections>(registry, std::move(connectionOptions));

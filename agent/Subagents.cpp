@@ -57,6 +57,7 @@ class ScopedPolicy final : public PermissionPolicy {
     std::shared_ptr<const PermissionPolicy> parent; QJsonObject original,current;
 public:
     ScopedPolicy(std::shared_ptr<const PermissionPolicy> p,QJsonObject o,QJsonObject c):parent(std::move(p)),original(std::move(o)),current(std::move(c)){}
+    QStringList workingDirectories(const ToolContext& c) const override { return parent->workingDirectories(c); }
     PermissionDecision decide(const ToolDefinition& t,const QJsonObject& a,const ToolContext& c) const override {
         if(!allowed(t,original)||!allowed(t,current)) return {PermissionBehavior::Deny,"Tool is outside this subagent's scope"};
         auto decision=parent->decide(t,a,c);

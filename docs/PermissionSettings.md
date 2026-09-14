@@ -1,8 +1,8 @@
 # 계층형 권한 설정
 
-0.19.0의 C++ `SettingsPermissionPolicy`는 파일 기반 권한 설정을 읽는다.
-`PermissionRule` 레이아웃과 `PermissionPolicy` 가상 함수가 바뀌므로 ABI는
-0.19이다. 헤더·라이브러리·소비자를 함께 다시 빌드한다. 기존 네이티브
+0.20.0의 C++ `SettingsPermissionPolicy`는 파일 기반 권한 설정과 추가 디렉터리를 읽는다.
+`ToolContext`, 설정 Options/Snapshot과 `PermissionPolicy` 가상 함수가 바뀌므로 ABI는
+0.20이다. 헤더·라이브러리·소비자를 함께 다시 빌드한다. 기존 네이티브
 `RulePolicy` 문법·스킬 권한 수명은 [Permissions.md](Permissions.md)를 따른다.
 
 ## 출처와 우선순위
@@ -56,12 +56,12 @@ mode는 `default`, `acceptEdits`, `dontAsk`, `bypassPermissions`, `plan`이다.
 `disableBypassPermissionsMode: "disable"`이면 bypass 후보를 건너뛴다.
 `disableAutoMode: "disable"`은 받지만 auto mode·자동 분류기는 아직 없다.
 
-비어 있지 않은 `permissions.additionalDirectories`와 알 수 없는 permissions
-필드는 `unsupported_features`에 기록하고 실행을 실패시킨다. 추가 디렉터리는
-파일 도구의 workspace 범위와 아직 연결하지 않았다. 일반 `env`, model, hooks
+`permissions.additionalDirectories`는 [WorkingDirectories.md](WorkingDirectories.md)의
+경로 검증·수명·도구 경계를 따른다. 알 수 없는 permissions 필드는
+`unsupported_features`에 기록하고 실행을 실패시킨다. 일반 `env`, model, hooks
 등은 적용하지 않고 이름만 미지원으로 보고하며 값은 조회에 노출하지 않는다.
 
-현재 읽은 설정 경로와 workspace 하위 `.claude/settings.json`·`settings.local.json`
+현재 읽은 설정 경로와 모든 작업 디렉터리의 `.claude/settings.json`·`settings.local.json`
 쓰기에 호스트 Ask를 적용한다. 일반 Edit/Write/acceptEdits로 권한 설정 자체를
 덮어쓸 수 없고 `dontAsk`에서는 Deny가 된다. 임베딩 호스트의 기존 승인 callback은
 Ask를 처리할 수 있지만 원격 호출자가 이를 바꾸는 API는 없다. Bash 프로그램
@@ -76,11 +76,11 @@ Ask를 처리할 수 있지만 원격 호출자가 이를 바꾸는 API는 없�
 - `/src/**`는 출처 기준, `//absolute/path`는 파일 시스템 루트, `~/path`는
   호스트 homeDirectory 기준이다. 나머지는 workspace 기준이다. 부정 규칙의
   root는 참조의 계산 순서대로 workspace라서 사용자 출처의 `/...` 긍정 규칙과
-  `!/...` 부정 규칙의 기준이 다를 수 있다. 이 문법이 workspace 밖 실행을 허용하지 않는다.
+  `!/...` 부정 규칙의 기준이 다를 수 있다. 이 문법이 허용된 작업 디렉터리 밖 실행을 허용하지 않는다.
 - `*`, `**`, `?`, 문자 집합·범위, 주석·escape, trailing slash, `!` 부정을 처리한다.
   마지막 `/**`는 참조처럼 먼저 제거한다. 제외된 부모 내부를 부정 규칙 하나로
   다시 포함하지 않는다. 같은 root의 동일 패턴은 순서를 중복하지 않는다.
-- Allow는 lexical·canonical 양쪽이 workspace 안이며 둘 다 일치해야 한다.
+- Allow는 lexical·canonical 양쪽이 허용된 작업 디렉터리 안이며 둘 다 일치해야 한다.
   Deny/Ask는 어느 쪽이든 일치하면 적용한다. 파일 도구의 실행 직전 대상 재검증도 유지한다.
 
 libgit2 v1.9.7의 작은 C wildmatch를 비공개로 사용한다. Git repository나
@@ -147,6 +147,6 @@ provider·mode·규칙·출처 파일·SHA·미지원 이름을 반환한다. AP
 쓰기 예외, 모든 특수 경로 보호까지 동일성을 검증하지 않았다. command/스킬 권한은
 참조 sync의 정리 대상에서 빠져 있으며 현재 구현도 호출 수명 안에서 유지한다.
 
-추가 디렉터리·원격 관리·MDM·Windows 레지스트리·플러그인 설정·환경 적용·
+원격 관리·MDM·Windows 레지스트리·플러그인 설정·환경 적용·
 마이그레이션·자동 분류·원격 승인 응답·OS 샌드박스는 남아 있다. 전체 하네스나
 전체 settings 호환이 완료된 것은 아니다.

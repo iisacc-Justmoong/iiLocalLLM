@@ -57,6 +57,7 @@ struct ToolContext {
     quint64 contextRevision = 0; // Read-before-edit observations expire after compaction.
     std::shared_ptr<const Session> sessionSnapshot; // Immutable parent context at the tool batch boundary.
     QStringList allowedTools; // Trusted invocation grants, never restored from transcript metadata.
+    QStringList workingDirectories; // Host policy snapshot, replaced by ToolRunner before preparation; never accepted from wire input.
 };
 struct ModelRequest {
     QString model;

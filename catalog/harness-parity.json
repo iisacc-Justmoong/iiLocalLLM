@@ -61,9 +61,11 @@
         "tests/permission_settings_tests.cpp",
         "tests/permission_settings_patterns.json",
         "tests/permission_settings_wire.py",
-        "docs/PermissionSettings.md"
+        "docs/PermissionSettings.md",
+        "tests/working_directories_tests.cpp",
+        "docs/WorkingDirectories.md"
       ],
-      "remaining": "C++ file-backed user/project/local/flag/managed layers, live reload, source-rooted bounded gitignore patterns, protected settings writes, host CLI configuration and authenticated API/MCP inspection now supplement RulePolicy and scoped skill grants. Additional directories, remote/MDM/registry policy sources, auto classifier, complete BashSecurity/OS sandbox, broader Unicode/reference pattern parity, and remote permission mediation remain."
+      "remaining": "C++ file-backed user/project/local/flag/managed layers, live reload, source-rooted bounded gitignore patterns, protected settings writes, host CLI configuration and authenticated API/MCP inspection now supplement RulePolicy and scoped skill grants. remote/MDM/registry policy sources, auto classifier, complete BashSecurity/OS sandbox, broader Unicode/reference pattern parity, and remote permission mediation remain. C++ file working directories, CLI grants, source-bound canonical roots, private host paths and current child-policy inheritance are implemented in 0.20; interactive/remote directory updates and additional-root instruction loading remain."
     },
     {
       "id": "files",
@@ -71,7 +73,9 @@
       "status": "partial",
       "evidence": [
         "agent/WorkspaceTools.cpp",
-        "tests/agent_tests.cpp"
+        "tests/agent_tests.cpp",
+        "tests/working_directories_tests.cpp",
+        "docs/WorkingDirectories.md"
       ],
       "remaining": "Read/Write/Edit/Glob/Grep with read-before-edit, stale hashes and backups implemented; full search semantics and rewind remain."
     },
@@ -165,7 +169,9 @@
         "agent/PermissionRules.cpp",
         "tests/permission_rules_tests.cpp",
         "tests/skill_permission_tests.cpp",
-        "docs/Permissions.md"
+        "docs/Permissions.md",
+        "tests/working_directories_tests.cpp",
+        "docs/WorkingDirectories.md"
       ],
       "remaining": "C++ child conversations, foreground/background execution, explicit parent-context fork, resume, cancellation/deadlines and notifications are implemented. File/JSON profile hierarchy, live catalogs, host model aliases, strict scope intersections, inline skill preloads and C++ SubagentStart/SubagentStop callbacks are added in 0.16. Full builtin roles and conditional selection, plugin lifecycle/worktree-directory fallback, agent-specific MCP/memory and external hooks, automatic transition during a running foreground task, teams/mailbox, worktree/remote isolation, unified task routing, trace/cost aggregation and complete real-app qualification remain. Profile bodies are original C++ implementation prompts, not copied reference prompts. See Verification.md for separate model-level outcomes. C++ synchronous context:fork skills for user and model invocation, isolated prompts, authorized agent/model selection and final-result forwarding are implemented in 0.17. Scheduled background fork and effort remain. Invocation-scoped allowed-tools, host-deny/ask precedence, child inheritance and non-restoration on resume are implemented in 0.18. See Permissions.md for boundaries."
     },
@@ -244,7 +250,9 @@
         "tests/consumer/mcp_http_server.cpp",
         "docs/MCPHTTPServer.md",
         "agent/ShellTasks.cpp",
-        "docs/BackgroundTasks.md"
+        "docs/BackgroundTasks.md",
+        "tests/working_directories_tests.cpp",
+        "docs/WorkingDirectories.md"
       ],
       "remaining": "C++ sessions, POSIX stdio, authenticated loopback Streamable HTTP, resumable SSE, CLI, app ToolRegistry export and local agent tools are implemented. Shell controls share conversation ownership and stop on connection close/reset. Remote TLS/proxy qualification, legacy SSE, OAuth, Windows stdio and MCP asynchronous tasks remain."
     },
@@ -279,7 +287,9 @@
         "docs/BackgroundTasks.md",
         "agent/Subagents.h",
         "tests/consumer/subagents.cpp",
-        "docs/Subagents.md"
+        "docs/Subagents.md",
+        "tests/working_directories_tests.cpp",
+        "docs/WorkingDirectories.md"
       ],
       "remaining": "Authenticated HTTP/native IPC sessions, attached parent runs, ordered events, cancellation, background shells and delegated child controls/history with thin CLI are implemented. Durable background parent jobs, idempotent response replay, live permission mediation and complete iisacc product workflows remain."
     },
@@ -439,9 +449,11 @@
         "tools/PermissionSettingsConfig.h",
         "tests/permission_settings_tests.cpp",
         "tests/permission_settings_wire.py",
-        "docs/PermissionSettings.md"
+        "docs/PermissionSettings.md",
+        "tests/working_directories_tests.cpp",
+        "docs/WorkingDirectories.md"
       ],
-      "remaining": "File-backed permission arrays, scalar modes, managed-only rules, bypass disable, source selection, managed drop-ins and source metadata are implemented. General environment/settings application, additionalDirectories, remote/MDM/registry providers, plugins, features/gates and migrations remain. Unsupported permission features fail execution; unrelated values are not applied or disclosed."
+      "remaining": "File-backed permission arrays, scalar modes, managed-only rules, bypass disable, source selection, managed drop-ins and source metadata are implemented. General environment/settings application, remote/MDM/registry providers, plugins, features/gates and migrations remain. Unsupported permission features fail execution; unrelated values are not applied or disclosed. File/CLI additionalDirectories now reach tool execution and authenticated inspection; live grants retain source-bound canonical targets."
     },
     {
       "id": "observability",
