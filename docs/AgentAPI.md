@@ -2,7 +2,7 @@
 
 `agent::Api`는 C++ `Engine`을 HTTP와 native IPC에서 함께 제공한다. 같은 인증키로 접속한 앱은 두 전송에서 같은 영속 세션을 사용한다. 앱마다 별도의 세션 저장소를 두며, 다른 앱의 세션 및 진행 중 요청 ID는 조회·취소할 수 없다. 프로토콜 식별자는 `iisacc.agent/1`이다. MCP JSON-RPC나 OpenAI Chat Completions와는 별도의 iiLocalLLM RPC 계약이다.
 
-현재 API는 인증, 영속 대화, 연결이 유지되는 에이전트 실행·이벤트·취소, 작업·Todo 상태와 백그라운드 셸 제어를 제공한다. **전체 Claude 하네스 호환이나 모든 제품 연동의 완료를 뜻하지 않는다.** 백그라운드 에이전트 실행, 입력 큐, 파일 rewind, artifact 복제 등은 대응표의 미완료 항목이다.
+현재 API는 인증, 영속 대화, 연결이 유지되는 에이전트 실행·이벤트·취소, 작업·Todo 상태, 백그라운드 셸과 영속 입력 큐 제어를 제공한다. **전체 Claude 하네스 호환이나 모든 제품 연동의 완료를 뜻하지 않는다.** 백그라운드 에이전트 실행, 자동 유휴 기동·완료 알림, 파일 rewind, artifact 복제 등은 대응표의 미완료 항목이다.
 
 ## daemon 실행
 
@@ -156,3 +156,22 @@ agent.tasks.create/get/list/update/claim 및 agent.todos.write/get을 추가한�
 `agent.shell.start/output/stop/list`는 `session_id`와 해당 셸 도구의 인수를 받으며 `{text,result,is_error}`를 반환한다. start는 `Bash` 권한을 확인하고 `run_in_background=true`를 호스트가 지정한다. output은 TaskOutput, stop은 TaskStop, list는 ShellTaskList에 대응한다. `agent.info.background_tasks_enabled`로 사용 여부를 확인하며 데스크톱 POSIX daemon의 `--agent-no-background`로 끌 수 있다.
 
 실행 중인 에이전트와 독립적으로 조회·중단한다. 출력 조회의 남은 API 기한이 요청한 대기 시간보다 짧으면 그 기한으로 제한하고, 아직 실행 중일 경우 timeout 오류를 반환한다. 조회 취소·기한 만료는 셸을 종료하지 않는다. 다른 앱이나 대화의 작업 ID는 접근할 수 없다. 재시작 기록, 바이트 페이징과 명시적 종료 계약은 [BackgroundTasks.md](BackgroundTasks.md)를 참조한다.
+
+## 입력 큐 API (0.13.0)
+
+`agent.info`의 `input_queue_enabled`와 methods로 확인한다. 모든 호출은 기존 앱 인증·workspace·세션 소유권을 적용한다.
+
+| 메서드 | params | 결과 |
+|---|---|---|
+| `agent.inputs.enqueue` | session_id, text; 선택 kind·priority·context_paths | input, revision, 실행이 있으면 active_run_id |
+| `agent.inputs.list` | session_id; 선택 offset(0 이상), limit(1~100, 기본 32) | count, inputs, revision, 선택 next_offset |
+| `agent.inputs.remove` | session_id, input_id | removed, input_id, revision |
+| `agent.inputs.run` | session_id; 선택 options·max_turns·context_paths | 기존 RunResult와 실행 이벤트 |
+
+등록·조회·삭제는 실행 중 transcript 잠금을 요청하지 않고 불변 세션 메타데이터로 소유권을 확인한다. 별도 제어 풀은 기본 동시 2개·대기 16개이며 C++ `ApiOptions.maxConcurrentInputControls/maxQueuedInputControls`로 지정한다. 풀 포화는 QueueFull이다. HTTP/native 전송 슬롯도 별도로 확보해야 한다. run은 일반 API 실행 풀을 사용한다.
+
+```json
+{"id":"steer","method":"agent.inputs.enqueue","params":{"session_id":"SESSION","text":"현재 작업을 중단하고 새 파일을 읽어라","priority":"now"}}
+```
+
+입력 큐의 now/next/later, 저장·복구, runQueued와 입력 전달 이벤트는 [InputQueue.md](InputQueue.md)를 따른다. 빈 큐 run은 RunResult의 not_found이며 placeholder 메시지를 추가하지 않는다. 새 요청으로 재등록하면 새 ID가 생기므로 응답 유실 시 자동 재등록으로 중복 방지를 보장하지 않는다.

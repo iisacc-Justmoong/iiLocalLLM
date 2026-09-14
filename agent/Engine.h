@@ -5,6 +5,7 @@
 #include "Compaction.h"
 #include "ToolSearch.h"
 #include "TaskStore.h"
+#include "InputQueue.h"
 #include "../Service.h"
 
 namespace iiLocalLLM::agent {
@@ -22,6 +23,7 @@ struct EngineOptions {
     ToolSearchOptions toolSearch;
     bool taskToolsEnabled = false; // Opt in for embedded hosts; daemon/MCP CLI enable it by default.
     bool taskToolsDeferred = true;
+    InputQueueOptions inputQueue;
 };
 class IILOCALLLM_EXPORT Engine {
 public:
@@ -39,6 +41,12 @@ public:
     ProjectContext context(const QString& sessionId, const QStringList& targetPaths = {}, const CancellationToken& = {}) const;
     RunHandle run(RunRequest, EventCallback = {});
     RunHandle compact(CompactRequest, EventCallback = {});
+    QJsonObject enqueueInput(const QString& sessionId, const QJsonObject&, const CancellationToken& = {});
+    QJsonObject queuedInputs(const QString& sessionId, int offset = 0, int limit = 100, const CancellationToken& = {}) const;
+    QJsonObject removeInput(const QString& sessionId, const QString& inputId, const CancellationToken& = {}) const;
+    // Start an idle session from queued input. prompt must be empty; generation,
+    // maxTurns and contextPaths use the same contract as run().
+    RunHandle runQueued(RunRequest, EventCallback = {});
     bool taskToolsEnabled() const;
     bool backgroundTasksEnabled() const;
     ToolResult runShellTool(const QString& sessionId, const QString& name, const QJsonObject& arguments = {},
@@ -48,7 +56,7 @@ public:
     ToolResult runTaskTool(const QString& sessionId, const QString& name, const QJsonObject& arguments = {},
         const CancellationToken& = {}, const EventCallback& = {}) const;
 private:
-    RunHandle submit(RunRequest, EventCallback, bool compactOnly, QString instructions = {});
+    RunHandle submit(RunRequest, EventCallback, bool compactOnly, QString instructions = {}, bool queuedOnly = false);
     class Impl;
     std::unique_ptr<Impl> d;
 };

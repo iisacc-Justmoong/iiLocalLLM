@@ -70,3 +70,5 @@
 0.12.0은 C++ 백그라운드 Bash, TaskOutput·TaskStop·ShellTaskList, 원시 출력 보존·페이지화, 소유 세션 격리, 시간/출력/동시 실행 상한과 정상 종료·재시작 복구를 추가한다. API·CLI 및 MCP의 실행 중 조회·중단을 연결하고 각 모델 턴에 현재 상태를 반영한다. 자동 배경 전환, 지속 환경, Windows/모바일, 백그라운드 에이전트, 완료 알림·입력 큐와 MCP 비동기 tasks 규격은 남아 있으므로 shell/tasks/API의 partial 상태를 유지한다. [BackgroundTasks.md](BackgroundTasks.md), [Verification.md](Verification.md)를 참조한다.
 
 0.12.1은 llama.cpp의 명시적 추론 모드 제어를 일반·구조화 대화에 연결하고, 추론만 있는 응답과 빈 응답을 구분한다. 명시한 Qwen3 8B 조건에서 지연 Task 실행은 소스·설치본 전체 검사, 지연 MCP 실행은 소스 단독 대조·설치본 전체 검사에서 통과했다. 기존 모델 실패와 최초 MCP 연결 실패는 별도로 유지한다. 원문의 도구 모양 문자열을 임의로 실행하지 않으며, 네이티브 provider와 전체 실행 범위는 partial을 유지한다. [NativeThinking.md](NativeThinking.md), [Verification.md](Verification.md)를 참조한다.
+
+0.13.0은 prompt/notification의 대화별 영속 입력 큐, now/next/later 우선순위, 같은 종류 묶음, 중단된 도구 이력 복구와 저장 후 확인 실패의 중복 방지를 추가한다. C++·인증된 API·CLI·MCP에서 실행 중 입력을 받고 유휴 큐는 명시적으로 시작한다. 자동 유휴 기동, 셸 완료 알림 생산, 첨부·slash/bash 입력 모드·수신 에이전트 지정·Sleep 깨우기와 팀 mailbox는 남아 있어 tasks/execution/API는 partial이다. [InputQueue.md](InputQueue.md), [Verification.md](Verification.md)를 참조한다.

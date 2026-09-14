@@ -1,5 +1,49 @@
 # 구현 검증 기록
 
+## 2026-09-14 영속 입력 큐와 실행 중 방향 전환 (0.13.0)
+
+C++ `InputQueue`에 대화별 prompt/notification 저장, now/next/later 우선순위와 같은 종류의 묶음 전달을 구현했다. Engine은 현재 모델·도구 연산의 취소와 전체 실행 취소를 구분하며 미완료 도구 결과를 중단 기록으로 짝지은 뒤 후속 입력을 처리한다. 인증 API·native IPC·HTTP·CLI·MCP를 연결했고 유휴 큐는 명시적 runQueued로 시작한다. Qt의 QLockFile·QSaveFile과 기존 C++ 실행 계층을 재사용하며 새 생산 의존성은 없다.
+
+| 검증 | 관측 결과 |
+|---|---|
+| Release 전체 빌드·CTest | 빌드 성공, **53/59 통과**, 752.05초. 기존 모델 검사 포함 |
+| ASan·UBSan 전체 | llama 비활성 Debug **35/36 통과**, 95.50초. 아래 명시적 실행 조건 |
+| sanitizer 실패 항목 단독 대조 | **1/1 통과**, 2.05초. 전체 결과와 별도 |
+| 새 설치 소비자 | input-stage와 input-consumer/build에서 **20/25 통과**, 457.30초 |
+| 실제 Qwen3 8B 입력 큐 | 소스 실패, 65.35초, 설치본 실패, 65.57초. next/now의 실제 호출·프로세스·최종 답을 함께 판정 |
+| 설치 API·CLI·공식 MCP | 5/5 통과. API·CLI 35개 조건, 공식 Python MCP 1.26.0 stdio/HTTP 입력 제어와 기존 서버 동작 |
+| 설치·ABI·로더 | 공개 헤더 34개 일치, 소스/설치 라이브러리 SHA-256·UUID 일치, 실제 0.13.0 stage 로드, 세 실행 파일 버전 확인 및 얇은 iillm 링크 검사 |
+
+Release 실패는 `iiLocalLLM.tasks_inference` · `iiLocalLLM.tasks_catalog_inference` · `iiLocalLLM.tasks_catalog_discovery` · `iiLocalLLM.input_queue_inference` · `iiLocalLLM.configured_mcp_inference` · `iiLocalLLM.discovery_inference`이다. 설치 소비자 실패는 `iiLocalLLM.installed_tasks_inference` · `iiLocalLLM.installed_tasks_discovery` · `iiLocalLLM.installed_input_queue_inference` · `iiLocalLLM.installed_configured_mcp_inference` · `iiLocalLLM.installed_discovery_inference`이다. 기존 모델·전송 실패와 이번 입력 큐 검사의 결과를 분리하며 단독 통과를 전체 실행의 통과로 합치지 않는다.
+
+Release 단독 대조에서는 RAM 보호로 거절됐던 tasks_catalog_inference가 84.69초에 통과했다. configured_mcp_inference는 28.01초 실행 후 다시 상대 연결 준비 실패로 종료했다. 해당 검사는 Service 모델 로딩 뒤 McpConnections를 생성하고 ready 상태를 확인하는 지점에서 실패했으며, Engine 생성·모델의 에이전트 호출에는 도달하지 않았다. 연결 지연의 근본 원인은 확정하지 않는다.
+
+별도 설치 라이브러리의 연결 진단기는 모델 없이 eager 447ms·deferred 433ms, 모델 로딩 뒤 eager 437ms·deferred 430ms에 각각 ready가 됐고 직접 도구 조회도 2개를 반환했다. 이 진단기는 독립 앱 등록 경로와 미리 만든 fixture 파일을 사용하며 실제 추론은 하지 않는다. 전체 검사의 연결 실패를 재현하지 못했으므로 원인 해결이나 동일 조건 통과 증거로 해석하지 않는다. 근거는 build/input-mcp-diagnosis/와 build/input-queue-mcp-diagnosis.json이다.
+
+입력 큐 C++ 검사는 10개 동작 사례를 포함한다. 우선순위·종류 분리, 스레드 12개·별도 프로세스 4개의 게시, transcript 게시 후 확인 실패 복구, 같은 ID의 본문 충돌, next/now/later 경계, 턴 한도·명시적 취소 뒤 미소비 입력 보존, 이벤트 관찰자의 재입력, 손상·symlink 저장 거절을 확인한다. API는 실행 1개·대기 0개인 조건에서 실행 중 긴급 입력과 앱 격리를 검사하며 MCP는 같은 연결의 실행 잠금과 입력 제어 경로를 검사한다.
+
+실제 모델 수락 검사는 고정 Qwen3 8B Q4_K_M, 컨텍스트 8,192, 턴당 2,048토큰·최대 6턴, seed 0, temperature 0.7·top_p 0.8·top_k 20, tool_grammar=false·enable_thinking=false이다. 이번 프롬프트에는 /no_think를 붙이지 않는다. 첫 흐름은 실제 Read가 끝난 이벤트에서 next 입력을 등록하고 두 번째 파일을 읽어 임의 값을 답하도록 요구한다. 두 번째는 셸이 기록한 PID·준비 파일을 확인한 뒤 now를 등록한다. 셸 프로세스 종료, 중단 결과와 호출의 짝, 재실행 부재, 후속 Read와 임의 파일 값 답변을 모두 요구한다. 호스트는 답이나 도구 호출을 대신 생성하지 않는다.
+
+최초 실제 모델 검사 **0/1 통과**, 138.05초에서는 두 Read와 입력 전달이 관측되었으나 최종 답을 파일 값 대신 `This is the content of next.txt.`라는 예시 문장으로 만들어 실패했다. 이 실행은 긴급 셸 검사에 도달하지 않았다. 이후 두 흐름을 모두 실행한 뒤 개별 판정하도록 시험을 보완했으며 프롬프트·모델 설정·수락 조건은 유지했다. 각 실행은 서로 다른 난수 파일을 사용하며 원문과 판정을 별도로 보관한다.
+
+소스 전체 실행에서 next는 입력 전달 1회와 첫 파일·후속 파일의 Read 각 1회를 수행했지만 최종 답을 파일 값 대신 Read 모양 JSON으로 반환했다. now는 Bash 1회, 중단 기록 1회, 실제 셸 종료와 후속 Read 1회가 확인되었으나 답에서 INPUT_ 접두사를 누락했다. 따라서 실행 제어가 관측되어도 두 흐름 모두 전체 수락은 실패이다. 원문은 input-queue-final-release-LastTest.log의 phase=next/now 기록에 있다.
+
+설치본도 next에서 두 Read와 입력 전달 1회, now에서 Bash 1회·중단 기록 1회·셸 종료와 후속 Read 1회를 관측했다. 그러나 next의 최종 답은 Hello, world! 예시 문장이었고 now는 파일 값 대신 중단 설명을 반환했다. 설치본에서도 원문 재현 조건은 통과하지 못했다.
+
+sanitizer의 전체 실패는 `iiLocalLLM.agent_transport`이다. 세션 생성 단계에서 100ms HTTP 기한을 넘겼으며, 모든 빌드가 끝난 뒤 같은 실행 파일·설정의 단독 대조는 통과했다. 근본 원인은 확정하지 않는다. ASAN_OPTIONS=malloc_context_size=0을 명시했으며 이는 이전 단계의 Apple Objective-C atfork/ASan StackStore 충돌을 피하기 위해 할당·해제 스택 이력을 끈 조건이다. ASan·UBSan 계측은 유지하지만 기본 설정 통과로 해석하지 않는다.
+
+TDD에서 헤더 부재, API/MCP 메서드 부재, 입력 종류 혼합과 transcript 동일 ID의 다른 본문 수용을 재현했다. 후자의 CTest 결과는 **1/2 통과**, 3.44초, 수정 후 관련 검사 결과는 **3/3 통과**, 3.73초였다. 공식 MCP 입력 제어를 포함한 후속 단독 검사는 **5/5 통과**, 42.71초였다. 새 API 시험의 별도 충돌은 임시 JSON 객체에서 얻은 QJsonValueRef의 수명 오류였다. LLDB의 QJsonValueConstRef::concrete 프레임으로 확인해 value() 복사로 수정했다. red 기록과 진단을 보존한다.
+
+llama 원본은 CMake에 고정된 5202104b59ada9005db079eea43882a2b7bf5802 아카이브의 SHA-256과 핵심 소스 8개를 대조했다. 압축 소스에 자체 Git 저장소가 없어 그 안의 git rev-parse는 상위 SDK를 가리킨다. 해당 출력이나 ggml 빌드 문자열을 llama revision 증거로 사용하지 않는다. 근거는 build/input-queue-llama-provenance.json이다.
+
+라이브러리 SHA-256은 `c663d9dc7e7164fed9aa4188fb39cd6c8df5c3578e46a2870be9bde15f15cf42`, UUID는 `64F63825-0240-3A82-B2BE-1C1BC825501A`이다. CancellationToken의 레이아웃과 Engine/API 옵션이 바뀌므로 소비자는 0.13 헤더와 라이브러리로 함께 다시 빌드한다. 이 단계는 SDK와 Workspace의 별도 설치본까지이며 기본 SDK 설치·기기 앱 재배포는 포함하지 않는다. iPhone은 사용자 지시로 제외한다.
+
+자동 유휴 기동, 셸 완료 알림 생산, 첨부·slash/bash 입력 모드, 수신 에이전트 지정·Sleep 깨우기·팀 mailbox는 미완료이다. now는 협력 취소이며 이미 일어난 부작용을 되돌리지 않는다. 입력의 저장·전달은 모델의 작업 완료 증거가 아니고 응답 유실 뒤 재등록의 중복 방지도 제공하지 않는다. 전체 하네스 목표는 계속 진행 중이다.
+
+계약은 [InputQueue.md](InputQueue.md), 전체 범위는 [HarnessParity.md](HarnessParity.md)에 있다. 증거는 build/input-queue-final-{release,sanitizer,consumer}-tests.log와 대응 JUnit XML·LastTest, build/input-queue-installed-wire/, build/input-queue-linkage.json, build/input-queue-native-LastTest.log, build/input-queue-verification.json에 보관한다.
+
+별도 release 대조: **1/2 통과**, 113.35초. 대상: iiLocalLLM.tasks_catalog_inference, iiLocalLLM.configured_mcp_inference.
+
 ## 2026-09-14 네이티브 추론 모드 제어와 지연 도구 실행 (0.12.1)
 
 llama.cpp 모델 로딩의 `options.enable_thinking` boolean을 기존 네이티브 Jinja 입력에 연결했다. 명시적 설정은 일반 text/chat과 구조화 conversation에 함께 적용한다. 옵션을 생략하면 기존 동작을 유지한다. 에이전트가 추론 내용만 받았을 때는 빈 응답과 구분하는 `protocol_error`를 반환한다. 기존 C++ llama.cpp 의존성을 재사용하며 가중치·템플릿 원본 수정이나 새 Python 추론 단계는 없다.

@@ -161,6 +161,7 @@ def main():
             assert "agent.mcp.status" in info["methods"] and info["tool_search_enabled"] is True
             assert "agent.tasks.create" in info["methods"] and info["task_tools_enabled"] is True
             assert "agent.shell.start" in info["methods"] and info["background_tasks_enabled"] is True
+            assert "agent.inputs.enqueue" in info["methods"] and info["input_queue_enabled"] is True
             connections = cli("agent.mcp.status")
             assert native("agent.mcp.status")[-1]["result"] == connections
             assert http(port, "agent.mcp.status")[1]["result"] == connections
@@ -263,6 +264,16 @@ def main():
                 assert sequence == list(range(1, len(sequence) + 1)), sequence
                 evidence.update({"answer": result["text"], "usage": result["usage"], "events": len(sequence)})
                 evidence["checks"].append("real_qwen_read_observation_over_http_sse")
+            pending_input = cli("agent.inputs.enqueue", {"session_id": session, "text": "persist until explicitly resumed", "priority": "later"})["input"]
+            assert http(port, "agent.inputs.list", {"session_id": session}, auth=other)[0] == 404
+            assert http(port, "agent.inputs.enqueue", {"session_id": session, "text": "wrong", "priority": "invalid"})[0] == 400
+            assert http(port, "agent.inputs.enqueue", {"session_id": session, "text": "wrong", "context_paths": ["../credentials.json"]})[0] == 400
+            queue_state = native("agent.inputs.list", {"session_id": session})[-1]["result"]
+            assert queue_state == http(port, "agent.inputs.list", {"session_id": session})[1]["result"]
+            queue_cli = subprocess.run([str(args.cli), "--socket", str(endpoint), "--auth-file", str(client_token),
+                "agent", "inputs", "list", session], capture_output=True, text=True, timeout=20, env=environment)
+            assert queue_cli.returncode == 0 and json.loads(queue_cli.stdout) == queue_state, (queue_cli.stdout, queue_cli.stderr)
+            evidence["checks"] += ["input_queue_http_native_cli", "input_queue_app_isolation", "input_queue_validation"]
             fork = http(port, "agent.sessions.fork", {"session_id": session})[1]["result"]["session_id"]
             assert fork != session
             before = native("agent.sessions.get", {"session_id": session})[-1]["result"]
@@ -272,6 +283,22 @@ def main():
         with daemon() as port:
             after = http(port, "agent.sessions.get", {"session_id": session})[1]["result"]
             assert after == before
+            assert cli("agent.inputs.list", {"session_id": session})["inputs"] == [pending_input]
+            assert cli("agent.inputs.list", {"session_id": fork})["inputs"] == []
+            input_params = root / "input-params.json"
+            input_params.write_text(json.dumps({"text": "remove before starting", "priority": "now"}))
+            queue_command = [str(args.cli), "--socket", str(endpoint), "--auth-file", str(client_token), "agent", "inputs"]
+            extra_input = subprocess.run(queue_command + ["enqueue", session, str(input_params)], capture_output=True, text=True, timeout=20, env=environment)
+            assert extra_input.returncode == 0, (extra_input.stdout, extra_input.stderr)
+            extra_id = json.loads(extra_input.stdout)["input"]["id"]
+            assert native("agent.inputs.remove", {"session_id": session, "input_id": extra_id})[-1]["result"]["removed"]
+            input_params.write_text(json.dumps({"input_id": pending_input["id"]}))
+            removed = subprocess.run(queue_command + ["remove", session, str(input_params)], capture_output=True, text=True, timeout=20, env=environment)
+            assert removed.returncode == 0 and json.loads(removed.stdout)["removed"], (removed.stdout, removed.stderr)
+            empty = subprocess.run(queue_command + ["run", session], capture_output=True, text=True, timeout=20, env=environment)
+            assert empty.returncode == 1 and json.loads(empty.stdout)["error_code"] == "not_found", (empty.stdout, empty.stderr)
+            assert cli("agent.sessions.get", {"session_id": session}) == before
+            evidence["checks"] += ["input_queue_restart_persistence", "input_queue_fork_isolation", "input_queue_cli_enqueue_remove", "input_queue_empty_run_dispatch"]
             assert cli("agent.tasks.get", {"session_id": session, "taskId": "1"})["result"]["task"]["status"] == "completed"
             assert cli("agent.tasks.list", {"session_id": fork})["result"]["tasks"] == []
             restored = cli("agent.shell.output", {"session_id": session, "task_id": shell_id, "block": False})["result"]["task"]

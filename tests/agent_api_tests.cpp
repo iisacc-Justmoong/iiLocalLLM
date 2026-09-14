@@ -52,6 +52,29 @@ template<class F> void error(F fn, ErrorCode expected) {
 class AgentApiTests : public QObject {
     Q_OBJECT
 private slots:
+    void inputsReachAnActiveRunWithoutAnAvailableRunWorker() {
+        QTemporaryDir root; auto o = options(root); o.maxConcurrentRequests = 1; o.maxQueuedRequests = 0;
+        auto model = std::make_shared<Model>();
+        a::Api api(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), o);
+        const auto id = call(api, "agent.sessions.create", {{"model", "fixture"}}).value("session_id");
+        auto run = api.dispatch("agent.run", {{"session_id", id}, {"prompt", "wait"}}, firstToken);
+        QTRY_VERIFY_WITH_TIMEOUT(model->waiting.load(), 3000);
+        error([&] { call(api, "agent.inputs.enqueue", {{"session_id", id}, {"text", "wrong app"}}, secondToken); }, ErrorCode::NotFound);
+        const auto input = call(api, "agent.inputs.enqueue", {{"session_id", id}, {"text", "urgent direction"}, {"priority", "now"}});
+        QVERIFY(!input["input"].toObject()["id"].toString().isEmpty());
+        QVERIFY(run.result.wait_for(3s) == std::future_status::ready);
+        const auto answer = run.result.get().toObject(); QCOMPARE(answer["status"], "completed");
+        QVERIFY(answer["text"].toString().endsWith("urgent direction"));
+        QCOMPARE(call(api, "agent.inputs.list", {{"session_id", id}})["count"].toInt(), 0);
+        auto queued = call(api, "agent.inputs.enqueue", {{"session_id", id}, {"text", "keep across restart"}})["input"].toObject();
+        api.close();
+        a::Api restored(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), o);
+        QCOMPARE(call(restored, "agent.inputs.list", {{"session_id", id}})["inputs"].toArray()[0].toObject()["id"], queued["id"]);
+        const auto fork = call(restored, "agent.sessions.fork", {{"session_id", id}}).value("session_id");
+        QCOMPARE(call(restored, "agent.inputs.list", {{"session_id", fork}})["count"].toInt(), 0);
+        QCOMPARE(call(restored, "agent.inputs.run", {{"session_id", id}})["status"], "completed");
+        error([&] { call(restored, "agent.inputs.remove", {{"session_id", id}, {"input_id", queued["id"]}}); }, ErrorCode::NotFound);
+    }
     void shellOutputHonorsApiDeadlineWithoutStoppingCommand() {
 #if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
         QSKIP("Background shell execution requires a desktop POSIX host");

@@ -255,6 +255,41 @@ async def native(binary, root, weights, http=False):
             "progress": updates, "transcript": saved, "unpredictable_file_value_verified": True}
 
 
+async def inputs(binary, root, http=False):
+    workspace = root / "workspace"
+    workspace.mkdir()
+    catalog = root / "Models"
+    catalog.mkdir()
+    command = StdioServerParameters(command=str(binary), args=["--workspace", str(workspace),
+        "--models", str(catalog), "--model", "model://not-loaded", "--sessions", str(root / "sessions"),
+        "--allow", "iiLocalLLM.agent.inputs.*"])
+    async with transport(command, root, http) as (read, write):
+        async with ClientSession(read, write, read_timeout_seconds=timedelta(seconds=20)) as session:
+            await session.initialize()
+            names = {tool.name for tool in (await session.list_tools()).tools}
+            assert {"iiLocalLLM.agent.inputs." + action for action in ("enqueue", "list", "remove", "run")} <= names
+            async def call(action, arguments=None):
+                result = await session.call_tool("iiLocalLLM.agent.inputs." + action, arguments or {})
+                assert not result.isError, result
+                return result.structuredContent
+            later = (await call("enqueue", {"text": "notification", "kind": "notification"}))["input"]
+            now = (await call("enqueue", {"text": "urgent", "priority": "now"}))["input"]
+            state = await call("list", {"limit": 1})
+            assert state["count"] == 2 and state["inputs"] == [now] and state["next_offset"] == 1, state
+            assert (await call("list", {"offset": 1}))["inputs"] == [later]
+            invalid = await session.call_tool("iiLocalLLM.agent.inputs.enqueue", {"text": "bad", "priority": "invalid"})
+            assert invalid.isError
+            assert (await call("remove", {"input_id": now["id"]}))["removed"]
+            assert (await call("remove", {"input_id": later["id"]}))["removed"]
+            empty = await session.call_tool("iiLocalLLM.agent.inputs.run", {})
+            assert empty.isError
+            assert (await call("list"))["count"] == 0
+            saved = (await session.call_tool("iiLocalLLM.agent.session", {"include_messages": True})).structuredContent
+            assert saved["messages"] == [], saved
+    return {"official_sdk": version("mcp"), "transport": "http" if http else "stdio", "native_inference": False,
+            "input_controls_verified": ["discovery", "enqueue", "priority", "pagination", "schema", "remove", "empty_run", "no_placeholder_message"]}
+
+
 async def managed(binary, root, http=False):
     workspace = root / "workspace"
     workspace.mkdir()
@@ -283,11 +318,13 @@ def main():
     parser.add_argument("--report", type=Path)
     parser.add_argument("--http", action="store_true")
     parser.add_argument("--managed", action="store_true")
+    parser.add_argument("--inputs", action="store_true")
     args = parser.parse_args()
     assert version("mcp") == "1.26.0"
     with tempfile.TemporaryDirectory(prefix="mcp-server-") as directory:
         root = Path(directory)
         report = asyncio.run(native(args.binary.resolve(), root, args.native.resolve(), args.http) if args.native
+                             else inputs(args.binary.resolve(), root, args.http) if args.inputs
                              else managed(args.binary.resolve(), root, args.http) if args.managed else basic(args.binary.resolve(), root, args.http))
     if args.report:
         args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")

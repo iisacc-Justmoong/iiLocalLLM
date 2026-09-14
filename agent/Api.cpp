@@ -12,6 +12,7 @@
 #include <QtCore/QThreadPool>
 #include <QtCore/QUuid>
 #include <chrono>
+#include <algorithm>
 #include <map>
 #include <mutex>
 
@@ -50,7 +51,11 @@ QStringList contextPaths(const QJsonObject& parameters, int limit) {
 QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.sessions.list", "agent.sessions.get",
     "agent.sessions.fork", "agent.sessions.compact", "agent.context.get", "agent.mcp.status", "agent.run", "agent.cancel", "agent.status",
     "agent.tasks.create", "agent.tasks.get", "agent.tasks.list", "agent.tasks.update", "agent.tasks.claim", "agent.todos.write", "agent.todos.get",
-    "agent.shell.start", "agent.shell.output", "agent.shell.stop", "agent.shell.list"}; }
+    "agent.shell.start", "agent.shell.output", "agent.shell.stop", "agent.shell.list",
+    "agent.inputs.enqueue", "agent.inputs.list", "agent.inputs.remove", "agent.inputs.run"}; }
+bool inputControl(const QString& method) {
+    return method == "agent.inputs.enqueue" || method == "agent.inputs.list" || method == "agent.inputs.remove";
+}
 QJsonObject sessionObject(const Session& s, int offset = 0, int limit = 0) {
     require(offset <= s.messages.size(), "Message offset exceeds the session length");
     QJsonArray messages;
@@ -71,6 +76,7 @@ public:
     struct Job {
         QString id, method, clientId; QJsonObject params; CancellationToken token;
         Clock::time_point deadline; std::atomic_bool running = false;
+        bool inputControl = false;
         std::shared_ptr<std::promise<QJsonValue>> promise;
     };
     ApiOptions options;
@@ -78,7 +84,7 @@ public:
     bool stopping = false;
     std::map<QString, std::shared_ptr<Client>> clients;
     std::map<QString, std::shared_ptr<Job>> active;
-    QThreadPool workers;
+    QThreadPool workers, inputWorkers;
     std::unique_ptr<QLockFile> stateLock;
 
     Impl(std::shared_ptr<Model> model, std::shared_ptr<ToolRegistry> registry,
@@ -87,7 +93,9 @@ public:
             && options.engine.sessionsDirectory.isEmpty() && options.maxConcurrentRequests >= 1 && options.maxConcurrentRequests <= 64
             && options.maxQueuedRequests >= 0 && options.maxQueuedRequests <= 10000
             && options.maxSessionsPerClient >= 1 && options.maxTurns >= 1 && options.maxTurns <= 10000
-            && options.maxResultBytes >= 1024 && options.requestTimeoutMs > 0, "Invalid agent API configuration");
+            && options.maxResultBytes >= 1024 && options.requestTimeoutMs > 0
+            && options.maxConcurrentInputControls >= 1 && options.maxConcurrentInputControls <= 16
+            && options.maxQueuedInputControls >= 0 && options.maxQueuedInputControls <= 10000, "Invalid agent API configuration");
         options.workingDirectory = QFileInfo(options.workingDirectory).canonicalFilePath();
         require(!options.workingDirectory.isEmpty() && QFileInfo(options.workingDirectory).isDir(), "Agent API workspace must exist");
         require(options.engine.projectContext.rootDirectory.isEmpty()
@@ -116,6 +124,7 @@ public:
             clients.emplace(client->id, std::move(client));
         }
         options.clientTokens.clear(); workers.setMaxThreadCount(options.maxConcurrentRequests);
+        inputWorkers.setMaxThreadCount(options.maxConcurrentInputControls);
     }
     std::shared_ptr<Client> authenticateLocked(const QString& credential) {
         require(!stopping, "Agent API is shutting down", ErrorCode::ShuttingDown);
@@ -139,7 +148,22 @@ public:
             return QJsonObject{{"protocol", "iisacc.agent/1"}, {"client_id", client->id}, {"methods", names}, {"max_turns", options.maxTurns},
                 {"working_directory", options.workingDirectory}, {"project_context_enabled", options.engine.projectContext.enabled},
                 {"auto_compact_enabled", options.engine.compaction.automatic}, {"tool_search_enabled", options.engine.toolSearch.enabled},
-                {"task_tools_enabled", client->engine->taskToolsEnabled()}, {"background_tasks_enabled", client->engine->backgroundTasksEnabled()}};
+                {"task_tools_enabled", client->engine->taskToolsEnabled()}, {"background_tasks_enabled", client->engine->backgroundTasksEnabled()},
+                {"input_queue_enabled", true}};
+        }
+        if (inputControl(method)) {
+            const auto id = text(p, "session_id");
+            require(client->engine->sessionMetadata(id).workingDirectory == options.workingDirectory,
+                "Session belongs to a different workspace", ErrorCode::NotFound);
+            if (method == "agent.inputs.list") {
+                fields(p, {"session_id", "offset", "limit"});
+                return client->engine->queuedInputs(id, integer(p, "offset", 0, 0, 1000000), integer(p, "limit", 32, 1, 100), job->token);
+            }
+            if (method == "agent.inputs.remove") {
+                fields(p, {"session_id", "input_id"}); return client->engine->removeInput(id, text(p, "input_id"), job->token);
+            }
+            fields(p, {"session_id", "text", "kind", "priority", "context_paths"});
+            auto input = p; input.remove("session_id"); return client->engine->enqueueInput(id, input, job->token);
         }
         static const QMap<QString, QString> shellMethods{{"agent.shell.start", "Bash"}, {"agent.shell.output", "TaskOutput"},
             {"agent.shell.stop", "TaskStop"}, {"agent.shell.list", "ShellTaskList"}};
@@ -214,10 +238,12 @@ public:
             result["parent_session_id"] = original.id; return result;
         }
         const bool compactOnly = method == "agent.sessions.compact";
+        const bool queuedOnly = method == "agent.inputs.run";
         if (compactOnly) fields(p, {"session_id", "instructions", "options"});
+        else if (queuedOnly) fields(p, {"session_id", "options", "max_turns", "context_paths"});
         else fields(p, {"session_id", "prompt", "options", "max_turns", "context_paths"});
         const auto original = session(client, p);
-        RunRequest request{original.id, compactOnly ? QString() : text(p, "prompt"), generationOptionsFromJson(object(p, "options")), integer(p, "max_turns", options.maxTurns, 1, options.maxTurns)};
+        RunRequest request{original.id, compactOnly || queuedOnly ? QString() : text(p, "prompt"), generationOptionsFromJson(object(p, "options")), integer(p, "max_turns", options.maxTurns, 1, options.maxTurns)};
         request.contextPaths = contextPaths(p, options.engine.projectContext.maxTargetPaths);
         job->token.throwIfCancelled();
         require(Clock::now() < job->deadline, "Agent API request deadline exceeded", ErrorCode::Timeout);
@@ -229,7 +255,7 @@ public:
             if (callback) callback(value);
         };
         auto handle = compactOnly ? client->engine->compact({original.id, request.generation, text(p, "instructions", false)}, observe)
-                                  : client->engine->run(std::move(request), observe);
+            : queuedOnly ? client->engine->runQueued(std::move(request), observe) : client->engine->run(std::move(request), observe);
         bool timedOut = false;
         while (handle.result.wait_for(10ms) != std::future_status::ready) {
             timedOut |= Clock::now() >= job->deadline;
@@ -264,18 +290,25 @@ public:
                 {"state", job->running ? "running" : "queued"}, {"cancel_requested", job->token.isCancelled()}});
             return handle;
         }
-        require(active.size() < size_t(options.maxConcurrentRequests + options.maxQueuedRequests), "Agent API queue is full", ErrorCode::QueueFull);
+        const bool control = inputControl(method);
+        const auto used = std::count_if(active.begin(), active.end(), [control](const auto& item) { return item.second->inputControl == control; });
+        const auto capacity = control ? options.maxConcurrentInputControls + options.maxQueuedInputControls
+            : options.maxConcurrentRequests + options.maxQueuedRequests;
+        require(used < capacity, "Agent API queue is full", ErrorCode::QueueFull);
         auto job = std::make_shared<Job>(); job->id = handle.requestId; job->method = std::move(method); job->params = std::move(params);
+        job->inputControl = control;
         job->clientId = client->id; job->token = handle.cancellation; job->promise = std::move(promise);
         job->deadline = Clock::now() + std::chrono::milliseconds(options.requestTimeoutMs);
         active.emplace(job->id, job); auto self = shared_from_this();
-        workers.start([self, client, job, callback = std::move(callback)] { self->execute(client, job, callback); });
+        auto& pool = control ? inputWorkers : workers;
+        pool.start([self, client, job, callback = std::move(callback)] { self->execute(client, job, callback); });
         return handle;
     }
     void stop() {
         std::lock_guard join(joining);
         { std::lock_guard lock(mutex); stopping = true; for (const auto& [id, job] : active) job->token.cancel(); }
         workers.waitForDone();
+        inputWorkers.waitForDone();
         { std::lock_guard lock(mutex); clients.clear(); stateLock.reset(); }
     }
 };

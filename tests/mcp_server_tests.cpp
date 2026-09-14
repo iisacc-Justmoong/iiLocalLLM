@@ -72,6 +72,33 @@ public:
 class McpServerTests : public QObject {
     Q_OBJECT
 private slots:
+    void urgentInputBypassesTheRunningConversationLock() {
+        QTemporaryDir root; auto registry = std::make_shared<a::ToolRegistry>();
+        auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass); auto model = std::make_shared<HistoryModel>();
+        a::EngineOptions eo; eo.sessionsDirectory = root.filePath("sessions");
+        auto engine = std::make_shared<a::Engine>(model, registry, policy, eo);
+        a::McpServerOptions config; config.workingDirectory = root.path(); config.engine = engine; config.model = "fixture";
+        const auto options = a::mcpServerOptions(registry, policy, config);
+        m::ServerSession first(options), second(options); initialize(first); initialize(second);
+        first.receive(request(10, "tools/call", {{"name", "iiLocalLLM.agent.run"}, {"arguments", QJsonObject{{"prompt", "hold"}}}}));
+        QTRY_VERIFY_WITH_TIMEOUT(model->waiting.load(), 2000);
+        first.receive(request(11, "tools/call", {{"name", "iiLocalLLM.agent.inputs.enqueue"},
+            {"arguments", QJsonObject{{"text", "follow-up"}, {"priority", "now"}}}}));
+        QJsonObject queued, done; QElapsedTimer clock; clock.start();
+        while ((queued.isEmpty() || done.isEmpty()) && clock.elapsed() < 3000) for (const auto& value : first.takeMessages(20)) {
+            const auto message = value.toObject();
+            if (message["id"].toInt() == 11) queued = message;
+            if (message["id"].toInt() == 10) done = message;
+        }
+        QVERIFY2(!queued.isEmpty() && !queued.contains("error") && !queued["result"].toObject()["isError"].toBool(), "Input must reach a running MCP agent");
+        QVERIFY2(!done.isEmpty(), "Urgent input must interrupt the current model call");
+        QVERIFY(done["result"].toObject()["structuredContent"].toObject()["text"].toString().endsWith("follow-up"));
+        const auto saved = call(first, 12, "iiLocalLLM.agent.inputs.enqueue", {{"text", "first connection only"}});
+        QVERIFY(!saved["isError"].toBool());
+        QCOMPARE(call(second, 2, "iiLocalLLM.agent.inputs.list")["structuredContent"].toObject()["count"].toInt(), 0);
+        QVERIFY(!call(first, 13, "iiLocalLLM.agent.inputs.run")["isError"].toBool());
+        QCOMPARE(call(first, 14, "iiLocalLLM.agent.inputs.list")["structuredContent"].toObject()["count"].toInt(), 0);
+    }
     void newConversationStopsPreviousShells() {
 #if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
         QSKIP("Background shell execution requires a desktop POSIX host");

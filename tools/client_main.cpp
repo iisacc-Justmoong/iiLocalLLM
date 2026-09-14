@@ -88,7 +88,7 @@ private:
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
-    app.setApplicationName(QStringLiteral("iillm")); app.setApplicationVersion(QStringLiteral("0.12.1"));
+    app.setApplicationName(QStringLiteral("iillm")); app.setApplicationVersion(QStringLiteral("0.13.0"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("Native IPC client of iiLocalLLMD. Inference runs only in the daemon."));
     parser.addHelpOption(); parser.addVersionOption();
@@ -101,7 +101,7 @@ int main(int argc, char** argv)
         {"auth-file", "Private file containing the app token for rpc.", "file"},
         {"defaults", "Include literal defaults in parameter exports"},
         {"redact", "Redact sensitive fields in parameter exports"}});
-    parser.addPositionalArgument("command", "run MODEL [PROMPT] | models | pull MODEL | ps | parameters [GROUP [FILE]] | rpc METHOD [FILE] | agent mcp | agent tasks/todos/shell ACTION SESSION [FILE]");
+    parser.addPositionalArgument("command", "run MODEL [PROMPT] | models | pull MODEL | ps | parameters [GROUP [FILE]] | rpc METHOD [FILE] | agent mcp | agent tasks/todos/shell/inputs ACTION SESSION [FILE]");
     parser.addPositionalArgument("arguments", "Model reference and optional prompt", "[arguments...]");
     parser.process(app);
     const auto args = parser.positionalArguments();
@@ -124,21 +124,23 @@ int main(int argc, char** argv)
         };
         if (command == "agent") {
             const bool mcp = args.size() == 2 && args[1] == "mcp";
-            const bool tasks = args.size() >= 4 && args.size() <= 5 && (args[1] == "tasks" || args[1] == "todos" || args[1] == "shell");
+            const bool tasks = args.size() >= 4 && args.size() <= 5 && (args[1] == "tasks" || args[1] == "todos" || args[1] == "shell" || args[1] == "inputs");
             if ((!mcp && !tasks) || !parser.isSet("auth-file"))
-                throw std::runtime_error("Usage: iillm --auth-file FILE agent mcp | agent tasks/todos/shell ACTION SESSION [PARAMS_JSON_FILE]");
+                throw std::runtime_error("Usage: iillm --auth-file FILE agent mcp | agent tasks/todos/shell/inputs ACTION SESSION [PARAMS_JSON_FILE]");
             const auto token = QString::fromUtf8(iiLocalLLMClient::readPrivateFile(parser.value("auth-file"), 512)).trimmed();
             if (token.size() < 32 || token.size() > 256) throw std::runtime_error("Invalid app token length");
             if (mcp) printJson(client.call("agent.mcp.status", {}, {}, 300000, token));
             else {
                 const auto allowed = args[1] == "tasks" ? QStringList{"create", "get", "list", "update", "claim"}
+                    : args[1] == "inputs" ? QStringList{"enqueue", "list", "remove", "run"}
                     : args[1] == "shell" ? QStringList{"start", "output", "stop", "list"} : QStringList{"get", "write"};
                 if (!allowed.contains(args[2])) throw std::runtime_error("Unknown agent action");
                 auto params = args.size() == 5 ? readObject(args[4]) : QJsonObject{};
                 if (params.contains("session_id")) throw std::runtime_error("Specify the session ID only as a positional argument");
                 params["session_id"] = args[3];
                 const auto value = client.call("agent." + args[1] + '.' + args[2], params, {}, 300000, token);
-                printJson(value); if (value.toObject()["is_error"].toBool()) return 1;
+                printJson(value); if (value.toObject()["is_error"].toBool()
+                    || (args[1] == "inputs" && args[2] == "run" && value.toObject()["status"] != "completed")) return 1;
             }
         } else if (command == "rpc") {
             if (args.size() < 2 || args.size() > 3 || !parser.isSet("auth-file"))

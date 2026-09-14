@@ -77,3 +77,7 @@ pull은 현재 모델 설치/생성과 같은 FIFO에서 실행되므로 긴 다
 ## 백그라운드 셸 명령 (0.12.0)
 
 `iillm --auth-file TOKEN agent shell ACTION SESSION [PARAMS_JSON_FILE]`에서 ACTION은 start/output/stop/list이다. start JSON에는 `command`, output/stop JSON에는 `task_id`를 지정한다. 목록은 JSON 파일 없이 조회할 수 있다. CLI는 native IPC를 사용하고 도구의 `is_error=true`에 종료 코드 1을 반환한다. 실제 실행 수명과 대기 취소의 차이, 출력 페이지와 daemon 비활성화 옵션은 [BackgroundTasks.md](BackgroundTasks.md)에 기록한다.
+
+## 입력 큐 명령 (0.13.0)
+
+`iillm --auth-file TOKEN agent inputs ACTION SESSION [PARAMS_JSON_FILE]`은 enqueue/list/remove/run을 지원한다. enqueue에는 text와 선택 kind·priority·context_paths, remove에는 input_id를 넣는다. run은 prompt 없이 남은 큐에서 실행하고 생성 옵션·max_turns·context_paths를 받는다. 최종 JSON은 기존 native IPC 경로를 사용하며 완료하지 못한 run은 종료 코드 1이다. 진행 이벤트가 필요하면 `--json rpc agent.inputs.run PARAMS_JSON_FILE`을 사용하고 파일에 session_id도 지정한다. [InputQueue.md](InputQueue.md)에 우선순위와 복구 계약을 기록한다.

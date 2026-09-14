@@ -17,6 +17,8 @@ struct ApiOptions {
     int maxTurns = 32;
     int maxResultBytes = 4 * 1024 * 1024;
     int requestTimeoutMs = 300000;
+    int maxConcurrentInputControls = 2;
+    int maxQueuedInputControls = 16;
 };
 // One authenticated service shared by HTTP and native IPC. App identities own
 // separate persistent Engine stores. Model, registry and policy are host-owned.

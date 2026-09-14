@@ -96,3 +96,5 @@ EngineOptions.taskToolsEnabled로 작업 도구를 활성화한다. TaskStore는
 ## 백그라운드 실행 상태 (0.12.0)
 
 `registerWorkspaceTools(registry, workspace, shells)`로 C++ ShellTasks를 연결한다. Engine의 `runShellTool`은 별도 대화 기록 잠금 없이 동일 정책·훅과 세션 소유권을 적용하며 진행 중인 모델 실행과 독립적으로 사용할 수 있다. 각 모델 턴에는 최대 32개의 실행 상태를 임시 데이터 메시지로 조합하고 토큰 예산에 포함한다. 출력 본문은 미리보기에 넣지 않으며 TaskOutput 또는 허용된 Read로 조회한다. 제어 도구는 기본 지연 공개이고 실제 eager 추론 검증은 별도 조건이다. [BackgroundTasks.md](BackgroundTasks.md)에 저장·수명·권한과 미완료 범위를 기록한다.
+
+0.13.0의 대화별 [입력 큐](InputQueue.md)는 우선순위·원자적 저장·중복 복구와 실행 중 모델/도구 연산 취소를 기존 Engine에 연결한다. 실행 토큰과 연산 토큰을 분리하여 now 입력이 전체 실행 취소로 바뀌지 않게 한다. 유휴 큐는 명시적으로 시작하며 자동 기동·완료 알림 생산은 아직 남아 있다.

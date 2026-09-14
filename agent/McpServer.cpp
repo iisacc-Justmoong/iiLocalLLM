@@ -120,7 +120,7 @@ public:
             {"properties", QJsonObject{{"run_id", QJsonObject{{"type", "string"}}}, {"session_id", QJsonObject{{"type", "string"}}},
                 {"text", QJsonObject{{"type", "string"}}}, {"status", QJsonObject{{"type", "string"}}},
                 {"turns", QJsonObject{{"type", "integer"}}}, {"usage", QJsonObject{{"type", "object"}}}}}};
-        auto executeAgent = [self](const QJsonObject& args, const ToolContext& context, bool compactOnly) {
+        auto executeAgent = [self](const QJsonObject& args, const ToolContext& context, bool compactOnly, bool queuedOnly = false) {
             auto conversation = self->conversation(context.sessionId);
             std::unique_lock lock(conversation->mutex, std::defer_lock); acquire(lock, context.cancellation);
             const auto id = self->sessionId(conversation, context.cancellation, !compactOnly, args["new_session"].toBool());
@@ -133,7 +133,7 @@ public:
                     {"_meta", QJsonObject{{"iisacc/agentEvent", toJson(event)}}}});
             };
             auto handle = compactOnly ? self->options.engine->compact({id, self->options.generation, args["instructions"].toString()}, observe)
-                                      : self->options.engine->run(request, observe);
+                : queuedOnly ? self->options.engine->runQueued(request, observe) : self->options.engine->run(request, observe);
             while (handle.result.wait_for(10ms) != std::future_status::ready)
                 if (context.cancellation.isCancelled()) handle.cancel();
             const auto result = handle.result.get(); context.cancellation.throwIfCancelled();
@@ -147,6 +147,42 @@ public:
             {"instructions", QJsonObject{{"type", "string"}, {"maxLength", 1048576}}}}}};
         compact.definition.outputSchema = run.definition.outputSchema;
         compact.execute = [executeAgent](const auto& args, const auto& context) { return executeAgent(args, context, true); };
+        Tool queuedRun;
+        queuedRun.definition = run.definition; queuedRun.definition.name = "iiLocalLLM.agent.inputs.run";
+        queuedRun.definition.description = "Start this connection's idle agent from pending input. Does not create a placeholder user prompt.";
+        auto queuedProperties = run.definition.inputSchema["properties"].toObject();
+        queuedProperties.remove("prompt"); queuedProperties.remove("new_session");
+        queuedRun.definition.inputSchema = {{"type", "object"}, {"additionalProperties", false}, {"properties", queuedProperties}};
+        queuedRun.execute = [executeAgent](const auto& args, const auto& context) { return executeAgent(args, context, false, true); };
+        frozen->add(std::move(queuedRun));
+        const auto text = QJsonObject{{"type", "string"}, {"minLength", 1}, {"maxLength", 65536}};
+        const auto inputId = QJsonObject{{"type", "string"}, {"minLength", 1}, {"maxLength", 128}};
+        for (const QString action : {QStringLiteral("enqueue"), QStringLiteral("list"), QStringLiteral("remove")}) {
+            Tool control; control.definition.name = "iiLocalLLM.agent.inputs." + action;
+            control.definition.description = action == "enqueue" ? "Queue input in this connection's agent conversation, including during execution. now cooperatively interrupts; next waits for tools; later waits for the answer."
+                : action == "list" ? "List this connection's pending input in priority order." : "Remove one input which has not yet been delivered.";
+            control.definition.readOnly = action == "list"; control.definition.concurrencySafe = true;
+            control.definition.metadata = {{"source", "builtin.input.control"}};
+            QJsonObject properties; QJsonArray required;
+            if (action == "enqueue") {
+                properties = {{"text", text}, {"priority", QJsonObject{{"type", "string"}, {"enum", QJsonArray{"now", "next", "later"}}}},
+                    {"kind", QJsonObject{{"type", "string"}, {"enum", QJsonArray{"prompt", "notification"}}}},
+                    {"context_paths", run.definition.inputSchema["properties"].toObject()["context_paths"]}};
+                required.append("text");
+            } else if (action == "remove") { properties = {{"input_id", inputId}}; required.append("input_id"); }
+            else properties = {{"offset", QJsonObject{{"type", "integer"}, {"minimum", 0}, {"maximum", 1000000}}},
+                {"limit", QJsonObject{{"type", "integer"}, {"minimum", 1}, {"maximum", 100}}}};
+            control.definition.inputSchema = {{"type", "object"}, {"additionalProperties", false}, {"properties", properties}, {"required", required}};
+            control.execute = [self, action](const QJsonObject& args, const ToolContext& context) {
+                const auto id = self->sessionId(self->conversation(context.sessionId), context.cancellation);
+                QJsonObject result;
+                if (action == "enqueue") result = self->options.engine->enqueueInput(id, args, context.cancellation);
+                else if (action == "remove") result = self->options.engine->removeInput(id, args["input_id"].toString(), context.cancellation);
+                else result = self->options.engine->queuedInputs(id, args["offset"].toInt(), args["limit"].toInt(32), context.cancellation);
+                return ToolResult{QString::fromUtf8(QJsonDocument(result).toJson(QJsonDocument::Compact)), result};
+            };
+            frozen->add(std::move(control));
+        }
         frozen->add(std::move(run)); frozen->add(std::move(compact));
         Tool session;
         session.definition = {"iiLocalLLM.agent.session", "Inspect only this MCP connection's local agent conversation.",
@@ -182,7 +218,9 @@ public:
                 context.sessionId = sessionId(conversation(request.sessionId), request.cancellation);
         };
         const bool shellControl = source == "builtin.shell.control" && QStringList{"TaskOutput", "TaskStop", "ShellTaskList"}.contains(name);
-        if (shellControl) { bindContext(); return wireResult(runner.run(call, context)); }
+        const bool inputControl = options.engine && source == "builtin.input.control"
+            && QStringList{"iiLocalLLM.agent.inputs.enqueue", "iiLocalLLM.agent.inputs.list", "iiLocalLLM.agent.inputs.remove"}.contains(name);
+        if (shellControl || inputControl) { bindContext(); return wireResult(runner.run(call, context)); }
         std::shared_lock shared(execution, std::defer_lock); std::unique_lock exclusive(execution, std::defer_lock);
         if (runner.concurrencySafe(call)) acquire(shared, request.cancellation); else acquire(exclusive, request.cancellation);
         bindContext();

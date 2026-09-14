@@ -5,8 +5,11 @@ namespace iiLocalLLM {
 Error::Error(ErrorCode code, const QString& message)
     : std::runtime_error(message.toStdString()), code_(code) {}
 CancellationToken::CancellationToken() : flag_(std::make_shared<std::atomic_bool>(false)) {}
+CancellationToken CancellationToken::linkedTo(const CancellationToken& parent) {
+    CancellationToken child; child.parent_ = std::make_shared<CancellationToken>(parent); return child;
+}
 void CancellationToken::cancel() const noexcept { flag_->store(true, std::memory_order_relaxed); }
-bool CancellationToken::isCancelled() const noexcept { return flag_->load(std::memory_order_relaxed); }
+bool CancellationToken::isCancelled() const noexcept { return flag_->load(std::memory_order_relaxed) || (parent_ && parent_->isCancelled()); }
 void CancellationToken::throwIfCancelled() const
 {
     if (isCancelled()) throw Error(ErrorCode::Cancelled, QStringLiteral("Request cancelled"));

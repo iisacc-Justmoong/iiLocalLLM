@@ -326,9 +326,15 @@
         "tests/shell_tasks_tests.cpp",
         "tests/shell_runtime_smoke.cpp",
         "tests/consumer/shells.cpp",
-        "docs/BackgroundTasks.md"
+        "docs/BackgroundTasks.md",
+        "agent/InputQueue.h",
+        "agent/InputQueue.cpp",
+        "tests/input_queue_tests.cpp",
+        "tests/input_queue_runtime_smoke.cpp",
+        "tests/consumer/inputs.cpp",
+        "docs/InputQueue.md"
       ],
-      "remaining": "Persistent planning tasks/todos, dependencies, claims, hooks and live context plus background Bash output/stop/list are implemented through C++/API/CLI/MCP. Plan transitions, background subagents, input queues, completion notifications and team mailbox remain. Native eager qualification and deferred failures are reported separately in Verification.md."
+      "remaining": "Persistent planning tasks/todos and background Bash plus durable prompt/notification queues with now/next/later and explicit idle start are implemented through C++/API/CLI/MCP. Per-input UserPromptSubmit hooks, automatic idle wakeup, completion notification producers, media/slash/bash modes, addressed agent input, Sleep wakeup, plan transitions, background subagents and team mailbox remain. Native qualification and model failures are reported separately in Verification.md."
     },
     {
       "id": "git",

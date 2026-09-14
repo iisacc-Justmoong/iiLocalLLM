@@ -69,3 +69,5 @@ MCP에서 셸·파일 도구와 로컬 에이전트가 같은 대화 소유권�
 C++ 회귀는 실제 셸과 자식 프로세스, 출력 크기/시간 제한, 조회 취소, 소유권, 기록 복구·손상 거절 및 중단 중 API/MCP 접근을 검증한다. 공식 Python MCP 클라이언트와 실제 daemon·CLI를 통한 검증도 수행한다. `tests/shell_runtime_smoke.cpp`는 고정 모델 카탈로그를 로드한 후 모델이 Bash→TaskOutput을 직접 호출하고 프롬프트에 없는 임의 파일 값을 답하는지 검사한다. 도구는 이 수락 검사에서 처음부터 제공한다. 모델 조건과 실제 통과/실패는 [Verification.md](Verification.md)에 별도로 기록한다.
 
 자동 배경 전환, Ctrl+B, 지속 셸 환경, Windows/모바일 실행, 백그라운드 하위 에이전트·원격 실행, 완료 알림의 외부 push 및 이전 도구 이름 별칭은 아직 미완료이다. TaskOutput의 이전 입력형과 별칭을 모두 지원한다고 주장하지 않는다. 전체 요구사항은 [HarnessParity.md](HarnessParity.md)를 따른다.
+
+0.13.0의 [입력 큐](InputQueue.md)는 진행 중인 에이전트에 prompt/notification을 전달한다. 백그라운드 셸이 끝날 때 알림을 자동 생산해 큐에 넣는 연결은 아직 제공하지 않는다. now 입력은 현재 에이전트 연산을 취소하며 이미 분리된 셸 실행은 TaskStop으로 중단한다.

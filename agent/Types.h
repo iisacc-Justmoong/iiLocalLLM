@@ -8,7 +8,8 @@ namespace iiLocalLLM::agent {
 enum class MessageRole { User, Assistant, Tool };
 enum class RunStatus { Completed, Cancelled, TurnLimit, Failed };
 enum class EventKind { Started, ModelDelta, Message, ToolStarted, ToolProgress, ToolFinished,
-    PermissionRequested, Hook, Finished, InstructionsLoaded, CompactionStarted, CompactionProgress, Compacted };
+    PermissionRequested, Hook, Finished, InstructionsLoaded, CompactionStarted, CompactionProgress, Compacted,
+    InputDelivered, Interrupted };
 struct ToolCall {
     QString id;
     QString name;

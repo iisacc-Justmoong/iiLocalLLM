@@ -42,11 +42,14 @@ private:
 class IILOCALLLM_EXPORT CancellationToken {
 public:
     CancellationToken();
+    // A child observes parent cancellation; cancelling the child leaves the parent usable.
+    static CancellationToken linkedTo(const CancellationToken& parent);
     void cancel() const noexcept;
     bool isCancelled() const noexcept;
     void throwIfCancelled() const;
 private:
     std::shared_ptr<std::atomic_bool> flag_;
+    std::shared_ptr<const CancellationToken> parent_;
 };
 
 struct ChatMessage {
