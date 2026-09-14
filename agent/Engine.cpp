@@ -423,7 +423,9 @@ ModelReply ServiceModel::generate(const ModelRequest& request, const Cancellatio
         reply.toolCalls.append({call["id"].toString(), f["name"].toString(),
             QJsonDocument::fromJson(f["arguments"].toString().toUtf8()).object()});
     }
-    if (reply.text.isEmpty() && reply.toolCalls.isEmpty()) throw Error(ErrorCode::ProtocolError, "Model returned an empty agent turn");
+    if (reply.text.isEmpty() && reply.toolCalls.isEmpty())
+        throw Error(ErrorCode::ProtocolError, result.reasoning.isEmpty() ? "Model returned an empty agent turn"
+            : "Model returned only reasoning, with no final answer or executable tool call");
     return reply;
 }
 }

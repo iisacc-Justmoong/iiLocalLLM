@@ -14,26 +14,36 @@ using namespace iiLocalLLM;
 namespace a = iiLocalLLM::agent;
 int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
-    if (argc != 2 && argc != 4 && argc != 5) return 2;
+    const bool catalog = argc == 7 && QString::fromLocal8Bit(argv[1]) == "--catalog"
+        && QString::fromLocal8Bit(argv[6]) == "--thinking-control";
+    if (!catalog && argc != 2 && argc != 4 && argc != 5) return 2;
     const bool remote = argc >= 4;
-    const bool configured = argc == 5;
-    const bool discovery = argc == 5 && QString::fromLocal8Bit(argv[4]) == "--discovery";
+    const bool configured = catalog || argc == 5;
+    const bool discovery = catalog || (argc == 5 && QString::fromLocal8Bit(argv[4]) == "--discovery");
     if (configured && !discovery && QString::fromLocal8Bit(argv[4]) != "--configured-eager") return 2;
     try {
         QTemporaryDir root(QDir::current().filePath("agent-native-XXXXXX"));
         if (!root.isValid()) throw std::runtime_error("Cannot create native agent fixture");
-        const auto modelRoot = root.filePath("Models/agent-fixture"); QDir().mkpath(modelRoot);
-        const auto weights = QDir(modelRoot).filePath("model.gguf");
-        std::error_code error;
-        std::filesystem::create_hard_link(argv[1], weights.toStdString(), error);
-        if (error && !QFile::copy(QString::fromLocal8Bit(argv[1]), weights)) throw std::runtime_error("Cannot provision fixture weights");
-        const QJsonObject manifest{{"schema_version", 1}, {"id", "agent-fixture"}, {"architecture", "qwen2"},
-            {"format", "gguf"}, {"quantization", "Q4_K_M"}, {"context_length", 32768}, {"entry_point", "model.gguf"},
-            {"capabilities", QJsonArray{"text-generation", "chat"}},
-            {"files", QJsonArray{QJsonObject{{"path", "model.gguf"}, {"size", 491400032},
-                {"sha256", "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"}}}}};
+        ModelManifest model{"agent-fixture", "qwen2", "gguf", "Q4_K_M", 32768, {"text-generation", "chat"}, "model.gguf",
+            {{"model.gguf", 491400032, "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"}}};
+        QString source;
+        if (catalog) {
+            const auto uri = QString::fromLocal8Bit(argv[3]);
+            source = QDir(QString::fromLocal8Bit(argv[2])).filePath(modelId(uri));
+            QFile file(QDir(source).filePath("manifest.json"));
+            if (!file.open(QIODevice::ReadOnly) || file.size() > 1024 * 1024) throw std::runtime_error("Cannot read model manifest");
+            model = parseModelManifest(QJsonDocument::fromJson(file.readAll()).object());
+            if (modelUri(model.id) != uri) throw std::runtime_error("Model identity mismatch");
+        }
+        const auto modelRoot = root.filePath("Models/" + model.id); QDir().mkpath(modelRoot);
+        for (const auto& file : model.files) {
+            const auto from = catalog ? QDir(source).filePath(file.path) : QString::fromLocal8Bit(argv[1]);
+            const auto to = QDir(modelRoot).filePath(file.path); QDir().mkpath(QFileInfo(to).absolutePath());
+            std::error_code error; std::filesystem::create_hard_link(from.toStdString(), to.toStdString(), error);
+            if (error && !QFile::copy(from, to)) throw std::runtime_error("Cannot provision fixture weights");
+        }
         QFile metadata(QDir(modelRoot).filePath("manifest.json"));
-        if (!metadata.open(QIODevice::WriteOnly) || metadata.write(QJsonDocument(manifest).toJson()) < 1)
+        if (!metadata.open(QIODevice::WriteOnly) || metadata.write(QJsonDocument(manifestObject(model)).toJson()) < 1)
             throw std::runtime_error("Cannot create fixture manifest");
         metadata.close();
         const auto workspace = root.filePath("workspace"); QDir().mkpath(workspace);
@@ -43,7 +53,10 @@ int main(int argc, char** argv) {
         QFile input(QDir(workspace).filePath("secret.txt"));
         ServiceOptions serviceOptions; serviceOptions.modelsDirectory = root.filePath("Models");
         Service service(serviceOptions);
-        (void)service.loadModel({"model://agent-fixture", 4096}).get();
+        const auto uri = modelUri(model.id);
+        ModelLoadRequest load{uri, catalog ? 8192 : 4096};
+        if (catalog) load.options = {{"enable_thinking", false}, {"tool_grammar", false}};
+        (void)service.loadModel(load).get();
         auto registry = std::make_shared<a::ToolRegistry>();
         std::unique_ptr<a::McpConnections> connections;
         QString toolName = "Read";
@@ -51,7 +64,7 @@ int main(int argc, char** argv) {
             const auto path = root.filePath("mcp.json"); QFile config(path);
             if (!config.open(QIODevice::WriteOnly)) throw std::runtime_error("Cannot write MCP fixture config");
             config.write(QJsonDocument(QJsonObject{{"mcpServers", QJsonObject{{"fixture", QJsonObject{
-                {"command", QString::fromLocal8Bit(argv[2])}, {"args", QJsonArray{"-B", QString::fromLocal8Bit(argv[3]), input.fileName()}},
+                {"command", QString::fromLocal8Bit(argv[catalog ? 4 : 2])}, {"args", QJsonArray{"-B", QString::fromLocal8Bit(argv[catalog ? 5 : 3]), input.fileName()}},
                 {"appId", "com.iisacc.fixture"}}}}}}).toJson()); config.close();
             a::McpConnectionOptions o; o.workingDirectory = workspace; o.configFiles = {path};
             o.deferTools = discovery;
@@ -76,13 +89,18 @@ int main(int argc, char** argv) {
             if (!input.open(QIODevice::WriteOnly | QIODevice::Truncate) || input.write(secret.toUtf8()) < 1)
                 throw std::runtime_error("Cannot write secret");
             input.close();
-            auto session = engine.createSession("model://agent-fixture", workspace);
+            auto session = engine.createSession(uri, workspace);
             a::RunRequest request{session.id, discovery
                 ? "First call ToolSearch with query select:mcp__fixture__read_secret. Then call mcp__fixture__read_secret to read the secret. Then return its exact value as your final answer. Do not guess."
                 : remote
                 ? "Use the mcp__fixture__read_secret tool to read the secret. Then return its exact value as your final answer. Do not guess."
                 : "Use the Read tool to read secret.txt. Then return the exact file contents as your final answer. Do not guess."};
             request.generation.temperature = 0; request.generation.maxTokens = 512; request.maxTurns = discovery ? 6 : 4;
+            if (catalog) {
+                request.prompt += " /no_think";
+                request.generation.temperature = 0.7; request.generation.topP = 0.8;
+                request.generation.topK = 20; request.generation.maxTokens = 2048;
+            }
             bool read = false; int progress = 0;
             auto result = engine.run(request, [&](const a::Event& event) {
                 if (event.kind == a::EventKind::ToolStarted && event.data["name"] == toolName) read = true;

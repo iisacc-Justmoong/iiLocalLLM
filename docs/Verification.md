@@ -1,5 +1,42 @@
 # 구현 검증 기록
 
+## 2026-09-14 네이티브 추론 모드 제어와 지연 도구 실행 (0.12.1)
+
+llama.cpp 모델 로딩의 `options.enable_thinking` boolean을 기존 네이티브 Jinja 입력에 연결했다. 명시적 설정은 일반 text/chat과 구조화 conversation에 함께 적용한다. 옵션을 생략하면 기존 동작을 유지한다. 에이전트가 추론 내용만 받았을 때는 빈 응답과 구분하는 `protocol_error`를 반환한다. 기존 C++ llama.cpp 의존성을 재사용하며 가중치·템플릿 원본 수정이나 새 Python 추론 단계는 없다.
+
+| 검증 | 최종 관측 결과 |
+|---|---|
+| Release 전체 빌드·CTest | 빌드 성공, **50/55 통과**, 717.29초. 기존 모델 검사도 그대로 포함 |
+| Release MCP 연결 실패의 단독 대조 | **2/2 통과**, 97.36초. 전체 실행과 별도 관측 |
+| ASan·UBSan 전체 | llama 비활성 Debug **32/33 통과**, 127.92초. 공식 MCP stdio 초기화 시간 초과 1건은 아래에 구분 |
+| 해당 sanitizer 단독 대조 | **1/1 통과**, 1.11초. 전체 실행의 실패를 통과로 덮어쓰지 않음 |
+| 새 설치 소비자 | `thinking-stage`와 `thinking-consumer/build`에서 **20/23 통과**, 362.50초 |
+| 실제 Qwen3 8B 지연 Task 도구 | 소스 통과, 68.15초, 설치본 통과, 67.42초. ToolSearch 후 실제 조회·생성·수정 및 저장 값 검증 |
+| 실제 Qwen3 8B 지연 MCP 도구 | 소스 전체 실패, 67.99초, 연결 실패 후 별도 대조 통과, 80.32초. 설치본 통과, 60.02초. 통과한 각 실행의 고정/임의 파일 값 두 대화에서 검색·원격 호출·진행 이벤트·최종 값·호출/결과 쌍 검증 |
+| 네이티브 템플릿 계약 | 실제 llama runtime의 제어용 Jinja fixture로 boolean 타입, 명시적 true/false, 생략 기본값 및 두 프롬프트 경로 검사. 모델 응답 생성 없이 입력 토큰을 검증 |
+| 설치 API·CLI·공식 MCP | 3/3 통과. API·CLI 28개 조건, 실제 daemon/얇은 CLI 및 공식 MCP Python 1.26.0의 stdio/HTTP 왕복 |
+| 설치·로더 | 소스/설치 라이브러리 SHA-256·UUID `0A1D0C46-8200-3C8A-96BA-213B0D8C5A52` 일치. 실제 0.12.1 stage 로드, 세 실행 파일 0.12.1, iillm의 추론 라이브러리 미링크 확인 |
+
+기존 조건의 원인을 별도 C++ Runtime 관측기로 재현했다. 첫 모델 출력은 닫힌 추론 구간 뒤의 ToolSearch였고 파싱된 호출을 실제 수행했다. 다음 입력에는 TaskGet과 ToolSearch 정의가 들어갔지만, 다음 출력은 `<think>` 뒤에 닫는 `</think>` 없이 TaskGet 모양의 JSON을 포함했다. 네이티브 파서는 그 문자열을 reasoning으로 반환하고 실행 가능한 호출은 반환하지 않았다. 따라서 이전 기록의 “빈 모델 턴”은 호출을 아예 생성하지 않았다는 뜻이 아니라 ServiceModel이 실행할 응답이 없었다는 뜻이다. 원문은 `build/discovery-diagnosis/build/native-trace.jsonl`과 `baseline.log`에 보존한다.
+
+`/no_think` 소프트 지시와 템플릿의 `enable_thinking=false`를 구분한다. [Qwen3 공식 문서](https://huggingface.co/Qwen/Qwen3-8B)에 따라 별도 제어를 연결했고 추론 안의 도구 문자열을 실행하거나 누락된 경계를 자동 삽입하지 않는다. 새 ServiceModel 회귀는 Write 모양 문자열이 추론에 있어도 도구 호출·최종 텍스트로 승격되지 않는지 확인한다.
+
+새 카탈로그 제어 검사는 Qwen3 8B Q4_K_M, `model://qwen3-8b-q4`, context 8,192, 턴당 2,048토큰·최대 6턴, seed 0, temperature 0.7·top_p 0.8·top_k 20, `/no_think`, `tool_grammar:false`, `enable_thinking:false`를 사용한다. Task의 기존 지연 검사와 비교할 때 추가한 운용 설정은 `enable_thinking:false`이다. MCP의 0.5B 기존 검사와는 모델·샘플링도 다르므로 MCP 결과를 추론 모드 한 가지의 인과 효과로 설명하지 않는다. 모델 가중치는 기존 고정 파일이며 새 다운로드는 없다. revision·크기·SHA-256은 [Tasks.md](Tasks.md)에 있다.
+
+Task 수락 조건은 프롬프트에 없는 임의 설명을 실제 TaskGet으로 읽고, 작업을 정확히 한 번 만들고, 기존 제목·설명을 보존하면서 요청한 담당자·상태를 저장하는 것이다. MCP는 실제 시험 서버의 파일 값을 읽는다. 두 검사 모두 호스트가 호출이나 답을 만들어 넣지 않는다. 명시적인 검색·실행 프롬프트와 해당 모델 설정에서의 수락 결과이며 일반적인 자율 작업 능력 보증은 아니다.
+
+Release 실패: `iiLocalLLM.tasks_inference` · `iiLocalLLM.tasks_catalog_discovery` · `iiLocalLLM.discovery_inference` · `iiLocalLLM.discovery_catalog_thinking_control` · `iiLocalLLM.agent_mcp_inference`. 설치 소비자 실패: `iiLocalLLM.installed_tasks_inference` · `iiLocalLLM.installed_tasks_discovery` · `iiLocalLLM.installed_discovery_inference`. 0.5B의 TaskGet 생략과 MCP 검색 후 실제 호출 생략, `enable_thinking`을 지정하지 않은 8B의 지연 도구 실패는 새 별도 검사의 통과와 구분한다. 기존 기본값·기대값·실패 항목을 제거하지 않았다.
+
+Release의 새 8B MCP 검사와 기존 `agent_mcp_inference`는 모델의 에이전트 실행 전에 각각 `Configured MCP peer did not connect`, `MCP initialize request timed out`으로 실패했다. 전체 검사가 끝난 뒤 같은 두 항목만 대조한 결과가 위 표이다. 성공할 때까지 반복하거나 최초 결과를 바꾸지 않았다. 두 연결 지연의 근본 원인은 확정하지 않으며 모델이 실제 호출 후 잘못 답한 오류와 구분한다. 근거는 `build/thinking-focused-release-*`이다.
+
+TDD의 변경 전 결과는 **0/2 통과**, 2.83초였다. 새 모델 옵션 거절과 reasoning-only 오류 구분 부재를 각각 재현했다. 구현 후 동일 두 검사 결과는 **2/2 통과**, 12.10초이며 근거는 `build/thinking-red-tests.*`, `build/thinking-green-tests.*`이다. 초기 Task 제어 단독 검사는 **1/1 통과**, 81.22초였으며 최종 전체 실행과 별도 기록이다.
+
+sanitizer는 `ASAN_OPTIONS=malloc_context_size=0`을 명시했다. 아래 0.12.0에서 진단한 Apple Objective-C atfork/ASan StackStore 충돌을 피하기 위해 할당·해제 호출 스택 이력을 끈 조건이며 ASan·UBSan 계측은 유지한다. 기본 설정 통과로 해석하지 않는다. 이번 전체 실행에서는 sanitizer 오류 보고 없이 공식 MCP stdio 초기화가 시간 초과했다. 모든 빌드가 끝난 뒤 같은 실행 파일·설정의 단독 대조는 통과했으나 최초 지연의 원인을 확정한 것은 아니다. 근거는 `build/thinking-final-sanitizer-*`와 `build/thinking-focused-sanitizer-*`이다.
+
+라이브러리 SHA-256은 `d6512cde9bffa41e4bea56970654d4c48f3d65a8b54fc427a16e51fc71ac2bfe`이다. 이 단계는 SDK와 Workspace의 별도 설치본까지이며 기본 SDK 설치나 Society·Dreamscapes 기기 앱 재배포를 포함하지 않는다. iPhone은 사용자 지시로 제외한다. MLX의 이 옵션, 모델 템플릿별 지원 전체, 점진적 추론·도구 스트리밍, 외부 provider 및 남은 하네스 기능은 미완료이다. 전체 하네스 목표는 계속 진행 중이다.
+
+계약은 [NativeThinking.md](NativeThinking.md), 전체 범위는 [HarnessParity.md](HarnessParity.md)이다. 최종 증거는 `build/thinking-final-{release,sanitizer,consumer}-tests.log`, 대응 JUnit XML·LastTest, `build/thinking-installed-wire/`, `build/thinking-linkage.json`, `build/thinking-installed-loader.log`, `build/thinking-verification.json`에 보관한다.
+
 ## 2026-09-14 백그라운드 셸과 실행 중 API/MCP 제어 (0.12.0)
 
 C++ `ShellTasks`에 실제 백그라운드 Bash, TaskOutput·TaskStop·ShellTaskList, 소유 대화 격리, 원시 출력 보존·바이트 페이징, 시간/출력/동시 실행 상한과 정상 종료·재시작 복구를 구현했다. 매 모델 턴의 현재 상태, 인증된 HTTP/native IPC, 얇은 CLI와 MCP에 연결한다. 기존 Qt QProcess·QLockFile·QSaveFile과 표준 C++ 스레드를 재사용하며 생산 Python 실행기나 새 런타임 의존성을 추가하지 않았다.

@@ -92,3 +92,5 @@ CLI 입력 파일에는 `session_id`를 넣지 않는다. 위치 인수로만 �
 llama.cpp 모델 로딩의 `options.tool_grammar`는 boolean이고 기본값은 true이다. false는 구조화 대화의 생성 시 스키마 문법 제약만 끈다. 모델에 제공하는 원래 스키마, 도구 응답 파서, 불완전 출력 거절 및 실행 전 JSON Schema·권한 검사는 유지한다. 일반 텍스트 생성에는 영향을 주지 않는다. 호스트는 모델을 unload한 뒤 바뀐 옵션으로 다시 로드해야 한다. 현재 포함한 [upstream JSON Schema 변환기](https://github.com/ggml-org/llama.cpp/blob/5202104b59ada9005db079eea43882a2b7bf5802/common/json-schema-to-grammar.cpp#L712)는 선택 필드의 출력 순서를 제한하므로 여러 필드를 자연스러운 순서로 출력하는 모델과의 대조에 사용할 수 있다. 이 옵션은 잘못된 의미의 인수를 자동 수정하지 않는다.
 
 `IILOCALLLM_TEST_AGENT_TOOL_GRAMMAR=OFF`는 카탈로그 수락 검사에서 위 옵션을 끈다(기본 ON). 생성과 수정 프롬프트는 요청 문자열을 따옴표로 구분하고, 수정 후 담당자·상태뿐 아니라 기존 제목과 설명 보존까지 검사한다. 모델·샘플링·프롬프트·생성 문법 조건이 다른 실행은 별도 결과로 보고한다.
+
+0.12.1의 `options.enable_thinking=false`는 템플릿에 직접 전달하는 추론 모드 제어이다. `IILOCALLLM_TEST_AGENT_THINKING_CONTROL=ON`이면 기존 조건을 유지한 채 이 값만 추가한 별도 지연 공개 수락 검사를 등록한다. 기본 지연 공개 검사를 대체하지 않으며 `/no_think` 사용자 지시와 구분한다. [NativeThinking.md](NativeThinking.md)에 일반 대화·도구 대화의 적용 범위와 오류 계약을 기록한다.

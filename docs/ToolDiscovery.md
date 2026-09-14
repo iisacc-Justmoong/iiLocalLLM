@@ -101,6 +101,8 @@ auto connections = std::make_shared<iiLocalLLM::agent::McpConnections>(registry,
 
 고정 Qwen2.5 0.5B Q4_K_M 검사에서 ToolSearch 호출과 선택은 성공했지만, 이어서 실제 도구를 호출하지 않고 검색 안내를 최종 답으로 끝내는 실패를 관측했다. 검색 지원의 C++ 계약과 개별 모델의 연속 도구 사용 능력은 다르다. 해당 모델에서 이 실패가 발생하면 `--agent-mcp-eager` / `--mcp-eager` 또는 `deferTools=false`로 도구를 처음부터 제공할 수 있다. 자동 연속 호출을 성공으로 간주하거나 모델 대신 답을 만들어 넣지 않는다. 실제 검증 결과는 [Verification.md](Verification.md)에 기록한다.
 
-MCP/API 설정 연결·협상·도구 검색까지 구현했으며 앱 manifest 탐색, 설치 앱·프로세스·LAN 자동 발견, 사용자/managed/plugin 설정 우선순위 전체, 임베딩 검색, 모델별 자동 토큰 임계값, 공급자 고유 `tool_reference`, legacy SSE, OAuth, MCP tasks는 남아 있다. `iillm-mcp`에서 프록시 도구 목록을 다시 요청하면 현재 registry를 받지만 관리 서버의 목록 변경 알림을 외부 MCP 클라이언트에 자동 중계하지는 않는다. 실제 Society/Dreamscapes 앱의 MCP endpoint와 API 호출까지 완료한 상태는 아니다.
+Qwen3 8B의 빈 턴 실패는 원문 관측에서 닫히지 않은 추론 구간 안의 TaskGet 호출로 좁혀졌다. ServiceModel은 추론만 있는 응답을 구분해 거절한다. 0.12.1은 명시적인 네이티브 `enable_thinking` 제어를 추가하며, 지연 공개 검사에서의 실제 대조 결과와 제약은 [NativeThinking.md](NativeThinking.md) 및 [Verification.md](Verification.md)에 기록한다.
+
+MCP/API 설정 연결·협상·도구 검색을 제공하며 실행 중인 Society·Dreamscapes 데스크톱 endpoint 연결은 [LocalApplications.md](LocalApplications.md)에 범위를 기록한다. 설치 앱·프로세스·LAN 발견 전체, 사용자/managed/plugin 설정 우선순위, 임베딩 검색, 모델별 자동 토큰 임계값, 공급자 고유 `tool_reference`, legacy SSE, OAuth, MCP tasks는 남아 있다. `iillm-mcp`에서 프록시 도구 목록을 다시 요청하면 현재 registry를 받지만 관리 서버의 목록 변경 알림을 외부 MCP 클라이언트에 자동 중계하지는 않는다.
 
 참조 동작은 고정된 Claude Code 2.1.88 분석 자료의 ToolSearch/config 구조이다. 현재 공식 문서의 설정 형식과 환경변수 표기는 [Claude Code MCP 문서](https://code.claude.com/docs/en/mcp), SDK 연결·검색 개념은 [Agent SDK MCP 문서](https://code.claude.com/docs/en/agent-sdk/mcp)와 대조했다. 현재 문서의 미정의 변수 처리, 자동 검색 임계값 및 제품 전체 범위와 동일한 구현이라고 주장하지 않는다. 코드 복제 없이 기존 iiLocalLLM 인터페이스에 맞춰 구현했다.

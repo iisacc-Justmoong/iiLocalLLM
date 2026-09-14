@@ -68,3 +68,5 @@
 0.11.0은 영속 Task/Todo 저장, 원자적 의존 관계·삭제·담당자 선점, 대화별 최신 상태 주입, TaskCreated/TaskCompleted 게시 전 훅, C++·인증된 API·MCP·CLI를 추가한다. 작업 실행기나 백그라운드 작업, 계획 모드 전환, 팀 알림은 별도 미완료 항목이다. [Tasks.md](Tasks.md), [Verification.md](Verification.md)를 참조한다.
 
 0.12.0은 C++ 백그라운드 Bash, TaskOutput·TaskStop·ShellTaskList, 원시 출력 보존·페이지화, 소유 세션 격리, 시간/출력/동시 실행 상한과 정상 종료·재시작 복구를 추가한다. API·CLI 및 MCP의 실행 중 조회·중단을 연결하고 각 모델 턴에 현재 상태를 반영한다. 자동 배경 전환, 지속 환경, Windows/모바일, 백그라운드 에이전트, 완료 알림·입력 큐와 MCP 비동기 tasks 규격은 남아 있으므로 shell/tasks/API의 partial 상태를 유지한다. [BackgroundTasks.md](BackgroundTasks.md), [Verification.md](Verification.md)를 참조한다.
+
+0.12.1은 llama.cpp의 명시적 추론 모드 제어를 일반·구조화 대화에 연결하고, 추론만 있는 응답과 빈 응답을 구분한다. 명시한 Qwen3 8B 조건에서 지연 Task 실행은 소스·설치본 전체 검사, 지연 MCP 실행은 소스 단독 대조·설치본 전체 검사에서 통과했다. 기존 모델 실패와 최초 MCP 연결 실패는 별도로 유지한다. 원문의 도구 모양 문자열을 임의로 실행하지 않으며, 네이티브 provider와 전체 실행 범위는 partial을 유지한다. [NativeThinking.md](NativeThinking.md), [Verification.md](Verification.md)를 참조한다.

@@ -10,7 +10,11 @@
       "evidence": [
         "agent/Engine.cpp",
         "tests/agent_tests.cpp",
-        "tests/agent_runtime_smoke.cpp"
+        "tests/agent_runtime_smoke.cpp",
+        "tests/reasoning_runtime_smoke.cpp",
+        "tests/service_tests.cpp",
+        "tests/task_runtime_smoke.cpp",
+        "docs/NativeThinking.md"
       ],
       "remaining": "Bounded run/tool loop, cancellation, paired results and interruption repair implemented; block streaming and cost budgets remain."
     },
@@ -21,9 +25,13 @@
       "evidence": [
         "agent/Engine.cpp",
         "runtimes/LlamaRuntime.cpp",
-        "tests/agent_runtime_smoke.cpp"
+        "tests/agent_runtime_smoke.cpp",
+        "tests/reasoning_runtime_smoke.cpp",
+        "tests/service_tests.cpp",
+        "tests/task_runtime_smoke.cpp",
+        "docs/NativeThinking.md"
       ],
-      "remaining": "Native llama.cpp Jinja, tool grammar, PEG parser and Service-owned cache implemented; MLX tools, external local providers and incremental reasoning/tool streaming remain."
+      "remaining": "Native llama.cpp Jinja, explicit thinking-template control for text and tool prompts, grammar, PEG parsing and Service-owned cache are implemented. Reasoning-only output is not promoted to an agent action. MLX tools, external local providers, incremental reasoning/tool streaming and broader model qualification remain."
     },
     {
       "id": "tools",
@@ -259,9 +267,13 @@
         "docs/ToolDiscovery.md",
         "mcp/LocalApplications.cpp",
         "tests/local_applications_tests.cpp",
-        "docs/LocalApplications.md"
+        "docs/LocalApplications.md",
+        "tests/reasoning_runtime_smoke.cpp",
+        "tests/service_tests.cpp",
+        "tests/task_runtime_smoke.cpp",
+        "docs/NativeThinking.md"
       ],
-      "remaining": "Host-authorized MCP configurations, same-user running-app endpoint registration/discovery, per-session ToolSearch and authenticated status are implemented. Installed-app launching/network discovery, complete configuration scopes, provider-specific thresholds/tool references and model qualification remain. Pinned Qwen2.5 0.5B discovery-to-action inference still fails; eager configured MCP and actual Society status inference work."
+      "remaining": "Host-authorized MCP configurations, same-user running-app endpoint registration/discovery, per-session ToolSearch and authenticated status are implemented. Installed-app launching/network discovery, complete configuration scopes, provider-specific thresholds/tool references and broader model qualification remain. Pinned Qwen2.5 0.5B discovery-to-action inference still fails; eager configured MCP and actual Society status inference work. Pinned Qwen3 8B deferred Task/MCP sequences pass under explicit thinking-disabled settings and prompts; initial MCP connection failures and separate successful control runs are preserved in Verification.md."
     },
     {
       "id": "skills",

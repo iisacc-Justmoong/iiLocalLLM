@@ -13,13 +13,14 @@ namespace a = iiLocalLLM::agent;
 int main(int argc, char** argv) {
     QCoreApplication application(argc, argv);
     const auto args = application.arguments();
-    const bool catalog = args.size() >= 4 && args.size() <= 7 && args[1] == "--catalog";
-    bool deferred = false, noThink = false, noToolGrammar = false;
+    const bool catalog = args.size() >= 4 && args.size() <= 8 && args[1] == "--catalog";
+    bool deferred = false, noThink = false, noToolGrammar = false, disableThinking = false;
     if (!catalog && argc != 2) return 2;
     if (catalog) for (int n = 4; n < args.size(); ++n) {
         if (args[n] == "--deferred" && !deferred) deferred = true;
         else if (args[n] == "--no-think" && !noThink) noThink = true;
         else if (args[n] == "--no-tool-grammar" && !noToolGrammar) noToolGrammar = true;
+        else if (args[n] == "--disable-thinking" && !disableThinking) disableThinking = true;
         else return 2;
     }
     try {
@@ -50,6 +51,7 @@ int main(int argc, char** argv) {
         Service service(serviceOptions); const auto uri = modelUri(model.id);
         ModelLoadRequest load{uri, 8192};
         if (noToolGrammar) load.options["tool_grammar"] = false;
+        if (disableThinking) load.options["enable_thinking"] = false;
         // ModelManager::load verifies every manifest file before loading. Do not
         // hash a multi-GB model a second time solely for this acceptance fixture.
         const auto loaded = service.loadModel(load).get();
@@ -97,6 +99,7 @@ int main(int argc, char** argv) {
         std::cout << "Native " << uri.toStdString() << (deferred ? " deferred" : " eager")
             << (noThink ? " /no_think" : " default thinking")
             << (noToolGrammar ? " unconstrained generation" : " schema grammar")
+            << (disableThinking ? " thinking template disabled" : " default thinking template")
             << " read an unknown task description, created one task, and persisted an owner/status update.\n";
         return 0;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

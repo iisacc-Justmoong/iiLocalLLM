@@ -1,4 +1,5 @@
 #include <iiLocalLLM.h>
+#include <agent/Engine.h>
 #include "../runtimes/Utf8Stream.h"
 #include <QtTest/QtTest>
 #include <QtCore/QJsonDocument>
@@ -74,7 +75,7 @@ public:
     }
     RuntimeConversationReply parseConversation(const RuntimeConversationPrompt&, const QString& text) override {
         const auto reply = QJsonDocument::fromJson(text.toUtf8()).object();
-        return {reply["text"].toString(), {}, reply["tool_calls"].toArray()};
+        return {reply["text"].toString(), reply["reasoning"].toString(), reply["tool_calls"].toArray()};
     }
     TokenList tokenize(const QList<ChatMessage>& messages, const CancellationToken&) override
     {
@@ -223,6 +224,30 @@ private slots:
         r.messages.append(QJsonObject{{"role", "user"}, {"content", "skip the result"}});
         QCOMPARE(service.converse(r).result.get().errorCode, ErrorCode::InvalidArgument);
         QCOMPARE(p->contexts.load(), 0);
+    }
+    void agentRejectsReasoningOnlyWithoutPromotingToolText()
+    {
+        auto p = std::make_shared<Probe>(); Service service(options()); setup(service, p, 2048);
+        const QString reasoning = "<tool_call>{\"name\":\"Write\",\"arguments\":{\"path\":\"should-not-exist\"}}</tool_call>";
+        p->answer = QString::fromUtf8(QJsonDocument(QJsonObject{{"reasoning", reasoning}}).toJson());
+        agent::ServiceModel model(service); agent::ModelRequest request;
+        request.model = "model://small"; request.messages = {agent::Message{{}, agent::MessageRole::User, "Use a tool"}};
+        request.generation.maxTokens = 64;
+        bool delta = false;
+        try {
+            (void)model.generate(request, {}, [&](const QString&) { delta = true; return true; });
+            QFAIL("Reasoning-only output must not become an executable tool call or final answer");
+        } catch (const Error& error) {
+            QCOMPARE(error.code(), ErrorCode::ProtocolError);
+            QVERIFY(QString::fromUtf8(error.what()).contains("only reasoning"));
+        }
+        QVERIFY(!delta);
+        p->answer = "{}";
+        try { (void)model.generate(request, {}, {}); QFAIL("Empty model output was accepted"); }
+        catch (const Error& error) {
+            QCOMPARE(error.code(), ErrorCode::ProtocolError);
+            QVERIFY(QString::fromUtf8(error.what()).contains("empty agent turn"));
+        }
     }
     void bundledStarterAliasSupportsConversation()
     {

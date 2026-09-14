@@ -231,6 +231,12 @@ public:
     TokenList tokenize(const QList<ChatMessage>& messages, const CancellationToken& cancel) override
     {
         cancel.throwIfCancelled();
+        if (spec_.options.contains("enable_thinking")) {
+            ConversationRequest request;
+            for (const auto& message : messages)
+                request.messages.append(QJsonObject{{"role", enumName(message.role)}, {"content", message.content}});
+            return prepareConversation(request, cancel).tokens;
+        }
         const auto custom = spec_.options.value(QStringLiteral("chat_template"));
         if (!custom.isUndefined() && !custom.isString())
             throw Error(ErrorCode::InvalidArgument, QStringLiteral("chat_template must be a string"));
@@ -271,6 +277,7 @@ public:
         input.tool_choice = common_chat_tool_choice_parse_oaicompat(request.toolChoice.toStdString());
         input.parallel_tool_calls = request.parallelToolCalls;
         input.reasoning_format = COMMON_REASONING_FORMAT_DEEPSEEK;
+        input.enable_thinking = spec_.options.value("enable_thinking").toBool(true);
         auto state = std::make_shared<LlamaConversationState>();
         state->chat = common_chat_templates_apply(templates_.get(), input);
         if (!spec_.options.value("tool_grammar").toBool(true)) {
@@ -362,7 +369,8 @@ public:
 #ifdef IILOCALLLM_WITH_LLAMA
         if (!QFileInfo(spec.path).isFile()) throw Error(ErrorCode::NotFound, QStringLiteral("Local GGUF file not found"));
         for (auto it = spec.options.begin(); it != spec.options.end(); ++it) {
-            if (it.key() != QStringLiteral("threads") && it.key() != QStringLiteral("chat_template") && it.key() != QStringLiteral("tool_grammar"))
+            if (it.key() != QStringLiteral("threads") && it.key() != QStringLiteral("chat_template")
+                && it.key() != QStringLiteral("tool_grammar") && it.key() != QStringLiteral("enable_thinking"))
                 throw Error(ErrorCode::InvalidArgument, QStringLiteral("Unsupported model option: ") + it.key());
         }
         (void)optionInt(spec, "threads", 4, 1, 512);
@@ -370,6 +378,8 @@ public:
             throw Error(ErrorCode::InvalidArgument, QStringLiteral("chat_template must be a string"));
         if (spec.options.contains("tool_grammar") && !spec.options.value("tool_grammar").isBool())
             throw Error(ErrorCode::InvalidArgument, "tool_grammar must be a boolean");
+        if (spec.options.contains("enable_thinking") && !spec.options.value("enable_thinking").isBool())
+            throw Error(ErrorCode::InvalidArgument, "enable_thinking must be a boolean");
         initializeLlama();
         auto selected = std::make_shared<std::vector<ggml_backend_dev_t>>();
         const bool accelerated = device.backend != ComputeBackend::Cpu;
