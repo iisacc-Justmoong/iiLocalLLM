@@ -24,6 +24,9 @@ public:
     // Lease excludes concurrent writers, including other processes, for the whole run.
     std::unique_ptr<SessionLease> acquire(const QString& id) const;
     Session load(const QString& id) const;
+    // Reads only the immutable identity/workspace header, without a writer lease.
+    // messages and compactions are empty; safe while an accepted run is active.
+    Session metadata(const QString& id) const;
     QStringList list() const;
 private:
     QString directory_;

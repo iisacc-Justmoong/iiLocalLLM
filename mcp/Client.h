@@ -35,7 +35,7 @@ struct StdioOptions : ClientLimits {
 };
 namespace detail { class ClientTransport; }
 struct ClientOptions {
-    QJsonObject implementation{{"name", "iiLocalLLM"}, {"version", "0.10.0"}};
+    QJsonObject implementation{{"name", "iiLocalLLM"}, {"version", "0.11.0"}};
     QStringList protocolVersions{"2025-11-25", "2025-06-18", "2025-03-26"};
     QJsonArray roots;
     // Optional host-owned handlers. Capability objects must match the handlers.

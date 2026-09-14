@@ -15,7 +15,7 @@
 namespace { volatile std::sig_atomic_t interrupted = 0; void interrupt(int) { interrupted = 1; } }
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.10.0");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.11.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},
@@ -25,6 +25,7 @@ int main(int argc, char** argv) {
         {"mcp-eager", "Publish all configured MCP tools to the agent without ToolSearch."},
         {"apps-dir", "Private registry of running local application MCP endpoints.", "directory"},
         {"no-apps", "Disable discovery of running local applications."},
+        {"no-tasks", "Disable persistent task and todo tools."},
         {"artifacts", "Directory for large tool results.", "path"},
         {"model", "Enable the local agent using an installed model:// URI.", "uri"},
         {"models", "Installed model catalog directory; required with --model.", "path"},
@@ -103,11 +104,15 @@ int main(int argc, char** argv) {
             iiLocalLLM::ServiceOptions serviceOptions; serviceOptions.modelsDirectory = parser.value("models"); serviceOptions.defaultContextTokens = contextTokens;
             service = std::make_unique<iiLocalLLM::Service>(serviceOptions);
             a::EngineOptions engineOptions;
+            engineOptions.taskToolsEnabled = !parser.isSet("no-tasks");
             engineOptions.sessionsDirectory = http ? QDir(privateState).filePath("sessions")
                 : parser.isSet("sessions") ? parser.value("sessions") : QDir(workspace).filePath(".iilocal-llm/sessions");
             options.engine = std::make_shared<a::Engine>(std::make_shared<a::ServiceModel>(*service), registry, policy, engineOptions);
             options.model = parser.value("model"); options.generation.maxTokens = maxTokens; options.generation.temperature = temperature;
         }
+        if (!agent && !parser.isSet("no-tasks"))
+            options.taskStore = std::make_shared<a::TaskStore>(http ? QDir(privateState).filePath("tasks")
+                : QDir(workspace).filePath(".iilocal-llm/tasks"));
         auto server = a::mcpServerOptions(registry, policy, std::move(options)); server.requestTimeoutMs = timeout;
         if (http) {
             // All configured clients share this explicitly selected workspace

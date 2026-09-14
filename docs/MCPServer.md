@@ -98,3 +98,9 @@ Engine을 설정한 서버는 `iiLocalLLM.agent.compact`를 제공한다. 선택
 ## 0.10.0 구조화 결과 전달
 
 `structuredContent`가 있을 때 설명 텍스트가 있더라도 실제 JSON을 모델 입력에서 보존한다. 서버 bridge는 JSON text block을 함께 반환하고 클라이언트 어댑터는 상대 서버가 빠뜨린 경우 모델용 텍스트에 추가한다. 이미 같은 JSON이 있으면 공백 형식과 무관하게 중복하지 않는다. 원래 MCP content·구조화 데이터·host용 `_meta`는 각각 보존한다. `_meta`는 모델 텍스트에 추가하지 않는다. 실제 앱 연동과 검증은 [LocalApplications.md](LocalApplications.md)에 기록한다.
+
+## 작업 목록 도구 (0.11.0)
+
+iillm-mcp는 기본 작업·Todo 도구 일곱 개를 추가하며 --no-tasks로 비활성화한다. 모델이 있으면 현재 연결의 Engine 대화와 목록을 공유하고, 모델이 없으면 연결별 TaskStore를 사용한다. 원격 목록 ID 선택은 허용하지 않는다. 직접 C++ 호스트는 McpServerOptions.taskStore 또는 taskToolsEnabled인 Engine을 선택한다. [Tasks.md](Tasks.md)에 연결 수명·권한·스키마·저장 계약을 기록한다.
+
+공식 Python SDK의 stdio 클라이언트는 제한된 환경 변수만 자동 상속한다. 수락 검사는 하위 서버에 독립 앱 등록 경로와 임시 경로를 명시적으로 전달하여 실행 중인 사용자 앱의 도구가 fixture 목록에 섞이지 않게 한다. HTTP 검사도 같은 격리 경로를 사용한다.

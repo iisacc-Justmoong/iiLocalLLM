@@ -273,6 +273,13 @@ public:
         input.reasoning_format = COMMON_REASONING_FORMAT_DEEPSEEK;
         auto state = std::make_shared<LlamaConversationState>();
         state->chat = common_chat_templates_apply(templates_.get(), input);
+        if (!spec_.options.value("tool_grammar").toBool(true)) {
+            // Upstream object grammars constrain optional property order. Hosts
+            // can use natural tool output while keeping parsing and executor validation.
+            state->chat.grammar.clear();
+            state->chat.grammar_lazy = false;
+            state->chat.grammar_triggers.clear();
+        }
         state->parser = common_chat_parser_params(state->chat);
         state->parser.reasoning_format = input.reasoning_format;
         if (!state->chat.parser.empty()) state->parser.parser.load(state->chat.parser);
@@ -355,12 +362,14 @@ public:
 #ifdef IILOCALLLM_WITH_LLAMA
         if (!QFileInfo(spec.path).isFile()) throw Error(ErrorCode::NotFound, QStringLiteral("Local GGUF file not found"));
         for (auto it = spec.options.begin(); it != spec.options.end(); ++it) {
-            if (it.key() != QStringLiteral("threads") && it.key() != QStringLiteral("chat_template"))
+            if (it.key() != QStringLiteral("threads") && it.key() != QStringLiteral("chat_template") && it.key() != QStringLiteral("tool_grammar"))
                 throw Error(ErrorCode::InvalidArgument, QStringLiteral("Unsupported model option: ") + it.key());
         }
         (void)optionInt(spec, "threads", 4, 1, 512);
         if (spec.options.contains(QStringLiteral("chat_template")) && !spec.options.value(QStringLiteral("chat_template")).isString())
             throw Error(ErrorCode::InvalidArgument, QStringLiteral("chat_template must be a string"));
+        if (spec.options.contains("tool_grammar") && !spec.options.value("tool_grammar").isBool())
+            throw Error(ErrorCode::InvalidArgument, "tool_grammar must be a boolean");
         initializeLlama();
         auto selected = std::make_shared<std::vector<ggml_backend_dev_t>>();
         const bool accelerated = device.backend != ComputeBackend::Cpu;

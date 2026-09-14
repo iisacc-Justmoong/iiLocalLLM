@@ -221,7 +221,10 @@
         "tests/consumer/api.cpp",
         "agent/Compaction.cpp",
         "tests/compaction_tests.cpp",
-        "docs/Compaction.md"
+        "docs/Compaction.md",
+        "agent/TaskStore.h",
+        "tests/consumer/tasks.cpp",
+        "docs/Tasks.md"
       ],
       "remaining": "Authenticated HTTP/native IPC agent sessions, attached runs, ordered events, cancellation and thin CLI implemented; durable background jobs, idempotent response replay, live permission mediation and actual iisacc product integration remain."
     },
@@ -270,15 +273,33 @@
         "tests/agent_tests.cpp",
         "agent/Compaction.cpp",
         "tests/compaction_tests.cpp",
-        "docs/Compaction.md"
+        "docs/Compaction.md",
+        "agent/TaskStore.cpp",
+        "tests/task_tests.cpp",
+        "docs/Tasks.md"
       ],
-      "remaining": "C++ model/tool/stop and before/after compaction callbacks implemented. Full lifecycle and external hook runners remain."
+      "remaining": "C++ model/tool/stop/compaction and pre-commit TaskCreated/TaskCompleted callbacks implemented. Full lifecycle and external command/HTTP/model hook runners remain."
     },
     {
       "id": "tasks",
       "requirement": "계획·Todo/Task·작업 의존성·입력 큐·백그라운드 작업/알림",
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "agent/TaskStore.h",
+        "agent/TaskStore.cpp",
+        "agent/Engine.cpp",
+        "agent/Api.cpp",
+        "agent/McpServer.cpp",
+        "tools/client_main.cpp",
+        "tests/task_tests.cpp",
+        "tests/task_runtime_smoke.cpp",
+        "tests/agent_api_tests.cpp",
+        "tests/agent_api_smoke.py",
+        "tests/mcp_server_smoke.py",
+        "tests/consumer/tasks.cpp",
+        "docs/Tasks.md"
+      ],
+      "remaining": "Persistent TaskCreate/Get/List/Update, atomic claims and dependency transactions, TodoWrite/Read, live model context, authenticated API, MCP and thin CLI implemented. Plan mode transitions/approval, background execution/output/stop, input queues, task notifications and team mailbox integration remain. Native model qualification is reported separately in Verification.md."
     },
     {
       "id": "git",
@@ -350,7 +371,10 @@
         "tests/compaction_runtime_smoke.cpp",
         "mcp/HttpClient.h",
         "docs/MCPHTTP.md",
-        "tests/consumer/local_applications.cpp"
+        "tests/consumer/local_applications.cpp",
+        "agent/TaskStore.h",
+        "tests/consumer/tasks.cpp",
+        "docs/Tasks.md"
       ],
       "remaining": "Public MCP client/server headers and a POSIX MCP executable are installed and tested through fresh C++ consumers. Complete app integration and platform qualification remain."
     },

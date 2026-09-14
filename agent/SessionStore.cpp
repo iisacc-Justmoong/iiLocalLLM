@@ -189,6 +189,21 @@ std::unique_ptr<SessionLease> SessionStore::acquire(const QString& id) const {
     return std::unique_ptr<SessionLease>(new SessionLease(std::move(d)));
 }
 Session SessionStore::load(const QString& id) const { return acquire(id)->session(); }
+Session SessionStore::metadata(const QString& id) const {
+    const auto directory = QDir(directory_).filePath(safeId(id)); const QFileInfo info(directory);
+    if (!info.isDir()) throw Error(ErrorCode::NotFound, "Agent session not found");
+    storage(!info.isSymLink() && info.canonicalFilePath() == directory, "Agent session directory must not be a symlink");
+    const auto path = QDir(directory).filePath("transcript.jsonl"); const QFileInfo transcript(path);
+    storage(!transcript.isSymLink() && transcript.isFile(), "Transcript must be a regular file");
+    QFile file(path); storage(file.open(QIODevice::ReadOnly), "Cannot read agent session metadata");
+    const auto bytes = file.readLine(4 * 1024 * 1024 + 1);
+    if (!bytes.endsWith('\n') || bytes.size() > 4 * 1024 * 1024) throw Error(ErrorCode::ProtocolError, "Missing complete transcript header");
+    const auto h = object(bytes);
+    if (h["type"] != "session" || (h["version"] != 1 && h["version"] != 2) || h["id"] != id || !h["model"].isString()
+        || h["model"].toString().isEmpty() || !h["system_prompt"].isString() || !h["working_directory"].isString())
+        throw Error(ErrorCode::ProtocolError, "Invalid agent transcript header");
+    return {id, h["model"].toString(), h["system_prompt"].toString(), h["working_directory"].toString(), {}};
+}
 QStringList SessionStore::list() const {
     QStringList result;
     for (const auto& name : QDir(directory_).entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {

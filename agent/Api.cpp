@@ -48,7 +48,8 @@ QStringList contextPaths(const QJsonObject& parameters, int limit) {
     return paths;
 }
 QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.sessions.list", "agent.sessions.get",
-    "agent.sessions.fork", "agent.sessions.compact", "agent.context.get", "agent.mcp.status", "agent.run", "agent.cancel", "agent.status"}; }
+    "agent.sessions.fork", "agent.sessions.compact", "agent.context.get", "agent.mcp.status", "agent.run", "agent.cancel", "agent.status",
+    "agent.tasks.create", "agent.tasks.get", "agent.tasks.list", "agent.tasks.update", "agent.tasks.claim", "agent.todos.write", "agent.todos.get"}; }
 QJsonObject sessionObject(const Session& s, int offset = 0, int limit = 0) {
     require(offset <= s.messages.size(), "Message offset exceeds the session length");
     QJsonArray messages;
@@ -136,7 +137,19 @@ public:
             fields(p, {}); QJsonArray names; for (const auto& name : methods()) names.append(name);
             return QJsonObject{{"protocol", "iisacc.agent/1"}, {"client_id", client->id}, {"methods", names}, {"max_turns", options.maxTurns},
                 {"working_directory", options.workingDirectory}, {"project_context_enabled", options.engine.projectContext.enabled},
-                {"auto_compact_enabled", options.engine.compaction.automatic}, {"tool_search_enabled", options.engine.toolSearch.enabled}};
+                {"auto_compact_enabled", options.engine.compaction.automatic}, {"tool_search_enabled", options.engine.toolSearch.enabled},
+                {"task_tools_enabled", client->engine->taskToolsEnabled()}};
+        }
+        static const QMap<QString, QString> taskMethods{{"agent.tasks.create", "TaskCreate"}, {"agent.tasks.get", "TaskGet"},
+            {"agent.tasks.list", "TaskList"}, {"agent.tasks.update", "TaskUpdate"}, {"agent.tasks.claim", "TaskClaim"},
+            {"agent.todos.write", "TodoWrite"}, {"agent.todos.get", "TodoRead"}};
+        if (taskMethods.contains(method)) {
+            const auto id = text(p, "session_id"); auto arguments = p; arguments.remove("session_id");
+            require(client->engine->sessionMetadata(id).workingDirectory == options.workingDirectory,
+                "Session belongs to a different workspace", ErrorCode::NotFound);
+            const auto value = client->engine->runTaskTool(id, taskMethods[method], arguments, job->token,
+                [callback](const Event& event) { if (callback) callback(toJson(event)); });
+            return QJsonObject{{"text", value.text}, {"result", value.data}, {"is_error", value.isError}};
         }
         if (method == "agent.mcp.status") {
             fields(p, {});

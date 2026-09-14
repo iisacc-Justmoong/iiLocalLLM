@@ -116,7 +116,7 @@ class HttpTransport final : public ClientTransport {
         auto ssl = QSslConfiguration::defaultConfiguration();
         ssl.setPeerVerifyMode(QSslSocket::VerifyPeer); request.setSslConfiguration(ssl);
         request.setRawHeader("Accept", accept);
-        request.setRawHeader("User-Agent", "iiLocalLLM-MCP/0.10.0");
+        request.setRawHeader("User-Agent", "iiLocalLLM-MCP/0.11.0");
         for (auto it = options.headers.cbegin(); it != options.headers.cend(); ++it)
             request.setRawHeader(it.key(), it.value());
         if (options.bearerToken) {

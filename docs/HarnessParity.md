@@ -29,7 +29,7 @@
 | skills | SKILL.md·메타데이터·인라인/fork 실행·허용 도구·검색·설치 | pending |
 | plugins | manifest·명령/스킬/에이전트/훅/MCP/LSP 등록·버전/캐시·설치/갱신 | pending |
 | hooks | 전체 생명주기·C++ 콜백·명령·HTTP·모델/에이전트·입력 변경·결과/차단 | partial |
-| tasks | 계획·Todo/Task·작업 의존성·입력 큐·백그라운드 작업/알림 | pending |
+| tasks | 계획·Todo/Task·작업 의존성·입력 큐·백그라운드 작업/알림 | partial |
 | git | 작업 디렉터리·worktree·브랜치·변경 이력·복구 | pending |
 | editor | LSP·IDE 통신·파일 변경 알림·진단·심볼/정의/참조 | pending |
 | frontends | CLI interactive/headless·구조화 입출력·앱용 상태/이벤트·LVRS UI 바인딩 | pending |
@@ -64,3 +64,5 @@
 0.9.0은 호스트가 지정한 MCP 설정 연결·복구, 목록 변경 반영, 대화별 ToolSearch와 선택 상태의 재개·분기·압축 복구, 스키마·연결 변경 시 선택 무효화, 인증된 MCP 상태 API/CLI를 추가한다. 0.9.0 시점에는 앱 manifest·설치 앱 자동 발견, 전체 설정 계층, 공급자별 검색 최적화 및 실제 Society/Dreamscapes endpoint 연동이 남아 있었다. [ToolDiscovery.md](ToolDiscovery.md)를 참조한다.
 
 0.10.0은 같은 OS 사용자의 실행 중인 앱 endpoint 등록·발견·토큰 인증, QObject 주 스레드 호출과 취소/종료를 추가한다. 실제 Society·Dreamscapes 데스크톱 컨트롤러를 연결하고 MCP 구조화 결과가 모델 입력에서 누락되던 문제를 수정했다. Society는 실제 Qwen 0.5B의 eager 도구 호출 후 컨테이너 ID 소비까지, Dreamscapes는 프로토콜 fixture로 실제 앱 생성 큐·결과 PNG·취소까지 확인한다. 앱 재시작은 새 인스턴스로 발견된다. iisacc_apps는 partial이며 나머지 앱·플랫폼과 광범위한 자율 작업은 남아 있다. [LocalApplications.md](LocalApplications.md), [Verification.md](Verification.md)를 참조한다.
+
+0.11.0은 영속 Task/Todo 저장, 원자적 의존 관계·삭제·담당자 선점, 대화별 최신 상태 주입, TaskCreated/TaskCompleted 게시 전 훅, C++·인증된 API·MCP·CLI를 추가한다. 작업 실행기나 백그라운드 작업, 계획 모드 전환, 팀 알림은 별도 미완료 항목이다. [Tasks.md](Tasks.md), [Verification.md](Verification.md)를 참조한다.

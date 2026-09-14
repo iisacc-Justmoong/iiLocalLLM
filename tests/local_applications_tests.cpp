@@ -157,7 +157,10 @@ void LocalApplicationTests::automaticRefreshAndCredentialRedaction() {
     auto oldClient = connections.client(server.serverName()); QVERIFY(oldClient);
     server.close();
     QTRY_VERIFY_WITH_TIMEOUT(registry->definitions().isEmpty(), 5000);
-    QVERIFY(oldClient->isClosed()); QVERIFY_THROWS_EXCEPTION(Error, old.execute({}, {}));
+    // Automatic refresh publishes the registry before closing old transports
+    // outside its locks. Observe both completion conditions independently.
+    QTRY_VERIFY_WITH_TIMEOUT(oldClient->isClosed(), 5000);
+    QVERIFY_THROWS_EXCEPTION(Error, old.execute({}, {}));
     QVERIFY(server.listen()); QTRY_COMPARE_WITH_TIMEOUT(registry->definitions().size(), 1, 5000);
     QVERIFY(registry->definitions().first().metadata["connection_id"] != first.metadata["connection_id"]);
 }

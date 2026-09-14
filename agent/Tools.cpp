@@ -105,8 +105,10 @@ PermissionDecision RulePolicy::decide(const ToolDefinition& tool, const QJsonObj
         if (rule.behavior == PermissionBehavior::Deny) return {PermissionBehavior::Deny, "Explicit tool deny rule"};
         if (!matched || rule.behavior == PermissionBehavior::Ask) matched = rule.behavior;
     }
-    if (mode_ == PermissionMode::Plan && !tool.readOnly) return {PermissionBehavior::Deny, "Plan mode allows only read-only tools"};
-    auto decision = matched.value_or(mode_ == PermissionMode::Bypass || tool.readOnly
+    const bool taskState = tool.metadata["source"] == "builtin.task"
+        && QStringList{"TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TaskClaim", "TodoWrite", "TodoRead"}.contains(tool.name);
+    if (mode_ == PermissionMode::Plan && !tool.readOnly && !taskState) return {PermissionBehavior::Deny, "Plan mode allows only read-only tools and internal task state"};
+    auto decision = matched.value_or(mode_ == PermissionMode::Bypass || tool.readOnly || taskState
         || (mode_ == PermissionMode::AcceptEdits && tool.editsFiles) ? PermissionBehavior::Allow : PermissionBehavior::Ask);
     if (decision == PermissionBehavior::Ask && mode_ == PermissionMode::DontAsk) decision = PermissionBehavior::Deny;
     return {decision, matched ? "Explicit tool rule" : "Session permission mode"};

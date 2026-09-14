@@ -22,6 +22,12 @@ from mcp.shared.exceptions import McpError
 
 @asynccontextmanager
 async def transport(command, root, http):
+    # The official stdio client inherits only a small environment allowlist.
+    # Explicitly isolate both child transports from running user applications.
+    temporary = root / "tmp"
+    temporary.mkdir(exist_ok=True)
+    command.env = {**(command.env or {}), "IILOCALLLM_APP_ENDPOINTS": str(root / "app-endpoints"),
+                   "TMPDIR": str(temporary), "TMP": str(temporary), "TEMP": str(temporary)}
     if not http:
         async with stdio_client(command) as streams:
             yield streams
@@ -37,7 +43,7 @@ async def transport(command, root, http):
     arguments += ["--http-port", "0", "--credentials", str(credentials), "--state", str(root / "http-state")]
     with (root / "http-server.log").open("ab") as log:
         process = await asyncio.create_subprocess_exec(command.command, *arguments,
-            stdout=asyncio.subprocess.PIPE, stderr=log)
+            stdout=asyncio.subprocess.PIPE, stderr=log, env={**os.environ, **command.env})
         try:
             line = await asyncio.wait_for(process.stdout.readline(), timeout=15)
             assert line, "HTTP MCP server exited before announcing its endpoint"
@@ -119,8 +125,23 @@ async def basic(binary, root, http=False):
             info = await session.initialize()
             assert info.protocolVersion == "2025-11-25"
             definitions = (await session.list_tools()).tools
-            assert {item.name for item in definitions} == {"Read", "Write", "Edit", "Glob", "Grep", "Bash"}
+            task_names = {"TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TaskClaim", "TodoWrite", "TodoRead"}
+            assert {item.name for item in definitions} == {"Read", "Write", "Edit", "Glob", "Grep", "Bash"} | task_names, sorted(item.name for item in definitions)
             assert all(item.meta["iisacc/appId"] == "com.iisacc.iiLocalLLM" for item in definitions)
+            created = await session.call_tool("TaskCreate", {"subject": "Verify package", "description": "Inspect the installed output"})
+            assert not created.isError and created.structuredContent["task"]["id"] == "1", created
+            claimed = await session.call_tool("TaskClaim", {"taskId": "1", "owner": "official-client"})
+            assert not claimed.isError and claimed.structuredContent["success"], claimed
+            wrong_revision = await session.call_tool("TaskUpdate", {"taskId": "1", "status": "completed", "expectedRevision": 0})
+            assert wrong_revision.isError, wrong_revision
+            listed = await session.call_tool("TaskList", {})
+            assert listed.structuredContent["tasks"][0]["status"] == "in_progress", listed
+            completed = await session.call_tool("TaskUpdate", {"taskId": "1", "status": "completed"})
+            assert not completed.isError and completed.structuredContent["task"]["status"] == "completed", completed
+            todos = [{"content": "Read result", "activeForm": "Reading result", "status": "completed"}]
+            assert not (await session.call_tool("TodoWrite", {"todos": todos})).isError
+            assert (await session.call_tool("TodoRead", {})).structuredContent["todos"] == todos
+            assert (await session.call_tool("TaskGet", {"taskId": "1", "listId": "other"})).isError
             result = await session.call_tool("Read", {"path": "secret.txt"})
             assert read_text(result) == secret
             denied = await session.call_tool("Write", {"path": "blocked.txt", "content": "denied"})
@@ -140,6 +161,7 @@ async def basic(binary, root, http=False):
         observer = ObservedSend(write)
         async with ClientSession(read, observer, read_timeout_seconds=timedelta(seconds=10)) as session:
             await session.initialize()
+            assert (await session.call_tool("TaskList", {})).structuredContent["tasks"] == []
             result = await session.call_tool("Write", {"path": "created.txt", "content": secret})
             assert not result.isError and (workspace / "created.txt").read_text() == secret
             command_text = 'printf "%s" "$$" > shell.pid; sleep 30 & printf "%s" "$!" > child.pid; wait; printf late > late.txt'
@@ -161,7 +183,13 @@ async def basic(binary, root, http=False):
                     pass
             await session.send_ping()
             assert read_text(await session.call_tool("Read", {"path": "created.txt"})) == secret
-    return {"official_sdk": version("mcp"), "transport": "http" if http else "stdio", "tools": 6, "real_file_read_write": True,
+    command.args += ["--no-tasks"]
+    async with transport(command, root, http) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            assert {item.name for item in (await session.list_tools()).tools} == {"Read", "Write", "Edit", "Glob", "Grep", "Bash"}
+    return {"official_sdk": version("mcp"), "transport": "http" if http else "stdio", "tools": 13, "real_file_read_write": True,
+            "task_create_claim_complete_todos": True, "task_revision_conflict": True, "task_connection_isolation": True, "task_host_opt_out": True,
             "permission_denial": True, "schema_validation": True, "workspace_boundary": True,
             "cancelled_shell_and_child_exited": True, "connection_survived_cancellation": True}
 

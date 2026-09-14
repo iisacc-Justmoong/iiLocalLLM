@@ -52,6 +52,7 @@ public:
         options.workingDirectory = workspace;
         if (!options.artifactsDirectory.isEmpty()) options.artifactsDirectory = QFileInfo(options.artifactsDirectory).absoluteFilePath();
         if (options.engine && options.model.isEmpty()) throw Error(ErrorCode::InvalidArgument, "MCP agent model is required");
+        if (options.engine && options.taskStore) throw Error(ErrorCode::InvalidArgument, "Use the Engine task store or an independent MCP task store, not both");
     }
     std::shared_ptr<Conversation> conversation(const QString& session) {
         std::lock_guard lock(mutex);
@@ -62,8 +63,21 @@ public:
     }
     std::shared_ptr<ToolRegistry> snapshot() {
         auto frozen = registry->snapshot();
-        if (!options.engine) return frozen;
         auto self = shared_from_this();
+        if (options.taskStore)
+            for (auto tool : taskTools(options.taskStore, {}, false)) frozen->add(std::move(tool));
+        if (!options.engine) return frozen;
+        if (options.engine->taskToolsEnabled()) for (auto definition : taskToolDefinitions(false)) {
+            Tool tool; tool.definition = definition;
+            tool.execute = [self, name = definition.name](const QJsonObject& args, const ToolContext& context) {
+                auto conversation = self->conversation(context.sessionId);
+                std::unique_lock lock(conversation->mutex, std::defer_lock); acquire(lock, context.cancellation);
+                if (conversation->id.isEmpty())
+                    conversation->id = self->options.engine->createSession(self->options.model, self->options.workingDirectory, self->options.systemPrompt).id;
+                return self->options.engine->runTaskTool(conversation->id, name, args, context.cancellation);
+            };
+            frozen->add(std::move(tool));
+        }
         Tool run;
         run.definition.name = "iiLocalLLM.agent.run";
         run.definition.description = "Run the configured local agent in this connection's private conversation and workspace. Use new_session to start a new conversation.";

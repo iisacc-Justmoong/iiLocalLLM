@@ -1,5 +1,44 @@
 # 구현 검증 기록
 
+## 2026-09-14 영속 작업·Todo 및 에이전트/API/MCP 연결 (0.11.0)
+
+C++ `TaskStore`에 일곱 작업·Todo 도구, 양방향 의존 관계의 원자적 갱신·삭제, 순환 검사, 담당자 선점, revision 충돌 검사와 재시작 보존을 구현했다. Engine의 현재 작업 컨텍스트와 게시 전 TaskCreated/TaskCompleted 훅, 인증된 HTTP/native IPC, 얇은 CLI 및 MCP 서버에 연결했다. Qt의 잠금·원자적 파일 저장과 기존 JSON Schema/ToolRunner를 재사용하며 새 생산 의존성은 없다.
+
+| 검증 | 최종 관측 결과 |
+|---|---|
+| Release 전체 빌드·CTest | 빌드 성공, **44/50 통과**, 525.60초. 실패 6건과 후속 대조 결과는 아래에 구분 |
+| ASan·UBSan | llama 비활성 Debug 전체 **32/32 통과**, 53.42초. Unicode 보존 및 아래 테스트 격리 수정 포함 |
+| 테스트 격리 수정 후 Release | 전송·공식 MCP stdio/HTTP·실제 MCP 추론의 영향 범위 **5/5 통과**, 27.76초. 전체 50개 실행과 별도 기록 |
+| 작업 C++ 회귀 | 7개 동작 사례. 스레드 16개 생성·12개 선점 경쟁, 별도 프로세스 8개 생성·선점 경쟁, 의존 관계·취소·손상 파일·훅 차단·Plan 정책·resume·fork·Unicode 담당자 재조회 포함 |
+| 새 설치 소비자 | 전체 **13/18 통과**, 271.62초. RAM 보호로 기동이 거절된 8B eager와 MCP 연결 검사의 별도 재실행 **2/2 통과**, 142.08초. 모델 응답/검색 실패와 원래 전체 결과는 유지 |
+| 설치된 API·CLI·공식 MCP | 최종 설치본에서 **3/3 통과**. API·CLI 20개 수락 조건, 공식 Python MCP 1.26.0의 stdio/HTTP에서 작업 생성·선점·완료·Todo·revision 충돌·연결 격리·호스트 비활성화 검증 |
+| Qwen3 8B 실제 작업 실행 | eager에서 TaskGet→임의 설명 답변, TaskCreate 한 건, TaskUpdate의 담당자·상태와 기존 제목·설명 보존 **통과**, 166.61초. 아래의 명시적 운용 조건 사용 |
+| 설치·ABI·로더 | `task-stage`의 0.11.0 라이브러리 실제 로드. 소스/설치 UUID `B2C82223-4256-3693-8594-FAD3616FACD4` 및 SHA-256 일치. 세 실행 파일 모두 0.11.0. iillm은 iiLocalLLM/llama/ggml을 링크하지 않음 |
+
+고정 Qwen2.5 0.5B Q4_K_M은 TaskGet을 호출하지 않고 미리보기 제목을 설명이라고 답했다. 기존 ToolSearch 다음 실제 MCP 도구 호출을 생략하는 실패도 유지한다. 이 모델의 검사 조건이나 관측값을 바꾸지 않았다.
+
+추가 Qwen3 8B Q4_K_M의 기본 추론 조건(temperature 0.6, top_p 0.95, top_k 20, seed 0, 턴당 2,048토큰, 컨텍스트 8,192)에서는 eager 검사가 첫 턴의 출력 한도로 실패했다. deferred 검사는 실제 ToolSearch→TaskGet과 임의 설명 재현, TaskCreate까지 통과했으나 TaskUpdate에서 담당자 대신 제목에 잘못된 문자열을 저장하고 성공했다고 답하여 실패했다. 초기 두 결과는 각각 160.61초·218.73초이며 `build/task-catalog-tests.log`에 보존한다. 도구 호출 성공과 사용자 의도에 맞는 결과는 별도 판정이다.
+
+문서화된 `/no_think` 사용자 입력과 temperature 0.7·top_p 0.8만 적용한 중간 대조에서도 생성 문법이 켜진 eager는 잘못된 수정 인수, deferred는 검색 후 빈 모델 턴으로 실패했다. 이 실행은 `build/task-no-think-schema-tests.log`에 보존한다. 포함된 upstream 변환기의 선택 필드 순서 제한을 코드에서 확인했으며, 이후 모델 로딩의 `tool_grammar` boolean 선택을 추가했다. 기본값 true를 유지하고 false에서도 실행 전 파싱·스키마·권한 검사는 동일하다. 옵션 누락 구현의 실패는 `build/task-grammar-red-tests.log`, 잘못된 타입 거절은 실제 llama runtime 검사에 포함한다.
+
+최종 Qwen3 조건은 `/no_think`, temperature 0.7·top_p 0.8·top_k 20·seed 0, `tool_grammar:false`, 턴당 2,048토큰, 컨텍스트 8,192이다. 요청 값은 따옴표로 구분하고 수정 후 기존 제목·설명도 보존하도록 검사를 강화했다. 일곱 도구가 모두 공개된 eager는 실제 호출과 저장 값 검증에 통과했다. deferred는 ToolSearch 후 빈 모델 턴으로 **실패**, 57.41초이다. 운용 조건과 프롬프트가 함께 달라졌으므로 모든 초기 실패의 원인이 생성 문법 하나라고 결론 내리지 않는다. 모델 답이나 도구 호출을 호스트가 만들어 넣지 않았다. 특정 명시 프롬프트의 수락 검사이며 광범위한 자율 작업 성능을 증명하지 않는다. 모델 해시·원본 revision 및 재현 설정은 [Tasks.md](Tasks.md)에 있다.
+
+최종 전체 실행의 다른 실패는 `mcp_official` 초기화 타임아웃, `configured_mcp_inference`의 peer 연결 실패, Qwen2.5의 `tasks_inference`·`discovery_inference` 및 `chat` 원문 재현이다. 앞의 MCP 두 항목과 chat만 단독 대조한 실행은 **3/3 통과**, 40.44초이다. 이는 전체 44/50 기록을 통과로 바꾸지 않으며, 임의 값이 달라진 재실행의 chat 성공으로 최초 원문 재현 오류가 해결되었다고 주장하지 않는다. 해당 근거는 `build/task-final-focused-tests.log`에 있다.
+
+설치 소비자 전체 실행의 실패 다섯 건은 `installed_tasks_inference`, `installed_tasks_catalog`, `installed_tasks_discovery`, `installed_configured_mcp_inference`, `installed_discovery_inference`이다. 8B eager는 `Insufficient available RAM or no idle model can be evicted`로 기동이 거절되었다. 메모리 보호 조건을 바꾸지 않은 단독 대조에서 같은 설치본의 작업 조회·생성·수정이 통과했다. MCP 연결도 이 대조에서 통과했다. 나머지 세 모델 검사의 실패는 유지한다. 로그는 `build/task-installed-focused-tests.log`이다.
+
+TDD에서 누락 Engine 인터페이스의 빌드 실패를 확인했다. 이후 fork의 빈 현재 작업 상태 누락과, 128개 이모지 담당자가 입력을 통과해도 UTF-16 길이 재검사 때문에 저장 후 읽기를 실패하는 문제를 각각 재현했다. 빈 상태 컨텍스트와 동일 JSON Schema 재검증으로 수정했다. 회귀 로그는 `build/task-fork-regression-red.log`, `build/task-unicode-red-tests.log`, `build/task-unicode-green-tests.log`이다. 초기 테스트 코드의 임시 QJsonValueRef 수명 오류도 수정했으며 마지막 sanitizer 전체 검사에 오류가 없다.
+
+첫 전체 실행의 agent_transport 시간 제한 검사에서는 예상 504 대신 400이 관측되었다. 세션 생성 응답 검증을 추가한 후 단독 재실행은 통과했다. 부하에 의한 초기 세션 생성 지연은 추정이며 원인으로 확정하지 않는다. 이후 sanitizer 실행에서는 큰 응답의 버퍼 초과보다 100ms 요청 제한이 먼저 발생했다. 시간 제한·종료 검사는 기존 100ms를 유지하고, 버퍼 초과 검사는 별도 3,000ms fixture로 분리하여 `resource_limit`을 검증한다. 제품 전송 코드는 변경하지 않았다.
+
+마지막 sanitizer 재빌드 후 기존 앱 발견 테스트의 비동기 완료 가정도 한 차례 실패했다. 자동 갱신은 도구 목록을 먼저 게시하고 잠금 밖에서 이전 연결을 닫으므로 두 조건을 각각 기다리도록 테스트를 수정했다. 실제 제거와 이전 도구 실행 거절 검증은 유지한다. 제품 연결 코드를 변경한 것은 아니다. 실패 원문은 `build/task-app-close-race-red-tests.log`, Release 대조는 `build/task-app-close-release-tests.log`에 보존하며 위 sanitizer 결과는 수정 후 전체 실행이다.
+
+공식 MCP stdio 테스트에서는 실행 중인 Society의 도구 다섯 개가 기대 목록에 추가되는 실패를 확인했다. 공식 Python 클라이언트의 제한된 환경 변수 상속 때문에 테스트의 앱 등록 경로가 자식 서버에 전달되지 않았다. stdio/HTTP 양쪽에 전용 앱 등록·임시 경로를 명시적으로 전달했고, 기대 도구 13개 검증은 유지했다. 실패는 `build/task-stdio-isolation-red-tests.log`, 버퍼 초과와 함께 관측한 실행은 `build/task-fixture-isolation-red-tests.log`에 있다. 수정 후 sanitizer 전체 32개와 Release 영향 범위 5개가 통과했다. 실제 모델을 사용하는 두 MCP 전송 검사도 이 5개에 포함하며 로그는 `build/task-final-fixture-release-tests.log`이다.
+
+이번 변경은 SDK와 Workspace 안의 별도 설치본에 한한다. 기본 SDK 경로 및 Society·Dreamscapes 기기 앱을 재배포한 결과가 아니다. 작업 상태는 실행 증거를 대체하지 않는다. 계획 모드 전환·승인 흐름, 백그라운드 실행/출력/종료, 입력 큐, 알림, 팀 mailbox 등은 여전히 미완료이며 전체 하네스 목표를 완료로 표시하지 않는다.
+
+계약은 [Tasks.md](Tasks.md), 범위는 [HarnessParity.md](HarnessParity.md)이다. 증거는 `build/task-final-{release,sanitizer,consumer}-tests.log`, 해당 JUnit XML, `build/task-installed-wire/`, `build/task-linkage.json`, `build/task-installed-loader.log`, `build/task-verification.json`에 보관한다.
+
 ## 2026-09-14 실행 중인 앱 MCP 연결과 실제 모델 입력 검증 (0.10.0)
 
 현재 단계는 데스크톱 POSIX 앱 등록·발견·인증·Qt 주 스레드 도구 호출이다. Society·Dreamscapes의 실제 컨트롤러를 연결한다. 전체 하네스와 모든 앱/플랫폼의 완료를 뜻하지 않는다.

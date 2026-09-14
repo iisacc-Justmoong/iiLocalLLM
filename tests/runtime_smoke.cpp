@@ -35,6 +35,13 @@ int main(int argc, char** argv)
         QDir().mkpath(package);
         const bool gguf = runtime == QStringLiteral("llama.cpp");
         if (gguf) {
+            ModelSpec invalid{"invalid", args[2], 512, {{"tool_grammar", "false"}}};
+            try {
+                createLlamaRuntime()->load(invalid, {ComputeBackend::Cpu, {}}, {});
+                throw std::runtime_error("Non-boolean tool_grammar was accepted");
+            } catch (const Error& error) {
+                if (error.code() != ErrorCode::InvalidArgument || !QString::fromUtf8(error.what()).contains("must be a boolean")) throw;
+            }
             if (!QFile::copy(args[2], QDir(package).filePath(QStringLiteral("model.gguf")))) throw std::runtime_error("Cannot copy GGUF fixture");
         } else copyPackage(args[2], package);
         ModelManifest manifest{"smoke", "llama", gguf ? "gguf" : "mlx", gguf ? "Q4_0" : "4bit", 512,

@@ -70,10 +70,10 @@ def main():
         environment.pop("DYLD_FRAMEWORK_PATH", None)
 
         @contextmanager
-        def daemon():
+        def daemon(extra=()):
             log_path = root / f"daemon-{time.monotonic_ns()}.log"
             with log_path.open("w") as log:
-                proc = subprocess.Popen(base, stdout=log, stderr=subprocess.STDOUT, env=environment)
+                proc = subprocess.Popen(base + list(extra), stdout=log, stderr=subprocess.STDOUT, env=environment)
                 try:
                     started = time.monotonic()
                     deadline = started + args.startup_timeout
@@ -159,6 +159,7 @@ def main():
             assert info["client_id"] == "society"
             assert "agent.sessions.compact" in info["methods"] and info["auto_compact_enabled"] is True
             assert "agent.mcp.status" in info["methods"] and info["tool_search_enabled"] is True
+            assert "agent.tasks.create" in info["methods"] and info["task_tools_enabled"] is True
             connections = cli("agent.mcp.status")
             assert native("agent.mcp.status")[-1]["result"] == connections
             assert http(port, "agent.mcp.status")[1]["result"] == connections
@@ -179,6 +180,23 @@ def main():
             assert http(port, "agent.sessions.get", {"session_id": session}, auth=other)[0] == 404
             assert http(port, "agent.sessions.list", auth=other)[1]["result"]["sessions"] == []
             evidence["checks"] += ["http_native_cli_session_identity", "cross_app_isolation"]
+            task_input = {"session_id": session, "subject": "Verify application", "description": "Inspect the actual result"}
+            created = cli("agent.tasks.create", task_input)
+            assert not created["is_error"] and created["result"]["task"]["id"] == "1", created
+            assert http(port, "agent.tasks.list", {"session_id": session}, auth=other)[0] == 404
+            listed = native("agent.tasks.list", {"session_id": session})[-1]["result"]
+            assert listed == http(port, "agent.tasks.list", {"session_id": session})[1]["result"]
+            task_cli = subprocess.run([str(args.cli), "--socket", str(endpoint), "--auth-file", str(client_token),
+                "agent", "tasks", "list", session], capture_output=True, text=True, timeout=20, env=environment)
+            assert task_cli.returncode == 0 and json.loads(task_cli.stdout) == listed, (task_cli.stdout, task_cli.stderr)
+            bad_cli = subprocess.run([str(args.cli), "--socket", str(endpoint), "--auth-file", str(client_token),
+                "agent", "tasks", "create", session], capture_output=True, text=True, timeout=20, env=environment)
+            assert bad_cli.returncode == 1 and json.loads(bad_cli.stdout)["is_error"], (bad_cli.stdout, bad_cli.stderr)
+            changed = http(port, "agent.tasks.update", {"session_id": session, "taskId": "1", "status": "completed"})[1]["result"]
+            assert not changed["is_error"] and changed["result"]["task"]["status"] == "completed", changed
+            conflicting = cli("agent.tasks.update", {"session_id": session, "taskId": "1", "status": "pending", "expectedRevision": 0})
+            assert conflicting["is_error"], conflicting
+            evidence["checks"] += ["task_http_native_cli_state", "task_app_isolation", "task_atomic_revision_conflict"]
             compact = {"session_id": session, "instructions": "Preserve the current task"}
             assert http(port, "agent.sessions.compact", compact, auth=other)[0] == 404
             # An empty session is rejected by the Engine after authenticated dispatch,
@@ -231,6 +249,9 @@ def main():
         with daemon() as port:
             after = http(port, "agent.sessions.get", {"session_id": session})[1]["result"]
             assert after == before
+            assert cli("agent.tasks.get", {"session_id": session, "taskId": "1"})["result"]["task"]["status"] == "completed"
+            assert cli("agent.tasks.list", {"session_id": fork})["result"]["tasks"] == []
+            evidence["checks"] += ["task_restart_persistence", "task_fork_isolation"]
             assert len(cli("agent.sessions.list")["sessions"]) == (3 if args.model else 2)
             assert native("agent.sessions.get", {"session_id": fork})[-1]["result"]["message_count"] == before["message_count"]
             evidence["checks"] += ["daemon_restart_resume", "transcript_fork"]
@@ -239,6 +260,10 @@ def main():
                     "max_turns": 4, "options": {"max_tokens": 128, "temperature": 0}})
                 assert result["status"] == "completed" and secret in result["text"], result
                 evidence["checks"].append("cli_fork_continuation")
+        with daemon(("--agent-no-tasks",)):
+            assert cli("agent.info")["task_tools_enabled"] is False
+            assert "error" in native("agent.tasks.list", {"session_id": session})[-1]
+            evidence["checks"].append("task_host_opt_out")
         if os.name == "posix":
             assert state.stat().st_mode & 0o077 == 0
     if args.report:

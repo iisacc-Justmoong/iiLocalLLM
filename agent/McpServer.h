@@ -10,6 +10,7 @@ struct McpServerOptions {
     ToolRunnerOptions tools;
     // Optional local agent tools. Each MCP connection receives its own conversation.
     std::shared_ptr<Engine> engine;
+    std::shared_ptr<TaskStore> taskStore; // Optional connection-bound tasks when no Engine is provided.
     QString model;
     QString systemPrompt;
     GenerationOptions generation;

@@ -88,3 +88,7 @@ MCP 서버는 [MCPServer.md](MCPServer.md)의 C++ ToolRegistry 공개와 연결�
 ## 0.9.0 MCP 연결 관리와 도구 검색
 
 호스트가 지정한 MCP 설정 파일의 연결·복구, 대화별 `ToolSearch`, 인증된 `agent.mcp.status` 및 CLI 옵션을 추가했다. 설정과 실행 권한, 수명 및 미지원 범위는 [ToolDiscovery.md](ToolDiscovery.md)를 참조한다.
+
+## 영속 작업 상태 (0.11.0)
+
+EngineOptions.taskToolsEnabled로 작업 도구를 활성화한다. TaskStore는 transcript와 별도 잠금을 사용하며 runTaskTool은 모델 실행 중에도 동일 정책·훅을 적용한다. TaskCreated/TaskCompleted는 게시 전에 block할 수 있다. SessionStore::metadata와 Engine::sessionMetadata는 활성 실행 중에도 불변 대화 헤더만 읽고 messages/compactions는 비워 반환한다. 목록 격리·재시작·fork·컨텍스트 및 정확한 저장 계약은 [Tasks.md](Tasks.md)를 참조한다.

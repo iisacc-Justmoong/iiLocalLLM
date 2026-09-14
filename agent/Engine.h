@@ -4,6 +4,7 @@
 #include "ProjectContext.h"
 #include "Compaction.h"
 #include "ToolSearch.h"
+#include "TaskStore.h"
 #include "../Service.h"
 
 namespace iiLocalLLM::agent {
@@ -19,6 +20,8 @@ struct EngineOptions {
     ProjectContextOptions projectContext;
     CompactionOptions compaction;
     ToolSearchOptions toolSearch;
+    bool taskToolsEnabled = false; // Opt in for embedded hosts; daemon/MCP CLI enable it by default.
+    bool taskToolsDeferred = true;
 };
 class IILOCALLLM_EXPORT Engine {
 public:
@@ -30,11 +33,17 @@ public:
     Engine& operator=(const Engine&) = delete;
     Session createSession(QString model, QString workspace, QString systemPrompt = {});
     Session session(const QString& id) const;
+    Session sessionMetadata(const QString& id) const;
     QStringList sessions() const;
     Session forkSession(const QString& id, const QString& throughMessageId = {});
     ProjectContext context(const QString& sessionId, const QStringList& targetPaths = {}, const CancellationToken& = {}) const;
     RunHandle run(RunRequest, EventCallback = {});
     RunHandle compact(CompactRequest, EventCallback = {});
+    bool taskToolsEnabled() const;
+    // Uses the same policy and hooks as model calls. Available during an active
+    // run; the task transaction uses a separate lock from the transcript lease.
+    ToolResult runTaskTool(const QString& sessionId, const QString& name, const QJsonObject& arguments = {},
+        const CancellationToken& = {}, const EventCallback& = {}) const;
 private:
     RunHandle submit(RunRequest, EventCallback, bool compactOnly, QString instructions = {});
     class Impl;

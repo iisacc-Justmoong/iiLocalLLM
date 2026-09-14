@@ -142,18 +142,25 @@ private slots:
         client.until("disconnect", "request_id"); QTRY_COMPARE(f.model->entered.load(), 3);
         client.socket.abort(); QTRY_COMPARE(f.model->cancelled.load(), 3);
     }
-    void timeoutOverflowAndShutdown() {
+    void timeoutAndShutdown() {
         Fixture f(100, 2048);
         const auto create = post(f, request("agent.sessions.create", {{"model", "fixture"}}));
+        QVERIFY2(create.status == 200, create.body.constData());
         const auto id = object(create)["result"].toObject().value("session_id");
         const auto timed = post(f, request("agent.run", {{"session_id", id}, {"prompt", "wait"}})); QCOMPARE(timed.status, 504);
         QTRY_COMPARE(f.model->cancelled.load(), 1);
+        Native client(f); client.send("run", "agent.run", {{"session_id", id}, {"prompt", "wait"}});
+        client.until("run", "request_id"); QTRY_COMPARE(f.model->entered.load(), 2);
+        f.ipc->close(); f.http->close(); f.api->close(); QCOMPARE(f.model->cancelled.load(), 2);
+    }
+    void streamOverflowHasIndependentDeadline() {
+        Fixture f(3000, 2048);
+        const auto create = post(f, request("agent.sessions.create", {{"model", "fixture"}}));
+        QVERIFY2(create.status == 200, create.body.constData());
+        const auto id = object(create)["result"].toObject().value("session_id");
         const auto large = post(f, request("agent.run", {{"session_id", id}, {"prompt", "large"}}, true));
         const auto frames = events(large.body); QVERIFY(!frames.isEmpty());
         QCOMPARE(frames.last()["error"].toObject()["code"].toString(), "resource_limit");
-        Native client(f); client.send("run", "agent.run", {{"session_id", id}, {"prompt", "wait"}});
-        client.until("run", "request_id"); QTRY_COMPARE(f.model->entered.load(), 3);
-        f.ipc->close(); f.http->close(); f.api->close(); QCOMPARE(f.model->cancelled.load(), 2);
     }
 };
 QTEST_GUILESS_MAIN(AgentTransportTests)

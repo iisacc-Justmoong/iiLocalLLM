@@ -146,3 +146,7 @@ status는 현재 프로세스에서 진행 중인 요청만 조회한다. 완료
 ## 0.9.0 MCP 연결 관리와 도구 검색
 
 호스트가 지정한 MCP 설정 파일의 연결·복구, 대화별 `ToolSearch`, 인증된 `agent.mcp.status` 및 CLI 옵션을 추가했다. 설정과 실행 권한, 수명 및 미지원 범위는 [ToolDiscovery.md](ToolDiscovery.md)를 참조한다.
+
+## 작업·Todo API (0.11.0)
+
+agent.tasks.create/get/list/update/claim 및 agent.todos.write/get을 추가한다. session_id와 도구별 인수를 받으며 {text,result,is_error}를 반환한다. 인증된 앱이 소유한 대화와 현재 workspace를 검사하고 모델 실행 중에도 접근한다. daemon에서는 기본 활성화이며 --agent-no-tasks로 끈다. TaskCreated/TaskCompleted와 일반 권한·훅이 동일하게 적용된다. [Tasks.md](Tasks.md)에 상태·페이징·revision·오류 계약과 CLI 사용법을 기록한다.

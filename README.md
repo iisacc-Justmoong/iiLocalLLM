@@ -2,7 +2,7 @@
 
 C++ 에이전트 하네스를 확장 중이다. 현재 실행 계층은 [AgentHarness.md](docs/AgentHarness.md), 전체 요구사항과 남은 구현은 [HarnessParity.md](docs/HarnessParity.md)에 기록한다. MCP/API 및 앱 전체 호환 완료와 기존 대화 기능 완료는 별도 상태로 관리한다.
 
-C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.10.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
+C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.11.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
 
 C++ stdio MCP 클라이언트가 외부 도구·리소스·프롬프트를 인식하고 에이전트 엔진에 연결한다. `iillm-mcp` 서버와 C++ 내장 API로 앱 도구 및 로컬 에이전트 실행을 외부 MCP 클라이언트에 제공한다. 프로토콜·정책·자료 보존 및 현재 지원 경계는 [MCP.md](docs/MCP.md) · [MCP 서버·앱 도구 제공](docs/MCPServer.md)에 설명한다.
 
@@ -48,7 +48,7 @@ ONNX 등은 위 인터페이스를 구현하여 등록한다. 현재 내장 어�
 ./build/iillm run qwen2.5:0.5b "안녕하세요" --options docs/examples/generation.json
 ```
 
-0.10.0은 실행 중인 로컬 앱의 인증된 MCP 주소를 자동 발견하고 실제 QObject 컨트롤러에 호출을 전달한다. Society·Dreamscapes의 데스크톱 도구와 취소·수명 계약은 [로컬 앱 연결](docs/LocalApplications.md)에 기록한다. ABI는 0.10이므로 소비자를 새 헤더·라이브러리로 함께 다시 빌드한다.
+0.10.0은 실행 중인 로컬 앱의 인증된 MCP 주소를 자동 발견하고 실제 QObject 컨트롤러에 호출을 전달한다. Society·Dreamscapes의 데스크톱 도구와 취소·수명 계약은 [로컬 앱 연결](docs/LocalApplications.md)에 기록한다. 0.10 당시 ABI는 0.10이었다. 현재 버전의 소비자는 새 헤더·라이브러리로 함께 다시 빌드한다.
 
 0.9.0은 설정 파일의 MCP 서버 연결·복구와 대화별 `ToolSearch`를 제공한다. 선택 상태는 재개·분기·압축 후에도 복구하고 스키마·연결 변경 시 다시 검색한다. `agent.mcp.status`와 `iillm agent mcp`로 상태를 조회한다. [도구 검색과 MCP 설정](docs/ToolDiscovery.md)에 사용법과 한계를 기록한다.
 
@@ -241,6 +241,8 @@ ModelResidencyManager가 가중치·KV·런타임 여유분의 바이트 예약�
 
 llama.cpp의 내장 chat template formatter가 지원하지 않는 템플릿은 오류이다. 템플릿 없는 GGUF에는 options.chat_template을 명시한다(예: chatml). 임의 모델에 ChatML을 자동 적용하지 않는다. MLX는 모델 tokenizer의 chat template을 사용한다. 부분 KV 제거가 불가능한 모델은 캐시를 새로 구성한다.
 
+llama.cpp의 구조화 도구 생성에는 모델 로딩 옵션 `tool_grammar`(boolean, 기본 true)를 제공한다. false는 생성 시 문법 제약을 끄며 실행 전 스키마·권한 검사는 유지한다. 다중 필드 인수와 모델별 운용 조건은 [Tasks.md](docs/Tasks.md)에 설명한다.
+
 stop 문자열은 청크 사이 부분 일치를 보관하고 완성되면 출력에서 제외한다. stop으로 잘린 KV는 이력과 달라질 수 있어 폐기한다. 생성 옵션은 maxTokens, temperature, topP, topK, seed, stop이다. 동일 seed가 서로 다른 런타임에서 동일 출력을 보장하지는 않는다.
 
 구조와 확장 계약은 [docs/Architecture.md](docs/Architecture.md)에 있다.
@@ -256,7 +258,7 @@ IILOCALLLM_WITH_LLAMA=ON INSTALL_PREFIX="$PWD/build/stage" ./install.sh
 IILOCALLLM_WITH_LLAMA를 생략하면 기존 CMake 선택을 유지하며 새 구성의 기본값은 ON이다. 과거 OFF로 구성했던 build/는 `IILOCALLLM_WITH_LLAMA=ON ./install.sh`로 활성화한다. INSTALL_PREFIX, QT_PREFIX_PATH, CMAKE_PREFIX_PATH로 경로를 설정한다. Qt와 MLX Python 환경은 패키지에 복사하지 않는다.
 
 ```cmake
-find_package(iiLocalLLM 0.10.0 CONFIG REQUIRED)
+find_package(iiLocalLLM 0.11.0 CONFIG REQUIRED)
 target_link_libraries(your_app PRIVATE iiLocalLLM::iiLocalLLM)
 ```
 
@@ -281,3 +283,5 @@ GGUF smoke는 chatml을 명시하여 경량 테스트 모델도 사용한다. �
 ## 라이선스
 
 자체 코드·문서는 **AGPL-3.0-only**이며 [LICENSE](LICENSE)를 따른다. 외부 의존성과 가중치는 각각의 라이선스를 유지한다. 도입 검토와 출처는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)에 있다.
+
+0.11.0은 작업·Todo 영속 저장, 의존 관계와 원자적 선점, C++/에이전트 API/MCP/CLI 연결을 추가한다. [작업 관리](docs/Tasks.md)에 입력·저장·권한·재시작 계약을 기록한다. 현재 ABI는 0.11이며 소비자는 새 헤더와 라이브러리로 함께 다시 빌드한다.

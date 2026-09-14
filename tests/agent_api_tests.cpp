@@ -51,6 +51,34 @@ template<class F> void error(F fn, ErrorCode expected) {
 class AgentApiTests : public QObject {
     Q_OBJECT
 private slots:
+    void taskStateIsAuthenticatedAndAccessibleDuringRuns() {
+        QTemporaryDir root; auto o = options(root); o.engine.taskToolsEnabled = true;
+        auto model = std::make_shared<Model>();
+        auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Default,
+            QList<a::PermissionRule>{{"TaskUpdate", a::PermissionBehavior::Deny}});
+        a::Api api(model, std::make_shared<a::ToolRegistry>(), policy, o);
+        QVERIFY(call(api, "agent.info")["task_tools_enabled"].toBool());
+        const auto id = call(api, "agent.sessions.create", {{"model", "fixture"}}).value("session_id");
+        auto run = api.dispatch("agent.run", {{"session_id", id}, {"prompt", "wait"}}, firstToken);
+        QTRY_VERIFY_WITH_TIMEOUT(model->waiting.load(), 3000);
+        const QJsonObject input{{"session_id", id}, {"subject", "Verify"}, {"description", "Check the actual result"}};
+        const auto created = call(api, "agent.tasks.create", input);
+        QVERIFY(!created["is_error"].toBool()); QCOMPARE(created["result"].toObject()["task"].toObject()["id"], "1");
+        error([&] { call(api, "agent.tasks.list", {{"session_id", id}}, secondToken); }, ErrorCode::NotFound);
+        error([&] { call(api, "agent.tasks.create", input, "invalid"); }, ErrorCode::Unauthorized);
+        auto changed = call(api, "agent.tasks.update", {{"session_id", id}, {"taskId", "1"}, {"status", "completed"}});
+        QVERIFY(changed["is_error"].toBool());
+        QVERIFY(call(api, "agent.tasks.create", {{"session_id", id}, {"subject", "no description"}})["is_error"].toBool());
+        QCOMPARE(call(api, "agent.tasks.list", {{"session_id", id}})["result"].toObject()["tasks"].toArray().size(), 1);
+        const QJsonArray todos{QJsonObject{{"content", "Test"}, {"activeForm", "Testing"}, {"status", "pending"}}};
+        QVERIFY(!call(api, "agent.todos.write", {{"session_id", id}, {"todos", todos}})["is_error"].toBool());
+        QCOMPARE(call(api, "agent.todos.get", {{"session_id", id}})["result"].toObject()["todos"].toArray(), todos);
+        call(api, "agent.cancel", {{"request_id", run.requestId}});
+        QCOMPARE(run.result.get().toObject()["status"], "cancelled");
+        api.close();
+        a::Api reopened(model, std::make_shared<a::ToolRegistry>(), policy, o);
+        QCOMPARE(call(reopened, "agent.tasks.list", {{"session_id", id}})["result"].toObject()["tasks"].toArray().size(), 1);
+    }
     void manualCompactionUsesAuthenticatedRunLifecycle() {
         QTemporaryDir root; auto o = options(root); auto model = std::make_shared<Model>(); model->budgets = true;
         a::Api api(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), o);

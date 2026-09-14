@@ -65,6 +65,36 @@ public:
 class McpServerTests : public QObject {
     Q_OBJECT
 private slots:
+    void taskToolsAreConnectionBoundAndShareAgentState() {
+        QTemporaryDir root; auto registry = std::make_shared<a::ToolRegistry>();
+        auto policy = std::make_shared<a::RulePolicy>();
+        a::McpServerOptions config; config.workingDirectory = root.path();
+        config.taskStore = std::make_shared<a::TaskStore>(root.filePath("standalone"));
+        auto serverOptions = a::mcpServerOptions(registry, policy, config);
+        m::ServerSession first(serverOptions), second(serverOptions); initialize(first); initialize(second);
+        auto created = call(first, 2, "TaskCreate", {{"subject", "Verify"}, {"description", "Run checks"}});
+        QVERIFY(!created["isError"].toBool()); QCOMPARE(created["structuredContent"].toObject()["task"].toObject()["id"], "1");
+        QCOMPARE(call(first, 3, "TaskList")["structuredContent"].toObject()["tasks"].toArray().size(), 1);
+        QVERIFY(call(second, 2, "TaskList")["structuredContent"].toObject()["tasks"].toArray().isEmpty());
+        QVERIFY(call(second, 3, "TaskList", {{"listId", "first"}})["isError"].toBool());
+        first.close();
+        m::ServerSession replacement(serverOptions); initialize(replacement);
+        QVERIFY(call(replacement, 2, "TaskList")["structuredContent"].toObject()["tasks"].toArray().isEmpty());
+
+        a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions"); options.taskToolsEnabled = true;
+        auto enginePolicy = std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
+        config.taskStore.reset(); config.engine = std::make_shared<a::Engine>(std::make_shared<HistoryModel>(), registry, enginePolicy, options);
+        config.model = "fixture";
+        m::ServerSession agent(a::mcpServerOptions(registry, enginePolicy, config)); initialize(agent);
+        QVERIFY(!call(agent, 2, "TaskCreate", {{"subject", "Persisted"}, {"description", "Inspect actual state"}})["isError"].toBool());
+        const auto id = call(agent, 3, "iiLocalLLM.agent.session")["structuredContent"].toObject()["session_id"].toString();
+        QCOMPARE(config.engine->runTaskTool(id, "TaskList").data["total"].toInt(), 1);
+        const auto reply = call(agent, 4, "iiLocalLLM.agent.run", {{"prompt", "Inspect tasks"}});
+        QVERIFY(reply["structuredContent"].toObject()["text"].toString().contains("Persisted"));
+        call(agent, 5, "iiLocalLLM.agent.run", {{"prompt", "New work"}, {"new_session", true}});
+        QVERIFY(call(agent, 6, "TaskList")["structuredContent"].toObject()["tasks"].toArray().isEmpty());
+        QCOMPARE(config.engine->runTaskTool(id, "TaskList").data["total"].toInt(), 1);
+    }
     void lifecycleAndValidation() {
         m::ServerSession s(options());
         s.receive(request(9, "tools/list")); QCOMPARE(next(s)["error"].toObject()["code"].toInt(), -32002);

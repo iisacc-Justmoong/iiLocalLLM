@@ -69,3 +69,7 @@ pull은 현재 모델 설치/생성과 같은 FIFO에서 실행되므로 긴 다
 ## 0.9.0 MCP 연결 관리와 도구 검색
 
 호스트가 지정한 MCP 설정 파일의 연결·복구, 대화별 `ToolSearch`, 인증된 `agent.mcp.status` 및 CLI 옵션을 추가했다. 설정과 실행 권한, 수명 및 미지원 범위는 [ToolDiscovery.md](ToolDiscovery.md)를 참조한다.
+
+## 작업·Todo 명령 (0.11.0)
+
+인증된 iillm에서 `agent tasks ACTION SESSION [PARAMS_JSON_FILE]` 및 `agent todos ACTION SESSION [PARAMS_JSON_FILE]`을 제공한다. tasks는 create/get/list/update/claim, todos는 get/write를 지원한다. JSON 응답의 is_error가 true이면 종료 코드 1이다. daemon의 기본 활성화·옵트아웃과 예시는 [Tasks.md](Tasks.md)를 참조한다. CLI는 여전히 Core/Network만 링크한다.
