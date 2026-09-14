@@ -5,6 +5,7 @@
 #include "mcp/LocalApplications.h"
 #include "mcp/HttpServer.h"
 #include "McpCredentials.h"
+#include "AgentProfileConfig.h"
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
@@ -17,7 +18,7 @@
 namespace { volatile std::sig_atomic_t interrupted = 0; void interrupt(int) { interrupted = 1; } }
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.15.0");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.16.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},
@@ -30,6 +31,8 @@ int main(int argc, char** argv) {
         {"no-tasks", "Disable persistent task and todo tools."},
         {"no-skills", "Disable local skill discovery and invocation in the agent."},
         {"no-subagents", "Disable delegated local agent execution."},
+        {"agent-profiles", "Private JSON host configuration for profile directories, overrides and model grants.", "file"},
+        {"no-agent-profiles", "Disable agent profile file discovery; retain general-purpose."},
         {"skills-dir", "Additional host-authorized skills directory; repeat in highest-priority-first order.", "directory"},
         {"no-background", "Disable background shell execution and its control tools."},
         {"artifacts", "Directory for large tool results.", "path"},
@@ -53,6 +56,8 @@ int main(int argc, char** argv) {
         const auto workspace = QFileInfo(parser.value("workspace")).canonicalFilePath();
         if (!parser.isSet("workspace") || workspace.isEmpty() || !QFileInfo(workspace).isDir())
             throw iiLocalLLM::Error(iiLocalLLM::ErrorCode::InvalidArgument, "--workspace must name an existing directory");
+        const auto profiles=iiLocalLLMClient::profileConfig(parser.value("agent-profiles"),parser.isSet("no-agent-profiles"));
+        iiLocalLLM::agent::discoverAgentProfiles(workspace,profiles.profiles);
         auto positive = [&](const char* option, int maximum) { bool ok; const int value = parser.value(option).toInt(&ok);
             if (!ok || value < 1 || value > maximum) throw std::runtime_error(std::string("Invalid --") + option); return value; };
         const int contextTokens = positive("context", 1048576), maxTokens = positive("max-tokens", 1048576);
@@ -132,10 +137,10 @@ int main(int argc, char** argv) {
                 : parser.isSet("sessions") ? parser.value("sessions") : QDir(workspace).filePath(".iilocal-llm/sessions");
             auto model = std::make_shared<a::ServiceModel>(*service);
             if (!privateState.isEmpty() && !parser.isSet("no-subagents")) {
-                a::SubagentOptions subagents; subagents.workingDirectory = workspace;
+                auto subagents=profiles; subagents.workingDirectory = workspace;
                 subagents.stateDirectory = QDir(privateState).filePath("subagents");
                 subagents.maxRuntimeMs = timeout; subagents.generation.maxTokens = maxTokens; subagents.generation.temperature = temperature;
-                engineOptions.additionalTools = a::Subagents::tools(std::make_shared<a::Subagents>(model, registry, policy, engineOptions, subagents));
+                a::Subagents::attach(engineOptions,std::make_shared<a::Subagents>(model, registry, policy, engineOptions, subagents));
             }
             options.engine = std::make_shared<a::Engine>(model, registry, policy, engineOptions);
             options.model = parser.value("model"); options.generation.maxTokens = maxTokens; options.generation.temperature = temperature;

@@ -52,7 +52,7 @@ QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.se
     "agent.sessions.fork", "agent.sessions.compact", "agent.context.get", "agent.skills.list", "agent.mcp.status", "agent.run", "agent.cancel", "agent.status",
     "agent.tasks.create", "agent.tasks.get", "agent.tasks.list", "agent.tasks.update", "agent.tasks.claim", "agent.todos.write", "agent.todos.get",
     "agent.shell.start", "agent.shell.output", "agent.shell.stop", "agent.shell.list",
-    "agent.agents.run", "agent.agents.output", "agent.agents.stop", "agent.agents.list",
+    "agent.agents.run", "agent.agents.output", "agent.agents.stop", "agent.agents.list", "agent.agents.profiles",
     "agent.inputs.enqueue", "agent.inputs.list", "agent.inputs.remove", "agent.inputs.run"}; }
 bool inputControl(const QString& method) {
     return method == "agent.inputs.enqueue" || method == "agent.inputs.list" || method == "agent.inputs.remove";
@@ -126,7 +126,7 @@ public:
                 auto so = options.subagents; so.workingDirectory = options.workingDirectory;
                 so.stateDirectory = QDir(options.stateDirectory).filePath(directory + "/subagents");
                 client->subagents = std::make_shared<Subagents>(model, registry, policy, engineOptions, so);
-                engineOptions.additionalTools.append(Subagents::tools(client->subagents));
+                Subagents::attach(engineOptions,client->subagents);
             }
             client->engine = std::make_shared<Engine>(model, registry, policy, engineOptions);
             clients.emplace(client->id, std::move(client));
@@ -160,7 +160,7 @@ public:
                 {"input_queue_enabled", true}, {"skills_enabled", options.engine.skills.enabled}, {"subagents_enabled", options.subagentsEnabled}};
         }
         static const QMap<QString, QString> agentMethods{{"agent.agents.run", "Agent"}, {"agent.agents.output", "AgentOutput"},
-            {"agent.agents.stop", "AgentStop"}, {"agent.agents.list", "AgentList"}};
+            {"agent.agents.stop", "AgentStop"}, {"agent.agents.list", "AgentList"}, {"agent.agents.profiles", "AgentProfiles"}};
         if (agentMethods.contains(method)) {
             const auto id = text(p, "session_id"); auto arguments = p; arguments.remove("session_id");
             require(client->engine->sessionMetadata(id).workingDirectory == options.workingDirectory,

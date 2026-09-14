@@ -45,8 +45,12 @@ int main(int argc,char** argv){
         auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Default,QList<a::PermissionRule>{{"Agent",a::PermissionBehavior::Allow}});
         a::EngineOptions eo;eo.sessionsDirectory=root.filePath("parents");eo.maxConcurrentRuns=1;eo.projectContext.enabled=false;eo.compaction.automatic=false;
         a::SubagentOptions so;so.workingDirectory=workspace;so.stateDirectory=root.filePath("children");so.maxTurns=6;so.maxRuntimeMs=180000;so.generation.temperature=0;so.generation.maxTokens=2048;
-        a::SubagentDefinition definition;definition.description="Read a local file and report its exact observed contents.";definition.tools={"Read"};definition.systemPrompt="Use Read to inspect the requested file, then report its exact contents. Do not guess.";so.definitions={definition};
-        auto agents=std::make_shared<a::Subagents>(model,registry,policy,eo,so);eo.additionalTools=a::Subagents::tools(agents);
+        so.profiles.enabled=true;so.profiles.includeBuiltins=false;so.profiles.projectBoundary=workspace;
+        put(workspace+"/.claude/agents/reader.md","---\nname: general-purpose\ndescription: Read a local file and report its exact observed contents.\ntools: Read\nskills: [read-evidence]\n---\nUse Read to inspect the requested file, then report its exact contents. Do not guess.\n");
+        put(workspace+"/.claude/skills/read-evidence/SKILL.md","---\ndescription: Observe file contents\n---\nRead the requested file with the available tool before reporting its contents.\n");
+        int lifecycleStarts=0,lifecycleStops=0;
+        eo.hooks.append([&](const a::HookInput& input,const CancellationToken&){if(input.kind==a::HookKind::SubagentStart)++lifecycleStarts;if(input.kind==a::HookKind::SubagentStop)++lifecycleStops;return a::HookResult{};});
+        auto agents=std::make_shared<a::Subagents>(model,registry,policy,eo,so);a::Subagents::attach(eo,agents);
         a::Engine engine(model,registry,policy,eo);bool all=true;
         for(const bool fork:{false,true}) {
             const auto expected=secret();put(workspace+"/secret.txt",expected.toUtf8());const auto parent=engine.createSession(uri,workspace);
@@ -61,7 +65,9 @@ int main(int argc,char** argv){
                 const auto transcript=a::SessionStore(so.stateDirectory+"/sessions").load(state["session_id"].toString());
                 read|=observed(transcript,expected);childCompleted|=state["status"]=="completed"&&state["result"].toObject()["text"].toString().contains(expected);
                 if(fork)for(const auto& m:transcript.messages)context|=m.text=="The target file is secret.txt. A delegated child should read that file.";
-                print({{"child",state}});
+                bool preload=false;for(const auto& m:transcript.messages)preload|=m.metadata.contains("iilocal.skill");
+                all&=preload&&state["profile"].toObject()["source"]=="project"&&!state["profile"].toObject()["sha256"].toString().isEmpty();
+                print({{"child",state},{"profile_skill_preloaded",preload}});
             }
             const bool pass=result.status==a::RunStatus::Completed&&delegated&&read&&childCompleted&&result.text.contains(expected)&&(!fork||context)&&a::pendingToolCalls(engine.session(parent.id).messages).isEmpty();
             all&=pass;print({{"phase",fork?"fork":"foreground"},{"passed",pass},{"delegated",delegated},{"observed",read},{"child_completed",childCompleted},{"fork_context_present",context},{"result",a::toJson(result)}});
@@ -78,6 +84,8 @@ int main(int argc,char** argv){
                 &&queue["count"].toInt()==(resume?2:1)&&a::pendingToolCalls(transcript.messages).isEmpty();
             all&=pass;print({{"phase",resume?"resume":"background"},{"passed",pass},{"observed",read},{"notification_count",queue["count"]},{"result",result}});
         }
+        all&=lifecycleStarts>=4&&lifecycleStops>=4;
+        print({{"phase","profile_lifecycle"},{"passed",all},{"subagent_start_count",lifecycleStarts},{"subagent_stop_count",lifecycleStops}});
         return all?0:1;
     }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
 }

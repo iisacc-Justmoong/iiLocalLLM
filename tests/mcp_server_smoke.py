@@ -240,7 +240,13 @@ async def native(binary, root, weights, http=False):
             await session.initialize()
             names = {tool.name for tool in (await session.list_tools()).tools}
             assert {"iiLocalLLM.agent.run", "iiLocalLLM.agent.session"} <= names
-            assert {"iiLocalLLM.agent.agents." + action for action in ("run", "output", "stop", "list")} <= names
+            assert {"iiLocalLLM.agent.agents." + action for action in ("run", "output", "stop", "list", "profiles")} <= names
+            profile_dir = workspace / ".claude" / "agents"
+            profile_dir.mkdir(parents=True)
+            (profile_dir / "reader.md").write_text("---\nname: reader\ndescription: Read one file\ntools: Read\n---\nUse Read to inspect the requested file. Report its exact contents; do not invent observations.\n")
+            profiles = await session.call_tool("iiLocalLLM.agent.agents.profiles", {})
+            assert not profiles.isError and "reader" in {p["name"] for p in profiles.structuredContent["profiles"]}
+            assert all("system_prompt" not in p for p in profiles.structuredContent["profiles"])
             catalog = await session.call_tool("iiLocalLLM.agent.skills.list", {})
             assert not catalog.isError and len(catalog.structuredContent["skills"]) == 1
             assert "content" not in catalog.structuredContent["skills"][0]
@@ -262,7 +268,7 @@ async def native(binary, root, weights, http=False):
             child_secret = "CHILD_" + secrets.token_hex(8)
             (workspace / "child.txt").write_text(child_secret)
             child_prompt = "Use Read to read child.txt now, then return its exact current contents. Do not guess."
-            child_result = await session.call_tool("iiLocalLLM.agent.agents.run", {"prompt": child_prompt, "max_turns": 4})
+            child_result = await session.call_tool("iiLocalLLM.agent.agents.run", {"prompt": child_prompt, "subagent_type": "reader", "max_turns": 4})
             child = child_result.structuredContent
             assert not child_result.isError and child["status"] == "completed" and child_secret in child["result"]["text"], child_result
             resumed_secret = "CHILD_" + secrets.token_hex(8)

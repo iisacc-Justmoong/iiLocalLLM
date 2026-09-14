@@ -179,3 +179,5 @@ agent.tasks.create/get/list/update/claim 및 agent.todos.write/get을 추가한�
 로컬 스킬 목록은 인증된 `agent.skills.list`로 조회한다. `agent.run`에 `skill`과 `skill_arguments`를 주면 `prompt`를 생략할 수 있다. `agent.info.skills_enabled`와 데몬의 `--agent-skills-dir`/`--agent-no-skills`를 지원한다. [스킬 계약](Skills.md)을 참조한다.
 
 0.15.0은 C++ 서브에이전트와 `agent.agents.run/output/stop/list`, 대응 MCP·CLI 경로를 추가한다. 소유권·취소·분기·재개와 설정 계약은 [Subagents.md](Subagents.md)를 따른다.
+
+0.16.0의 `agent.agents.profiles`(MCP: `iiLocalLLM.agent.agents.profiles`, CLI: `agent agents profiles SESSION`)는 프로파일 메타데이터·출처·가려진 정의·오류를 반환한다. C++ 호스트는 `Subagents::attach`로 현재 프로파일을 각 턴에 연결한다. 독립 데몬과 MCP 서버의 `--agent-profiles FILE`·`--no-agent-profiles`, 모델 사용 범위와 훅 계약은 [AgentProfiles.md](AgentProfiles.md)를 따른다.

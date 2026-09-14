@@ -102,7 +102,7 @@ public:
         if (!options.engine) return frozen;
         if (options.engine->subagentsEnabled()) for (auto definition : options.engine->subagentToolDefinitions()) {
             const auto nativeName = definition.name;
-            const QMap<QString, QString> names{{"Agent", "run"}, {"AgentOutput", "output"}, {"AgentStop", "stop"}, {"AgentList", "list"}};
+            const QMap<QString, QString> names{{"Agent", "run"}, {"AgentOutput", "output"}, {"AgentStop", "stop"}, {"AgentList", "list"}, {"AgentProfiles", "profiles"}};
             definition.name = "iiLocalLLM.agent.agents." + names[nativeName];
             definition.metadata = {{"source", nativeName == "Agent" ? "builtin.subagent.run" : "builtin.subagent.control"}};
             Tool tool; tool.definition = definition;

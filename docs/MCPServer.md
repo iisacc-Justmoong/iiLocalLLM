@@ -120,3 +120,5 @@ Engine과 모델을 설정하면 `iiLocalLLM.agent.inputs.enqueue/list/remove/ru
 엔진을 연결한 서버는 `iiLocalLLM.agent.skills.list`와 `iiLocalLLM.agent.run`의 `skill`/`skill_arguments`를 지원한다. 호출은 연결별 대화에 인라인으로 저장된다. [스킬 계약](Skills.md)을 참조한다.
 
 0.15.0은 C++ 서브에이전트와 `agent.agents.run/output/stop/list`, 대응 MCP·CLI 경로를 추가한다. 소유권·취소·분기·재개와 설정 계약은 [Subagents.md](Subagents.md)를 따른다.
+
+0.16.0의 `agent.agents.profiles`(MCP: `iiLocalLLM.agent.agents.profiles`, CLI: `agent agents profiles SESSION`)는 프로파일 메타데이터·출처·가려진 정의·오류를 반환한다. C++ 호스트는 `Subagents::attach`로 현재 프로파일을 각 턴에 연결한다. 독립 데몬과 MCP 서버의 `--agent-profiles FILE`·`--no-agent-profiles`, 모델 사용 범위와 훅 계약은 [AgentProfiles.md](AgentProfiles.md)를 따른다.

@@ -59,7 +59,7 @@ private:
     QList<PermissionRule> rules_;
 };
 enum class HookKind { BeforeModel, AfterModel, BeforeTool, AfterTool, Stop, BeforeCompact, AfterCompact,
-    TaskCreated, TaskCompleted }; // Task lifecycle callbacks veto before the transaction commits.
+    TaskCreated, TaskCompleted, SubagentStart, SubagentStop }; // Task lifecycle callbacks veto before the transaction commits.
 struct HookInput {
     HookKind kind;
     QString sessionId;
@@ -67,6 +67,7 @@ struct HookInput {
     ToolCall call;
     ToolResult result;
     QString text;
+    QJsonObject context; // Lifecycle identity, plus stop_hook_active on stop callbacks.
 };
 struct HookResult {
     bool block = false;

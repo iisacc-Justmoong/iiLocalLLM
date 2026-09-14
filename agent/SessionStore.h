@@ -21,7 +21,10 @@ public:
     Session create(QString model, QString systemPrompt, QString workingDirectory) const;
     // Atomically clones an immutable, already-paired snapshot with a fresh ID.
     // External artifacts are not copied. The caller must handle that boundary.
-    Session createFromSnapshot(Session snapshot) const;
+    // initialize receives the fresh ID before publication. It may append seed
+    // messages; exceptions leave no session on disk. No store lock is held.
+    Session createFromSnapshot(Session snapshot,
+        const std::function<void(const QString&, QList<Message>&)>& initialize = {}) const;
     // Copies a complete message boundary into a new, atomically published session.
     Session fork(const QString& id, const QString& throughMessageId = {}) const;
     // Lease excludes concurrent writers, including other processes, for the whole run.

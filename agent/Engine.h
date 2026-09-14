@@ -28,6 +28,9 @@ struct EngineOptions {
     SkillOptions skills;
     QList<Tool> additionalTools; // Host-owned orchestration tools; merged into each live registry snapshot.
     std::function<bool(const ToolDefinition&)> toolFilter; // Applied before and after deferred discovery.
+    // Invoked outside engine locks, before each model turn and native dispatch.
+    // May add live host definitions; duplicates with any other source are errors.
+    std::function<QList<Tool>()> additionalToolsProvider;
 };
 class IILOCALLLM_EXPORT Engine {
 public:

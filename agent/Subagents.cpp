@@ -33,9 +33,7 @@ QJsonObject publicState(const QJsonObject& state) {
     return result;
 }
 QJsonObject profileJson(const SubagentDefinition& p) {
-    return {{"name",p.name},{"description",p.description},{"system_prompt",p.systemPrompt},{"model",p.model},
-        {"tools",QJsonArray::fromStringList(p.tools)},{"disallowed_tools",QJsonArray::fromStringList(p.disallowedTools)},
-        {"read_only",p.readOnly},{"max_turns",p.maxTurns}};
+    return p.toJson(true);
 }
 bool matches(const QString& name,const QJsonArray& patterns) {
     for(const auto& p:patterns) if(QRegularExpression(QRegularExpression::wildcardToRegularExpression(p.toString(),QRegularExpression::NonPathWildcardConversion)).match(name).hasMatch()) return true;
@@ -59,14 +57,24 @@ public:
     ScopedPolicy(std::shared_ptr<const PermissionPolicy> p,QJsonObject o,QJsonObject c):parent(std::move(p)),original(std::move(o)),current(std::move(c)){}
     PermissionDecision decide(const ToolDefinition& t,const QJsonObject& a,const ToolContext& c) const override {
         if(!allowed(t,original)||!allowed(t,current)) return {PermissionBehavior::Deny,"Tool is outside this subagent's scope"};
-        return parent->decide(t,a,c);
+        auto decision=parent->decide(t,a,c);
+        for(const auto& p:{original,current}) {
+            const auto mode=p["permission_mode"].toString();
+            if(mode=="plan" && RulePolicy(PermissionMode::Plan).decide(t,a,c).behavior==PermissionBehavior::Deny)
+                return {PermissionBehavior::Deny,"Subagent plan mode forbids this tool"};
+            if(mode=="dontAsk" && decision.behavior==PermissionBehavior::Ask)
+                return {PermissionBehavior::Deny,"Subagent dontAsk mode cannot request permission"};
+        }
+        return decision;
     }
 };
 void checkProfile(const SubagentDefinition& p) {
-    static const QRegularExpression name("\\A[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\\z");
+    static const QRegularExpression name("\\A[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}\\z");
     require(name.match(p.name).hasMatch() && !p.description.trimmed().isEmpty() && p.description.size()<=4096
         && p.systemPrompt.size()<=1024*1024 && p.model.size()<=256 && p.maxTurns>=1 && p.maxTurns<=10000
-        && p.tools.size()<=256 && p.disallowedTools.size()<=256,"Invalid subagent definition");
+        && p.tools.size()<=256 && p.disallowedTools.size()<=256 && p.skills.size()<=128
+        && p.initialPrompt.size()<=65536 && !p.initialPrompt.contains(QChar::Null),"Invalid subagent definition");
+    require(QStringList{"","default","inherit","acceptEdits","dontAsk","bypassPermissions","plan","auto"}.contains(p.permissionMode),"Invalid subagent permission mode");
     for(const auto& pattern:p.tools+p.disallowedTools) require(!pattern.isEmpty() && pattern.size()<=256 && !pattern.contains(QChar::Null),"Invalid subagent tool pattern");
 }
 }
@@ -103,17 +111,23 @@ public:
          notifications(QDir(parent.sessionsDirectory).filePath("inputs"),parent.inputQueue),ownership(QDir(options.stateDirectory).filePath("agents.lock")) {
         require(model && registry && policy && options.maxConcurrent>=1 && options.maxConcurrent<=64 && options.maxRecords>=1 && options.maxRecords<=10000
             && options.maxTurns>=1 && options.maxTurns<=10000 && options.maxRuntimeMs>=1 && options.maxRuntimeMs<=86400000
-            && options.definitions.size()<=128 && options.allowedModels.size()<=128,"Invalid subagent host configuration");
+            && options.definitions.size()<=128 && options.allowedModels.size()<=128 && options.modelAliases.size()<=128,"Invalid subagent host configuration");
         options.workingDirectory=QFileInfo(options.workingDirectory).canonicalFilePath(); options.stateDirectory=QFileInfo(options.stateDirectory).canonicalFilePath();
         require(!options.workingDirectory.isEmpty() && QFileInfo(options.workingDirectory).isDir() && !QDir(options.workingDirectory).isRoot(),"Invalid subagent workspace");
         require(!QFileInfo(ownership.fileName()).isSymLink(),"Subagent ownership lock is a symlink",ErrorCode::StorageFailure);
         ownership.setStaleLockTime(0); require(ownership.tryLock(0),"Subagent store already owned or inaccessible",ErrorCode::AlreadyExists);
-        if(options.definitions.isEmpty()) options.definitions.append(SubagentDefinition{});
+        if(options.definitions.isEmpty() && !options.profiles.enabled) options.definitions.append(SubagentDefinition{});
         QSet<QString> names; for(const auto& definition:options.definitions) {checkProfile(definition);require(!names.contains(definition.name),"Duplicate subagent definition");names.insert(definition.name);}
         for(const auto& name:options.allowedModels) require(!name.trimmed().isEmpty() && name.size()<=256,"Invalid allowed subagent model");
+        for(auto i=options.modelAliases.begin();i!=options.modelAliases.end();++i)
+            require(!i.key().trimmed().isEmpty()&&i.key().size()<=256&&!i.key().contains(QChar::Null)
+                &&!i.value().trimmed().isEmpty()&&i.value().size()<=256&&!i.value().contains(QChar::Null),"Invalid subagent model alias");
         // Additional tools include the parent's orchestration owner. Children get
         // a fresh engine and a scoped snapshot of the underlying tool registry.
         parent.additionalTools.removeIf([](const Tool& t){return t.definition.name=="Agent"||t.definition.metadata["source"]=="builtin.subagent";});
+        if(parent.additionalToolsProvider) parent.additionalToolsProvider=[provider=std::move(parent.additionalToolsProvider)]{
+            auto tools=provider();tools.removeIf([](const Tool& t){return t.definition.name=="Agent"||t.definition.metadata["source"]=="builtin.subagent";});return tools;
+        };
         pool.setMaxThreadCount(options.maxConcurrent);
         const auto files=QDir(options.stateDirectory).entryList({"agent-*.json"},QDir::Files|QDir::Hidden,QDir::Name);
         require(files.size()<=options.maxRecords,"Subagent record limit exceeded",ErrorCode::ResourceLimit);
@@ -147,9 +161,9 @@ public:
     std::shared_ptr<Job> owned(const QString& parentId,const QString& id) const {
         safeId(id);const auto it=jobs.find(id);require(it!=jobs.end() && it->second->state["parent_session_id"]==parentId,"Subagent not found",ErrorCode::NotFound);return it->second;
     }
-    SubagentDefinition profile(const QString& name) const {
-        for(const auto& p:options.definitions) if(p.name==name)return p;
-        throw Error(ErrorCode::NotFound,"Unknown subagent type: "+name);
+    bool modelAllowed(const QString& name,const QString& parentModel,const SubagentDefinition& p) const {
+        return name==parentModel || options.allowedModels.contains(name) || options.modelAliases.values().contains(name)
+            || ((p.source=="host" || !options.profiles.enabled) && !p.model.isEmpty() && name==p.model);
     }
     void stopShells(const QString& id) const {
         const auto source=registry->snapshot();Tool list,stop;
@@ -193,13 +207,31 @@ public:
         std::function<void(const QJsonObject&)> progress) noexcept {
         const auto started=Clock::now(); RunResult result;result.sessionId=request.sessionId;
         try {
-            QJsonObject original,current=profileJson(definition);
-            {std::lock_guard lock(mutex);job->state["status"]="running";original=job->state["profile"].toObject();write(*job);}
+            QJsonObject original,current=profileJson(definition),hookContext;
+            {std::lock_guard lock(mutex);job->state["status"]="running";original=job->state["profile"].toObject();write(*job);
+                hookContext={{"agent_id",job->state["agentId"]},{"agent_type",definition.name},{"parent_session_id",job->state["parent_session_id"]}};}
+            QString startFeedback;
+            for(const auto& hook:parent.hooks) {
+                job->token.throwIfCancelled();
+                const auto value=hook({HookKind::SubagentStart,request.sessionId,{}, {},{},request.prompt,hookContext},job->token);
+                require(!value.block,"SubagentStart hook blocked execution: "+value.feedback);
+                if(!value.feedback.isEmpty()){if(!startFeedback.isEmpty())startFeedback+='\n';startFeedback+=value.feedback;}
+                require(startFeedback.size()<=parent.maxInputCharacters,"SubagentStart context exceeds input limit",ErrorCode::ResourceLimit);
+            }
+            if(!startFeedback.isEmpty()) {
+                job->token.throwIfCancelled();auto lease=children.acquire(request.sessionId);
+                Message message{uuid(),MessageRole::User,startFeedback};message.metadata={{"iilocal.subagent_start",hookContext}};lease->append(message);
+            }
             auto scoped=std::make_shared<ToolRegistry>();const auto source=registry->snapshot();
             for(const auto& t:source->definitions()) if(allowed(t,original)&&allowed(t,current)) {
                 scoped->add(source->get(t.name));
             }
             auto eo=parent;eo.sessionsDirectory=QDir(options.stateDirectory).filePath("sessions");eo.maxConcurrentRuns=1;eo.maxQueuedRuns=0;
+            eo.hooks.clear();for(const auto& hook:parent.hooks)eo.hooks.append([hook,hookContext](HookInput input,const CancellationToken& token){
+                for(auto i=hookContext.begin();i!=hookContext.end();++i)input.context[i.key()]=i.value();
+                if(input.kind==HookKind::Stop)input.kind=HookKind::SubagentStop;
+                return hook(input,token);
+            });
             eo.toolFilter=[original,current,parentFilter=parent.toolFilter](const ToolDefinition& t){
                 return allowed(t,original)&&allowed(t,current)&&(!parentFilter||parentFilter(t));
             };
@@ -258,12 +290,16 @@ ToolResult Subagents::run(const ToolContext& context,const QJsonObject& args) {
         && context.sessionSnapshot->workingDirectory==d->options.workingDirectory && context.workingDirectory==d->options.workingDirectory,"Missing or mismatched subagent parent context");
     const auto parent=d->parentStore.metadata(context.sessionId);
     require(parent.model==context.sessionSnapshot->model && parent.workingDirectory==d->options.workingDirectory,"Subagent parent identity mismatch");
-    const bool background=args["run_in_background"].toBool(),fork=args["fork_context"].toBool();
+    bool background=args["run_in_background"].toBool();const bool fork=args["fork_context"].toBool();
     const auto resume=args["resume"].toString();std::shared_ptr<Impl::Job> job;SubagentDefinition definition;RunRequest request;QString id;
+    const auto catalog=profiles(context.cancellation);
     const auto configureRequest=[&]{
         const int cap=std::min(d->options.maxTurns,definition.maxTurns);
         if(args.contains("max_turns")) require(args["max_turns"].isDouble() && args["max_turns"].toDouble()==std::floor(args["max_turns"].toDouble()) && args["max_turns"].toDouble()>=1 && args["max_turns"].toDouble()<=cap,"Invalid subagent turn limit");
         request.prompt=args["prompt"].toString();request.maxTurns=args["max_turns"].toInt(cap);
+        require(definition.unsupportedFeatures.isEmpty()&&definition.permissionMode!="auto","Unsupported agent profile execution features: "+definition.unsupportedFeatures.join(", "),ErrorCode::RuntimeUnavailable);
+        checkProfile(definition);background|=definition.background;
+        if(resume.isEmpty()&&!definition.initialPrompt.isEmpty()) request.prompt=definition.initialPrompt+"\n\n"+request.prompt;
         if(fork) request.prompt="You are the delegated child. The earlier conversation belongs to the parent. Work directly on the task below with your available tools and report your own observed result.\n\n"+request.prompt;
         require(request.prompt.size()<=d->parent.maxInputCharacters,"Expanded subagent prompt exceeds input limit",ErrorCode::ResourceLimit);
         request.generation=d->options.generation;
@@ -275,14 +311,15 @@ ToolResult Subagents::run(const ToolContext& context,const QJsonObject& args) {
         if(!resume.isEmpty()) {
             require(!fork&&!args.contains("subagent_type")&&!args.contains("model"),"Resume cannot replace context, profile or model");
             job=d->owned(context.sessionId,resume);require(job->done,"Subagent is already active",ErrorCode::ModelInUse);
-            definition=d->profile(job->state["agent_type"].toString());request.sessionId=job->state["session_id"].toString();
+            definition=catalog.find(job->state["agent_type"].toString());request.sessionId=job->state["session_id"].toString();
             configureRequest();
         } else {
             require(int(d->jobs.size())<d->options.maxRecords,"Subagent record limit reached",ErrorCode::ResourceLimit);
-            definition=d->profile(args["subagent_type"].toString("general-purpose"));job=std::make_shared<Impl::Job>();
+            definition=catalog.find(args["subagent_type"].toString("general-purpose"));job=std::make_shared<Impl::Job>();
             configureRequest();
-            const auto model=args["model"].toString(definition.model.isEmpty()?parent.model:definition.model);
-            require(model==parent.model||model==definition.model||d->options.allowedModels.contains(model),"Subagent model override is not authorized by the host");
+            const auto requestedModel=args["model"].toString(definition.model.isEmpty()?parent.model:definition.model);
+            const auto model=d->options.modelAliases.value(requestedModel,requestedModel);
+            require(d->modelAllowed(model,parent.model,definition),"Subagent model override is not authorized by the host");
             Session seed=fork?*context.sessionSnapshot:Session{};seed.model=model;seed.workingDirectory=parent.workingDirectory;
             seed.systemPrompt=fork?context.sessionSnapshot->systemPrompt:definition.systemPrompt;
             if(!fork && seed.systemPrompt.isEmpty()) seed.systemPrompt="Perform the delegated task using the available tools and report the observed result.";
@@ -290,11 +327,19 @@ ToolResult Subagents::run(const ToolContext& context,const QJsonObject& args) {
                 require(context.artifactsDirectory.isEmpty() || QDir(context.artifactsDirectory).entryList(QDir::AllEntries|QDir::NoDotAndDotDot|QDir::Hidden).isEmpty(),"Forking parent artifacts is not implemented",ErrorCode::RuntimeUnavailable);
                 for(const auto& call:pendingToolCalls(seed.messages)) seed.messages.append({uuid(),MessageRole::Tool,"Parent operation is still pending. This child has not executed it.",{},call.id,true,{{"parent_pending",true}}});
             }
-            const auto child=d->children.createFromSnapshot(std::move(seed));request.sessionId=child.id;
+            const auto child=d->children.createFromSnapshot(std::move(seed),[&](const QString& childId,QList<Message>& messages){
+            qsizetype skillCharacters=0;
+            for(const auto& skill:definition.skills) {
+                auto message=loadSkill(parent.workingDirectory,skill,{},childId,SkillInvocationSource::Model,d->parent.skills,context.cancellation);
+                skillCharacters+=message.text.size();require(skillCharacters<=d->parent.maxInputCharacters,"Preloaded agent skills exceed input limit",ErrorCode::ResourceLimit);
+                auto metadata=message.metadata["iilocal.skill"].toObject();metadata["agent_profile"]=definition.name;message.metadata["iilocal.skill"]=metadata;
+                messages.append(std::move(message));
+            }
+            });request.sessionId=child.id;
             job->state={{"schema","iisacc.subagent/1"},{"agentId","agent-"+uuid()},{"parent_session_id",parent.id},{"session_id",child.id},
                 {"agent_type",definition.name},{"profile",profileJson(definition)},{"model",model},{"fork_context",fork},{"created_at",QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}};
         }
-        const auto model=job->state["model"].toString();require(model==parent.model||model==definition.model||d->options.allowedModels.contains(model),"Resumed subagent model is no longer authorized");
+        const auto model=job->state["model"].toString();require(d->modelAllowed(model,parent.model,definition),"Resumed subagent model is no longer authorized");
         Impl::Job accepted;accepted.state=job->state;
         accepted.state["status"]="queued";accepted.state["prompt"]=request.prompt;accepted.state["description"]=args["description"].toString(job->state["description"].toString());
         accepted.state["background"]=background;accepted.state["tool_uses"]=0;
@@ -335,26 +380,48 @@ QJsonArray Subagents::list(const QString& parent) const {
         {"status",job->state["status"]},{"description",job->state["description"]},{"session_id",job->state["session_id"]},{"model",job->state["model"]},{"finished",job->done}});
     return items;
 }
-QList<Tool> Subagents::tools(std::shared_ptr<Subagents> owner) {
+AgentProfileCatalog Subagents::profiles(const CancellationToken& token) const {
+    return discoverAgentProfiles(d->options.workingDirectory,d->options.profiles,d->options.definitions,token);
+}
+QList<Tool> Subagents::tools(std::shared_ptr<Subagents> owner) {return makeTools(std::move(owner),true);}
+void Subagents::attach(EngineOptions& options,std::shared_ptr<Subagents> owner) {
+    require(bool(owner),"Missing subagent owner");
+    options.additionalTools.append(makeTools(owner,false));
+    options.additionalToolsProvider=[owner,previous=options.additionalToolsProvider]{
+        auto tools=previous?previous():QList<Tool>{};auto live=makeTools(owner,true);
+        live.removeIf([](const Tool& t){return t.definition.name!="Agent";});tools.append(live);return tools;
+    };
+}
+QList<Tool> Subagents::makeTools(std::shared_ptr<Subagents> owner,bool includeAgent) {
     require(bool(owner),"Missing subagent owner");QList<Tool> tools;
     const QJsonObject text{{"type","string"},{"minLength",1},{"maxLength",1048576}},id{{"type","string"},{"minLength",1},{"maxLength",128}};
-    QJsonArray types;QString descriptions;
-    for(const auto& p:owner->d->options.definitions){types.append(p.name);descriptions+=p.name+": "+p.description+'\n';}
+    if(includeAgent) {
+    QJsonArray types;QString descriptions;QJsonObject discoveryError;
+    try {
+        for(const auto& p:owner->profiles().profiles)if(p.unsupportedFeatures.isEmpty()){types.append(p.name);descriptions+=p.name+": "+p.description+'\n';}
+    }catch(const Error& error) {
+        discoveryError={{"code",iiLocalLLM::enumName(error.code())},{"message",QString::fromUtf8(error.what())}};
+        descriptions="Profile discovery failed. AgentProfiles reports the failure; existing child state controls remain available.";
+    }
     Tool agent;agent.definition.name="Agent";agent.definition.description="Delegate a task to a separate local agent conversation. A foreground status of completed already includes the final response; use it directly without polling. Only async_launched means background work is pending; use AgentOutput to wait or AgentStop to cancel it. Child agents cannot delegate again.\n"+descriptions;
     agent.definition.concurrencySafe=true;agent.definition.metadata={{"source","builtin.subagent"}};
+    if(!discoveryError.isEmpty())agent.definition.metadata["profile_discovery_error"]=discoveryError;
     agent.definition.inputSchema={{"type","object"},{"additionalProperties",false},{"required",QJsonArray{"prompt"}},{"properties",QJsonObject{
         {"prompt",text},{"description",QJsonObject{{"type","string"},{"maxLength",512}}},{"subagent_type",QJsonObject{{"type","string"},{"enum",types}}},
         {"model",QJsonObject{{"type","string"},{"maxLength",256}}},{"run_in_background",QJsonObject{{"type","boolean"}}},
         {"fork_context",QJsonObject{{"type","boolean"}}},{"resume",id},{"max_turns",QJsonObject{{"type","integer"},{"minimum",1},{"maximum",owner->d->options.maxTurns}}}}}};
     agent.execute=[owner](const auto& args,const auto& context){return owner->run(context,args);};tools.append(std::move(agent));
-    for(const auto& name:{QStringLiteral("AgentOutput"),QStringLiteral("AgentStop"),QStringLiteral("AgentList")}) {
+    }
+    for(const auto& name:{QStringLiteral("AgentOutput"),QStringLiteral("AgentStop"),QStringLiteral("AgentList"),QStringLiteral("AgentProfiles")}) {
         Tool tool;tool.definition.name=name;tool.definition.readOnly=name!="AgentStop";tool.definition.concurrencySafe=true;tool.definition.metadata={{"source","builtin.subagent"}};
-        tool.definition.description=name=="AgentOutput"?"Inspect or wait for a pending child agent. retrieval_status success and finished true mean the recorded result is final; read it and stop polling that invocation.":name=="AgentStop"?"Request cancellation of a child agent.":"List this conversation's child agents.";
-        QJsonObject props;if(name!="AgentList")props["agent_id"]=id;
+        tool.definition.description=name=="AgentOutput"?"Inspect or wait for a pending child agent. retrieval_status success and finished true mean the recorded result is final; read it and stop polling that invocation.":name=="AgentStop"?"Request cancellation of a child agent.":name=="AgentProfiles"?"Discover current agent profile metadata, provenance, shadowed definitions and unsupported fields. Profile prompts are excluded.":"List this conversation's child agents.";
+        const bool needsId=name=="AgentOutput"||name=="AgentStop";
+        QJsonObject props;if(needsId)props["agent_id"]=id;
         if(name=="AgentOutput"){props["block"]=QJsonObject{{"type","boolean"}};props["timeout_ms"]=QJsonObject{{"type","integer"},{"minimum",0},{"maximum",60000}};}
-        tool.definition.inputSchema={{"type","object"},{"additionalProperties",false},{"properties",props}};if(name!="AgentList")tool.definition.inputSchema["required"]=QJsonArray{"agent_id"};
+        tool.definition.inputSchema={{"type","object"},{"additionalProperties",false},{"properties",props}};if(needsId)tool.definition.inputSchema["required"]=QJsonArray{"agent_id"};
         tool.execute=[owner,name](const auto& args,const auto& context){QJsonObject result;
-            if(name=="AgentList")result={{"agents",owner->list(context.sessionId)}};
+            if(name=="AgentProfiles")result=owner->profiles(context.cancellation).toJson();
+            else if(name=="AgentList")result={{"agents",owner->list(context.sessionId)}};
             else if(name=="AgentStop")result=owner->stop(context.sessionId,args["agent_id"].toString(),context.cancellation);
             else result=publicState(owner->output(context.sessionId,args["agent_id"].toString(),args["block"].toBool(),args["timeout_ms"].toInt(30000),context.cancellation));
             const auto text=name=="AgentOutput" && result["finished"].toBool()

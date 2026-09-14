@@ -1,5 +1,38 @@
 # 구현 검증 기록
 
+## 2026-09-15 파일 기반 에이전트 프로파일과 자식 훅 (0.16.0)
+
+관리·실행 시 JSON/C++·프로젝트·사용자·플러그인 디렉터리·내장 정의의 프로파일 계층을 C++ 실행기에 연결했다. `Subagents::attach`는 현재 프로파일을 각 모델 턴에 반영하며, 자식 기록에는 선택한 프롬프트와 출처·파일 SHA-256을 고정한다. 호스트 모델 별칭/허용 목록, 재개 시 범위 교집합, 초기 프롬프트, 백그라운드 지정, 스킬 사전 로딩과 SubagentStart/SubagentStop 콜백을 제공한다. `agent.agents.profiles`, MCP `iiLocalLLM.agent.agents.profiles`, CLI `agent agents profiles SESSION`이 같은 구현을 사용한다. 세부 계약과 참조 차이는 [AgentProfiles.md](AgentProfiles.md)에 있다. 전체 하네스·서브에이전트·훅 영역은 **partial**이다.
+
+| 검증 경계 | 결과 |
+|---|---|
+| Release 전체 검사, inference 라벨 제외 | 최종 직렬 41/41, 57.61초 |
+| AddressSanitizer, llama 비활성 | 39/39, 76.97초 |
+| 새 설치 소비자, inference 이름 제외 | 17/17, 25.00초 |
+| C++ Qwen3 8B 위임·부모 분기·백그라운드·재개 | 소스 4/4, 설치본 4/4 |
+| 실제 파일 프로파일의 Start/Stop 훅 | 소스·설치본 각각 Start 4회, Stop 4회 |
+| 8B 실제 데몬 프로파일 실행·CLI 재개 | 소스 최종 CTest 1/1, 62.32초; 설치본 1/1, 59.01초 |
+| 공식 Python MCP의 0.5B 프로파일 실행·재개 | 소스 stdio/HTTP 2/2, 설치본 stdio/HTTP 2/2 |
+| 설치 데몬 HTTP·native IPC·CLI, 추론 없는 제어 검사 | 통과 |
+
+단위 검사는 우선순위·프로젝트 상위 탐색·현재 파일 갱신·심볼릭 링크 범위·취소/용량 제한·미지원 필드·카탈로그 비공개 필드 제외·호스트 설정 검증을 포함한다. 실제 C++ 실행에서는 새 프로파일의 다음 턴 인식, 원래 프롬프트 유지, 현재 도구 제한과의 교집합, 파일이 지정한 임의 모델의 거부, 별칭 선택, 스킬의 실제 자식 세션 ID 치환, 사전 로딩 실패 시 저장소 정리와 background 지정도 확인했다. 추가 스킬 권한이나 미지원 설정을 조용히 허용하지 않는다.
+
+Start 훅 안에서 자식 목록을 조회해 소유자 잠금과의 교착이 없음을 확인했다. Start 차단은 기록된 실패가 되고 모델을 실행하지 않는다. 자식 Stop은 부모 Stop과 구분되며 차단 피드백으로 다음 턴을 실행한다. `stop_hook_active`, 부모의 Deny/Ask 유지, Plan 제한을 검사했다. 마지막 Plan fixture는 부모 Bypass에 명시적 Deny가 없는 조건으로 보강하여 Release와 ASAN에서 각각 다시 빌드·검사했다. 이 변경과 공개 헤더 설명 보완은 라이브러리 해시를 바꾸지 않았다.
+
+프로파일 디렉터리가 실행 중 범위를 벗어나는 링크로 교체되면 `AgentProfiles`는 오류를 반환한다. 이 오류 때문에 기존 자식의 MCP 조회·중단·연결 종료까지 실패하던 경계를 회귀 검사 후 수정했다. 초기 Release 전체 검사에서는 기존 전송 시험의 100ms HTTP 제한 안에 세션 생성이 끝나지 않아 40/41이었다. 같은 전송 검사의 단독 재검사와 이후 전체 직렬 검사는 통과했다. 최초 실패를 `agent-profiles-release-tests.log/xml`에 보존했으며 성공 결과로 덮어쓰지 않았다.
+
+초기 TDD 빌드는 미구현 헤더/attach/훅 enum으로 실패했다. 스킬 세션 ID 치환 실패, MCP 설정 오류로 인한 제어 경로 실패도 수정 전 로그를 유지한다. Qt moc가 테스트의 URL을 포함한 raw 문자열을 잘못 읽는 문제는 일반 이스케이프 문자열로 고쳤다. MCP fixture에 두 번째 자식을 추가한 뒤 UUID 정렬의 첫 항목을 가정하던 검사는 반환된 실제 ID를 선택하도록 수정했다. 이들은 제품 동작 실패와 테스트 fixture 결함을 구분해 `build/agent-profiles-*red*`, `*green*`에 기록했다.
+
+8B C++ 검사는 파일 프로파일과 사전 로딩한 스킬을 사용한다. 부모의 실제 Agent 호출, 자식의 실제 Read, 임의 생성 파일 값, 짝이 맞는 도구 호출/결과, 분기된 부모 문맥, 백그라운드 알림과 재개를 확인했다. Qwen3 8B Q4_K_M의 가중치는 5,027,783,488바이트, SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`이다. C++ 구성은 context 8192, 캐시 문맥 1개, temperature 0, 최대 생성 2048토큰, thinking/tool grammar false이다.
+
+새 데몬 검사는 동일한 8B를 호스트 모델 별칭으로 선택하고 HTTP로 첫 실행, 얇은 IPC CLI로 백그라운드 재개, HTTP로 최종 결과를 조회한다. 각 실행의 실제 Read 두 번과 서로 다른 파일 값, 앱별 인증 격리, 프로파일 갱신 뒤 기존 시스템 프롬프트·SHA 유지, 한 번만 로딩된 스킬과 자식 ID를 저장된 JSONL/작업 기록에서 대조했다. 소스·설치본 모두 정상 종료 코드 0을 확인했다. 첫 소스 시도는 새 Python probe가 필수 RPC id를 빠뜨려 세션 생성 전 실패했으며 `agent-profiles-source-api-native.*`에 남겨 두었다. 수정된 fixture의 최종 등록 CTest 결과는 `agent-profiles-api-wire-final.*`, `agent-profiles-api-inference.*`이다. 8B의 이 성공은 이전 0.15의 0.5B API 모델 실패를 재검증하거나 지우는 증거가 아니다.
+
+공식 MCP 1.26.0의 stdio·HTTP 검사는 서버 기동 후 reader 파일을 생성하고 카탈로그의 갱신·본문 제외를 확인한다. 해당 reader로 실제 Read와 백그라운드 재개, 변경된 파일 값, 두 개 이상의 Read 결과, 알림과 대화 정합성을 검사한다. 가중치는 Qwen2.5 0.5B Q4_K_M, 491,400,032바이트, SHA-256 `74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db`이다. 검증 프로세스는 Python을 외부 클라이언트로 사용하며 제품의 프로파일·훅 실행기는 C++이다.
+
+설치 prefix는 `build/agent-profiles-stage`, 새 소비자는 `build/agent-profiles-consumer/build`이다. 라이브러리 SHA-256은 `2bc772c145572a147ff3e16874d69c83605f165cdfd5d9258c01375d6435857e`, UUID는 `40F442C1-66E2-36B1-B78C-AA4FAD61857E`이다. 소스 실제 8B 검증 이후와 최종 설치본의 라이브러리가 동일하며, 공개 헤더 37개·설치 문서·카탈로그를 원본과 대조한다. 실제 loader 경로가 이 설치본을 가리키고 `iillm`이 libiiLocalLLM/llama/ggml을 링크하지 않음을 확인한다. ABI는 0.16이며 소비자를 다시 빌드했다.
+
+명령·JUnit·모델 흐름·실패·설치 동일성은 `build/agent-profiles-verification.json`, `agent-profiles-linkage.json`, `agent-profiles-steps.json`과 개별 로그에 있다. 스킬 `context: fork`, 전체 전문 역할·조건부 선택, 플러그인 생명주기, 에이전트별 MCP/메모리·외부 훅, 팀·mailbox·worktree·remote 격리와 실제 Society/Dreamscapes 제품 UI 검증은 남아 있다. 이 단계에서 기본 SDK나 제품 앱을 재설치하지 않았으며 iPhone 제외 지시를 유지한다. 전체 목표는 진행 중이다.
+
 ## 2026-09-15 C++ 서브에이전트와 호출 경계 (0.15.0)
 
 기존 Engine 위에 별도 자식 대화 실행, 도구·모델 범위 제한, 동기·백그라운드 실행, 명시적 부모 컨텍스트 분기, 자식 재개, 취소·기한, 결과 조회와 완료 알림을 추가했다. 인증 API·native IPC·HTTP·CLI·MCP에서 같은 실행기를 사용한다. 추가 생산 의존성과 Python 실행기는 없으며 기존 Qt·C++ Model/Service·도구·세션·입력 큐를 재사용한다. EngineOptions·ToolContext·ApiOptions 확장에 따라 ABI는 0.15이고 소비자를 다시 빌드한다. 전체 하네스와 subagents의 상태는 **partial**이다.

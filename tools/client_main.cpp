@@ -88,7 +88,7 @@ private:
 int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
-    app.setApplicationName(QStringLiteral("iillm")); app.setApplicationVersion(QStringLiteral("0.15.0"));
+    app.setApplicationName(QStringLiteral("iillm")); app.setApplicationVersion(QStringLiteral("0.16.0"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("Native IPC client of iiLocalLLMD. Inference runs only in the daemon."));
     parser.addHelpOption(); parser.addVersionOption();
@@ -133,7 +133,7 @@ int main(int argc, char** argv)
             else {
                 const auto allowed = args[1] == "tasks" ? QStringList{"create", "get", "list", "update", "claim"}
                     : args[1] == "skills" ? QStringList{"list", "run"}
-                    : args[1] == "agents" ? QStringList{"run", "output", "stop", "list"}
+                    : args[1] == "agents" ? QStringList{"run", "output", "stop", "list", "profiles"}
                     : args[1] == "inputs" ? QStringList{"enqueue", "list", "remove", "run"}
                     : args[1] == "shell" ? QStringList{"start", "output", "stop", "list"} : QStringList{"get", "write"};
                 if (!allowed.contains(args[2])) throw std::runtime_error("Unknown agent action");

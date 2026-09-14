@@ -16,7 +16,8 @@ int main(int argc,char** argv){
         auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
         a::EngineOptions eo;eo.sessionsDirectory=root.filePath("parents");
         a::SubagentOptions so;so.workingDirectory=workspace;so.stateDirectory=root.filePath("children");
-        auto children=std::make_shared<a::Subagents>(model,registry,policy,eo,so);eo.additionalTools=a::Subagents::tools(children);
+        so.profiles.enabled=true;so.profiles.projectBoundary=workspace;
+        auto children=std::make_shared<a::Subagents>(model,registry,policy,eo,so);a::Subagents::attach(eo,children);
         a::Engine engine(model,registry,policy,eo);const auto parent=engine.createSession("local",workspace);
         auto first=engine.runSubagentTool(parent.id,"Agent",{{"prompt","INSTALLED_CHILD"}});
         if(first.isError||first.data["result"].toObject()["text"]!="INSTALLED_CHILD")return 1;
@@ -25,7 +26,9 @@ int main(int argc,char** argv){
         if(resumed.isError||resumed.data["status"]!="async_launched")return 1;
         auto output=engine.runSubagentTool(parent.id,"AgentOutput",{{"agent_id",id},{"block",true},{"timeout_ms",5000}});
         if(output.isError||output.data["status"]!="completed"||output.data["result"].toObject()["text"]!="RESUMED_CHILD")return 1;
-        if(engine.queuedInputs(parent.id)["count"]!=1||engine.subagentToolDefinitions().size()!=4)return 1;
+        if(engine.queuedInputs(parent.id)["count"]!=1||engine.subagentToolDefinitions().size()!=5)return 1;
+        const auto profiles=engine.runSubagentTool(parent.id,"AgentProfiles");
+        if(profiles.isError||profiles.data["profiles"].toArray().size()!=3||children->profiles().find("Explore").readOnly!=true)return 1;
         std::cout<<"installed subagent ABI, foreground, background, resume and notification passed\n";
     }catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}
 }

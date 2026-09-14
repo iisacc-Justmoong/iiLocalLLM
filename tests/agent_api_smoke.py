@@ -172,6 +172,16 @@ def main():
             assert rejected.returncode != 0 and "ggml_metal" not in rejected.stderr, rejected.stderr
         subagent_options.write_text(valid_subagent_options)
         evidence["checks"].append("subagent_generation_validated_before_runtime")
+        profile_config = root / "profiles.json"
+        for invalid in ('[]', '{"unknown":true}', '{"model_aliases":{"small":false}}'):
+            profile_config.write_text(invalid)
+            profile_config.chmod(0o600)
+            rejected = subprocess.run(base + ["--agent-profiles", str(profile_config)], capture_output=True, text=True, timeout=10, env=environment)
+            assert rejected.returncode != 0 and "ggml_metal" not in rejected.stderr, rejected.stderr
+        profile_config.write_text(json.dumps({"project_boundary": str(workspace), "overrides": {"configured": {
+            "description": "Host JSON profile", "prompt": "Inspect the supplied facts.", "tools": []}}}))
+        base += ["--agent-profiles", str(profile_config)]
+        evidence["checks"].append("agent_profile_host_configuration_validated")
         for extra in (["--agent-apps-dir", str(root / "apps"), "--agent-no-apps"], ["--agent-apps-dir", ""]):
             rejected = subprocess.run(base + extra, capture_output=True, text=True, timeout=10, env=environment)
             assert rejected.returncode != 0 and "agent-apps-dir" in rejected.stderr, rejected.stderr
@@ -214,6 +224,17 @@ def main():
             assert agents_cli("run", session, {"prompt": "rejected before execution", "max_turns": 0}, expect=1)["is_error"]
             assert agents_cli("list", session) == children
             evidence["checks"] += ["subagent_list_http_native_cli", "subagent_parent_auth_isolation", "subagent_cli_validation_exit"]
+            profile_dir = workspace / ".claude" / "agents"
+            profile_dir.mkdir(parents=True)
+            (profile_dir / "reader.md").write_text("---\nname: reader\ndescription: Read one workspace file\ntools: Read\n---\nUse Read to inspect the requested file and report its exact contents. Do not invent observations.\n")
+            profiles = agents_cli("profiles", session)
+            names = {item["name"] for item in profiles["result"]["profiles"]}
+            assert {"reader", "configured", "general-purpose", "Explore", "Plan"} <= names
+            assert native("agent.agents.profiles", {"session_id": session})[-1]["result"] == profiles
+            assert http(port, "agent.agents.profiles", {"session_id": session})[1]["result"] == profiles
+            assert http(port, "agent.agents.profiles", {"session_id": session}, auth=other)[0] == 404
+            assert all("system_prompt" not in item and "metadata" not in item for item in profiles["result"]["profiles"])
+            evidence["checks"] += ["live_profiles_http_native_cli", "profile_catalog_excludes_prompts", "profile_catalog_authentication"]
             skill_dir = workspace / ".claude" / "skills" / "inspect"
             skill_dir.mkdir(parents=True)
             (skill_dir / "SKILL.md").write_text("---\ndescription: Inspect a file\ndisable-model-invocation: true\n---\nUse the Read tool to read $0. Then return the exact file contents as your final answer. Do not guess.\n")

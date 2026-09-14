@@ -80,3 +80,5 @@
 0.14.0은 로컬 스킬의 메타데이터 목록·인자 치환·인라인 대화 주입·복원을 C++로 구현하고 인증 API·MCP·CLI에 연결한다. 허용 도구에 따른 권한 추가, fork, 훅, 조건부/원격 스킬, 번들/플러그인 설치와 갱신은 아직 남아 있다. [Skills.md](Skills.md)의 구체적 지원 범위를 따른다.
 
 0.15.0은 별도 C++ Engine의 자식 대화, 범위 제한, 동기·백그라운드 실행, 명시적 부모 컨텍스트 분기, 재개·취소·기한과 결과 제어·완료 알림을 API·MCP·CLI에 연결한다. 프로파일 파일 계층·전체 전문 역할·전용 훅·에이전트별 확장·팀·worktree·remote와 전체 앱 검증은 남아 있다. [Subagents.md](Subagents.md)를 참조한다.
+
+0.16.0은 파일·JSON 프로파일 계층과 변경 인식, `general-purpose`/`Explore`/`Plan`의 로컬 역할, 스킬 사전 로딩, 호스트 모델 별칭·추가 제한, SubagentStart/SubagentStop C++ 훅과 프로파일 조회 API·MCP·CLI를 추가한다. 참조의 모든 전문 역할·플러그인 생명주기·에이전트별 MCP/메모리·외부 훅과 스킬 fork는 계속 미완료이다. 세부 계약은 [AgentProfiles.md](AgentProfiles.md)를 따른다.

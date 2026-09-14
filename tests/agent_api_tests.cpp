@@ -52,6 +52,16 @@ template<class F> void error(F fn, ErrorCode expected) {
 class AgentApiTests : public QObject {
     Q_OBJECT
 private slots:
+    void liveProfilesShareHostConfigurationButRespectClientIdentity() {
+        QTemporaryDir root;auto config=options(root);config.subagentsEnabled=true;config.subagents.profiles.enabled=true;config.subagents.profiles.projectBoundary=config.workingDirectory;
+        a::Api api(std::make_shared<Model>(),std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass),config);
+        const auto id=call(api,"agent.sessions.create",{{"model","local"}})["session_id"].toString();
+        auto catalog=call(api,"agent.agents.profiles",{{"session_id",id}});QVERIFY(!catalog["is_error"].toBool());QCOMPARE(catalog["result"].toObject()["profiles"].toArray().size(),3);
+        const auto dir=config.workingDirectory+"/.claude/agents";QVERIFY(QDir().mkpath(dir));QFile file(dir+"/review.md");QVERIFY(file.open(QIODevice::WriteOnly));file.write("---\nname: reviewer\ndescription: API profile\ntools: []\n---\nInspect provided facts.\n");file.close();
+        catalog=call(api,"agent.agents.profiles",{{"session_id",id}});QCOMPARE(catalog["result"].toObject()["profiles"].toArray().size(),4);
+        const auto result=call(api,"agent.agents.run",{{"session_id",id},{"prompt","API_PROFILE"},{"subagent_type","reviewer"}});QVERIFY(!result["is_error"].toBool());QCOMPARE(result["result"].toObject()["result"].toObject()["text"],"API_PROFILE");
+        QVERIFY_THROWS_EXCEPTION(Error,call(api,"agent.agents.profiles",{{"session_id",id}},secondToken));
+    }
     void childGenerationUsesHostOptionsIndependentlyOfParentRequests() {
         class OptionsModel final : public a::Model {
             a::ModelReply generate(const a::ModelRequest& r,const CancellationToken&,const TextCallback&) override {

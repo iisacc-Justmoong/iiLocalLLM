@@ -147,9 +147,12 @@
         "tests/subagent_tests.cpp",
         "tests/subagent_runtime_smoke.cpp",
         "tests/consumer/subagents.cpp",
-        "docs/Subagents.md"
+        "docs/Subagents.md",
+        "agent/AgentProfiles.cpp",
+        "tests/agent_profiles_tests.cpp",
+        "docs/AgentProfiles.md"
       ],
-      "remaining": "C++ separate child conversations, scoped tools/models, foreground/background execution, explicit context forks, resume, cancellation/deadlines, result controls and parent input-queue notifications are implemented. File-based and managed/plugin agent profiles, all specialist roles, skill fork invocation, dedicated lifecycle hooks, agent-specific MCP/memory/skills, automatic background transition, teams/SendMessage/mailbox, worktree/remote isolation, shared TaskOutput/TaskStop routing, trace/cost aggregation and complete real-app qualification remain. Model-level qualification and failures are recorded separately in Verification.md."
+      "remaining": "C++ child conversations, foreground/background execution, explicit parent-context fork, resume, cancellation/deadlines and notifications are implemented. File/JSON profile hierarchy, live catalogs, host model aliases, strict scope intersections, inline skill preloads and C++ SubagentStart/SubagentStop callbacks are added in 0.16. Full builtin roles and conditional selection, plugin lifecycle/worktree-directory fallback, skill fork invocation, agent-specific MCP/memory and external hooks, automatic transition during a running foreground task, teams/mailbox, worktree/remote isolation, unified task routing, trace/cost aggregation and complete real-app qualification remain. Profile bodies are original C++ implementation prompts, not copied reference prompts. See Verification.md for separate model-level outcomes."
     },
     {
       "id": "teams",
@@ -309,7 +312,12 @@
         "tests/mcp_server_tests.cpp",
         "tests/mcp_server_smoke.py",
         "tests/consumer/skills.cpp",
-        "docs/Skills.md"
+        "docs/Skills.md",
+        "agent/AgentProfiles.cpp",
+        "agent/Subagents.cpp",
+        "tests/agent_profiles_tests.cpp",
+        "tests/subagent_tests.cpp",
+        "docs/AgentProfiles.md"
       ],
       "remaining": "Local bounded discovery, metadata catalog, literal arguments, inline user/model invocation and durable restoration are implemented. Permission grants, model/effort changes, fork, hooks, conditional and dynamic scopes, remote MCP skills, legacy commands, bundled/plugin skills, installation and update, ranking and active-skill compaction reinjection remain."
     },
@@ -332,9 +340,14 @@
         "docs/Compaction.md",
         "agent/TaskStore.cpp",
         "tests/task_tests.cpp",
-        "docs/Tasks.md"
+        "docs/Tasks.md",
+        "agent/AgentProfiles.cpp",
+        "agent/Subagents.cpp",
+        "tests/agent_profiles_tests.cpp",
+        "tests/subagent_tests.cpp",
+        "docs/AgentProfiles.md"
       ],
-      "remaining": "C++ model/tool/stop/compaction and pre-commit TaskCreated/TaskCompleted callbacks implemented. Full lifecycle and external command/HTTP/model hook runners remain."
+      "remaining": "C++ model/tool/stop/compaction, pre-commit TaskCreated/TaskCompleted and SubagentStart/SubagentStop callbacks are implemented. Child Stop is mapped to SubagentStop; veto, feedback and stop_hook_active are tested. Start precedes child Engine.run and has no runId yet. Full lifecycle and external command/HTTP/model hook runners, including agent-file hooks, remain."
     },
     {
       "id": "tasks",

@@ -42,7 +42,7 @@ public:
             throw Error(ErrorCode::InvalidArgument, "Invalid agent engine configuration");
         pool.setMaxThreadCount(this->options.maxConcurrentRuns);
         auto configured = this->registry->snapshot();
-        for (const auto& tool : this->options.additionalTools) configured->add(tool);
+        for (const auto& tool : additionalTools()) configured->add(tool);
         if (this->options.skills.enabled) {
             configured->add(detail::skillTool({}, this->options.skills)); // Reserve the native Skill identity.
         }
@@ -64,6 +64,12 @@ public:
     struct ActiveRun { CancellationToken root, operation; QString sessionId; bool acceptsInput = true; bool interrupted = false; };
     std::map<QString, ActiveRun> active;
     QSet<QString> busySessions;
+
+    QList<Tool> additionalTools() const {
+        auto result = options.additionalTools;
+        if (options.additionalToolsProvider) result.append(options.additionalToolsProvider());
+        return result;
+    }
 
     CancellationToken beginOperation(const QString& id, const CancellationToken& root) {
         std::lock_guard lock(mutex); auto& run = active.at(id);
@@ -181,11 +187,13 @@ public:
             }
             return count;
         };
+        bool stopHookActive=false;
         auto hooks = [&](HookKind kind, const QString& text) {
             HookResult combined;
             for (const auto& hook : options.hooks) {
                 token.throwIfCancelled();
-                auto r = hook({kind, request.sessionId, runId, {}, {}, text}, token);
+                auto r = hook({kind, request.sessionId, runId, {}, {}, text,
+                    kind==HookKind::Stop?QJsonObject{{"stop_hook_active",stopHookActive}}:QJsonObject{}}, token);
                 combined.block |= r.block;
                 if (!r.feedback.isEmpty()) {
                     if (!combined.feedback.isEmpty()) combined.feedback += '\n';
@@ -228,7 +236,7 @@ public:
                 if (!before.feedback.isEmpty()) append({{}, MessageRole::User, before.feedback});
                 const auto& session = lease->session();
                 const auto turnRegistry = registry->snapshot();
-                for (const auto& tool : options.additionalTools) turnRegistry->add(tool);
+                for (const auto& tool : additionalTools()) turnRegistry->add(tool);
                 const auto skillCatalog = discoverSkills(session.workingDirectory, options.skills, token);
                 const auto skillContext = skillCatalog.message();
                 if (!skillContext.text.isEmpty()) turnRegistry->add(detail::skillTool(session.workingDirectory, options.skills));
@@ -293,6 +301,7 @@ public:
                 if (reply.toolCalls.isEmpty()) {
                     auto stop = hooks(HookKind::Stop, reply.text);
                     if (stop.block) {
+                        stopHookActive=true;
                         append({{}, MessageRole::User, stop.feedback.isEmpty() ? QStringLiteral("The stop hook requires more work.") : stop.feedback});
                         continue;
                     }
@@ -393,12 +402,12 @@ bool Engine::backgroundTasksEnabled() const {
 }
 bool Engine::subagentsEnabled() const {
     for (const auto& t : d->options.additionalTools)
-        if (t.definition.name == "Agent" && t.definition.metadata["source"] == "builtin.subagent") return true;
+        if ((t.definition.name == "Agent" || t.definition.name == "AgentProfiles") && t.definition.metadata["source"] == "builtin.subagent") return true;
     return false;
 }
 QList<ToolDefinition> Engine::subagentToolDefinitions() const {
     QList<ToolDefinition> result;
-    for (const auto& t : d->options.additionalTools) if (t.definition.metadata["source"] == "builtin.subagent") result.append(t.definition);
+    for (const auto& t : d->additionalTools()) if (t.definition.metadata["source"] == "builtin.subagent") result.append(t.definition);
     return result;
 }
 void Engine::stopSubagents(const QString& id) const {
@@ -417,11 +426,13 @@ void Engine::stopSubagents(const QString& id) const {
 ToolResult Engine::runSubagentTool(const QString& id, const QString& name, const QJsonObject& args,
     const CancellationToken& token, const EventCallback& callback) const {
     if (!subagentsEnabled()) throw Error(ErrorCode::RuntimeUnavailable, "Subagents are disabled by the host");
-    if (!QStringList{"Agent", "AgentOutput", "AgentStop", "AgentList"}.contains(name)) throw Error(ErrorCode::NotFound, "Unknown subagent tool");
+    if (!QStringList{"Agent", "AgentOutput", "AgentStop", "AgentList", "AgentProfiles"}.contains(name)) throw Error(ErrorCode::NotFound, "Unknown subagent tool");
     token.throwIfCancelled();
     const auto session = name == "Agent" && args["fork_context"].toBool() ? d->store.load(id) : d->store.metadata(id);
     auto registry = std::make_shared<ToolRegistry>();
-    for (const auto& t : d->options.additionalTools) if (t.definition.metadata["source"] == "builtin.subagent") registry->add(t);
+    // State controls remain usable even if fresh profile discovery fails.
+    const auto tools = name == "Agent" ? d->additionalTools() : d->options.additionalTools;
+    for (const auto& t : tools) if (t.definition.metadata["source"] == "builtin.subagent") registry->add(t);
     ToolContext context{id, uuid(), session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), token};
     context.sessionSnapshot = std::make_shared<Session>(session);
     const auto callId = uuid();

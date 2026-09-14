@@ -40,6 +40,52 @@ struct Host {
 class SubagentTests final : public QObject {
     Q_OBJECT
 private slots:
+    void subagentHooksAreScopedAndCanRequireAnotherTurn() {
+        Host h;int starts=0,stops=0,parentStops=0;QString childId;std::shared_ptr<a::Subagents> agents;
+        h.engineOptions.hooks.append([&](const a::HookInput& input,const CancellationToken&){
+            if(input.kind==a::HookKind::SubagentStart){
+                ++starts;childId=input.sessionId;
+                if(input.context["agent_type"]!="general-purpose"||input.context["parent_session_id"].toString().isEmpty())throw std::runtime_error("missing lifecycle identity");
+                // Safe reentrant inspection proves callbacks run outside owner locks.
+                if(agents->list(input.context["parent_session_id"].toString()).isEmpty())throw std::runtime_error("hook before acceptance");
+                return a::HookResult{false,"START_CONTEXT"};
+            }
+            if(input.kind==a::HookKind::SubagentStop){
+                if(input.sessionId!=childId||input.context["stop_hook_active"].toBool()!=(stops>0))throw std::runtime_error("incorrect stop context");
+                ++stops;return a::HookResult{stops==1,"CONTINUE_FROM_HOOK"};
+            }
+            if(input.kind==a::HookKind::Stop)++parentStops;
+            return a::HookResult{};
+        });
+        h.model->next=[](const auto& r,const auto&){
+            bool start=false;for(const auto& m:r.messages)start|=m.text=="START_CONTEXT";
+            if(!start)throw std::runtime_error("missing lifecycle context");
+            return a::ModelReply{r.messages.last().text=="CONTINUE_FROM_HOOK"?"continued":"first",{}};
+        };
+        agents=h.start();auto result=agents->run(h.context(h.parent()),{{"prompt","perform"}});
+        QVERIFY2(!result.isError,qPrintable(result.text));QCOMPARE(result.data["result"].toObject()["text"],"continued");
+        QCOMPARE(starts,1);QCOMPARE(stops,2);QCOMPARE(parentStops,0);
+        const auto transcript=a::SessionStore(h.options.stateDirectory+"/sessions").load(childId);
+        bool saved=false;for(const auto& m:transcript.messages)saved|=m.text=="START_CONTEXT";QVERIFY(saved);
+    }
+    void startHookVetoHasARecordedFailureAndNoModelExecution() {
+        Host h;int modelCalls=0;h.model->next=[&](const auto&,const auto&){++modelCalls;return a::ModelReply{"unexpected",{}};};
+        h.engineOptions.hooks.append([](const a::HookInput& input,const CancellationToken&){return a::HookResult{input.kind==a::HookKind::SubagentStart,"START_REJECTED"};});
+        auto agents=h.start();const auto p=h.parent();const auto result=agents->run(h.context(p),{{"prompt","perform"}});
+        QVERIFY(result.isError);QCOMPARE(modelCalls,0);QCOMPARE(result.data["status"],"failed");
+        QVERIFY(result.data["result"].toObject()["error_message"].toString().contains("START_REJECTED"));QCOMPARE(agents->list(p.id).size(),1);
+    }
+    void profilePermissionModeCannotGrantParentDeniedActions() {
+        for(const auto& mode:{QStringLiteral("bypassPermissions"),QStringLiteral("acceptEdits"),QStringLiteral("dontAsk"),QStringLiteral("plan")}) {
+            Host h;int writes=0,asks=0;h.registry->add({{"Write","write",{{"type","object"}}},[&](const auto&,const auto&){++writes;return a::ToolResult{"bad"};}});
+            h.policy=std::make_shared<a::RulePolicy>(mode=="plan"?a::PermissionMode::Bypass:a::PermissionMode::Default,
+                (mode=="dontAsk"||mode=="plan")?QList<a::PermissionRule>{}:QList<a::PermissionRule>{{"Write",a::PermissionBehavior::Deny}});
+            h.engineOptions.permission=[&](const auto&,const auto&,const auto&){++asks;return true;};
+            a::SubagentDefinition profile;profile.permissionMode=mode;h.options.definitions={profile};
+            h.model->next=[](const auto& r,const auto&){if(r.messages.last().role==a::MessageRole::Tool)return a::ModelReply{"observed denial",{}};return a::ModelReply{{},{{"write","Write",{}}}};};
+            auto agents=h.start();const auto result=agents->run(h.context(h.parent()),{{"prompt","attempt write"}});QVERIFY(!result.isError);QCOMPARE(writes,0);QCOMPARE(asks,0);
+        }
+    }
     void childSearchCatalogCannotExposeOrActivateDeniedTools() {
         Host h;h.engineOptions.taskToolsEnabled=true;int invoked=0;
         a::Tool tool;tool.definition={"mcp.fixture.read","Read delegated artifact",{{"type","object"}}, {},true,true,false,true};
