@@ -1,4 +1,6 @@
 #include "Subagents.h"
+#include "SkillsInternal.h"
+#include "PermissionRules.h"
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -321,9 +323,11 @@ ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args
         if(fork) request.prompt="You are the delegated child. The earlier conversation belongs to the parent. Work directly on the task below with your available tools and report your own observed result.\n\n"+request.prompt;
         require(request.prompt.size()<=d->parent.maxInputCharacters,"Expanded subagent prompt exceeds input limit",ErrorCode::ResourceLimit);
         request.generation=d->options.generation;
+        request.allowedTools=parsePermissionRules(context.allowedTools);
         if(skill) {
             request.generation=skill->generation;request.maxTurns=std::min(request.maxTurns,skill->maxTurns);
             request.contextPaths=skill->contextPaths;request.promptMetadata=skill->prompt.metadata;
+            request.allowedTools=parsePermissionRules(request.allowedTools+detail::skillAllowedTools(skill->prompt));
         }
     };
     {

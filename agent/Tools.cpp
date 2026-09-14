@@ -1,4 +1,5 @@
 #include "Tools.h"
+#include "PermissionRulesInternal.h"
 #include <jsoncons/json.hpp>
 #include <jsoncons_ext/jsonschema/jsonschema.hpp>
 #include <QtCore/QJsonDocument>
@@ -46,7 +47,7 @@ ToolRegistry::ToolRegistry() : d(std::make_unique<Impl>()) {}
 ToolRegistry::~ToolRegistry() = default;
 void ToolRegistry::add(Tool tool) {
     static const QRegularExpression name("^[A-Za-z0-9_.:-]{1,128}$");
-    if (!name.match(tool.definition.name).hasMatch() || !tool.execute)
+    if (!name.match(tool.definition.name).hasMatch() || (!tool.execute && !tool.prepare))
         throw Error(ErrorCode::InvalidArgument, "Tool name and implementation are required");
     if (tool.definition.inputSchema.isEmpty()) tool.definition.inputSchema = {{"type", "object"}};
     if (QJsonDocument(tool.definition.inputSchema).toJson().size() > 1024 * 1024
@@ -96,23 +97,30 @@ void ToolRegistry::validateInput(const QString& name, const QJsonObject& input) 
 void ToolRegistry::validateOutput(const QString& name, const QJsonObject& output) const {
     resolve(name)->validateOutput(output);
 }
-RulePolicy::RulePolicy(PermissionMode mode, QList<PermissionRule> rules) : mode_(mode), rules_(std::move(rules)) {}
-PermissionDecision RulePolicy::decide(const ToolDefinition& tool, const QJsonObject&, const ToolContext&) const {
+RulePolicy::RulePolicy(PermissionMode mode, QList<PermissionRule> rules) : mode_(mode) {
+    QStringList all;
+    for (const auto& rule : rules) { for (const auto& pattern : parsePermissionRules({rule.toolPattern})) { rules_.append({pattern, rule.behavior}); all.append(pattern); } }
+    parsePermissionRules(all);
+}
+PermissionDecision RulePolicy::decide(const ToolDefinition& tool, const QJsonObject& args, const ToolContext& context) const {
     std::optional<PermissionBehavior> matched;
+    QStringList denies, asks, allows = context.allowedTools;
     for (const auto& rule : rules_) {
-        auto regex = QRegularExpression(QRegularExpression::wildcardToRegularExpression(rule.toolPattern));
-        if (!regex.match(tool.name).hasMatch()) continue;
-        if (rule.behavior == PermissionBehavior::Deny) return {PermissionBehavior::Deny, "Explicit tool deny rule"};
-        if (!matched || rule.behavior == PermissionBehavior::Ask) matched = rule.behavior;
+        if (rule.behavior == PermissionBehavior::Deny) denies.append(rule.toolPattern);
+        else if (rule.behavior == PermissionBehavior::Ask) asks.append(rule.toolPattern);
+        else allows.append(rule.toolPattern);
     }
+    if (detail::permissionRulesMatch(denies, tool, args, context, false)) return {PermissionBehavior::Deny, "Explicit tool deny rule"};
     const bool taskState = tool.metadata["source"] == "builtin.task"
         && QStringList{"TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TaskClaim", "TodoWrite", "TodoRead"}.contains(tool.name);
     const bool stopOwnShell = tool.name == "TaskStop" && tool.metadata["source"] == "builtin.shell.control";
     if (mode_ == PermissionMode::Plan && !tool.readOnly && !taskState && !stopOwnShell) return {PermissionBehavior::Deny, "Plan mode allows read-only tools, internal task state and stopping owned executions"};
+    if (detail::permissionRulesMatch(asks, tool, args, context, false)) matched = PermissionBehavior::Ask;
+    else if (detail::permissionRulesMatch(allows, tool, args, context, true)) matched = PermissionBehavior::Allow;
     auto decision = matched.value_or(mode_ == PermissionMode::Bypass || tool.readOnly || taskState || stopOwnShell
         || (mode_ == PermissionMode::AcceptEdits && tool.editsFiles) ? PermissionBehavior::Allow : PermissionBehavior::Ask);
     if (decision == PermissionBehavior::Ask && mode_ == PermissionMode::DontAsk) decision = PermissionBehavior::Deny;
-    return {decision, matched ? "Explicit tool rule" : "Session permission mode"};
+    return {decision, matched ? "Tool permission rule (host or current invocation)" : "Session permission mode"};
 }
 ToolRunner::ToolRunner(std::shared_ptr<ToolRegistry> registry, std::shared_ptr<const PermissionPolicy> policy, ToolRunnerOptions options)
     : registry_(std::move(registry)), policy_(std::move(policy)), options_(std::move(options)) {
@@ -140,16 +148,25 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& context, const Even
         }
         entry->validateInput(call.arguments);
         if (tool.validate) tool.validate(call.arguments, context);
-        const auto decision = policy_->decide(tool.definition, call.arguments, context);
+        const auto prepared = tool.prepare ? tool.prepare(call.arguments, context)
+            : PreparedTool{tool.definition, [&] { return tool.execute(call.arguments, context); }};
+        if (!prepared.execute || prepared.definition.name != tool.definition.name
+            || prepared.definition.inputSchema != tool.definition.inputSchema || prepared.definition.outputSchema != tool.definition.outputSchema)
+            throw Error(ErrorCode::InvalidArgument, "Prepared tool changed identity/schema or omitted execution");
+        auto decision = policy_->decide(prepared.definition, call.arguments, context);
+        if (tool.prepare) decision.reason += "\n" + prepared.definition.description + "\n"
+            + QString::fromUtf8(QJsonDocument(prepared.definition.metadata).toJson(QJsonDocument::Compact));
         bool allowed = decision.behavior == PermissionBehavior::Allow;
         if (decision.behavior == PermissionBehavior::Ask) {
-            event(callback, EventKind::PermissionRequested, context, call, decision.reason, toJson(call));
+            auto data = toJson(call);
+            if (tool.prepare) data["permission_preview"] = toJson(prepared.definition);
+            event(callback, EventKind::PermissionRequested, context, call, decision.reason, data);
             allowed = options_.permission && options_.permission(call, decision, context);
         }
         if (!allowed) throw Error(ErrorCode::InvalidArgument, "Tool permission denied: " + decision.reason);
         context.cancellation.throwIfCancelled();
         event(callback, EventKind::ToolStarted, context, call, {}, toJson(call));
-        result = tool.execute(call.arguments, context);
+        result = prepared.execute();
         context.cancellation.throwIfCancelled();
         if (!result.isError) entry->validateOutput(result.data);
     } catch (const Error& e) {

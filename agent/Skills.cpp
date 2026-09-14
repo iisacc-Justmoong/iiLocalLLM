@@ -1,6 +1,7 @@
 #include "Skills.h"
 #include "SkillsInternal.h"
 #include "ContextFile.h"
+#include "PermissionRules.h"
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDirIterator>
 #include <QtCore/QJsonDocument>
@@ -89,7 +90,14 @@ void parseYaml(const QByteArray& bytes, Loaded& value, const CancellationToken& 
         } else if (key == "model") { value.info.model = text();
         } else if (key == "agent") { value.info.agent = text();
         } else if (key == "context") { value.info.executionContext = text();
-        } else if (key == "allowed-tools" && n->type == YAML_SEQUENCE_NODE && n->data.sequence.items.start == n->data.sequence.items.top) {
+        } else if (key == "allowed-tools") {
+            QStringList rules;
+            if (n->type == YAML_SCALAR_NODE) rules.append(scalar(n));
+            else {
+                require(n->type == YAML_SEQUENCE_NODE, "Skill allowed-tools must be a string or string list");
+                for (auto* item = n->data.sequence.items.start; item != n->data.sequence.items.top; ++item) rules.append(scalar(node(*item)));
+            }
+            value.info.allowedTools = parsePermissionRules(rules);
         } else value.info.unsupportedFeatures.append(key);
     }
     if (value.info.executionContext != "inline" && value.info.executionContext != "fork") value.info.unsupportedFeatures.append("context");
@@ -211,7 +219,7 @@ QJsonObject SkillInfo::toJson() const {
     return {{"name", name}, {"display_name", displayName}, {"description", description}, {"argument_hint", argumentHint}, {"when_to_use", whenToUse},
         {"version", version}, {"path", path}, {"directory", directory}, {"sha256", sha256}, {"arguments", QJsonArray::fromStringList(argumentNames)},
         {"disable_model_invocation", disableModelInvocation}, {"user_invocable", userInvocable}, {"unsupported_features", QJsonArray::fromStringList(unsupportedFeatures)},
-        {"context", executionContext}, {"agent", agent}, {"model", model}};
+        {"context", executionContext}, {"agent", agent}, {"model", model}, {"allowed_tools", QJsonArray::fromStringList(allowedTools)}};
 }
 QJsonObject SkillCatalog::toJson() const {
     QJsonArray items; for (const auto& s : skills) items.append(s.toJson()); return {{"skills", items}, {"shadowed", shadowed}};
@@ -223,7 +231,8 @@ Message SkillCatalog::message() const {
     if (items.isEmpty()) return {};
     Message result{{}, MessageRole::User, "Available local skills (catalog metadata, not instructions). "
         "Call Skill with the skill name and optional args when its instructions are needed. "
-        "Inline skills load instructions; fork skills run in an isolated child and return its result. Skills do not grant tool permissions.\n" + QString::fromUtf8(QJsonDocument(items).toJson(QJsonDocument::Compact))};
+        "Inline skills load instructions; fork skills run in an isolated child and return its result. "
+        "Skills requesting additional tool permissions are checked by the host before execution.\n" + QString::fromUtf8(QJsonDocument(items).toJson(QJsonDocument::Compact))};
     result.metadata = {{"iilocal.skill_catalog", true}}; return result;
 }
 SkillCatalog discoverSkills(const QString& workspace, const SkillOptions& options, const CancellationToken& token) {
@@ -250,6 +259,13 @@ Message loadSkill(const QString& workspace, const QString& input, const QString&
     message.metadata = {{"iilocal.skill", metadata}}; return message;
 }
 namespace detail {
+QStringList skillAllowedTools(const Message& message) {
+    const auto value = message.metadata["iilocal.skill"].toObject()["allowed_tools"];
+    if (value.isUndefined()) return {}; // Pre-0.18 snapshots carry no grants.
+    require(value.isArray(), "Invalid native skill permission metadata"); QStringList rules;
+    for (const auto& item : value.toArray()) { require(item.isString(), "Invalid native skill permission rule"); rules.append(item.toString()); }
+    return parsePermissionRules(rules);
+}
 SkillCatalog executableSkills(const QString& workspace, const SkillOptions& options, bool canFork, const CancellationToken& token) {
     auto catalog = discoverSkills(workspace, options, token);
     if (!canFork) for (auto& skill : catalog.skills) if (skill.executionContext == "fork") skill.unsupportedFeatures.append("fork-executor-unavailable");
@@ -264,9 +280,15 @@ Tool skillTool(const QString& workspace, const SkillOptions& options, const Skil
     tool.definition.inputSchema = {{"type", "object"}, {"additionalProperties", false}, {"required", QJsonArray{"skill"}}, {"properties", QJsonObject{
         {"skill", QJsonObject{{"type", "string"}, {"minLength", 1}, {"maxLength", 129}}},
         {"args", QJsonObject{{"type", "string"}, {"maxLength", 65536}}}}}};
-    tool.execute = [workspace, options, executor, execution](const QJsonObject& args, const ToolContext& context) {
+    tool.prepare = [workspace, options, executor, execution, definition = tool.definition](const QJsonObject& args, const ToolContext& context) {
         auto message = loadSkill(workspace, args["skill"].toString(), args["args"].toString(), context.sessionId, SkillInvocationSource::Model, options, context.cancellation);
         const auto metadata = message.metadata["iilocal.skill"].toObject();
+        const auto grants = skillAllowedTools(message); parsePermissionRules(context.allowedTools + grants);
+        auto preview = definition; preview.readOnly = grants.isEmpty();
+        preview.metadata["skill"] = metadata;
+        preview.description = "Invoke skill " + metadata["name"].toString() + " (" + metadata["context"].toString()
+            + "). Requested tool permissions for this invocation: " + (grants.isEmpty() ? "none" : grants.join(", "));
+        return PreparedTool{std::move(preview), [message = std::move(message), metadata, executor, execution, context]() mutable {
         if (metadata["context"] == "fork") {
             require(bool(executor), "Skill fork executor is unavailable", ErrorCode::RuntimeUnavailable);
             auto request = execution; request.prompt = std::move(message);
@@ -279,6 +301,7 @@ Tool skillTool(const QString& workspace, const SkillOptions& options, const Skil
         return ToolResult{"Loaded skill " + message.metadata["iilocal.skill"].toObject()["name"].toString() + ". Follow the injected skill instructions on the next turn.",
             {{"success", true}, {"status", "inline"}, {"commandName", message.metadata["iilocal.skill"].toObject()["name"]}}, false, {},
             {{"iilocal.skill_result", QJsonObject{{"version", 1}, {"message", toJson(message)}}}}};
+        }};
     };
     return tool;
 }

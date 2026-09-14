@@ -19,10 +19,12 @@ with tempfile.TemporaryDirectory(prefix="mcp-http-cli-") as directory:
     token = secrets.token_urlsafe(32)
     arguments = [binary, "--workspace", str(workspace), "--http-port", "0", "--credentials", str(credentials), "--state", str(root / "state")]
 
-    def reject(extra=(), override=None):
+    def reject(extra=(), override=None, error=None):
         process = subprocess.run(override or (arguments + list(extra)), capture_output=True, timeout=10)
         assert process.returncode != 0 and not process.stdout, (process.returncode, process.stdout, process.stderr)
         assert token.encode() not in process.stderr, "Credential leaked to diagnostics"
+        if error:
+            assert error.encode() in process.stderr, process.stderr
 
     def write(value, mode=0o600):
         credentials.write_text(json.dumps(value))
@@ -36,6 +38,30 @@ with tempfile.TemporaryDirectory(prefix="mcp-http-cli-") as directory:
     write({"fixture": token}, 0o644)
     reject()
     write({"fixture": token})
+    help_text = subprocess.check_output([binary, "--help"], timeout=10)
+    assert b"--model-options" in help_text, "MCP host cannot configure model load options"
+    model_options = root / "model-options.json"
+    model_options.write_text('{"enable_thinking": false, "tool_grammar": false}')
+    model_options.chmod(0o600)
+    model_flags = ["--model", "model://not-installed", "--models", str(root / "missing-models")]
+    reject(["--model-options", str(model_options)], error="--model-options requires --model and --models")
+    reject(["--model", "model://not-installed", "--model-options", str(model_options)],
+           error="--model-options requires --model and --models")
+    for value in ("[]", "false", "null", "{invalid", "", " " * 65537):
+        model_options.write_text(value)
+        reject(model_flags + ["--model-options", str(model_options)], error="Invalid --model-options file")
+        assert not (root / "missing-models").exists(), "Invalid options reached Service initialization"
+    model_options.write_text('{"enable_thinking": false}')
+    model_options.chmod(0o644)
+    reject(model_flags + ["--model-options", str(model_options)], error="Invalid --model-options file")
+    model_options.chmod(0o600)
+    options_alias = root / "options-alias.json"
+    options_alias.symlink_to(model_options)
+    inside_options = workspace / "model-options.json"
+    inside_options.write_bytes(model_options.read_bytes()); inside_options.chmod(0o600)
+    for path in (inside_options, options_alias, root / "absent-options.json"):
+        reject(model_flags + ["--model-options", str(path)], error="Invalid --model-options file")
+        assert not (root / "missing-models").exists()
     reject(["--apps-dir", str(root / "apps"), "--no-apps"])
     reject(["--apps-dir", ""])
     inside = workspace / "credentials.json"
@@ -94,4 +120,4 @@ with tempfile.TemporaryDirectory(prefix="mcp-http-cli-") as directory:
         process.terminate()
         out, err = process.communicate(timeout=10)
         assert process.returncode == 0 and token.encode() not in out + err
-print("MCP HTTP CLI private credentials, early validation, disjoint state, ownership and graceful shutdown passed")
+print("MCP HTTP CLI private credentials and model options, early validation, disjoint state, ownership and graceful shutdown passed")

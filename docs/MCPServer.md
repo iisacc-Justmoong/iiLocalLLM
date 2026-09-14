@@ -24,6 +24,10 @@ build/iillm-mcp --workspace /absolute/project \
 
 모델 URI는 실제 설치 카탈로그의 ID를 사용한다. `--model`은 iiLocalLLM.agent.run 실행을 활성화하며 내부 에이전트의 파일·셸 도구는 같은 허용 규칙을 따른다. 모델은 첫 추론 때 기존 Service의 상주 정책으로 로드된다. 이 실행 파일은 Service를 소유하는 독립 프로세스이므로 이미 다른 daemon이 소유한 동일 모델 카탈로그의 잠금을 공유하거나 탈취하지 않는다. 여러 연결에서 하나의 모델 서비스를 공유하려면 아래 C++ 내장 방식으로 하나의 Engine을 사용한다. 기존 iillm CLI의 Core/Network 전용 링크 경계는 유지한다.
 
+0.18.0의 `--model-options FILE`은 `ModelLoadRequest.options`에 전달할 JSON 객체를 받는다. `--model`·`--models`와 함께 사용하며 작업 폴더 밖의 일반 파일, 최대 64 KiB로 제한한다. POSIX에서는 현재 사용자 소유이며 그룹·다른 사용자 접근 권한이 없어야 한다(예: `0600`). 파일 자체가 심볼릭 링크이면 거부한다. 파일을 한 번 읽어 고정하고, 지정한 모델을 실제로 로드한 뒤 stdio 요청을 처리하거나 HTTP endpoint를 공개한다. 로딩에 실패하면 시작도 실패한다. 이 옵션을 생략하면 기존 첫 추론 시 로딩 동작을 유지한다. 원격 MCP 요청은 모델 옵션을 바꿀 수 없다.
+
+예를 들어 Qwen3에서 `{"enable_thinking": false, "tool_grammar": false}`를 저장한 비공개 파일을 지정하면 API의 같은 모델 로딩 설정을 재현할 수 있다. 지원 키와 값의 의미는 선택한 추론 백엔드의 계약을 따른다. 이 설정은 모델 출력의 정확성이나 한 번만 쓰기를 보장하지 않으므로 실제 도구 호출·반환값·파일 바이트를 함께 검증해야 한다.
+
 `--sessions` 기본값은 작업 폴더의 `.iilocal-llm/sessions`, `--artifacts`는 `.iilocal-llm/artifacts`다. `--request-timeout`은 밀리초 단위이며 기본 60초다. `--temperature`, `--context`, `--max-tokens`는 호스트 시작 설정이다. MCP 요청의 파라미터는 아래 도구 계약에 한정한다.
 
 | 도구 | 입력 | 동작 |
@@ -124,3 +128,5 @@ Engine과 모델을 설정하면 `iiLocalLLM.agent.inputs.enqueue/list/remove/ru
 0.16.0의 `agent.agents.profiles`(MCP: `iiLocalLLM.agent.agents.profiles`, CLI: `agent agents profiles SESSION`)는 프로파일 메타데이터·출처·가려진 정의·오류를 반환한다. C++ 호스트는 `Subagents::attach`로 현재 프로파일을 각 턴에 연결한다. 독립 데몬과 MCP 서버의 `--agent-profiles FILE`·`--no-agent-profiles`, 모델 사용 범위와 훅 계약은 [AgentProfiles.md](AgentProfiles.md)를 따른다.
 
 0.17.0에서는 `context: fork` 스킬을 같은 API·MCP·CLI 호출로 별도 자식에서 실행한다. 직접 호출은 자식 결과를 반환하고 모델의 `Skill` 호출은 후속 부모 턴에 결과를 전달한다. 본문 분리·권한·모델·사용량·큐 입력과 참조 차이는 [Skills.md](Skills.md)의 별도 자식 실행 계약을 따른다.
+
+0.18.0의 스킬 allowed-tools와 인자 권한 규칙은 [Permissions.md](Permissions.md)를 따른다. API·IPC·MCP 입력은 allowed_tools/prompt_metadata 같은 호스트 전용 권한·출처 필드를 받지 않는다. 모델 Skill의 PermissionRequested 이벤트에는 고정된 permission_preview가 있다. 원격 권한 응답 중개는 아직 지원하지 않는다.

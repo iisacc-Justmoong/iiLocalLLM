@@ -18,11 +18,11 @@
 namespace { volatile std::sig_atomic_t interrupted = 0; void interrupt(int) { interrupted = 1; } }
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.17.0");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.18.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},
-        {"allow", "Allow a tool name or wildcard; repeat for more rules. Read-only tools are allowed by default.", "pattern"},
+        {"allow", "Allow a tool permission rule, e.g. Write(src/**), Bash(git status:*) or Skill(review); repeat for more rules. Read-only tools are allowed by default.", "pattern"},
         {"mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
         {"mcp-project", "Load workspace/.mcp.json after explicit MCP configuration files."},
         {"mcp-eager", "Publish all configured MCP tools to the agent without ToolSearch."},
@@ -38,6 +38,7 @@ int main(int argc, char** argv) {
         {"artifacts", "Directory for large tool results.", "path"},
         {"model", "Enable the local agent using an installed model:// URI.", "uri"},
         {"models", "Installed model catalog directory; required with --model.", "path"},
+        {"model-options", "Private JSON model load options outside the workspace; preload --model before serving.", "file"},
         {"sessions", "Agent transcript directory (default: workspace/.iilocal-llm/sessions).", "path"},
         {"http-port", "Serve Streamable HTTP on 127.0.0.1/mcp; 0 selects an available port.", "port"},
         {"credentials", "Private JSON client-ID/token file outside the workspace; required with --http-port.", "path"},
@@ -56,6 +57,26 @@ int main(int argc, char** argv) {
         const auto workspace = QFileInfo(parser.value("workspace")).canonicalFilePath();
         if (!parser.isSet("workspace") || workspace.isEmpty() || !QFileInfo(workspace).isDir())
             throw iiLocalLLM::Error(iiLocalLLM::ErrorCode::InvalidArgument, "--workspace must name an existing directory");
+        QJsonObject modelOptions;
+        if (parser.isSet("model-options")) {
+            if (!parser.isSet("model") || !parser.isSet("models"))
+                throw std::runtime_error("--model-options requires --model and --models");
+            // Validate the host-owned file before creating Service or its catalog.
+            // Report only the option name, never backend values or file contents.
+            try {
+                const auto path = parser.value("model-options");
+                const auto canonical = QFileInfo(path).canonicalFilePath();
+                if (canonical.isEmpty() || iiLocalLLMClient::containsPath(workspace, canonical))
+                    throw std::runtime_error("Model options must be outside the workspace");
+                QJsonParseError error;
+                const auto document = QJsonDocument::fromJson(iiLocalLLMClient::readPrivateFile(path), &error);
+                if (error.error != QJsonParseError::NoError || !document.isObject())
+                    throw std::runtime_error("Model options must be a JSON object");
+                modelOptions = document.object();
+            } catch (const std::exception&) {
+                throw std::runtime_error("Invalid --model-options file: require a private regular JSON object file outside the workspace, at most 65536 bytes");
+            }
+        }
         const auto profiles=iiLocalLLMClient::profileConfig(parser.value("agent-profiles"),parser.isSet("no-agent-profiles"));
         iiLocalLLM::agent::discoverAgentProfiles(workspace,profiles.profiles);
         auto positive = [&](const char* option, int maximum) { bool ok; const int value = parser.value(option).toInt(&ok);
@@ -129,6 +150,8 @@ int main(int argc, char** argv) {
             if (!parser.isSet("models") || !parser.value("model").startsWith("model://")) throw std::runtime_error("--model requires a model:// URI and --models catalog");
             iiLocalLLM::ServiceOptions serviceOptions; serviceOptions.modelsDirectory = parser.value("models"); serviceOptions.defaultContextTokens = contextTokens;
             service = std::make_unique<iiLocalLLM::Service>(serviceOptions);
+            if (parser.isSet("model-options"))
+                (void)service->loadModel({parser.value("model"), contextTokens, modelOptions}).get();
             a::EngineOptions engineOptions;
             engineOptions.taskToolsEnabled = !parser.isSet("no-tasks");
             engineOptions.skills.enabled = !parser.isSet("no-skills");

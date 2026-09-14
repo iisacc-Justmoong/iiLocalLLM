@@ -1,6 +1,6 @@
 # 로컬 스킬
 
-0.17.0은 C++에서 `SKILL.md` 탐색, 메타데이터 목록, 인자 치환, 인라인 대화 주입과 `context: fork` 자식 실행을 제공한다. 본문에서 요구한 읽기·수정·명령 실행은 모델의 도구 호출과 기존 호스트 권한 정책을 거친다. 공개 구조체가 바뀌어 SOVERSION은 **0.17**이며 C++ 소비자는 다시 빌드해야 한다.
+0.18.0은 C++에서 `SKILL.md` 탐색, 메타데이터 목록, 인자 치환, 인라인 대화 주입과 `context: fork` 자식 실행을 제공한다. 본문에서 요구한 읽기·수정·명령 실행은 모델의 도구 호출과 기존 호스트 권한 정책을 거친다. 공개 구조체가 바뀌어 SOVERSION은 **0.18**이며 C++ 소비자는 다시 빌드해야 한다.
 
 ## 파일과 탐색
 
@@ -18,9 +18,9 @@ argument-hint: '[filename]'
 Use Read to open $filename, then report its exact contents.
 ```
 
-호출 이름은 폴더 이름이며 `name`은 표시 이름이다. `description`, `argument-hint`, `arguments`, `when_to_use`, `version`, `disable-model-invocation`, `user-invocable`를 해석한다. 설명이 없으면 첫 비어 있지 않은 본문 줄에서 최대 512자를 사용한다. `license`, `compatibility`, `metadata`는 설명 정보이며 실행 동작을 바꾸지 않는다. `context: inline`이 기본이다. `context: fork`와 그때의 `agent`·`model`은 아래 별도 자식 실행 계약을 따르며, `model: inherit`과 빈 `allowed-tools: []`도 허용한다.
+호출 이름은 폴더 이름이며 `name`은 표시 이름이다. `description`, `argument-hint`, `arguments`, `when_to_use`, `version`, `disable-model-invocation`, `user-invocable`를 해석한다. 설명이 없으면 첫 비어 있지 않은 본문 줄에서 최대 512자를 사용한다. `license`, `compatibility`, `metadata`는 설명 정보이며 실행 동작을 바꾸지 않는다. `context: inline`이 기본이다. `context: fork`와 그때의 `agent`·`model`은 아래 별도 자식 실행 계약을 따르며, `model: inherit`도 허용한다. `allowed-tools`의 문자열·배열은 [Permissions.md](Permissions.md)의 호출 범위 권한으로 해석한다.
 
-`disable-model-invocation: true`는 모델 목록과 `Skill` 호출을 차단하지만 직접 사용자 호출은 허용한다. `user-invocable: false`는 직접 호출을 차단하지만 모델 호출을 허용한다. 불리언 값은 true/false만 허용한다. BOM·CRLF와 구분자 뒤 공백·탭을 지원한다. YAML은 기존 libyaml 0.2.5를 재사용하며 신규 생산 의존성이나 Python 실행기를 추가하지 않았다. 별칭, 중복 최상위 키, 여러 YAML 문서, 잘못된 필드 형식, 비정상 UTF-8, NUL, 빈 본문은 명시적으로 실패한다. 현재는 하나의 잘못된 활성 스킬 파일이 전체 탐색을 실패시킬 수 있다.
+`disable-model-invocation: true`는 모델 목록과 `Skill` 호출을 차단하지만 직접 사용자 호출은 허용한다. `user-invocable: false`는 직접 호출을 차단하지만 모델 호출을 허용한다. 불리언 값은 true/false만 허용한다. BOM·CRLF와 구분자 뒤 공백·탭을 지원한다. YAML은 기존 libyaml 0.2.5를 재사용한다. 0.18.0의 Bash 권한 구문 파서 의존성은 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)에 별도로 기록한다. 별칭, 중복 최상위 키, 여러 YAML 문서, 잘못된 필드 형식, 비정상 UTF-8, NUL, 빈 본문은 명시적으로 실패한다. 현재는 하나의 잘못된 활성 스킬 파일이 전체 탐색을 실패시킬 수 있다.
 
 ## 인라인 실행과 복원
 
@@ -62,7 +62,7 @@ iillm --auth-file /private/token agent skills run SESSION_ID skill-request.json
 
 기본 제한은 파일당 128 KiB, 읽은 파일 합계 512 KiB, 스킬 128개, 조사 항목 4,096개, 추가 디렉터리 64개이다. YAML 헤더는 16 KiB·깊이 16·이벤트 4,096개 이내이고 인자는 65,536자, 확장된 본문은 512 Ki 문자 이내이다. POSIX에서는 정규 파일 여부와 각 경로 구성요소를 `openat`/`O_NOFOLLOW`로 다시 확인한다. 비-POSIX 구현은 정규 파일과 canonical 경계 검사를 사용하며 동일한 디스크립터 기반 경합 방어를 제공하지 않는다.
 
-비어 있지 않은 `allowed-tools`에 따른 권한 추가, 인라인 스킬의 모델 변경·agent 선택, effort, `hooks`, `paths`, `shell`, 알 수 없는 실행 속성, `!` 백틱 또는 실행 코드 블록은 `unsupported_features`에 표시하고 호출 시 `runtime_unavailable`로 실패한다. 실행하지 않은 기능을 조용히 무시하지 않는다. 참조와 같은 사용자/관리/프로젝트 계층, legacy commands, 동적 하위 경로 활성화, MCP 스킬 수신, 번들·플러그인·설치/갱신·검색 순위, 활성 스킬 재주입도 아직 남아 있다. 전체 skills 영역은 **partial**이다.
+인라인 스킬의 모델 변경·agent 선택, effort, `hooks`, `paths`, `shell`, 알 수 없는 실행 속성, `!` 백틱 또는 실행 코드 블록은 `unsupported_features`에 표시하고 호출 시 `runtime_unavailable`로 실패한다. 실행하지 않은 기능을 조용히 무시하지 않는다. 참조와 같은 사용자/관리/프로젝트 계층, legacy commands, 동적 하위 경로 활성화, MCP 스킬 수신, 번들·플러그인·설치/갱신·검색 순위, 활성 스킬 재주입도 아직 남아 있다. 전체 skills 영역은 **partial**이다.
 
 ## 별도 자식에서 실행
 
@@ -86,6 +86,8 @@ Read $0 and return the observed result.
 
 양쪽 경로 모두 부모 실행의 generation 설정과 명시적 contextPaths를 전달한다. 자식 턴 수는 부모 요청·프로파일·호스트의 최소 한도이며 시간·동시 실행·기록 제한은 Subagents 설정을 따른다. 프로파일의 `background: true`도 fork 호출은 동기 실행한다. 별도 완료 알림을 만들지 않는다. 직접 호출 중 새 큐 입력은 다음 부모 실행까지 대기한다. 모델 도구 호출 중 긴급 큐 입력은 기존 인터럽트 경로로 자식을 취소한다. 취소·기한 초과·자식 실패·턴 한도를 그대로 보고하고, 진행 콜백이 실패해도 자식이 끝날 때까지 기다린다. 재개·재시작은 기존 기록을 읽을 뿐 이 스킬 호출을 자동 재실행하지 않는다.
 
-비교 근거는 고정 참조 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `source/src/utils/forkedAgent.ts`와 `tools/SkillTool/SkillTool.ts`, `utils/processUserInput/processSlashCommand.tsx`이다. 일반 동기 경로·대화 분리·에이전트 fallback·결과 반환을 구현했으며 KAIROS 예약 호출의 백그라운드 경로, effort 병합, allowed-tools 권한 추가, 터미널 진행 UI의 동일성은 포함하지 않는다. 참조 프롬프트를 복사하거나 TypeScript 실행에 의존하지 않는다.
+비교 근거는 고정 참조 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `source/src/utils/forkedAgent.ts`와 `tools/SkillTool/SkillTool.ts`, `utils/processUserInput/processSlashCommand.tsx`이다. 일반 동기 경로·대화 분리·에이전트 fallback·결과 반환을 구현했으며 KAIROS 예약 호출의 백그라운드 경로, effort 병합, 터미널 진행 UI의 동일성은 포함하지 않는다. 참조 프롬프트를 복사하거나 TypeScript 실행에 의존하지 않는다.
 
 관찰한 참조는 커밋 `c8cd253554319f32ff64ff7000636199f720c9bc`의 [loadSkillsDir.ts](https://github.com/Exhen/claude-code-2.1.88/blob/c8cd253554319f32ff64ff7000636199f720c9bc/source/src/skills/loadSkillsDir.ts), [SkillTool.ts](https://github.com/Exhen/claude-code-2.1.88/blob/c8cd253554319f32ff64ff7000636199f720c9bc/source/src/tools/SkillTool/SkillTool.ts), [argumentSubstitution.ts](https://github.com/Exhen/claude-code-2.1.88/blob/c8cd253554319f32ff64ff7000636199f720c9bc/source/src/utils/argumentSubstitution.ts), [SkillTool/prompt.ts](https://github.com/Exhen/claude-code-2.1.88/blob/c8cd253554319f32ff64ff7000636199f720c9bc/source/src/tools/SkillTool/prompt.ts)이다. TypeScript 소스와 번들 스킬 본문은 SDK에 포함하지 않았다. 검증 결과는 [Verification.md](Verification.md)에 별도로 기록한다.
+
+0.18.0은 직접·모델 호출의 allowed-tools를 구현한다. 인라인은 현재 실행, fork는 자식 실행에 적용하고 다음 실행·재시작·본문 복원에서 권한을 복구하지 않는다. 모델 호출은 파일 스냅샷을 권한 판정 전에 고정하며, 명시적 Deny/Ask·Plan·프로파일 범위를 유지한다. 상세한 수명과 이벤트 계약은 [Permissions.md](Permissions.md)에 있다.

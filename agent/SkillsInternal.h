@@ -6,4 +6,5 @@ Tool skillTool(const QString& workingDirectory, const SkillOptions&, const Skill
 SkillCatalog executableSkills(const QString& workingDirectory, const SkillOptions&, bool canFork, const CancellationToken& = {});
 // Recover committed native Skill results; never rerun file reads or tools.
 QList<Message> pendingSkillMessages(const QList<Message>&);
+QStringList skillAllowedTools(const Message&); // Validated metadata of a freshly loaded native snapshot only.
 }

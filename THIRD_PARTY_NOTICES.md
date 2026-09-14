@@ -2,6 +2,16 @@
 
 서비스 고유 정책만 직접 구현하고 추론·토큰화·JSON·프로세스·IPC는 기존 라이브러리를 사용한다.
 
+## Bash 구문 파서 (0.18.0)
+
+2026-09-15 공식 릴리스·소스·MIT 고지를 확인하고 [tree-sitter v0.27.0](https://github.com/tree-sitter/tree-sitter/releases/tag/v0.27.0)과 [tree-sitter-bash v0.25.1](https://github.com/tree-sitter/tree-sitter-bash/releases/tag/v0.25.1)을 선택했다. 유지되는 C runtime과 생성된 Bash C grammar를 private object로 포함한다. TypeScript, Rust/Node CLI, Python, 추가 공유 라이브러리는 생산 실행에 필요하지 않다. 라이브러리가 Bash AST를 만들고 iiLocalLLM 고유의 규칙·권한 수명·보수적 판정을 C++에서 처리한다.
+
+- tree-sitter 압축 원본 1,020,259 bytes, SHA-256 `d35c96e68736bd9569d2757c3cc71052485f33082c3825f1aed9d0e86013a159`.
+- tree-sitter-bash 압축 원본 543,006 bytes, SHA-256 `2e785a761225b6c433410ef9c7b63cfb0a4e83a35a19e0f2aec140b42c06b52d`.
+- `cmake/PermissionParsers.cmake`에서 버전·해시를 고정하고 원본 MIT 라이선스를 `share/iiLocalLLM/licenses/tree-sitter.LICENSE` 및 `tree-sitter-bash.LICENSE`로 설치한다. 외부 파서 타입은 공개 SDK 헤더에 노출하지 않는다.
+- 업스트림의 `TREE_SITTER_HIDE_SYMBOLS` 설정으로 런타임·문법 C 심볼의 공개를 막는다. 같은 호스트의 다른 tree-sitter 버전과 결합되지 않도록 macOS `nm` 회귀 검사에서 공개 심볼 부재를 확인한다.
+- 문법 파서는 명령의 실제 부작용을 판정하는 샌드박스가 아니다. 지원하는 정적 구문과 입력·시간 상한은 [Permissions.md](docs/Permissions.md)를 따른다.
+
 2026-09-14 에이전트 입력/출력 검증에 [jsoncons 1.9.0](https://github.com/danielaparker/jsoncons/releases/tag/v1.9.0)을 추가했다. 2026-08-07 릴리스와 JSON Schema 2020-12 지원을 공식 소스에서 확인했다. 약 1.7 MB 압축 아카이브의 header-only C++ 의존성이며 실행 프로세스·Python·네트워크 서비스는 추가하지 않는다. CMake는 아카이브 SHA-256 `f1017b36e4e034acd5c0f5f616bacf5d7a161d6d3a43ff9ddb73fd8dca4d3cd9`를 고정한다. Boost Software License 1.0 및 포함된 A5HASH의 MIT 고지를 `third_party/jsoncons`와 설치 패키지 licenses에 보존한다. 외부 공개 헤더에는 jsoncons 타입이 없다.
 
 | 의존성 | 도입 이유·규모 | 라이선스·유지보수 |

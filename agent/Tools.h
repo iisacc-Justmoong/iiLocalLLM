@@ -4,11 +4,17 @@
 
 namespace iiLocalLLM::agent {
 
+struct PreparedTool {
+    ToolDefinition definition; // Same identity/schemas; exact permission preview for this invocation.
+    std::function<ToolResult()> execute; // Executes the snapshot whose preview was checked.
+};
 struct Tool {
     ToolDefinition definition;
     std::function<ToolResult(const QJsonObject&, const ToolContext&)> execute;
     std::function<void(const QJsonObject&, const ToolContext&)> validate;
     std::function<bool(const QJsonObject&)> canRunConcurrently;
+    // Runs once after input-changing hooks, before permission. Must have no execution side effects.
+    std::function<PreparedTool(const QJsonObject&, const ToolContext&)> prepare;
 };
 class IILOCALLLM_EXPORT ToolRegistry {
 public:

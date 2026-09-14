@@ -1,5 +1,37 @@
 # 구현 검증 기록
 
+## 2026-09-15 호출 범위 스킬 권한과 실행 스냅샷 (0.18.0)
+
+스킬의 `allowed-tools`를 현재 호출의 권한에만 합치고, 호스트의 Deny·Ask·Plan 및 자식 도구 범위를 유지한다. 모델의 Skill 호출은 권한 판정 전에 본문·출처·SHA·요청 권한을 한 번 고정하고, 성공한 도구 결과가 저장된 뒤 권한을 활성화한다. 파일 도구도 승인한 canonical 대상을 실행 직전에 재검증한다. 정확한 문법·우선순위·미지원 범위는 [Permissions.md](Permissions.md)에 기록한다.
+
+| 검증 경계 | 최종 결과 |
+|---|---|
+| Release 전체 검사, inference 라벨 제외 | 45/45, 79.73초 |
+| AddressSanitizer·UndefinedBehaviorSanitizer, llama 비활성 | 43/43, 80.24초; 런타임 오류 보고 없음 |
+| 별도 설치 소비자의 공개 헤더·라이브러리 사용 | 16/16, 8.91초 |
+| Qwen3 8B: HTTP 직접·IPC CLI 직접·모델 Skill, inline/fork | 소스 6/6, 설치본 6/6; 실제 파일 바이트와 다음 호출의 거부 확인 |
+| Qwen3 8B: 공식 MCP SDK 1.26.0, stdio·HTTP, inline/fork | 소스 4/4, 설치본 4/4; 각 전송에서 실제 파일 두 개 확인 |
+| 설치·ABI·로더 | 공개 헤더 38개·문서·catalog·두 MIT 라이선스 일치; 실제 0.18 라이브러리 로딩 |
+| 배포 실행 파일·파서 경계 | CLI·데몬·MCP 모두 0.18.0; 얇은 CLI 링크 유지, tree-sitter C 심볼 비공개 |
+
+추론을 제외한 Release 전체 검사는 모든 모델의 정확도 검사가 아니다. sanitizer는 C·C++에 address/undefined 계측을 적용하고 `ASAN_OPTIONS=malloc_context_size=0`, `UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1`로 실행했다. 초기 실패, 중간 수정 및 최종 전체 직렬 실행은 별도 로그로 보존한다.
+
+C++ 회귀 검사는 규칙 파싱·상한·취소, 호스트 Deny/Ask 우선순위, 파일·Skill·Agent·MCP 서버 규칙, 복합 Bash의 모든 명령, 중첩 거부·리다이렉션·심볼릭 링크, 입력 변경 훅 뒤 스냅샷, 권한 응답 또는 ToolStarted 중 파일 경로 교체를 포함한다. 스킬 권한은 같은 도구 묶음의 후속 호출과 현재 실행의 자동 압축 이후에 유지되고, 새 실행·세션 분기·재시작·기록 복구에서 복원되지 않는다. 큐의 새 사용자 prompt는 스킬 추가 권한을 지우고 notification은 유지한다. 자식 fork의 전용 권한, 일반 위임·백그라운드 수락 스냅샷, 재개 시 현재 호출자의 권한 및 사전 로딩 스킬의 권한 비활성도 검사했다.
+
+추가 검토에서 `'git status'`라는 단일 실행 파일을 git/status 두 단어처럼 판정하는 오류, `<>` 오류 노드와 후행 인자가 포함된 리다이렉션에서 파일 거부 규칙을 놓치는 오류를 재현했다. 전자는 공백 실행 파일명의 자동 접두사 허용을 막고, 후자는 파서가 분리하지 못한 리다이렉션에 보수적인 Deny/Ask를 적용해 수정했다. 고정한 tree-sitter-bash 문법이 `<>`를 지원한다고 주장하지 않는다. 수정 전 `permission-shell-boundaries-red.log`·`permission-redirect-target-red.log`와 수정 후 검사, 최종 전체 검사가 남아 있다.
+
+API 검사는 호스트가 Skill(writer)를 허용한 상태에서 스킬이 요청한 `Write(grant-*.txt)`만으로 임의 값을 실제 파일에 쓰도록 한다. 각 inline/fork 및 HTTP/CLI/모델 경로의 Write는 1회였으며, 같은 부모의 다음 일반 호출은 Write를 거부하고 파일을 만들지 않았다. 외부 allowed_tools 입력은 400, 다른 앱 토큰 접근은 404로 거부했다. 소스·설치 데몬 모두 종료 코드 0이며, 기존 프로파일 읽기·백그라운드 재개 검사도 함께 통과했다.
+
+MCP는 stdio·HTTP 각각 인라인·fork 쓰기, 직접 MCP Write의 호출 밖 거부, 원격 권한 필드 거부를 검사했다. 기존 임의 값 Read, 자식 프로파일의 읽기·재개, 스킬 fork의 부모 이력 격리도 함께 검사했다. 모든 Write의 경로·내용과 성공 결과를 대조하고 실제 파일 바이트도 일치해야 통과한다. 관측한 Write 수는 source stdio: 2회, source http: 2회, installed stdio: 2회, installed http: 2회이다. 한 번만 실행을 보장하는 기능을 추가한 것은 아니다.
+
+Qwen2.5 0.5B에서는 중복 Write, 쓰기 없이 완료 응답, 요청과 다른 파일 바이트가 관측되어 정확한 쓰기 검증을 통과한 모델로 처리하지 않는다. 최초의 단일 호출 가정은 중복 Write에서 실패했고, 모든 호출·결과를 검사하면서 실행 횟수를 기록하도록 fixture를 고쳤다. MCP가 반환한 절대·상대 경로도 canonical 대상 기준으로 대조한다. 원래 실패는 `skill-permissions-source-mcp-stdio-native-first-pass.log`, `*-no-write.log`, `*-05b.log` 등에 보존한다.
+
+8B의 기본 MCP 모델 로딩 설정에서도 구조화 응답이 출력 한도에 도달한 실패가 있었다. `iillm-mcp --model-options FILE`을 추가하여 API에서 검증한 `enable_thinking=false`, `tool_grammar=false`를 같은 호스트 설정으로 전달했다. 비공개 JSON을 모델 초기화 전에 검증하고 모델 로딩 완료 후 요청을 처리한다. 옵션 부재·잘못된 JSON/권한/위치/심볼릭 링크는 CLI 회귀 검사에 포함한다. 최종 8B 모델은 Q4_K_M, 5,027,783,488바이트, SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`이며 컨텍스트 8192·temperature 0을 사용한다. API 스킬 쓰기 한도는 1024토큰, MCP는 2048토큰이며 일반 프로파일의 자식 생성 설정은 2048토큰이다. 모든 스킬·모델·입력에 대한 일반적인 지시 이행 정확도를 보장하지 않는다.
+
+설치 prefix는 `build/skill-permissions-stage`, 소비자는 `build/skill-permissions-consumer/build`이다. 최종 라이브러리 SHA-256 `9e824127ededcdb3544671a5a977212953a768115f0d6ad23a80e424e2a9620c`, Mach-O UUID `3EE8390D-B4B3-34E3-8968-0D1A8C452322`가 소스 빌드와 설치본에서 일치한다. 실행 파일별 해시, 실제 loader 경로, 버전·링크·설치 문서 대조는 `build/skill-permissions-linkage.json`에 있다. 라이브러리 경로 환경변수 네 개를 제거하고 임시 데이터·앱 발견 경로를 build 아래로 격리했다. 명령·JUnit·모델 결과·실패 기록과 소스 파일 해시는 `build/skill-permissions-verification.json` 및 `skill-permissions-*`에 있다. `skill-permissions-prefinal/`의 중간 성공은 최종 결과와 구분한다.
+
+새 권한 실행기는 C++이고 Bash AST는 버전·SHA를 고정한 MIT C 의존성을 사용한다. Python은 이번 검증의 외부 클라이언트 역할이다. ABI는 0.18이므로 새 공개 헤더와 라이브러리로 소비자를 다시 빌드해야 한다. 관리/사용자/프로젝트 권한 계층, 전체 BashSecurity·별칭 정규화·자동 분류·OS 샌드박스·원격 권한 중개와 나머지 하네스 기능은 계속 미완료이다. skills/subagents/permissions는 **partial**이며 전체 목표는 진행 중이다. 이번 단계는 SDK 검증이며 Society/Dreamscapes 재설치나 물리 디바이스 UI 검증을 포함하지 않는다. iPhone 제외 지시를 유지한다.
+
 ## 2026-09-15 C++ 스킬의 별도 자식 실행 (0.17.0)
 
 `context: fork` 스킬을 사용자 직접 호출과 모델의 `Skill` 도구 호출에 연결했다. 선택한 에이전트 프로파일·호스트 모델 별칭을 사용하고, 부모 세션에서 한 번 치환한 본문을 부모 이력 없이 자식 대화에 저장한다. 직접 호출은 자식의 결과·상태·사용량을 부모 호출 ID로 반환한다. 모델 호출은 자식 결과를 도구 관측으로 받고 후속 턴을 진행한다. 부모 권한, 자식 도구 범위, 취소·기한·턴 한도와 자식 훅을 유지한다. 세부 계약과 참조 차이는 [Skills.md](Skills.md)에 기록한다.

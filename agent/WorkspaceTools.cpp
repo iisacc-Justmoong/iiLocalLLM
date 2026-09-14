@@ -108,6 +108,22 @@ public:
     }
     static QString uuid() { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
 };
+void preparePath(Tool& tool, const std::shared_ptr<Workspace>& workspace, bool write) {
+    tool.prepare = [workspace, write, definition = tool.definition, execute = tool.execute](const QJsonObject& args, const ToolContext& context) {
+        QString path;
+        { std::lock_guard lock(workspace->mutex); path = workspace->resolve(args["path"].toString(), context, write); }
+        auto preview = definition; preview.metadata["canonical_path"] = path;
+        return PreparedTool{std::move(preview), [workspace, write, execute, args, context, path] {
+            {
+                std::lock_guard lock(workspace->mutex);
+                require(workspace->resolve(args["path"].toString(), context, write) == path
+                    && workspace->resolve(path, context, write) == path, "File permission target changed before execution");
+            }
+            auto frozen = args; frozen["path"] = path;
+            return execute(frozen, context);
+        }};
+    };
+}
 }
 void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot) {
     registerWorkspaceTools(registry, workspaceRoot, {});
@@ -133,7 +149,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         const QJsonObject contextPaths = path == workspace->root || path.startsWith(workspace->root + '/')
             ? QJsonObject{{"iilocal.context_paths", QJsonArray{path}}} : QJsonObject{};
         return ToolResult{output.join('\n'), {{"path", path}, {"offset", offset}, {"lines", output.size()}, {"complete", complete}}, false, {}, contextPaths};
-    }; read.definition.metadata = {{"source", "builtin.workspace"}}; registry.add(std::move(read));
+    }; read.definition.metadata = {{"source", "builtin.workspace"}}; preparePath(read, workspace, false); registry.add(std::move(read));
     Tool write;
     write.definition = {"Write", "Write a UTF-8 file. Existing files must have been read completely and remain unchanged.",
         inputSchema({{"path", stringSchema()}, {"content", stringSchema()}}, {"path", "content"}), {}, false, false, true};
@@ -144,7 +160,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         if (QFileInfo::exists(path)) before = workspace->writable(c, path);
         const auto backup = workspace->write(c, path, a["content"].toString().toUtf8(), before);
         return ToolResult{"Wrote " + path, {{"path", path}, {"backup_path", backup}}, false, {}, {{"iilocal.context_paths", QJsonArray{path}}}};
-    }; write.definition.metadata = {{"source", "builtin.workspace"}}; registry.add(std::move(write));
+    }; write.definition.metadata = {{"source", "builtin.workspace"}}; preparePath(write, workspace, true); registry.add(std::move(write));
     Tool edit;
     edit.definition = {"Edit", "Replace exact text in a previously read UTF-8 file. Multiple matches require replace_all=true.",
         inputSchema({{"path", stringSchema()}, {"old_string", QJsonObject{{"type", "string"}, {"minLength", 1}}},
@@ -159,7 +175,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         text.replace(old, replacement);
         const auto backup = workspace->write(c, path, text.toUtf8(), before);
         return ToolResult{"Edited " + path, {{"path", path}, {"replacements", matches}, {"backup_path", backup}}, false, {}, {{"iilocal.context_paths", QJsonArray{path}}}};
-    }; edit.definition.metadata = {{"source", "builtin.workspace"}}; registry.add(std::move(edit));
+    }; edit.definition.metadata = {{"source", "builtin.workspace"}}; preparePath(edit, workspace, true); registry.add(std::move(edit));
     Tool glob;
     glob.definition = {"Glob", "List matching relative file paths in the workspace (up to 1000 results).",
         inputSchema({{"pattern", stringSchema()}}, {"pattern"}), {}, true, true};

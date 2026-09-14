@@ -19,6 +19,7 @@ struct IILOCALLLM_EXPORT SkillInfo {
     bool disableModelInvocation = false, userInvocable = true;
     QString executionContext = "inline";
     QString agent, model; // Fork target; model aliases must be authorized by the host.
+    QStringList allowedTools; // Requested invocation grants; host deny/ask and child scope remain authoritative.
     QJsonObject toJson() const;
 };
 struct IILOCALLLM_EXPORT SkillCatalog {

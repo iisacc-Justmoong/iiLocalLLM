@@ -56,6 +56,7 @@ struct ToolContext {
     std::function<void(const QJsonObject&)> progress;
     quint64 contextRevision = 0; // Read-before-edit observations expire after compaction.
     std::shared_ptr<const Session> sessionSnapshot; // Immutable parent context at the tool batch boundary.
+    QStringList allowedTools; // Trusted invocation grants, never restored from transcript metadata.
 };
 struct ModelRequest {
     QString model;
@@ -108,6 +109,7 @@ struct RunRequest {
     QString skill; // Optional direct user invocation; prompt may be empty when set.
     QString skillArguments;
     QJsonObject promptMetadata; // Trusted C++ host provenance, never accepted from API/IPC/MCP input.
+    QStringList allowedTools; // Trusted host/child invocation grants; expires at the end of this run.
 };
 struct RunUsage {
     qint64 promptTokens = 0;

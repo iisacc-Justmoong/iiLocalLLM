@@ -33,7 +33,7 @@ int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("iiLocalLLMD"));
-    app.setApplicationVersion(QStringLiteral("0.17.0"));
+    app.setApplicationVersion(QStringLiteral("0.18.0"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("iiLocalLLM local JSON IPC service"));
     parser.addHelpOption(); parser.addVersionOption();
@@ -52,7 +52,7 @@ int main(int argc, char** argv)
         {"agent-workspace", "Enable the agent API for this existing workspace.", "directory"},
         {"agent-state", "Private agent state directory outside the workspace.", "directory"},
         {"agent-credentials", "Private JSON object mapping client IDs to distinct random tokens (32..256 URL-safe characters).", "file"},
-        {"agent-allow", "Allow a tool name or wildcard; repeat for more rules. Read-only tools are allowed by default.", "pattern"},
+        {"agent-allow", "Allow a tool permission rule, e.g. Write(src/**), Bash(git status:*) or Skill(review); repeat for more rules. Read-only tools are allowed by default.", "pattern"},
         {"agent-mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
         {"agent-mcp-project", "Load workspace/.mcp.json after explicit MCP configuration files."},
         {"agent-mcp-eager", "Publish all configured MCP tools to the model without ToolSearch."},

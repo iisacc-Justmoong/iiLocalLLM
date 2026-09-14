@@ -52,9 +52,13 @@
       "status": "partial",
       "evidence": [
         "agent/Tools.cpp",
-        "tests/agent_tests.cpp"
+        "tests/agent_tests.cpp",
+        "agent/PermissionRules.cpp",
+        "tests/permission_rules_tests.cpp",
+        "tests/skill_permission_tests.cpp",
+        "docs/Permissions.md"
       ],
-      "remaining": "RulePolicy modes and host callback implemented; classifier, detailed resource rules and OS sandbox remain."
+      "remaining": "RulePolicy modes, host callbacks, argument rules for files/Bash/Skill/Agent/MCP, bounded C Bash AST analysis, immutable prepared invocation and scoped skill grants are implemented. Managed/user/project rule sources, full BashSecurity and wrapper normalization, argument contracts for other tools, automatic classifier, remote permission mediation and OS sandbox remain. Opaque shell operations use conservative deny/ask; this is not full reference permission parity."
     },
     {
       "id": "files",
@@ -152,9 +156,13 @@
         "tests/agent_profiles_tests.cpp",
         "docs/AgentProfiles.md",
         "tests/skill_fork_tests.cpp",
-        "tests/agent_profile_wire.py"
+        "tests/agent_profile_wire.py",
+        "agent/PermissionRules.cpp",
+        "tests/permission_rules_tests.cpp",
+        "tests/skill_permission_tests.cpp",
+        "docs/Permissions.md"
       ],
-      "remaining": "C++ child conversations, foreground/background execution, explicit parent-context fork, resume, cancellation/deadlines and notifications are implemented. File/JSON profile hierarchy, live catalogs, host model aliases, strict scope intersections, inline skill preloads and C++ SubagentStart/SubagentStop callbacks are added in 0.16. Full builtin roles and conditional selection, plugin lifecycle/worktree-directory fallback, agent-specific MCP/memory and external hooks, automatic transition during a running foreground task, teams/mailbox, worktree/remote isolation, unified task routing, trace/cost aggregation and complete real-app qualification remain. Profile bodies are original C++ implementation prompts, not copied reference prompts. See Verification.md for separate model-level outcomes. C++ synchronous context:fork skills for user and model invocation, isolated prompts, authorized agent/model selection and final-result forwarding are implemented in 0.17. Scheduled background fork, effort and skill permission grants remain."
+      "remaining": "C++ child conversations, foreground/background execution, explicit parent-context fork, resume, cancellation/deadlines and notifications are implemented. File/JSON profile hierarchy, live catalogs, host model aliases, strict scope intersections, inline skill preloads and C++ SubagentStart/SubagentStop callbacks are added in 0.16. Full builtin roles and conditional selection, plugin lifecycle/worktree-directory fallback, agent-specific MCP/memory and external hooks, automatic transition during a running foreground task, teams/mailbox, worktree/remote isolation, unified task routing, trace/cost aggregation and complete real-app qualification remain. Profile bodies are original C++ implementation prompts, not copied reference prompts. See Verification.md for separate model-level outcomes. C++ synchronous context:fork skills for user and model invocation, isolated prompts, authorized agent/model selection and final-result forwarding are implemented in 0.17. Scheduled background fork and effort remain. Invocation-scoped allowed-tools, host-deny/ask precedence, child inheritance and non-restoration on resume are implemented in 0.18. See Permissions.md for boundaries."
     },
     {
       "id": "teams",
@@ -321,9 +329,13 @@
         "tests/subagent_tests.cpp",
         "docs/AgentProfiles.md",
         "tests/skill_fork_tests.cpp",
-        "tests/agent_profile_wire.py"
+        "tests/agent_profile_wire.py",
+        "agent/PermissionRules.cpp",
+        "tests/permission_rules_tests.cpp",
+        "tests/skill_permission_tests.cpp",
+        "docs/Permissions.md"
       ],
-      "remaining": "Local bounded discovery, metadata catalog, literal arguments, inline user/model invocation and durable restoration are implemented. Permission grants, inline model changes, effort, hooks, conditional and dynamic scopes, remote MCP skills, legacy commands, bundled/plugin skills, installation and update, ranking and active-skill compaction reinjection remain. C++ synchronous context:fork skills for user and model invocation, isolated prompts, authorized agent/model selection and final-result forwarding are implemented in 0.17. Scheduled background fork, effort and skill permission grants remain."
+      "remaining": "Local bounded discovery, metadata catalog, literal arguments, inline user/model invocation and durable restoration are implemented. Inline model changes, effort, hooks, conditional and dynamic scopes, remote MCP skills, legacy commands, bundled/plugin skills, installation and update, ranking and active-skill compaction reinjection remain. C++ synchronous context:fork skills for user and model invocation, isolated prompts, authorized agent/model selection and final-result forwarding are implemented in 0.17. Scheduled background fork and effort remain. Invocation-scoped allowed-tools, host-deny/ask precedence, child inheritance and non-restoration on resume are implemented in 0.18. See Permissions.md for boundaries."
     },
     {
       "id": "plugins",

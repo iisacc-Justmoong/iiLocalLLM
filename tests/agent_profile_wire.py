@@ -20,6 +20,7 @@ def main():
     parser.add_argument("model")
     parser.add_argument("--report", type=Path)
     parser.add_argument("--skill-forks", action="store_true")
+    parser.add_argument("--skill-permissions", action="store_true")
     args = parser.parse_args()
     daemon, cli, catalog = (p.resolve() for p in (args.daemon, args.cli, args.catalog))
     report = {"daemon": str(daemon), "cli": str(cli), "model": args.model, "passed": False}
@@ -67,6 +68,8 @@ def main():
             "--agent-workspace", str(workspace), "--agent-state", str(state), "--agent-credentials", str(credentials),
             "--agent-profiles", str(profiles), "--agent-subagent-options", str(generation), "--agent-allow", "Agent",
             "--agent-no-apps", "--agent-no-tasks", "--agent-no-background", "--agent-no-auto-compact"]
+        if args.skill_permissions:
+            command += ["--agent-allow", "Skill(writer)"]
         started = time.monotonic()
         with (root / "daemon.log").open("w+") as log:
             process = subprocess.Popen(command, stdout=log, stderr=log, env=env)
@@ -180,6 +183,58 @@ def main():
                         rpc("agent.run", {"session_id": owner, "skill": "fork-inspect"}, bearer=foreign, expected=404)
                         fork_results.append({"route": route, "run": run, "child": child_state, "actual_reads": len(fork_reads), "isolated": True})
                     report.pop("active_fork", None)
+                if args.skill_permissions:
+                    writer_profile = workspace / ".claude/agents/writer.md"
+                    writer_profile.write_text("---\nname: writer\ndescription: Write the requested file\ntools: Write, Skill\n---\nUse Write exactly as requested. Return DONE after the tool succeeds.\n")
+                    writer = workspace / ".claude/skills/writer/SKILL.md"
+                    writer.parent.mkdir(parents=True)
+                    results = report["skill_permissions"] = []
+                    for mode in ("inline", "fork"):
+                        writer.write_text("---\ndescription: Write an exact value to the specified file\nallowed-tools: 'Write(grant-*.txt)'\n"
+                            + ("context: fork\nagent: writer\n" if mode == "fork" else "")
+                            + "---\nUse Write with path=$0 and content=$1 exactly, without adding a newline. Then return DONE.\n")
+                        for route in ("http", "cli", "model-tool"):
+                            owner = rpc("agent.sessions.create", {"model": args.model, "system": "Use exactly the requested tool. If it fails, report the failure and stop. Never bypass a tool denial."})["session_id"]
+                            value = "GRANTED_" + secrets.token_hex(8)
+                            filename = f"grant-{mode}-{route}.txt"
+                            params = {"session_id": owner, "skill": "writer", "skill_arguments": filename + " " + value,
+                                "max_turns": 4, "options": {"temperature": 0, "max_tokens": 1024}}
+                            if route == "cli":
+                                request_file = private("permission-request", json.dumps({k: v for k, v in params.items() if k != "session_id"}))
+                                proc = subprocess.run([str(cli), "--socket", str(endpoint), "--auth-file", str(auth), "agent", "skills", "run", owner, str(request_file)],
+                                    env=env, capture_output=True, text=True, timeout=180)
+                                assert proc.returncode == 0, proc.stderr
+                                run = json.loads(proc.stdout)
+                            else:
+                                if route == "model-tool":
+                                    params.pop("skill"); literal = params.pop("skill_arguments")
+                                    params["prompt"] = 'Call Skill with skill="writer" and args="' + literal + '". Follow the loaded instructions or return the child result.'
+                                run = rpc("agent.run", params)
+                            report["active_permission"] = {"mode": mode, "route": route, "run": run}
+                            assert run["status"] == "completed" and (workspace / filename).read_text() == value, report["active_permission"]
+                            parent_state = rpc("agent.sessions.get", {"session_id": owner})
+                            records = parent_state["messages"]
+                            if mode == "fork":
+                                job = rpc("agent.agents.list", {"session_id": owner})["result"]["agents"][0]
+                                path = state / hashlib.sha256(b"society").hexdigest() / "subagents/sessions" / job["session_id"] / "transcript.jsonl"
+                                records = [r["message"] for r in map(json.loads, path.read_text().splitlines()) if r["type"] == "message"]
+                            actual = [c for m in records for c in m["tool_calls"] if c["name"] == "Write"]
+                            assert len(actual) == 1 and actual[0]["arguments"] == {"path": filename, "content": value}, actual
+                            assert any(m.get("metadata", {}).get("iilocal.skill", {}).get("allowed_tools") == ["Write(grant-*.txt)"] for m in records)
+                            before = len(parent_state["messages"])
+                            denied_file = f"grant-after-{mode}-{route}.txt"
+                            denied = rpc("agent.run", {"session_id": owner, "prompt": f'Call Write directly with path="{denied_file}" and content="DENIED". Do not call Skill or any other tool. If Write fails, stop and report the failure.',
+                                "max_turns": 3, "options": {"temperature": 0, "max_tokens": 1024}})
+                            negative = rpc("agent.sessions.get", {"session_id": owner})["messages"][before:]
+                            calls = [c for m in negative for c in m["tool_calls"]]
+                            assert calls and all(c["name"] == "Write" for c in calls), negative
+                            assert any(m["is_error"] and "permission denied" in m["text"] for m in negative if m["role"] == "tool"), negative
+                            assert not (workspace / denied_file).exists(), "Skill grant leaked into the next run"
+                            rpc("agent.run", {"session_id": owner, "prompt": "invalid", "allowed_tools": ["Write"]}, expected=400)
+                            rpc("agent.skills.list", {"session_id": owner}, bearer=foreign, expected=404)
+                            results.append({"mode": mode, "route": route, "run": run, "exact_write": actual[0], "next_run": denied,
+                                "next_run_denied_write_calls": len(calls), "grant_expired": True, "wire_grants_rejected": True})
+                    report.pop("active_permission", None)
                 report.update(passed=True, profile=reader, skill_preloaded_once=True, model_alias_resolved=True,
                     source_hash_frozen_on_resume=True, cross_app_isolation=True, observed_reads=len(reads), seconds=round(time.monotonic()-started, 3))
             finally:

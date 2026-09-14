@@ -46,7 +46,9 @@ async def transport(command, root, http):
         process = await asyncio.create_subprocess_exec(command.command, *arguments,
             stdout=asyncio.subprocess.PIPE, stderr=log, env={**os.environ, **command.env})
         try:
-            line = await asyncio.wait_for(process.stdout.readline(), timeout=15)
+            # Explicit model options preload and verify the model before listening.
+            startup_timeout = 120 if "--model-options" in arguments else 15
+            line = await asyncio.wait_for(process.stdout.readline(), timeout=startup_timeout)
             assert line, "HTTP MCP server exited before announcing its endpoint"
             endpoint = json.loads(line)["endpoint"]
             async with httpx.AsyncClient(headers={"Authorization": "Bearer " + credential},
@@ -211,7 +213,7 @@ async def basic(binary, root, http=False):
             "cancelled_shell_and_child_exited": True, "connection_survived_cancellation": True}
 
 
-async def native(binary, root, weights, http=False):
+async def native(binary, root, weights, http=False, skill_permissions=False, catalog=None, model_uri=None):
     workspace = root / "workspace"
     workspace.mkdir()
     secret = "LOCAL_" + uuid.uuid4().hex[:12]
@@ -219,17 +221,32 @@ async def native(binary, root, weights, http=False):
     skill_dir = workspace / ".claude" / "skills" / "inspect"
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text("---\ndescription: Inspect a file\ndisable-model-invocation: true\n---\nUse the Read tool to read $0. Then return the exact file contents as your final answer. Do not guess.\n")
-    package = root / "Models" / "agent-fixture"
-    package.mkdir(parents=True)
-    os.link(weights, package / "model.gguf")
     manifest = {"schema_version": 1, "id": "agent-fixture", "architecture": "qwen2", "format": "gguf",
                 "quantization": "Q4_K_M", "context_length": 32768, "entry_point": "model.gguf",
                 "capabilities": ["text-generation", "chat"], "files": [{"path": "model.gguf", "size": 491400032,
                 "sha256": "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db"}]}
+    if catalog:
+        assert model_uri and model_uri.startswith("model://")
+        source = catalog / model_uri.removeprefix("model://")
+        manifest = json.loads((source / "manifest.json").read_text())
+        assert manifest["id"] == model_uri.removeprefix("model://")
+    package = root / "Models" / manifest["id"]
+    package.mkdir(parents=True)
+    for entry in manifest["files"]:
+        target = package / entry["path"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        os.link(source / entry["path"] if catalog else weights, target)
     (package / "manifest.json").write_text(json.dumps(manifest))
     command = StdioServerParameters(command=str(binary), args=["--workspace", str(workspace),
-        "--models", str(root / "Models"), "--model", "model://agent-fixture", "--state", str(root / "stdio-state"),
+        "--models", str(root / "Models"), "--model", "model://" + manifest["id"], "--state", str(root / "stdio-state"),
         "--allow", "Agent", "--allow", "AgentStop", "--temperature", "0", "--request-timeout", "120000"])
+    model_options = {}
+    if catalog:
+        model_options = {"enable_thinking": False, "tool_grammar": False}
+        options_file = root / "model-options.json"
+        options_file.write_text(json.dumps(model_options))
+        options_file.chmod(0o600)
+        command.args += ["--context", "8192", "--max-tokens", "2048", "--model-options", str(options_file)]
     updates = []
 
     async def progress(value, total, message):
@@ -310,9 +327,44 @@ async def native(binary, root, weights, http=False):
             assert any(c["name"] == "Read" for m in fork_messages for c in m["tool_calls"])
             assert any(m["role"] == "tool" and fork_secret in m["text"] for m in fork_messages)
             assert all(code not in m["text"] for m in fork_messages for code in (secret, child_secret, resumed_secret))
+            permission_results = []
+            if skill_permissions:
+                (profile_dir / "writer.md").write_text("---\nname: writer\ndescription: Write one file\ntools: Write\n---\nUse Write exactly as requested. Return DONE after it succeeds.\n")
+                for mode in ("inline", "fork"):
+                    (skill_dir / "SKILL.md").write_text("---\ndescription: Write an exact file\ndisable-model-invocation: true\nallowed-tools: 'Write(grant-*.txt)'\n"
+                        + ("context: fork\nagent: writer\n" if mode == "fork" else "")
+                        + "---\nCall Write with path=$0 and content=$1 exactly without an added newline. Then return DONE.\n")
+                    name, value = "grant-" + mode + ".txt", "GRANTED_" + secrets.token_hex(6)
+                    observed = await session.call_tool("iiLocalLLM.agent.run", {"skill": "inspect", "skill_arguments": name + " " + value, "max_turns": 4})
+                    assert not observed.isError and observed.structuredContent["status"] == "completed", observed
+                    assert (workspace / name).is_file(), observed
+                    assert (workspace / name).read_text() == value, observed
+                    after = (await session.call_tool("iiLocalLLM.agent.session", {"include_messages": True})).structuredContent
+                    records = after["messages"]
+                    if mode == "fork":
+                        grant_execution = records[-1]["metadata"]["iilocal.skill_fork"]
+                        path = private_state / "subagents/sessions" / grant_execution["session_id"] / "transcript.jsonl"
+                        records = [r["message"] for r in map(json.loads, path.read_text().splitlines()) if r["type"] == "message"]
+                    writes = [c for m in records for c in m["tool_calls"] if c["name"] == "Write"]
+                    def target_path(call):
+                        path = Path(call["arguments"]["path"])
+                        return (path if path.is_absolute() else workspace / path).resolve()
+                    assert writes and all(target_path(c) == (workspace / name).resolve() and c["arguments"]["content"] == value for c in writes), {"mode": mode, "writes": writes, "run": observed.structuredContent}
+                    write_results = [m for m in records if m["role"] == "tool" and m["tool_call_id"] in {c["id"] for c in writes}]
+                    assert len(write_results) == len(writes) and all(not m["is_error"] for m in write_results), write_results
+                    # Direct MCP tools share host policy, never a previous agent run's grants.
+                    denied = await session.call_tool("Write", {"path": "grant-outside-run.txt", "content": "DENIED"})
+                    assert denied.isError and not (workspace / "grant-outside-run.txt").exists()
+                    invalid = await session.call_tool("iiLocalLLM.agent.run", {"prompt": "invalid", "allowed_tools": ["Write"]})
+                    assert invalid.isError
+                    permission_results.append({"mode": mode, "run": observed.structuredContent, "actual_write": writes[0], "actual_write_calls": len(writes),
+                        "write_calls": writes, "write_results": write_results,
+                        "outside_invocation_denied": True, "wire_grants_rejected": True})
     assert list((private_state / "sessions").glob("**/*.jsonl")), "Agent transcript was not persisted"
-    return {"official_sdk": version("mcp"), "transport": "http" if http else "stdio", "native_model": "Qwen2.5 0.5B Q4_K_M", "run": run,
+    return {"official_sdk": version("mcp"), "transport": "http" if http else "stdio", "native_model": manifest["id"], "model_manifest": manifest, "run": run,
+            "model_options": model_options,
             "progress": updates, "transcript": saved, "unpredictable_file_value_verified": True, "skill_fork": {"run": fork_run, "execution": execution, "actual_read_verified": True},
+            "skill_permissions": permission_results,
             "subagent": {"foreground": child, "resumed": resumed, "actual_read_calls": sum(c["name"] == "Read" for c in child_calls), "notification_count": 1}}
 
 
@@ -376,15 +428,19 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("binary", type=Path)
     parser.add_argument("--native", type=Path)
+    parser.add_argument("--native-catalog", type=Path)
+    parser.add_argument("--native-model")
     parser.add_argument("--report", type=Path)
     parser.add_argument("--http", action="store_true")
     parser.add_argument("--managed", action="store_true")
     parser.add_argument("--inputs", action="store_true")
+    parser.add_argument("--skill-permissions", action="store_true")
     args = parser.parse_args()
     assert version("mcp") == "1.26.0"
     with tempfile.TemporaryDirectory(prefix="mcp-server-") as directory:
         root = Path(directory)
-        report = asyncio.run(native(args.binary.resolve(), root, args.native.resolve(), args.http) if args.native
+        report = asyncio.run(native(args.binary.resolve(), root, args.native.resolve() if args.native else None, args.http, args.skill_permissions,
+                                   args.native_catalog.resolve() if args.native_catalog else None, args.native_model) if args.native or args.native_catalog
                              else inputs(args.binary.resolve(), root, args.http) if args.inputs
                              else managed(args.binary.resolve(), root, args.http) if args.managed else basic(args.binary.resolve(), root, args.http))
     if args.report:

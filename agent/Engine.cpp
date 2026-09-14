@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "PermissionRules.h"
 #include "SkillsInternal.h"
 #include "../Parameters.h"
 #include <QtCore/QThreadPool>
@@ -139,6 +140,7 @@ public:
     void execute(RunRequest request, QString runId, CancellationToken runToken,
                  EventCallback callback, std::shared_ptr<std::promise<RunResult>> promise, bool compactOnly, QString compactInstructions, bool queuedOnly) {
         auto token = runToken;
+        auto activeAllowedTools = request.allowedTools;
         RunResult result; result.runId = runId; result.sessionId = request.sessionId;
         std::unique_ptr<SessionLease> lease;
         std::mutex eventsMutex;
@@ -182,6 +184,7 @@ public:
             }, token);
             // User observers may enqueue more input. They never run under the queue lock.
             for (const auto& message : delivered) {
+                if (message.metadata["iilocal.input"].toObject()["kind"] == "prompt") activeAllowedTools = request.allowedTools;
                 send({EventKind::Message, runId, request.sessionId, {}, {}, toJson(message)});
                 send({EventKind::InputDelivered, runId, request.sessionId, {}, {}, message.metadata["iilocal.input"].toObject()});
             }
@@ -220,6 +223,7 @@ public:
                 if (user.text.size() > options.maxInputCharacters) throw Error(ErrorCode::ResourceLimit, "Expanded skill exceeds engine input limit");
                 forkedSkill = user.metadata["iilocal.skill"].toObject()["context"] == "fork";
                 if (forkedSkill && !options.forkedSkill) throw Error(ErrorCode::RuntimeUnavailable, "Skill fork executor is unavailable");
+                if (!forkedSkill) activeAllowedTools = parsePermissionRules(activeAllowedTools + detail::skillAllowedTools(user));
             }
             if (!request.contextPaths.isEmpty() && options.projectContext.enabled)
                 user.metadata.insert("iilocal.context_paths", QJsonArray::fromStringList(initial.targetPaths));
@@ -233,6 +237,7 @@ public:
                 const auto& session = lease->session();
                 ToolContext context{session.id, runId, session.workingDirectory, lease->artifactsDirectory(), runToken, {},
                     quint64(session.compactions.size()), std::make_shared<Session>(session)};
+                context.allowedTools = activeAllowedTools;
                 context.progress = [&](const QJsonObject& data) { send({EventKind::ToolProgress, runId, request.sessionId, {}, {}, data}); };
                 const auto outcome = options.forkedSkill({std::move(user), request.generation, request.maxTurns, request.contextPaths}, context);
                 result = outcome.result; result.runId = runId; result.sessionId = request.sessionId;
@@ -337,6 +342,7 @@ public:
                 const ToolContext toolBase{session.id, runId, session.workingDirectory, lease->artifactsDirectory(), token, {}, quint64(session.compactions.size()), std::make_shared<Session>(session)};
                 auto runTool = [&](const ToolCall& call) {
                     auto context = toolBase;
+                    context.allowedTools = activeAllowedTools;
                     context.progress = [&, id = call.id](const QJsonObject& data) {
                         send({EventKind::ToolProgress, runId, request.sessionId, id, {}, data});
                     };
@@ -344,6 +350,20 @@ public:
                     // Only the reserved native tool may request prompt injection.
                     if (call.name != "Skill" || skillContext.text.isEmpty()) output.metadata.remove("iilocal.skill_result");
                     return output;
+                };
+                auto commitTool = [&](const ToolCall& call, ToolResult output) {
+                    auto grants = activeAllowedTools;
+                    bool activate = false;
+                    if (call.name == "Skill" && !skillContext.text.isEmpty() && !output.isError) {
+                        const auto marker = output.metadata.value("iilocal.skill_result").toObject();
+                        if (marker["version"] == 1) {
+                            grants = parsePermissionRules(grants + detail::skillAllowedTools(messageFromJson(marker["message"].toObject())));
+                            activate = true;
+                        }
+                    }
+                    append({{}, MessageRole::Tool, output.text, {}, call.id, output.isError, output.data, output.content, output.metadata});
+                    // Native Skill is a serial barrier. Parallel readers never race a scope write.
+                    if (activate) activeAllowedTools = std::move(grants);
                 };
                 for (qsizetype i = 0; i < reply.toolCalls.size();) {
                     token.throwIfCancelled();
@@ -353,7 +373,7 @@ public:
                                && runner.concurrencySafe(reply.toolCalls[end])) ++end;
                     if (end == i + 1) {
                         auto output = runTool(reply.toolCalls[i]);
-                        append({{}, MessageRole::Tool, output.text, {}, reply.toolCalls[i].id, output.isError, output.data, output.content, output.metadata});
+                        commitTool(reply.toolCalls[i], std::move(output));
                     } else {
                         std::vector<std::future<ToolResult>> futures;
                         for (auto n = i; n < end; ++n)
@@ -361,7 +381,7 @@ public:
                         try {
                             for (auto n = i; n < end; ++n) {
                                 auto output = futures[size_t(n - i)].get();
-                                append({{}, MessageRole::Tool, output.text, {}, reply.toolCalls[n].id, output.isError, output.data, output.content, output.metadata});
+                                commitTool(reply.toolCalls[n], std::move(output));
                             }
                         } catch (...) {
                             token.cancel();
@@ -533,6 +553,7 @@ RunHandle Engine::submit(RunRequest request, EventCallback callback, bool compac
             || request.maxTurns < 1 || request.maxTurns > 10000
             || request.contextPaths.size() > d->options.projectContext.maxTargetPaths) throw Error(ErrorCode::InvalidArgument, "Invalid agent run request");
         validateGenerationOptions(request.generation);
+        request.allowedTools = parsePermissionRules(request.allowedTools);
         std::lock_guard lock(d->mutex);
         if (d->stopping) throw Error(ErrorCode::ShuttingDown, "Agent engine is shutting down");
         if (d->active.size() >= size_t(d->options.maxConcurrentRuns + d->options.maxQueuedRuns))

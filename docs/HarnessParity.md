@@ -83,4 +83,6 @@
 
 0.16.0은 파일·JSON 프로파일 계층과 변경 인식, `general-purpose`/`Explore`/`Plan`의 로컬 역할, 스킬 사전 로딩, 호스트 모델 별칭·추가 제한, SubagentStart/SubagentStop C++ 훅과 프로파일 조회 API·MCP·CLI를 추가한다. 참조의 모든 전문 역할·플러그인 생명주기·에이전트별 MCP/메모리·외부 훅은 계속 미완료이다. 세부 계약은 [AgentProfiles.md](AgentProfiles.md)를 따른다.
 
-0.17.0은 C++ `context: fork` 스킬의 사용자·모델 호출, 자식 격리, 모델 별칭과 동기 결과 반환을 추가한다. skills와 subagents의 전체 상태는 계속 partial이며 권한 추가·effort·KAIROS 예약 fork 등은 남아 있다. [Skills.md](Skills.md)에 구현 범위와 차이를 기록한다.
+0.17.0은 C++ `context: fork` 스킬의 사용자·모델 호출, 자식 격리, 모델 별칭과 동기 결과 반환을 추가한다. skills와 subagents의 전체 상태는 계속 partial이며 effort·KAIROS 예약 fork 등은 남아 있다. [Skills.md](Skills.md)에 구현 범위와 차이를 기록한다.
+
+0.18.0은 호출 범위의 allowed-tools, 권한 판정/실행 스냅샷, 인자 규칙과 C Bash AST 검사를 추가한다. 권한의 설정 계층·자동 분류·전체 BashSecurity·OS 샌드박스 등은 남아 있어 permissions/skills/subagents는 계속 partial이다. [Permissions.md](Permissions.md)에 구체적인 차이를 기록한다.
