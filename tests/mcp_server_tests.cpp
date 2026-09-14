@@ -4,6 +4,7 @@
 #include <QtCore/QFile>
 #include <QtCore/QDir>
 #include <QtCore/QElapsedTimer>
+#include <QtCore/QJsonDocument>
 #include <QtTest/QTest>
 #include <chrono>
 #include <thread>
@@ -183,9 +184,26 @@ private slots:
         const auto content = result["content"].toArray();
         QCOMPARE(content[0].toObject()["type"].toString(), "text");
         QCOMPARE(content[1].toObject()["type"].toString(), "image");
+        QCOMPARE(content.size(), 3);
+        QCOMPARE(QJsonDocument::fromJson(content.last().toObject()["text"].toString().toUtf8()).object(),
+            result["structuredContent"].toObject());
         QVERIFY(call(s, 3, "write")["isError"].toBool());
         QVERIFY(call(s, 4, "value", {{"extra", true}})["isError"].toBool());
         s.receive(request(5, "tools/call", {{"name", "missing"}})); QCOMPARE(next(s)["error"].toObject()["code"].toInt(), -32602);
+    }
+    void structuredOutputTextIsNotDuplicated() {
+        QTemporaryDir root;
+        for (const auto& json : QStringList{"{\"value\":7}", "{\n  \"value\": 7\n}"}) {
+            for (const auto& version : QStringList{"2025-11-25", "2025-03-26"}) {
+                auto registry = std::make_shared<a::ToolRegistry>();
+                a::Tool value; value.definition = {"value", "Read a value", {{"type", "object"}}, {}, true, true};
+                value.execute = [json](const auto&, const auto&) { return a::ToolResult{json, {{"value", 7}}}; };
+                registry->add(value);
+                a::McpServerOptions config; config.workingDirectory = root.path();
+                m::ServerSession session(a::mcpServerOptions(registry, std::make_shared<a::RulePolicy>(), config)); initialize(session, {}, version);
+                QCOMPARE(call(session, 2, "value")["content"].toArray().size(), 1);
+            }
+        }
     }
     void manualCompactionIsConnectionBound() {
         QTemporaryDir root; auto registry = std::make_shared<a::ToolRegistry>();

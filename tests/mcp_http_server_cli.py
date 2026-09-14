@@ -36,6 +36,8 @@ with tempfile.TemporaryDirectory(prefix="mcp-http-cli-") as directory:
     write({"fixture": token}, 0o644)
     reject()
     write({"fixture": token})
+    reject(["--apps-dir", str(root / "apps"), "--no-apps"])
+    reject(["--apps-dir", ""])
     inside = workspace / "credentials.json"
     inside.write_bytes(credentials.read_bytes()); inside.chmod(0o600)
     alias = root / "alias.json"

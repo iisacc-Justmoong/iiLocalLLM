@@ -1,4 +1,5 @@
 #include "McpTools.h"
+#include "McpResult.h"
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QRegularExpression>
@@ -53,10 +54,10 @@ QList<Tool> mcpTools(std::shared_ptr<mcp::Client> client, const McpToolOptions& 
             if (generation != client->connectionGeneration())
                 throw Error(ErrorCode::RuntimeFailure, "MCP session changed; refresh tool definitions before executing");
             const auto wire = client->callTool(remoteName, args, context.cancellation, context.progress, generation);
-            ToolResult result; result.content = wire["content"].toArray(); result.text = textContent(result.content);
+            ToolResult result; result.content = wire["content"].toArray();
             result.data = wire["structuredContent"].toObject(); result.metadata = wire["_meta"].toObject();
             result.isError = wire["isError"].toBool();
-            if (result.text.isEmpty() && !result.data.isEmpty()) result.text = QString::fromUtf8(QJsonDocument(result.data).toJson(QJsonDocument::Compact));
+            result.text = textContent(detail::withStructuredText(result.content, result.data));
             return result;
         };
         validation.add(tool); tools.append(std::move(tool));

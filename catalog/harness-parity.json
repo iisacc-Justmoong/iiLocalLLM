@@ -241,9 +241,12 @@
         "tests/agent_api_smoke.py",
         "tests/mcp_server_smoke.py",
         "tests/consumer/discovery.cpp",
-        "docs/ToolDiscovery.md"
+        "docs/ToolDiscovery.md",
+        "mcp/LocalApplications.cpp",
+        "tests/local_applications_tests.cpp",
+        "docs/LocalApplications.md"
       ],
-      "remaining": "Host-authorized stdio/Streamable HTTP config, environment expansion, tool-list refresh, connection recovery, per-session ToolSearch, persisted selection and authenticated status implemented. App manifests, installed-app/network discovery, full managed/user/plugin config scopes, provider-specific auto thresholds/tool references and actual Society/Dreamscapes endpoints remain. Pinned Qwen2.5 0.5B discovery-to-action inference still fails; configured eager MCP inference works. Model qualification remains open."
+      "remaining": "Host-authorized MCP configurations, same-user running-app endpoint registration/discovery, per-session ToolSearch and authenticated status are implemented. Installed-app launching/network discovery, complete configuration scopes, provider-specific thresholds/tool references and model qualification remain. Pinned Qwen2.5 0.5B discovery-to-action inference still fails; eager configured MCP and actual Society status inference work."
     },
     {
       "id": "skills",
@@ -316,8 +319,17 @@
     {
       "id": "iisacc_apps",
       "requirement": "Society·Dreamscapes·Congregation·Thinking Space 실제 consumer 연동 검증",
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "mcp/LocalApplications.cpp",
+        "agent/ObjectTools.cpp",
+        "agent/McpServer.cpp",
+        "agent/McpTools.cpp",
+        "tests/local_applications_tests.cpp",
+        "docs/LocalApplications.md",
+        "docs/Verification.md"
+      ],
+      "remaining": "Actual macOS Society and Dreamscapes endpoints dispatch to their Qt controllers. Society navigation and eager native Qwen status consumption, plus Dreamscapes model selection, fixture generation, job IDs and cancellation were exercised. Congregation/Thinking Space, mobile/Windows discovery, native image quality and broad autonomous app workflows remain."
     },
     {
       "id": "packaging",
@@ -337,7 +349,8 @@
         "tests/consumer/compaction.cpp",
         "tests/compaction_runtime_smoke.cpp",
         "mcp/HttpClient.h",
-        "docs/MCPHTTP.md"
+        "docs/MCPHTTP.md",
+        "tests/consumer/local_applications.cpp"
       ],
       "remaining": "Public MCP client/server headers and a POSIX MCP executable are installed and tested through fresh C++ consumers. Complete app integration and platform qualification remain."
     },

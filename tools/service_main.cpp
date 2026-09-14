@@ -3,6 +3,7 @@
 #include "PrivateFile.h"
 #include <agent/Api.h>
 #include <agent/McpConnections.h>
+#include <mcp/LocalApplications.h>
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
@@ -30,7 +31,7 @@ int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("iiLocalLLMD"));
-    app.setApplicationVersion(QStringLiteral("0.9.0"));
+    app.setApplicationVersion(QStringLiteral("0.10.0"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("iiLocalLLM local JSON IPC service"));
     parser.addHelpOption(); parser.addVersionOption();
@@ -53,6 +54,8 @@ int main(int argc, char** argv)
         {"agent-mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
         {"agent-mcp-project", "Load workspace/.mcp.json after explicit MCP configuration files."},
         {"agent-mcp-eager", "Publish all configured MCP tools to the model without ToolSearch."},
+        {"agent-apps-dir", "Private registry of running local application MCP endpoints.", "directory"},
+        {"agent-no-apps", "Disable discovery of running local applications."},
         {"agent-no-auto-compact", "Disable automatic agent conversation compaction; explicit compact requests remain available."},
         {"agent-no-project-context", "Disable automatic project instruction loading for the agent API."},
         {"agent-context-exclude", "Exclude a workspace-relative instruction glob; repeat for more patterns.", "pattern"},
@@ -80,7 +83,12 @@ int main(int argc, char** argv)
         std::optional<a::ApiOptions> agentConfig;
         if (parser.isSet("agent-workspace") || parser.isSet("agent-state") || parser.isSet("agent-credentials") || parser.isSet("agent-allow")
             || parser.isSet("agent-no-auto-compact") || parser.isSet("agent-no-project-context") || parser.isSet("agent-context-exclude")
-            || parser.isSet("agent-mcp-config") || parser.isSet("agent-mcp-project") || parser.isSet("agent-mcp-eager")) {
+            || parser.isSet("agent-mcp-config") || parser.isSet("agent-mcp-project") || parser.isSet("agent-mcp-eager")
+            || parser.isSet("agent-apps-dir") || parser.isSet("agent-no-apps")) {
+            if (parser.isSet("agent-apps-dir") && parser.isSet("agent-no-apps"))
+                throw std::runtime_error("--agent-apps-dir and --agent-no-apps cannot be combined");
+            if (parser.isSet("agent-apps-dir") && parser.value("agent-apps-dir").isEmpty())
+                throw std::runtime_error("--agent-apps-dir requires a nonempty directory");
             if (!parser.isSet("agent-workspace") || !parser.isSet("agent-state") || !parser.isSet("agent-credentials"))
                 throw std::runtime_error("Agent API requires --agent-workspace, --agent-state and --agent-credentials together");
             a::ApiOptions config; config.workingDirectory = QFileInfo(parser.value("agent-workspace")).canonicalFilePath();
@@ -151,7 +159,12 @@ int main(int argc, char** argv)
             for (const auto& path : parser.values("agent-mcp-config")) connections.configFiles.append(QFileInfo(path).absoluteFilePath());
             if (parser.isSet("agent-mcp-project")) connections.configFiles.append(".mcp.json");
             connections.deferTools = !parser.isSet("agent-mcp-eager");
-            if (!connections.configFiles.isEmpty()) agentConfig->mcp = std::make_shared<a::McpConnections>(registry, std::move(connections));
+#if defined(Q_OS_UNIX) && !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
+            if (!parser.isSet("agent-no-apps")) connections.localApplicationsDirectory = iiLocalLLM::mcp::localApplicationsDirectory();
+#endif
+            if (parser.isSet("agent-apps-dir")) connections.localApplicationsDirectory = QFileInfo(parser.value("agent-apps-dir")).absoluteFilePath();
+            if (!connections.configFiles.isEmpty() || !connections.localApplicationsDirectory.isEmpty())
+                agentConfig->mcp = std::make_shared<a::McpConnections>(registry, std::move(connections));
             QList<a::PermissionRule> rules;
             for (const auto& name : parser.values("agent-allow")) rules.append({name, a::PermissionBehavior::Allow});
             auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::DontAsk, rules);

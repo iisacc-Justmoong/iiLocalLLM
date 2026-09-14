@@ -55,7 +55,13 @@ QJsonObject legacyResult(const QString& method, QJsonObject result) {
         for (qsizetype i = 0; i < content.size(); ++i) content[i] = legacyContent(content[i]);
         if (result.contains("structuredContent")) {
             const auto serialized = QString::fromUtf8(QJsonDocument(result["structuredContent"].toObject()).toJson(QJsonDocument::Compact));
-            bool included = false; for (const auto& value : content) if (value.toObject()["type"] == "text" && value.toObject()["text"] == serialized) included = true;
+            bool included = false;
+            for (const auto& value : content) {
+                const auto block = value.toObject();
+                if (block["type"] != "text") continue;
+                const auto parsed = QJsonDocument::fromJson(block["text"].toString().toUtf8());
+                if (parsed.isObject() && parsed.object() == result["structuredContent"].toObject()) included = true;
+            }
             if (!included) content.append(QJsonObject{{"type", "text"}, {"text", serialized}});
             result.remove("structuredContent");
         }

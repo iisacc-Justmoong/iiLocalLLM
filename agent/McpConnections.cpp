@@ -1,5 +1,6 @@
 #include "McpConnections.h"
 #include "../mcp/HttpClient.h"
+#include "../mcp/LocalApplications.h"
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -45,6 +46,7 @@ QString expand(const QJsonValue& value, const QProcessEnvironment& environment) 
 }
 struct Config {
     QString name, type, command, cwd, appId;
+    QString applicationInstance;
     QStringList args;
     QProcessEnvironment environment;
     QUrl endpoint;
@@ -143,6 +145,8 @@ public:
     std::thread worker;
     std::atomic_bool stopping = false;
     std::map<QString, Entry> entries;
+    std::map<QString, Config> configured;
+    ErrorCode applicationDiscoveryError = ErrorCode::None;
     QStringList ownedNames;
     QJsonArray statuses;
     std::map<QString, std::shared_ptr<mcp::Client>> clients;
@@ -156,6 +160,9 @@ public:
             && options.limits.maxNotificationCount >= 1 && options.limits.maxQueuedBytes >= 1, "Invalid MCP connection manager options");
         options.workingDirectory = QFileInfo(options.workingDirectory).canonicalFilePath();
         require(QFileInfo(options.workingDirectory).isDir(), "MCP workspace must be an existing directory");
+        require(options.localApplicationsDirectory.isEmpty()
+            || (QDir::isAbsolutePath(options.localApplicationsDirectory) && !options.localApplicationsDirectory.contains(QChar(0))),
+            "Local application registry must be an absolute directory");
     }
     void enqueue(QJsonObject notification) {
         const auto size = QJsonDocument(notification).toJson(QJsonDocument::Compact).size();
@@ -181,7 +188,8 @@ public:
                 "Configured MCP Authorization must use Bearer authentication");
             o.bearerToken = [credential = authorization.mid(7)] { return credential; };
         }
-        if (options.bearerToken) o.bearerToken = [callback = options.bearerToken, name = c.name] { return callback(name); };
+        if (options.bearerToken && c.applicationInstance.isEmpty())
+            o.bearerToken = [callback = options.bearerToken, name = c.name] { return callback(name); };
         return std::make_shared<mcp::HttpClient>(std::move(o), std::move(clientOptions));
     }
     void update(Entry& entry, const CancellationToken& cancellation, bool force) {
@@ -219,6 +227,10 @@ public:
                     tool.definition.deferred = options.deferTools && !entry.config.alwaysLoad;
                     tool.definition.metadata["connection_id"] = entry.connectionId;
                     tool.definition.metadata["connection_generation"] = QString::number(generation);
+                    if (!entry.config.applicationInstance.isEmpty()) {
+                        tool.definition.metadata["application_instance"] = entry.config.applicationInstance;
+                        tool.definition.metadata["discovery_source"] = "local_application";
+                    }
                 }
                 entry.tools = std::move(tools); entry.generation = generation; entry.dirty = false; ++entry.toolsRevision;
             }
@@ -242,6 +254,7 @@ public:
                 {"tool_count", entry.tools.size()}, {"deferred", options.deferTools && !entry.config.alwaysLoad},
                 {"generation", QString::number(entry.generation)}};
             if (!entry.config.appId.isEmpty()) item["app_id"] = entry.config.appId;
+            item["source"] = entry.config.applicationInstance.isEmpty() ? "configuration" : "local_application";
             if (entry.error != ErrorCode::None) item["error_code"] = enumName(entry.error);
             if (entry.httpStatus) item["http_status"] = entry.httpStatus;
             status.append(item);
@@ -272,17 +285,36 @@ public:
             if (stopping) throw Error(ErrorCode::ShuttingDown, "MCP connections are closed");
         }
         cancellation.throwIfCancelled();
-        auto next = entries;
-        if (reload) {
-            const auto configs = readConfigs(options); next.clear();
-            for (const auto& [name, config] : configs) {
-                const auto old = entries.find(name);
-                if (old != entries.end() && old->second.config.disabled == config.disabled
-                    && old->second.config.fingerprint == config.fingerprint) {
-                    next[name] = old->second; next[name].config = config;
-                }
-                else { Entry entry; entry.config = config; next.emplace(name, std::move(entry)); }
+        const auto authorized = reload ? readConfigs(options) : configured;
+        auto configs = authorized;
+        if (!options.localApplicationsDirectory.isEmpty()) {
+            const auto discovered = mcp::discoverLocalApplications(options.localApplicationsDirectory, options.maxServers);
+            if (discovered.error != applicationDiscoveryError) {
+                applicationDiscoveryError = discovered.error;
+                enqueue({{"method", "iilocal/apps/discovery_state"}, {"error_code", enumName(discovered.error)}});
             }
+            for (const auto& application : discovered.applications) {
+                if (configs.contains(application.serverName) || configs.size() >= static_cast<size_t>(options.maxServers)) continue;
+                Config config; config.name = application.serverName; config.type = "http";
+                config.appId = application.application.id; config.applicationInstance = application.instanceId;
+                config.endpoint = application.endpoint; config.cwd = options.workingDirectory;
+                config.headers["authorization"] = "Bearer " + application.bearerToken;
+                config.fingerprint = QCryptographicHash::hash(QJsonDocument(QJsonObject{
+                    {"instance", config.applicationInstance}, {"app_id", config.appId},
+                    {"url", config.endpoint.toString()}, {"token", QString::fromLatin1(application.bearerToken)},
+                    {"name", application.application.name}, {"version", application.application.version}
+                }).toJson(QJsonDocument::Compact), QCryptographicHash::Sha256);
+                configs.emplace(config.name, std::move(config));
+            }
+        }
+        std::map<QString, Entry> next;
+        for (const auto& [name, config] : configs) {
+            const auto old = entries.find(name);
+            if (old != entries.end() && old->second.config.disabled == config.disabled
+                && old->second.config.fingerprint == config.fingerprint) {
+                next[name] = old->second; next[name].config = config;
+            }
+            else { Entry entry; entry.config = config; next.emplace(name, std::move(entry)); }
         }
         for (auto& [name, entry] : next) {
             if (stopping) throw Error(ErrorCode::ShuttingDown, "MCP connections are closed");
@@ -291,6 +323,7 @@ public:
         cancellation.throwIfCancelled();
         if (stopping) throw Error(ErrorCode::ShuttingDown, "MCP connections are closed");
         publish(std::move(next));
+        configured = authorized;
     }
     void start() {
         if (!options.refreshIntervalMs) return;

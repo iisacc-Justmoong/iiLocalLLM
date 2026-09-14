@@ -192,6 +192,7 @@ private slots:
         auto output = runner.run({"c2", "mcp__app__echo", {{"value", "observed"}}}, context);
         QVERIFY(!output.isError); QCOMPARE(output.content.size(), 2); QCOMPARE(output.metadata["app"].toString(), "fixture");
         QCOMPARE(output.data["value"].toString(), "observed");
+        QVERIFY(output.text.contains("\"value\":\"observed\""));
         QVERIFY(runner.run({"c3", "mcp__app__echo", {{"value", "bad-output"}}}, context).isError);
         QVERIFY(runner.run({"c4", "mcp__app__echo", {{"value", "tool-error"}}}, context).isError);
         struct Model final : agent::Model {

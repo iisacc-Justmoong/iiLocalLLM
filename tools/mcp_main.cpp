@@ -1,5 +1,6 @@
 #include "agent/McpServer.h"
 #include "agent/McpConnections.h"
+#include "mcp/LocalApplications.h"
 #include "mcp/HttpServer.h"
 #include "McpCredentials.h"
 #include <QtCore/QCommandLineParser>
@@ -14,7 +15,7 @@
 namespace { volatile std::sig_atomic_t interrupted = 0; void interrupt(int) { interrupted = 1; } }
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.9.0");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.10.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},
@@ -22,6 +23,8 @@ int main(int argc, char** argv) {
         {"mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
         {"mcp-project", "Load workspace/.mcp.json after explicit MCP configuration files."},
         {"mcp-eager", "Publish all configured MCP tools to the agent without ToolSearch."},
+        {"apps-dir", "Private registry of running local application MCP endpoints.", "directory"},
+        {"no-apps", "Disable discovery of running local applications."},
         {"artifacts", "Directory for large tool results.", "path"},
         {"model", "Enable the local agent using an installed model:// URI.", "uri"},
         {"models", "Installed model catalog directory; required with --model.", "path"},
@@ -36,6 +39,10 @@ int main(int argc, char** argv) {
         {"request-timeout", "Maximum MCP request duration in milliseconds.", "milliseconds", "60000"}});
     parser.process(app);
     try {
+        if (parser.isSet("apps-dir") && parser.isSet("no-apps"))
+            throw std::runtime_error("--apps-dir and --no-apps cannot be combined");
+        if (parser.isSet("apps-dir") && parser.value("apps-dir").isEmpty())
+            throw std::runtime_error("--apps-dir requires a nonempty directory");
         const auto workspace = QFileInfo(parser.value("workspace")).canonicalFilePath();
         if (!parser.isSet("workspace") || workspace.isEmpty() || !QFileInfo(workspace).isDir())
             throw iiLocalLLM::Error(iiLocalLLM::ErrorCode::InvalidArgument, "--workspace must name an existing directory");
@@ -80,8 +87,13 @@ int main(int argc, char** argv) {
         for (const auto& path : parser.values("mcp-config")) connectionOptions.configFiles.append(QFileInfo(path).absoluteFilePath());
         if (parser.isSet("mcp-project")) connectionOptions.configFiles.append(".mcp.json");
         connectionOptions.deferTools = !parser.isSet("mcp-eager");
+#if defined(Q_OS_UNIX) && !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
+        if (!parser.isSet("no-apps")) connectionOptions.localApplicationsDirectory = iiLocalLLM::mcp::localApplicationsDirectory();
+#endif
+        if (parser.isSet("apps-dir")) connectionOptions.localApplicationsDirectory = QFileInfo(parser.value("apps-dir")).absoluteFilePath();
         std::unique_ptr<a::McpConnections> connections;
-        if (!connectionOptions.configFiles.isEmpty()) connections = std::make_unique<a::McpConnections>(registry, std::move(connectionOptions));
+        if (!connectionOptions.configFiles.isEmpty() || !connectionOptions.localApplicationsDirectory.isEmpty())
+            connections = std::make_unique<a::McpConnections>(registry, std::move(connectionOptions));
         std::unique_ptr<iiLocalLLM::Service> service;
         a::McpServerOptions options; options.workingDirectory = workspace; options.appId = "com.iisacc.iiLocalLLM";
         options.artifactsDirectory = http ? QDir(privateState).filePath("artifacts")

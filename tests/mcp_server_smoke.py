@@ -82,6 +82,16 @@ def text(result):
     return "\n".join(part.text for part in result.content if part.type == "text")
 
 
+def read_text(result):
+    # 0.10 publishes the structured result as a separate MCP text block too.
+    # Preserve the exact file bytes and independently verify the JSON projection.
+    assert not result.isError and len(result.content) == 2, result
+    first, structured = result.content
+    assert first.type == structured.type == "text", result
+    assert json.loads(structured.text) == result.structuredContent, result
+    return first.text
+
+
 async def wait_until(predicate, seconds=5):
     deadline = asyncio.get_running_loop().time() + seconds
     while not predicate():
@@ -112,7 +122,7 @@ async def basic(binary, root, http=False):
             assert {item.name for item in definitions} == {"Read", "Write", "Edit", "Glob", "Grep", "Bash"}
             assert all(item.meta["iisacc/appId"] == "com.iisacc.iiLocalLLM" for item in definitions)
             result = await session.call_tool("Read", {"path": "secret.txt"})
-            assert not result.isError and text(result) == secret
+            assert read_text(result) == secret
             denied = await session.call_tool("Write", {"path": "blocked.txt", "content": "denied"})
             assert denied.isError and not (workspace / "blocked.txt").exists()
             invalid = await session.call_tool("Read", {})
@@ -150,7 +160,7 @@ async def basic(binary, root, http=False):
                 except asyncio.CancelledError:
                     pass
             await session.send_ping()
-            assert text(await session.call_tool("Read", {"path": "created.txt"})) == secret
+            assert read_text(await session.call_tool("Read", {"path": "created.txt"})) == secret
     return {"official_sdk": version("mcp"), "transport": "http" if http else "stdio", "tools": 6, "real_file_read_write": True,
             "permission_denial": True, "schema_validation": True, "workspace_boundary": True,
             "cancelled_shell_and_child_exited": True, "connection_survived_cancellation": True}

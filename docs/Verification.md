@@ -1,5 +1,28 @@
 # 구현 검증 기록
 
+## 2026-09-14 실행 중인 앱 MCP 연결과 실제 모델 입력 검증 (0.10.0)
+
+현재 단계는 데스크톱 POSIX 앱 등록·발견·인증·Qt 주 스레드 도구 호출이다. Society·Dreamscapes의 실제 컨트롤러를 연결한다. 전체 하네스와 모든 앱/플랫폼의 완료를 뜻하지 않는다.
+
+| 검증 | 최종 결과 |
+|---|---|
+| SDK Release CTest | 45/46, 176.01초. 기존 `iiLocalLLM.discovery_inference` 한 건 실패 유지 |
+| ASan + UBSan, llama 비활성 | 31/31, 53.64초 |
+| 새 stage의 외부 C++ consumer | 13/14, 33.68초. 동일한 `installed_discovery_inference` 실패 유지. 새 앱 등록·HTTP·QObject 호출·삭제 consumer 통과 |
+| Society 현재 작업 트리 | 전체 20/20, 140.98초. 실제 앱 탐색·범위 거절·자동 발견·제거·비활성 및 네이티브 Qwen 호출 포함 |
+| Dreamscapes 현재 작업 트리 | 전체 9/9, 135.16초. 구조화 결과 수정 후 실제 MCP 테스트도 3.76초에 통과 |
+| 커밋할 코드만 추출한 독립 앱 빌드 | Society MCP 14.00초, Dreamscapes MCP 7.80초에 각각 통과. 기존 미커밋 제품 변경에 의존하지 않음 |
+| 모델이 실제 앱 값을 소비하는지 | Qwen2.5 0.5B Q4_K_M이 발견한 Society status 도구를 호출하고 새 컨테이너 ID를 최종 응답에 포함. ID는 프롬프트에 주지 않음. eager 도구 하나와 명시 허용 정책으로 검증 |
+| 설치·ABI·로더 | SDK/daemon/CLI 0.10.0. 소스와 stage의 UUID `B1E9F032-0C61-32E7-B9A9-17E8372ADFEA`, SHA-256 일치. 외부 consumer가 실제 `local-app-stage/lib/libiiLocalLLM.0.10.0.dylib`를 로드. 얇은 iillm은 iiLocalLLM/llama/ggml을 링크하지 않음 |
+
+실제 Qwen 검사에서 최초에는 MCP 호출이 성공해도 모델이 `Society state`라는 설명만 읽었다. `structuredContent`가 모델용 텍스트에서 누락된 원인이었다. 서버의 JSON text block과 클라이언트의 구조화 결과 전달을 수정했다. stdio/HTTP 회귀의 실패를 먼저 재현하고 통과시켰으며, 같은 JSON이 이미 있으면 공백 형식과 무관하게 중복하지 않는다. 공식 Python MCP 1.26 클라이언트는 파일 본문과 추가 JSON block을 각각 검증한다.
+
+초기 실행에는 공식 MCP peer 초기화 타임아웃과 Dreamscapes의 첫 GUI 시작 지연이 각각 있었다. 원래 로그를 보존하고 해당 검사와 최종 전체/독립 빌드를 다시 실행했다. 모델 폴더의 텍스트 자동 분류와 이미지 크기의 8픽셀 정렬도 실제 앱 규칙에 맞게 테스트에 반영했다. 최종 SDK의 유일한 실패는 검색 후 도구를 실행하지 않는 기존 소형 Qwen 경로이다.
+
+Dreamscapes의 검사는 기존 생성 프로세스 fixture로 실제 앱 큐·생성 결과 PNG·작업 ID·실행/대기 취소를 확인한다. 실제 확산 모델의 생성 품질·성능 검증으로 확대하지 않는다. 이번 작업은 별도 stage와 앱 build를 사용하며 기본 SDK 설치 및 기존 디바이스 앱 bundle을 교체하지 않는다. iOS·Android·Windows 발견, Congregation·Thinking Space 및 광범위한 자율 앱 작업은 남아 있다.
+
+재현과 계약은 [LocalApplications.md](LocalApplications.md)에 있다. 로컬 증거는 `build/local-app-verification.json`, `build/local-app-verified-*-tests.log`, `build/local-app-final-consumer-tests.log`, 제품별 `build/local-mcp/`에 보관한다.
+
 ## 2026-09-14 MCP 설정 연결과 대화별 도구 검색 (0.9.0)
 
 C++ `McpConnections`에 호스트가 지정한 stdio/Streamable HTTP 설정 연결, 환경변수 치환, 서버별 실패 격리, 도구 목록 변경 알림·연결 복구, 명시적 설정 reload를 구현했다. `ToolSearch`는 대화별 선택·원본 JSONL 복구·턴 snapshot·스키마/연결 변경 무효화를 제공한다. 인증된 상태 API, 얇은 CLI, MCP 서버의 설정 기반 도구 중계도 연결했다. 기존 Qt와 MCP/Schema 코드를 재사용하며 새 생산 런타임 의존성은 없다. 환경은 Apple M1 Max / macOS 27 / Qt 6.8.3이다.

@@ -149,6 +149,10 @@ def main():
         evidence["invalid_credential_rejection_seconds"] = round(time.monotonic() - rejection_started, 3)
         credentials.chmod(0o600)
         evidence["checks"].append("private_credentials_required")
+        for extra in (["--agent-apps-dir", str(root / "apps"), "--agent-no-apps"], ["--agent-apps-dir", ""]):
+            rejected = subprocess.run(base + extra, capture_output=True, text=True, timeout=10, env=environment)
+            assert rejected.returncode != 0 and "agent-apps-dir" in rejected.stderr, rejected.stderr
+            assert "ggml_metal" not in rejected.stderr, "Invalid app discovery arguments reached GPU initialization"
         with daemon() as port:
             assert http(port, "agent.info", auth="wrong")[0] == 401
             info = cli("agent.info")

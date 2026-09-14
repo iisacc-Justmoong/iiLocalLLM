@@ -1,4 +1,5 @@
 #include "McpServer.h"
+#include "McpResult.h"
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
@@ -17,6 +18,7 @@ QJsonObject wireResult(const ToolResult& result) {
     for (const auto& v : content) if (v.toObject()["type"] == "text") texts.append(v.toObject()["text"].toString());
     if (!result.text.isEmpty() && texts.join('\n') != result.text)
         content.prepend(QJsonObject{{"type", "text"}, {"text", result.text}});
+    content = detail::withStructuredText(std::move(content), result.data);
     QJsonObject value{{"content", content}, {"structuredContent", result.data}, {"isError", result.isError}};
     if (!result.metadata.isEmpty()) value["_meta"] = result.metadata;
     return value;

@@ -36,13 +36,13 @@
 | remote | 원격/bridge 실행·인증·연결 복원·메시지 라우팅 | pending |
 | settings | 프로젝트/사용자/관리 설정 우선순위·기능 gate·환경·migration | pending |
 | observability | 구조화 로그·실행 trace·사용량/비용·성능·오류 진단 | pending |
-| iisacc_apps | Society·Dreamscapes·Congregation·Thinking Space 실제 consumer 연동 검증 | pending |
+| iisacc_apps | Society·Dreamscapes·Congregation·Thinking Space 실제 consumer 연동 검증 | partial |
 | packaging | 공개 헤더·CMake export·daemon/CLI·설치 consumer·플랫폼 검증 | partial |
 | conditional | 분석본의 내부/조건부 기능: 실제 구현 확보 범위와 iiLocalLLM 대응을 개별 검증 | pending |
 
 ## 현재 구현 순서
 
-0.4.0에서 C++ stdio 클라이언트, 도구·리소스·프롬프트, roots, 진행·취소, 호스트 요청 콜백 및 에이전트 어댑터를 추가했다. 프로토콜 버전 2025-11-25/2025-06-18/2025-03-26을 지원하며, C++ 내장/POSIX stdio 서버와 연결별 로컬 에이전트 실행도 제공한다. 0.7.0에서는 공통 C++ 클라이언트에 Streamable HTTP, bearer/header 공급자, SSE 복원과 세션 404 재초기화를 연결했다. 0.8.0은 인증된 HTTP 서버와 CLI, 요청별 SSE 재개·취소를 추가한다. legacy SSE·OAuth·자동 앱 발견과 최신 규격은 남아 있다. 2025-03 배열 수신·응답 결합을 양쪽에 구현했다. 계약과 교차 검증 절차는 [MCP.md](MCP.md), [MCPHTTP.md](MCPHTTP.md), [MCPHTTPServer.md](MCPHTTPServer.md), [MCPServer.md](MCPServer.md)에 기록한다.
+0.4.0에서 C++ stdio 클라이언트, 도구·리소스·프롬프트, roots, 진행·취소, 호스트 요청 콜백 및 에이전트 어댑터를 추가했다. 프로토콜 버전 2025-11-25/2025-06-18/2025-03-26을 지원하며, C++ 내장/POSIX stdio 서버와 연결별 로컬 에이전트 실행도 제공한다. 0.7.0에서는 공통 C++ 클라이언트에 Streamable HTTP, bearer/header 공급자, SSE 복원과 세션 404 재초기화를 연결했다. 0.8.0은 인증된 HTTP 서버와 CLI, 요청별 SSE 재개·취소를 추가한다. legacy SSE·OAuth·원격 앱 발견과 최신 규격은 남아 있다. 2025-03 배열 수신·응답 결합을 양쪽에 구현했다. 계약과 교차 검증 절차는 [MCP.md](MCP.md), [MCPHTTP.md](MCPHTTP.md), [MCPHTTPServer.md](MCPHTTPServer.md), [MCPServer.md](MCPServer.md)에 기록한다.
 
 1. C++ 대화/도구/권한/취소 계약, JSON Schema 검증, JSONL 복원, 기존 로컬 추론 연결을 종단까지 구현한다.
 2. 같은 실행 계층에 MCP client/server와 IPC/HTTP/CLI를 연결한다.
@@ -61,4 +61,6 @@
 
 0.6.0은 실제 네이티브 예산 측정, 오래된 도구 결과 축소, 여러 묶음의 로컬 모델 요약, 원본 보존 체크포인트·재개·분기, 원문 조회 도구, 압축 훅 및 API/MCP 수동 호출을 추가한다. [Compaction.md](Compaction.md)에 정확한 범위와 실패 계약을 기록한다. 세션 메모리·첨부 재주입·reactive overflow 복구·서버 캐시 편집 및 전체 앱 연동은 남아 있으므로 context/sessions는 partial을 유지한다.
 
-0.9.0은 호스트가 지정한 MCP 설정 연결·복구, 목록 변경 반영, 대화별 ToolSearch와 선택 상태의 재개·분기·압축 복구, 스키마·연결 변경 시 선택 무효화, 인증된 MCP 상태 API/CLI를 추가한다. 앱 manifest·설치 앱 자동 발견, 전체 설정 계층, 공급자별 검색 최적화 및 실제 Society/Dreamscapes endpoint 연동은 남아 있다. [ToolDiscovery.md](ToolDiscovery.md)를 참조한다.
+0.9.0은 호스트가 지정한 MCP 설정 연결·복구, 목록 변경 반영, 대화별 ToolSearch와 선택 상태의 재개·분기·압축 복구, 스키마·연결 변경 시 선택 무효화, 인증된 MCP 상태 API/CLI를 추가한다. 0.9.0 시점에는 앱 manifest·설치 앱 자동 발견, 전체 설정 계층, 공급자별 검색 최적화 및 실제 Society/Dreamscapes endpoint 연동이 남아 있었다. [ToolDiscovery.md](ToolDiscovery.md)를 참조한다.
+
+0.10.0은 같은 OS 사용자의 실행 중인 앱 endpoint 등록·발견·토큰 인증, QObject 주 스레드 호출과 취소/종료를 추가한다. 실제 Society·Dreamscapes 데스크톱 컨트롤러를 연결하고 MCP 구조화 결과가 모델 입력에서 누락되던 문제를 수정했다. Society는 실제 Qwen 0.5B의 eager 도구 호출 후 컨테이너 ID 소비까지, Dreamscapes는 프로토콜 fixture로 실제 앱 생성 큐·결과 PNG·취소까지 확인한다. 앱 재시작은 새 인스턴스로 발견된다. iisacc_apps는 partial이며 나머지 앱·플랫폼과 광범위한 자율 작업은 남아 있다. [LocalApplications.md](LocalApplications.md), [Verification.md](Verification.md)를 참조한다.

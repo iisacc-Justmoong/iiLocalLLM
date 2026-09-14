@@ -45,7 +45,9 @@ private slots:
         QCOMPARE(result["structuredContent"].toObject()["value"].toString(), "로컬 앱");
         auto tools = agent::mcpTools(client, {"app", "com.iisacc.fixture"});
         QCOMPARE(tools.size(), 1);
-        QCOMPARE(tools[0].execute({{"value", "adapter"}}, {}).data["value"].toString(), "adapter");
+        const auto imported = tools[0].execute({{"value", "adapter"}}, {});
+        QCOMPARE(imported.data["value"].toString(), "adapter");
+        QVERIFY(imported.text.contains("\"value\":\"adapter\""));
         auto state = client->request("test/state");
         QCOMPARE(state["initializations"].toInt(), 1); QVERIFY(state["headersValid"].toBool());
         client->close(); QVERIFY(!client->isConnected()); QVERIFY(client->isClosed());

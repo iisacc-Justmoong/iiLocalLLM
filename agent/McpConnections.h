@@ -5,8 +5,11 @@ namespace iiLocalLLM::agent {
 struct McpConnectionOptions {
     QString workingDirectory;
     // Host-authorized files, in increasing priority. Later entries replace whole
-    // server definitions. No automatic filesystem discovery or file watching.
+    // server definitions. They are reread only by explicit reload().
     QStringList configFiles;
+    // Optional private same-user registry of running app HTTP endpoints. Refreshed
+    // automatically; it cannot supply commands, arguments, environment or remote URLs.
+    QString localApplicationsDirectory;
     QProcessEnvironment environment = QProcessEnvironment::systemEnvironment();
     mcp::ClientLimits limits;
     int refreshIntervalMs = 250; // 0: host drives refresh explicitly.
