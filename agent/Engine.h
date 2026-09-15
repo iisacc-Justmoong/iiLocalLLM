@@ -34,6 +34,8 @@ struct EngineOptions {
     SkillForkExecutor forkedSkill; // Synchronous child execution, supplied by Subagents::attach().
     bool sessionStartHooks = true; // Main SessionStart/End; delegated engines use SubagentStart/Stop instead.
     int sessionEndTimeoutMs = 1500; // Shared cooperative budget for this session's end hooks.
+    PermissionResponseCallback permissionResponse;
+    PermissionUpdateCallback permissionUpdates;
 };
 class IILOCALLLM_EXPORT Engine {
 public:

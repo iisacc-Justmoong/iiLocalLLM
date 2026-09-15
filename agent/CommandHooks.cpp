@@ -1,6 +1,7 @@
 #include "CommandHooks.h"
 #include "PermissionRules.h"
 #include "PermissionRulesInternal.h"
+#include "PermissionResponses.h"
 #include "ShellProcess.h"
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
@@ -45,10 +46,21 @@ QString eventName(const HookInput& input) {
     case HookKind::UserPromptSubmit:return "UserPromptSubmit";
     case HookKind::SessionStart:return "SessionStart";
     case HookKind::SessionEnd:return "SessionEnd";
+    case HookKind::PermissionRequest:return "PermissionRequest";
     }
     throw Error(ErrorCode::InvalidArgument,"Unknown hook event");
 }
-void merge(HookResult& target,const HookResult& value) {
+void merge(HookResult& target,const HookResult& value,bool request) {
+    if(request) {
+        // First completed decision owns its whole payload. Later hooks may log
+        // diagnostics but cannot mix a deny or new input into that decision.
+        if(!target.permissionResponse&&!target.block&&!target.stop) {
+            target.permissionResponse=value.permissionResponse;target.block=value.block;target.stop=value.stop;
+            target.stopReason=value.stopReason;target.feedback=value.feedback;
+        }
+        for(const auto& event:value.diagnostics)target.diagnostics.append(event);
+        return;
+    }
     target.block|=value.block;target.stop|=value.stop;
     if(!value.stopReason.isEmpty())target.stopReason=value.stopReason;
     if(!value.feedback.isEmpty()) {if(!target.feedback.isEmpty())target.feedback+='\n';target.feedback+=value.feedback;}
@@ -84,7 +96,19 @@ HookResult response(const QJsonObject& object,const QString& event,bool& suppres
         const bool pre=event=="PreToolUse";
         auto known=pre?QStringList{"hookEventName","permissionDecision","permissionDecisionReason","updatedInput","additionalContext"}
                       :QStringList{"hookEventName","additionalContext"};
-        if(event=="SessionStart")known.append("initialUserMessage");keys(specific,known);
+        if(event=="SessionStart")known.append("initialUserMessage");
+        if(event=="PermissionRequest")known={"hookEventName","decision"};keys(specific,known);
+        if(event=="PermissionRequest") {
+            require(specific["decision"].isObject(),"PermissionRequest requires a decision object");const auto decision=specific["decision"].toObject();
+            const auto behavior=string(decision["behavior"]);require(behavior=="allow"||behavior=="deny","PermissionRequest must allow or deny");
+            PermissionResponse response;response.behavior=behavior=="allow"?PermissionBehavior::Allow:PermissionBehavior::Deny;
+            keys(decision,behavior=="allow"?QStringList{"behavior","updatedInput","updatedPermissions"}:QStringList{"behavior","message","interrupt"});
+            if(decision.contains("message"))response.message=string(decision["message"]);
+            if(decision.contains("interrupt")){require(decision["interrupt"].isBool(),"Permission interrupt must be boolean");response.interrupt=decision["interrupt"].toBool();}
+            if(decision.contains("updatedInput")){require(decision["updatedInput"].isObject(),"Permission updatedInput must be an object");response.updatedArguments=decision["updatedInput"].toObject();}
+            if(decision.contains("updatedPermissions")){require(decision["updatedPermissions"].isArray(),"Permission updatedPermissions must be an array");response.updatedPermissions=decision["updatedPermissions"].toArray();}
+            detail::validatePermissionResponse(response);result.permissionResponse=response;
+        }
         if(specific.contains("permissionDecision"))permission(string(specific["permissionDecision"]),specific.contains("permissionDecisionReason")?string(specific["permissionDecisionReason"]):object["reason"].toString());
         if(specific.contains("updatedInput")) {require(specific["updatedInput"].isObject(),"Hook updatedInput must be an object");if(!result.block)result.updatedArguments=specific["updatedInput"].toObject();}
         if(specific.contains("additionalContext")) {const auto value=string(specific["additionalContext"]);if(!result.feedback.isEmpty())result.feedback+='\n';result.feedback+=value;}
@@ -110,7 +134,7 @@ public:
         require(!options.workingDirectory.isEmpty()&&QFileInfo(options.workingDirectory).isDir(),"Command hook workspace must exist");
         permits.release(options.maxConcurrentProcesses);keys(settings,{"hooks"});
         require(settings["hooks"].isObject(),"Command hook settings require a hooks object");
-        const QStringList events{"PreToolUse","PostToolUse","PostToolUseFailure","Stop","PreCompact","PostCompact","TaskCreated","TaskCompleted","SubagentStart","SubagentStop","BeforeModel","AfterModel","UserPromptSubmit","SessionStart","SessionEnd"};
+        const QStringList events{"PreToolUse","PostToolUse","PostToolUseFailure","Stop","PreCompact","PostCompact","TaskCreated","TaskCompleted","SubagentStart","SubagentStop","BeforeModel","AfterModel","UserPromptSubmit","SessionStart","SessionEnd","PermissionRequest"};
         const auto hooks=settings["hooks"].toObject();
         for(auto i=hooks.begin();i!=hooks.end();++i) {
             require(events.contains(i.key()),"Unsupported command hook event: "+i.key(),ErrorCode::RuntimeUnavailable);
@@ -182,10 +206,11 @@ public:
             diagnostic["exit_code"]=outcome.code;diagnostic["crashed"]=outcome.crashed;
             const auto trimmed=stdoutBytes.trimmed();QJsonParseError error;QJsonDocument document;
             if(trimmed.startsWith('{'))document=QJsonDocument::fromJson(trimmed,&error);
-            if(document.isObject()&&error.error==QJsonParseError::NoError)result=response(document.object(),event,suppress);
+            if(event=="PermissionRequest"&&outcome.code==2)result.permissionResponse=PermissionResponse{PermissionBehavior::Deny,stderrText.isEmpty()?QString("Permission denied by command hook"):stderrText};
+            else if(document.isObject()&&error.error==QJsonParseError::NoError&&(event!="PermissionRequest"||outcome.code==0))result=response(document.object(),event,suppress);
             else if(outcome.code==2&&event!="SessionStart"&&event!="SessionEnd") {result.block=true;result.feedback=stderrText.isEmpty()?QString("Blocked by command hook"):stderrText;}
             else if(outcome.code==0&&QStringList{"BeforeModel","PreCompact","UserPromptSubmit","SessionStart"}.contains(event))result.feedback=stdoutText.trimmed();
-            diagnostic["outcome"]=result.block?"blocked":outcome.code==0?"success":"non_blocking_error";
+            diagnostic["outcome"]=result.block||(result.permissionResponse&&result.permissionResponse->behavior==PermissionBehavior::Deny)?"blocked":outcome.code==0?"success":"non_blocking_error";
             if(!suppress)diagnostic["stdout"]=stdoutText.left(4096);diagnostic["stderr"]=stderrText.left(4096);
         } catch(const Error& error) {
             if(error.code()==ErrorCode::Cancelled||error.code()==ErrorCode::ConsumerFailure) {release();throw;}
@@ -225,7 +250,7 @@ public:
         require(payload.size()<=options.maxInputBytes,"Command hook input exceeds byte limit",ErrorCode::ResourceLimit);
         HookResult result;std::mutex resultMutex;std::exception_ptr failure;QThreadPool pool;pool.setMaxThreadCount(options.maxConcurrentProcesses);
         for(const auto& entry:matching)pool.start([&,entry] {
-            try {auto value=execute(entry,input,event,payload,token);std::lock_guard lock(resultMutex);merge(result,value);}
+            try {auto value=execute(entry,input,event,payload,token);std::lock_guard lock(resultMutex);merge(result,value,event=="PermissionRequest");}
             catch(...) {std::lock_guard lock(resultMutex);if(!failure)failure=std::current_exception();}
         });
         pool.waitForDone();if(failure)std::rethrow_exception(failure);token.throwIfCancelled();return result;

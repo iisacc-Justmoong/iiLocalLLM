@@ -48,7 +48,7 @@ def main():
         credentials = private("credentials", {"society": token, "dreamscapes": other})
         auth = private("auth", token)
         policy = private("permissions", {"enabled_sources": [], "settings": {"permissions": {
-            "defaultMode": "dontAsk", "deny": ["Edit(/denied.txt)"], "ask": ["Edit(/ask.txt)"]}}})
+            "defaultMode": "default", "deny": ["Edit(/denied.txt)"], "ask": ["Edit(/ask.txt)", "Write(/request-*)", "TaskCreate"]}}})
         script = private("hook.py", '''import json, pathlib, sys
 root = pathlib.Path(__file__).parent
 value = json.load(sys.stdin)
@@ -63,6 +63,32 @@ if event == "PreToolUse":
     if value["tool_input"]["path"] == "rewrite.txt":
         result["updatedInput"] = {"path": "rewritten.txt", "content": "REWRITTEN"}
     print(json.dumps({"hookSpecificOutput": result}))
+elif event == "PermissionRequest":
+    decision = {"behavior": "allow"}
+    args = value["tool_input"]
+    path = args.get("path", "")
+    if value["tool_name"] == "TaskCreate":
+        if args["subject"] == "REQUEST_TASK":
+            decision["updatedInput"] = dict(args, subject="APPROVED_TASK")
+        elif args["subject"] == "REQUEST_DENIED_TASK":
+            decision = {"behavior": "deny", "message": "REQUEST_DENIED"}
+    elif path == "request-rewrite.txt":
+        decision["updatedInput"] = {"path": "request-rewritten.txt", "content": "REQUEST_REWRITTEN"}
+    elif path == "request-native.txt":
+        decision["updatedInput"] = {"path": "permission-native-applied.txt", "content": (root / "permission-content.txt").read_text()}
+    elif path == "request-forbidden.txt":
+        decision["updatedInput"] = {"path": "denied.txt", "content": "FORBIDDEN"}
+    elif path == "request-updates.txt":
+        decision["updatedPermissions"] = [{"type": "addRules", "destination": "session", "behavior": "allow", "rules": [{"toolName": "Write"}]}]
+    elif path == "request-invalid.txt":
+        decision["updatedInput"] = {"path": "invalid-target.txt", "content": 42}
+    elif path == "request-interrupt.txt":
+        decision = {"behavior": "deny", "message": "REQUEST_INTERRUPT", "interrupt": True}
+    elif path == "request-denied.txt":
+        decision = {"behavior": "deny", "message": "REQUEST_DENIED"}
+    else:
+        sys.exit(0)
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": event, "decision": decision}}))
 elif event == "SessionStart":
     initial = root / "initial.txt"
     fields = {"hookEventName": event, "additionalContext": "SESSION_START_CONTEXT"}
@@ -95,7 +121,7 @@ elif event == "Stop" and (root / "stop").exists():
         command = shlex.join([sys.executable, "-B", script])
         settings = {"hooks": {event: [{"matcher": "Write" if "ToolUse" in event else "*",
             "hooks": [{"type": "command", "command": command, "timeout": 10}]}]
-            for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure", "TaskCreated", "TaskCompleted", "Stop", "SessionStart", "UserPromptSubmit", "SessionEnd")}}
+            for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "TaskCreated", "TaskCompleted", "Stop", "SessionStart", "UserPromptSubmit", "SessionEnd")}}
         hooks = private("hooks", settings)
         common_daemon = [daemon, "--socket", str(root / "s"), "--http-port", "0", "--models-root", str(root / "models"),
             "--agent-workspace", str(workspace), "--agent-state", str(root / "api-state"), "--agent-credentials", credentials,
@@ -204,6 +230,16 @@ elif event == "Stop" and (root / "stop").exists():
             completed = rpc("agent.tasks.update", {"session_id": owner, "taskId": task["result"]["task"]["id"], "status": "completed"})
             assert not completed["is_error"], completed
             report["api"] = {"hooks_enabled": True, "cli_matches": True, "authentication": True, "task_commit_veto": True, "task_completed": True}
+            approved = rpc("agent.tasks.create", {"session_id": owner, "subject": "REQUEST_TASK", "description": "REQUEST_REWRITE"})
+            assert not approved["is_error"] and approved["result"]["task"]["subject"] == "APPROVED_TASK", approved
+            rejected = rpc("agent.tasks.create", {"session_id": owner, "subject": "REQUEST_DENIED_TASK", "description": "NO_COMMIT"})
+            assert rejected["is_error"] and "REQUEST_DENIED" in rejected["text"], rejected
+            assert "REQUEST_DENIED_TASK" not in json.dumps(rpc("agent.tasks.list", {"session_id": owner}))
+            parameters = private("permission-task", {"session_id": owner, "subject": "REQUEST_TASK", "description": "IPC_REWRITE"})
+            command_result = subprocess.run([cli, "--socket", str(root / "s"), "--auth-file", auth, "rpc", "agent.tasks.create", parameters],
+                env=env, text=True, capture_output=True, timeout=15)
+            assert command_result.returncode == 0 and json.loads(command_result.stdout)["result"]["task"]["subject"] == "APPROVED_TASK", command_result
+            report["permission_request_api"] = {"rewrite": True, "deny_no_commit": True, "native_ipc_cli": True}
             for prompt, expected in (("BLOCK_USER_PROMPT", "failed"), ("STOP_USER_PROMPT", "cancelled")):
                 outcome = rpc("agent.run", {"session_id": owner, "prompt": prompt})
                 assert outcome["status"] == expected and outcome["usage"]["generated_tokens"] == 0, outcome
@@ -314,6 +350,23 @@ elif event == "Stop" and (root / "stop").exists():
                 assert outcome["status"] == "completed" and (workspace / "clear-context.txt").read_text() == content, outcome
                 report["model_clear_context"] = {"passed": True, "clear": cleared, "outcome": outcome, "content": content}
                 (root / "clear-context.txt").unlink()
+                content = "PERMISSION_" + secrets.token_hex(16)
+                (root / "permission-content.txt").write_text(content)
+                session = rpc("agent.sessions.create", {"model": args.model})["session_id"]
+                outcome = rpc("agent.run", {"session_id": session, "prompt": 'Call Write exactly once with path="request-native.txt" and content="MODEL_CONTENT". Return DONE on success. Do not use another tool.',
+                    "max_turns": 4, "options": {"temperature": 0, "max_tokens": 1024}})
+                assert outcome["status"] == "completed" and not (workspace / "request-native.txt").exists(), outcome
+                assert (workspace / "permission-native-applied.txt").read_text() == content, outcome
+                history = rpc("agent.sessions.get", {"session_id": session})["messages"]
+                calls = [c for m in history for c in m["tool_calls"] if c["name"] == "Write"]
+                assert len(calls) == 1 and calls[0]["arguments"]["path"] == "request-native.txt", history
+                report["model_permission_request"] = {"rewritten": True, "outcome": outcome, "content": content, "model_calls": calls}
+                session = rpc("agent.sessions.create", {"model": args.model})["session_id"]
+                interrupted = rpc("agent.run", {"session_id": session, "prompt": 'Call Write once with path="request-interrupt.txt" and content="NO_WRITE".',
+                    "max_turns": 3, "options": {"temperature": 0, "max_tokens": 1024}})
+                assert interrupted["status"] == "cancelled" and "REQUEST_INTERRUPT" in json.dumps(interrupted), interrupted
+                assert not (workspace / "request-interrupt.txt").exists()
+                report["model_permission_request"]["interrupt"] = interrupted
 
         events = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]
         assert [e["reason"] for e in events if e["hook_event_name"] == "SessionEnd" and e["session_id"] == owner] == ["other"]
@@ -376,6 +429,15 @@ elif event == "Stop" and (root / "stop").exists():
 
             assert not call("rewrite.txt").get("isError")
             assert not (workspace / "rewrite.txt").exists() and (workspace / "rewritten.txt").read_text() == "REWRITTEN"
+            assert not call("request-rewrite.txt").get("isError") and (workspace / "request-rewritten.txt").read_text() == "REQUEST_REWRITTEN"
+            assert not (workspace / "request-rewrite.txt").exists()
+            for path in ("request-denied.txt", "request-forbidden.txt", "request-updates.txt", "request-invalid.txt"):
+                result = call(path)
+                assert result["isError"] and not (workspace / path).exists(), result
+                if path == "request-updates.txt":
+                    assert "trusted host handler" in json.dumps(result), result
+            assert not (workspace / "denied.txt").exists() and not (workspace / "invalid-target.txt").exists()
+            report["permission_request_mcp"] = {"rewrite": True, "deny": True, "host_deny_rechecked": True, "schema_rechecked": True, "updates_without_handler_fail": True}
             for path in ("denied.txt", "ask.txt"):
                 assert call(path)["isError"] and not (workspace / path).exists()
             (root / "block").touch()
@@ -458,6 +520,13 @@ elif event == "Stop" and (root / "stop").exists():
                         report["session_clear"]["official_stdio"] = cleared.structuredContent
                         result = await session.call_tool("Write", {"path": "stdio.txt", "content": "OFFICIAL"})
                         assert not result.isError and (workspace / "stdio.txt").read_text() == "OFFICIAL"
+                        observed = await session.call_tool("Read", {"path": "request-rewritten.txt"})
+                        assert not observed.isError, observed
+                        result = await session.call_tool("Write", {"path": "request-rewrite.txt", "content": "OFFICIAL_ORIGINAL"})
+                        assert not result.isError and (workspace / "request-rewritten.txt").read_text() == "REQUEST_REWRITTEN", result
+                        result = await session.call_tool("Write", {"path": "request-denied.txt", "content": "NO"})
+                        assert result.isError and not (workspace / "request-denied.txt").exists(), result
+                        report["permission_request_mcp"]["official_stdio"] = True
                         (root / "block").touch()
                         result = await session.call_tool("Write", {"path": "stdio-blocked.txt", "content": "NO"})
                         assert result.isError and not (workspace / "stdio-blocked.txt").exists()

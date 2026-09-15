@@ -1,4 +1,5 @@
 #include "Tools.h"
+#include "PermissionResponses.h"
 #include "PermissionRulesInternal.h"
 #include <jsoncons/json.hpp>
 #include <jsoncons_ext/jsonschema/jsonschema.hpp>
@@ -150,7 +151,8 @@ ToolRunner::ToolRunner(std::shared_ptr<ToolRegistry> registry, std::shared_ptr<c
 bool ToolRunner::concurrencySafe(const ToolCall& call) const {
     try { const auto entry = registry_->resolve(call.name); entry->validateInput(call.arguments); const auto& tool = entry->tool;
         // Input-changing hooks can change the scheduling classification. Serialize those runs.
-        return options_.hooks.isEmpty() && (tool.canRunConcurrently ? tool.canRunConcurrently(call.arguments) : tool.definition.concurrencySafe);
+        return options_.hooks.isEmpty() && !options_.permissionResponse
+            && (tool.canRunConcurrently ? tool.canRunConcurrently(call.arguments) : tool.definition.concurrencySafe);
     } catch (...) { return false; }
 }
 ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, const EventCallback& callback) const {
@@ -189,11 +191,14 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
         if (tool.validate) tool.validate(call.arguments, context);
         context.workingDirectories=policy_->workingDirectories(context);
         if(hookPermission&&hookPermission->behavior==PermissionBehavior::Allow)context.allowedTools.append(call.name);
-        const auto prepared = tool.prepare ? tool.prepare(call.arguments, context)
-            : PreparedTool{tool.definition, [&] { return tool.execute(call.arguments, context); }};
-        if (!prepared.execute || prepared.definition.name != tool.definition.name
-            || prepared.definition.inputSchema != tool.definition.inputSchema || prepared.definition.outputSchema != tool.definition.outputSchema)
-            throw Error(ErrorCode::InvalidArgument, "Prepared tool changed identity/schema or omitted execution");
+        auto prepare=[&] {
+            auto value=tool.prepare?tool.prepare(call.arguments,context):PreparedTool{tool.definition,[&]{return tool.execute(call.arguments,context);}};
+            if(!value.execute||value.definition.name!=tool.definition.name||value.definition.inputSchema!=tool.definition.inputSchema
+                ||value.definition.outputSchema!=tool.definition.outputSchema)
+                throw Error(ErrorCode::InvalidArgument,"Prepared tool changed identity/schema or omitted execution");
+            return value;
+        };
+        auto prepared=prepare();
         auto decision = policy_->decide(prepared.definition, call.arguments, context);
         if(hookPermission&&(hookPermission->behavior==PermissionBehavior::Deny
             ||(hookPermission->behavior==PermissionBehavior::Ask&&decision.behavior!=PermissionBehavior::Deny)))decision=*hookPermission;
@@ -203,8 +208,48 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
         if (decision.behavior == PermissionBehavior::Ask) {
             auto data = toJson(call);
             if (tool.prepare) data["permission_preview"] = toJson(prepared.definition);
+            if(!decision.suggestions.isEmpty())data["permission_suggestions"]=decision.suggestions;
             event(callback, EventKind::PermissionRequested, context, call, decision.reason, data);
-            allowed = options_.permission && options_.permission(call, decision, context);
+            auto requestContext=hookContext;requestContext["permission_reason"]=decision.reason;
+            requestContext["permission_mode"]=policy_->describe(context)["mode"].toString("unknown");
+            if(tool.prepare)requestContext["permission_preview"]=toJson(prepared.definition);
+            if(!decision.suggestions.isEmpty())requestContext["permission_suggestions"]=decision.suggestions;
+            std::optional<PermissionResponse> response;
+            for(const auto& hook:options_.hooks) {
+                context.cancellation.throwIfCancelled();
+                const auto r=hook({HookKind::PermissionRequest,context.sessionId,context.runId,call,{},decision.reason,requestContext},context.cancellation);
+                hookEvents(r);
+                if(!r.feedback.isEmpty()){if(!beforeFeedback.isEmpty())beforeFeedback+='\n';beforeFeedback+=r.feedback;}
+                if(r.block)response=PermissionResponse{PermissionBehavior::Deny,r.feedback};
+                else if(r.permissionResponse)response=r.permissionResponse;
+                if(response)break;
+            }
+            context.cancellation.throwIfCancelled();
+            if(!response&&options_.permissionResponse)response=options_.permissionResponse(call,decision,context);
+            if(!response)response=PermissionResponse{options_.permission&&options_.permission(call,decision,context)?PermissionBehavior::Allow:PermissionBehavior::Deny};
+            context.cancellation.throwIfCancelled();detail::validatePermissionResponse(*response);
+            allowed=response->behavior==PermissionBehavior::Allow;
+            if(!response->message.isEmpty())decision.reason=response->message;
+            if(response->interrupt) {
+                context.cancellation.cancel();throw Error(ErrorCode::Cancelled,response->message.isEmpty()?QString("Permission denied with interrupt"):response->message);
+            }
+            if(allowed) {
+                auto reprepare=[&] {
+                    context.workingDirectories=policy_->workingDirectories(context);
+                    entry->validateInput(call.arguments);if(tool.validate)tool.validate(call.arguments,context);prepared=prepare();
+                };
+                auto checkDeny=[&] {
+                    const auto current=policy_->decide(prepared.definition,call.arguments,context);
+                    if(current.behavior==PermissionBehavior::Deny)throw Error(ErrorCode::InvalidArgument,"Tool permission denied: "+current.reason);
+                };
+                if(response->updatedArguments){call.arguments=*response->updatedArguments;reprepare();}
+                checkDeny();
+                if(!response->updatedPermissions.isEmpty()) {
+                    if(!options_.permissionUpdates)throw Error(ErrorCode::RuntimeUnavailable,"Permission updates require a trusted host handler");
+                    options_.permissionUpdates(response->updatedPermissions,context);context.cancellation.throwIfCancelled();
+                    reprepare();checkDeny();
+                }
+            }
         }
         if (!allowed) throw Error(ErrorCode::InvalidArgument, "Tool permission denied: " + decision.reason);
         context.cancellation.throwIfCancelled();

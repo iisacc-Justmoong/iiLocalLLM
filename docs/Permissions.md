@@ -1,6 +1,6 @@
 # 도구 권한과 스킬 호출 범위
 
-0.18.0에서 C++ `RulePolicy` 인자 규칙과 스킬 `allowed-tools`를 추가했다. 현재 0.20.0은 추가 작업 디렉터리의 권한 경계를 연결하여 ABI가 **0.20**이다. 소비자는 헤더와 라이브러리를 함께 갱신한다. 전체 참조 권한 시스템은 아직 partial이다.
+0.18.0에서 C++ `RulePolicy` 인자 규칙과 스킬 `allowed-tools`를, 0.20.0에서 추가 작업 디렉터리의 권한 경계를 추가했다. 현재 0.25.0의 PermissionRequest 응답으로 ABI가 **0.25**이다. 소비자는 헤더와 라이브러리를 함께 갱신한다. 전체 참조 권한 시스템은 아직 partial이다.
 
 ## 판정 순서
 
@@ -62,7 +62,7 @@ fork 스킬은 권한을 자식에만 더한다. 일반 Agent와 fork 자식은 
 
 ## 권한 판정과 실행 스냅샷
 
-`Tool::prepare`는 입력 검증과 `BeforeTool` 인자 변경 후 한 번 호출한다. 실행 부작용 없이 파일을 읽어 `PreparedTool`의 구체적인 정의와 실행 콜백을 만든다. 이름·입출력 스키마를 바꿀 수 없다. 도구 실행기는 이 정의로 권한을 판정하고 같은 콜백을 실행한다. 기존 `Tool::execute` 구현은 그대로 동작한다.
+`Tool::prepare`는 입력 검증과 `BeforeTool` 인자 변경 후 호출한다. 0.25의 PermissionRequest 응답이 입력·권한을 바꾸면 다시 호출한다. 실행 부작용 없이 파일을 읽어 `PreparedTool`의 구체적인 정의와 실행 콜백을 만든다. 이름·입출력 스키마를 바꿀 수 없다. 도구 실행기는 이 정의로 권한을 판정하고 같은 콜백을 실행한다. 기존 `Tool::execute` 구현은 그대로 동작한다.
 
 native Skill은 파일 경로·SHA-256·인자·allowed_tools를 고정한다. 권한 판정 뒤 파일이 바뀌어도 다시 읽지 않는다. `PermissionRequested` 이벤트의 `permission_preview._meta.skill`과 호스트 콜백의 decision.reason에는 요청한 권한과 출처가 있으며 본문은 포함하지 않는다. 원격 클라이언트가 권한 응답을 보내는 대화형 중개 API는 아직 없다. 데몬/MCP 서버의 `--agent-allow`/`--allow`는 같은 인자 규칙을 받는다.
 
@@ -71,3 +71,5 @@ Read/Write/Edit도 canonical 대상을 준비하고 실행 직전에 원래 경�
 비교 근거는 참조 커밋 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `tools/SkillTool/SkillTool.ts`, `screens/REPL.tsx`, `utils/forkedAgent.ts`, `utils/permissions/permissionSetup.ts`, `permissionRuleParser.ts`, `tools/BashTool/bashPermissions.ts`이다. 참조 TypeScript나 프롬프트를 SDK에 복사하지 않았다. 파일 기반 관리/사용자/프로젝트 권한 설정 계층은 0.19.0의 [PermissionSettings.md](PermissionSettings.md)에 구현 범위를 기록했다. 추가 디렉터리는 [WorkingDirectories.md](WorkingDirectories.md)에 구현 범위를 기록한다. 외부 관리 공급자, 자동 권한 분류, 참조 전체 인자 의미·별칭, 원격 질문 중개와 OS 샌드박스는 구현이 남아 있다.
 
 0.21.0의 명령 PreToolUse 훅은 입력을 바꾸고 호출 한 번에만 allow/ask/deny를 제공한다. 수정 입력을 다시 검증하며 명시적 호스트 Deny/Ask·Plan·자식 범위·파일 경계가 우선한다. Allow를 다음 호출이나 resume에 저장하지 않는다. 커스텀 정책의 최종 판단도 유지한다. [CommandHooks.md](CommandHooks.md)에 순서와 실패 계약을 기록한다.
+
+0.25.0은 Ask 도구의 PermissionRequest 훅, C++ 구조화 응답과 호스트 권한 갱신 처리를 연결한다. Allow/Deny에는 요청 훅을 호출하지 않으며 수정 입력의 스키마·경계·명시적 Deny를 다시 검사한다. [PermissionRequest.md](PermissionRequest.md)에 API/MCP 연결과 지속 갱신·원격 응답의 남은 범위를 기록한다.

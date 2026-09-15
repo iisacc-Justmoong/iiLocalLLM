@@ -36,6 +36,7 @@ stdin은 UTF-8 JSON 객체 한 개와 마지막 줄바꿈이며 채널을 닫아
 
 | 이벤트 | 추가 입력과 효과 |
 |---|---|
+| PermissionRequest | 0.25: Ask 도구의 승인/거부·입력 변경·호스트 권한 갱신. [PermissionRequest.md](PermissionRequest.md) |
 | PreToolUse | tool_name, tool_input, tool_use_id; 실행 전 입력 변경·권한 판단 |
 | PostToolUse | 도구 정보와 tool_response(text/data/content); 이미 실행한 효과를 되돌리지 않음 |
 | PostToolUseFailure | error, is_interrupt:false; 검증·정책·도구 실패 뒤 호출. 취소 예외는 전파하며 취소 전용 실패 이벤트는 없음 |
@@ -46,7 +47,7 @@ stdin은 UTF-8 JSON 객체 한 개와 마지막 줄바꿈이며 채널을 닫아
 | BeforeModel / AfterModel | SDK 확장 이벤트. 각각 prompt / response와 기존 모델 콜백의 피드백·차단 |
 | UserPromptSubmit | 0.22: 원래 prompt, input_source(direct/queue), 큐이면 input_id. 모델 실행 전 허용·차단·중단 |
 | SessionEnd | 0.23: reason 매처, 실제 세션 종료의 비차단 정리. [SessionEnd.md](SessionEnd.md) |
-| SessionStart | 0.22: source(startup/resume/compact), model. 활성화/압축 문맥과 initialUserMessage |
+| SessionStart | 0.22: source(startup/resume/compact/clear), model. 활성화/압축 문맥과 initialUserMessage |
 
 SubagentStart는 접수 뒤 Engine.run 전에 호출하므로 run_id가 비어 있다. 자식 Stop은 SubagentStop으로 전달한다. Task 콜백은 저장소 잠금을 가진 상태이므로 같은 목록 API로 재진입하면 잠금 대기가 발생한다. 훅이 외부에 낸 효과는 작업 저장 취소로 되돌리지 않는다.
 
@@ -63,19 +64,19 @@ SubagentStart는 접수 뒤 Engine.run 전에 호출하므로 run_id가 비어 �
 }}
 ```
 
-stdout 앞뒤 공백을 제거한 첫 문자가 `{`이면 JSON 파싱을 시도한다. 유효한 객체의 제어 결과는 종료 코드보다 먼저 처리한다. JSON 문법이 깨졌으면 일반 출력으로 처리하고, JSON은 맞지만 지원 스키마와 다르면 비차단 오류 진단을 남긴다. 알 수 없는 필드도 거부하므로 참조의 일부 unknown 필드 제거 동작과 다르다.
+stdout 앞뒤 공백을 제거한 첫 문자가 `{`이면 JSON 파싱을 시도한다. PermissionRequest를 제외하면 유효한 객체의 제어 결과는 종료 코드보다 먼저 처리한다. PermissionRequest는 정상 종료 0의 응답만 처리하며 종료 2를 거부로 우선한다. JSON 문법이 깨졌으면 일반 출력으로 처리하고, JSON은 맞지만 지원 스키마와 다르면 비차단 오류 진단을 남긴다. 알 수 없는 필드도 거부하므로 참조의 일부 unknown 필드 제거 동작과 다르다.
 
 일반 출력의 종료 코드 0은 성공, 2는 stderr를 이유로 차단, 그 외는 비차단 오류이다. SessionStart·SessionEnd의 종료 2는 비차단 진단이다. 일반 stdout은 BeforeModel·PreCompact·UserPromptSubmit·SessionStart에서 피드백으로 사용하고 다른 이벤트에서는 진단이다. 잘못된 UTF-8, 시간 초과, 출력 한도, 시작 실패는 비차단 진단이며 취소는 전파한다. 거부권이 있는 이벤트에서 반드시 차단해야 하는 정책은 명시적 거부 또는 종료 코드 2를 사용해야 한다.
 
 공통 JSON 필드는 continue, stopReason, suppressOutput, decision, reason, systemMessage이다. decision은 approve/block이며 PreToolUse의 permissionDecision이 있으면 이를 우선한다. `continue:false`는 SessionStart·SessionEnd를 제외하고 stopReason으로 현재 실행을 취소한다. Stop의 block은 다음 턴을 요청하는 별도 동작이다. C++ HookResult의 stop·stopReason·permission·diagnostics도 같은 역할이다.
 
-PreToolUse의 permissionDecision은 allow/ask/deny/passthrough이다. allow는 현재 호출의 도구 허용 후보에만 추가한다. 명시적 Deny/Ask, Plan, 자식 읽기 전용 범위, workspace와 비공개 경로 검사는 유지한다. Ask는 기존 permission callback을 사용하며 CLI처럼 callback이 없으면 실행하지 않는다. 다음 호출·resume에 허용을 저장하지 않는다. 변경된 입력은 원래 스키마와 도메인 검사를 다시 통과해야 한다. 커스텀 PermissionPolicy는 허용 후보를 해석하지 않을 수 있으며 최종 판단은 해당 정책을 따른다.
+PreToolUse의 permissionDecision은 allow/ask/deny/passthrough이다. allow는 현재 호출의 도구 허용 후보에만 추가한다. 명시적 Deny/Ask, Plan, 자식 읽기 전용 범위, workspace와 비공개 경로 검사는 유지한다. Ask는 0.25의 PermissionRequest 훅과 C++ 구조화 응답, 기존 permission callback 순으로 처리하며 결정이 없으면 실행하지 않는다. 다음 호출·resume에 허용을 저장하지 않는다. 변경된 입력은 원래 스키마와 도메인 검사를 다시 통과해야 한다. 커스텀 PermissionPolicy는 허용 후보를 해석하지 않을 수 있으며 최종 판단은 해당 정책을 따른다.
 
-지원 이벤트의 hookSpecificOutput은 이름 일치와 additionalContext를 받는다. PreToolUse는 permissionDecision·permissionDecisionReason·updatedInput, SessionStart는 initialUserMessage를 추가 지원한다. 참조에 정의되지 않은 이벤트의 additionalContext는 SDK 콜백 확장이며 모든 출력 스키마와 동일하지 않다. updatedMCPToolOutput, watchPaths, 설정 갱신, 권한 재시도 출력은 미지원이다.
+PermissionRequest 이외의 지원 이벤트의 hookSpecificOutput은 이름 일치와 additionalContext를 받는다. PermissionRequest는 allow/deny decision 객체를 받으며 세부 계약은 [PermissionRequest.md](PermissionRequest.md)를 따른다. PreToolUse는 permissionDecision·permissionDecisionReason·updatedInput, SessionStart는 initialUserMessage를 추가 지원한다. 참조에 정의되지 않은 이벤트의 additionalContext는 SDK 콜백 확장이며 모든 출력 스키마와 동일하지 않다. updatedMCPToolOutput, watchPaths, 설정 갱신, 권한 재시도 출력은 미지원이다.
 
 0.22의 UserPromptSubmit은 허용된 stdout/추가 문맥을 입력에 연결한다. SessionStart의 성공한 stdout도 문맥에 추가하지만 종료 2·차단 reason·continue:false를 거부권으로 적용하지 않는다. 초기 입력 게시, 원문 보존, 차단 입력 제외와 재개·압축 계약은 [InputLifecycle.md](InputLifecycle.md)를 따른다.
 
-명령들은 같은 원본 입력을 받아 제한된 동시성으로 실행한다. 결과는 완료 순서로 합친다. 차단·중단은 하나라도 있으면 유지하고 권한은 deny > ask > allow이다. updatedInput은 마지막 완료 결과를 사용한다. 변경 입력을 다음 명령에 직렬 전달하지 않는다. 하나가 차단해도 다른 명령의 외부 효과는 되돌리지 않는다.
+명령들은 같은 원본 입력을 받아 제한된 동시성으로 실행한다. 결과는 완료 순서로 합친다. PermissionRequest는 첫 완료 결정의 behavior·입력·갱신 목록을 함께 보존하며 나머지는 진단만 수집한다. 다음 병합 규칙은 다른 이벤트에 적용된다. 차단·중단은 하나라도 있으면 유지하고 권한은 deny > ask > allow이다. updatedInput은 마지막 완료 결과를 사용한다. 변경 입력을 다음 명령에 직렬 전달하지 않는다. 하나가 차단해도 다른 명령의 외부 효과는 되돌리지 않는다.
 
 명령 완료 진단에는 이벤트·설정 인덱스·명령 SHA-256·종료 코드·시간·결과와 stdout/stderr 각각 최대 4096자가 들어간다. systemMessage는 별도 진단으로 전달한다. suppressOutput은 stdout 진단만 숨기고 제어 결과·stderr·systemMessage를 삭제하지 않는다. 스크립트 출력은 호스트 이벤트에 전달된다. API `agent.info.hooks_enabled`와 MCP tools/list `_meta["iisacc/hooksEnabled"]`로 활성 여부를 확인한다. API 스트림과 progressToken이 있는 MCP 요청은 기존 hook 이벤트로 진단을 전달한다. 활성 여부는 콜백 등록 여부이며 비어 있는 명령 설정도 등록된 콜백으로 표시될 수 있다. 전체 생명주기 지원 목록이나 설정 내용을 공개하는 API는 아니다.
 
@@ -95,6 +96,6 @@ timeout은 시작 확인 뒤 적용하며 슬롯 대기와 최대 5초 시작 �
 
 once:true는 동일 프로세스의 공유 실행기에서 세션·설정 항목별 한 번이다. 동시 호출도 먼저 예약한 하나만 실행한다. 프로세스를 시작하면 실패해도 소비하고 시작 전 실패는 예약을 반환한다. 표가 가득 차면 비차단 오류를 남기며 기존 기록을 버리지 않는다. 호스트 재시작 뒤에는 복구하지 않는다.
 
-macOS에서 검증한 데스크톱 POSIX 실행기이다. Windows·iOS·Android·WASM은 비어 있지 않은 명령 설정을 거부하며 Linux 실기기 검증은 별도다. HTTP·prompt·agent 훅, async/asyncRewake, powershell, PermissionRequest/Denied·Notification·Setup·ConfigChange·Worktree·파일 감시·팀/elicitation 이벤트와 스킬·에이전트·플러그인 hooks 병합은 남아 있다. 지원하지 않는 설정은 명시적으로 거부한다.
+macOS에서 검증한 데스크톱 POSIX 실행기이다. Windows·iOS·Android·WASM은 비어 있지 않은 명령 설정을 거부하며 Linux 실기기 검증은 별도다. HTTP·prompt·agent 훅, async/asyncRewake, powershell, PermissionDenied·Notification·Setup·ConfigChange·Worktree·파일 감시·팀/elicitation 이벤트와 스킬·에이전트·플러그인 hooks 병합은 남아 있다. 지원하지 않는 설정은 명시적으로 거부한다.
 
 분석 기준은 고정 미러 `c8cd253554319f32ff64ff7000636199f720c9bc`의 schemas/hooks.ts, types/hooks.ts, entrypoints/sdk/coreSchemas.ts, utils/hooks.ts, services/tools/toolHooks.ts이다. 설정·stdin·JSON/종료 코드 순서·매처·권한 우선순위를 관찰해 C++로 구현했다. 미러 출처 주장의 독립 인증이나 전체 Claude Code 호환 인증은 아니다. 실행 증거는 [Verification.md](Verification.md), 남은 전체 목표는 [HarnessParity.md](HarnessParity.md)에 구분한다.

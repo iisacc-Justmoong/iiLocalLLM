@@ -13,7 +13,8 @@ struct Tool {
     std::function<ToolResult(const QJsonObject&, const ToolContext&)> execute;
     std::function<void(const QJsonObject&, const ToolContext&)> validate;
     std::function<bool(const QJsonObject&)> canRunConcurrently;
-    // Runs once after input-changing hooks, before permission. Must have no execution side effects.
+    // Runs after input-changing hooks, before permission. Repeated if an approval
+    // changes input or permissions. Must have no execution side effects.
     std::function<PreparedTool(const QJsonObject&, const ToolContext&)> prepare;
     // Optional trusted host lifecycle operation; never exported in tool schemas
     // or dispatchable by a model/MCP caller. Install on one control per owner.
@@ -49,6 +50,7 @@ enum class PermissionBehavior { Allow, Deny, Ask };
 struct PermissionDecision {
     PermissionBehavior behavior = PermissionBehavior::Ask;
     QString reason;
+    QJsonArray suggestions; // Host-supplied PermissionUpdate candidates, never grants by themselves.
 };
 struct PermissionRule {
     QString toolPattern;
@@ -73,7 +75,15 @@ private:
     QList<PermissionRule> rules_;
 };
 enum class HookKind { BeforeModel, AfterModel, BeforeTool, AfterTool, Stop, BeforeCompact, AfterCompact,
-    TaskCreated, TaskCompleted, SubagentStart, SubagentStop, UserPromptSubmit, SessionStart, SessionEnd }; // Task lifecycle callbacks veto before the transaction commits.
+    TaskCreated, TaskCompleted, SubagentStart, SubagentStop, UserPromptSubmit, SessionStart, SessionEnd,
+    PermissionRequest }; // Task lifecycle callbacks veto before the transaction commits.
+struct PermissionResponse {
+    PermissionBehavior behavior = PermissionBehavior::Deny; // Only Allow or Deny; Ask is invalid here.
+    QString message;
+    std::optional<QJsonObject> updatedArguments; // Allow only; revalidated and re-prepared before execution.
+    QJsonArray updatedPermissions; // Allow only; requires a trusted host update handler.
+    bool interrupt = false; // Deny only; cancels the owning run as well as rejecting this tool.
+};
 struct HookInput {
     HookKind kind;
     QString sessionId;
@@ -92,13 +102,18 @@ struct HookResult {
     QString stopReason;
     QJsonArray diagnostics;
     std::optional<QString> initialUserMessage; // SessionStart schedules this through the normal prompt input queue.
+    std::optional<PermissionResponse> permissionResponse; // PermissionRequest only; decision and payload stay together.
 };
 using Hook = std::function<HookResult(const HookInput&, const CancellationToken&)>;
 using PermissionCallback = std::function<bool(const ToolCall&, const PermissionDecision&, const ToolContext&)>;
+using PermissionResponseCallback = std::function<PermissionResponse(const ToolCall&,const PermissionDecision&,const ToolContext&)>;
+using PermissionUpdateCallback = std::function<void(const QJsonArray&,const ToolContext&)>;
 struct ToolRunnerOptions {
     QList<Hook> hooks;
     PermissionCallback permission;
     int maxResultCharacters = 24000;
+    PermissionResponseCallback permissionResponse; // Used after request hooks, before the legacy bool callback.
+    PermissionUpdateCallback permissionUpdates; // Trusted host operation; must apply all updates or throw.
 };
 class IILOCALLLM_EXPORT ToolRunner {
 public:

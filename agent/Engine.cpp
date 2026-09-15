@@ -438,7 +438,7 @@ public:
                     if (compactOnly) { result.text = checkpoint.summary; result.status = RunStatus::Completed; break; }
                     modelRequest = base; modelRequest.messages.append(modelMessages(session));
                 }
-                const ToolRunner runner(turnRegistry, policy, {options.hooks, options.permission});
+                const ToolRunner runner(turnRegistry, policy, {options.hooks, options.permission, 24000, options.permissionResponse, options.permissionUpdates});
                 qsizetype streamed = 0;
                 auto reply = model->generate(modelRequest, token, [&](const QString& text) {
                     token.throwIfCancelled(); streamed += text.size();
@@ -752,7 +752,7 @@ ToolResult Engine::runSubagentTool(const QString& id, const QString& name, const
     context.progress = [callback, id, runId = context.runId, callId](const QJsonObject& data) {
         if (callback) callback({EventKind::ToolProgress, runId, id, callId, {}, data});
     };
-    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission});
+    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates});
     return runner.run({callId, name, args}, context, callback);
 }
 ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJsonObject& args,
@@ -766,7 +766,7 @@ ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJ
         throw Error(ErrorCode::InvalidArgument, "Shell control must refer to the host's native tool");
     ToolContext context{id, uuid(), session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), operation.token};
     context.transcriptPath=transcriptPath(id);
-    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission});
+    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates});
     return runner.run({uuid(), name, args}, context, callback);
 }
 Session Engine::sessionMetadata(const QString& id) const { return d->store.metadata(id); }
@@ -788,7 +788,7 @@ ToolResult Engine::runTaskTool(const QString& id, const QString& name, const QJs
     for (auto tool : d->taskToolsFor(id, runId, callback)) registry->add(std::move(tool));
     ToolContext context{id, runId, session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), operation.token};
     context.transcriptPath=transcriptPath(id);
-    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission});
+    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates});
     return runner.run({uuid(), name, args}, context, callback);
 }
 RunHandle Engine::compact(CompactRequest request, EventCallback callback) {

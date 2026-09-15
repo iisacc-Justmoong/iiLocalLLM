@@ -98,3 +98,5 @@
 0.23.0은 SessionEnd와 C++ endSession/close, 인증 API 세션 종료, MCP 교체·연결 종료·stdio 신호 정리를 구현한다. API 접수 요청과 Engine 대기 작업을 취소하고 활성화별 중복을 방지한다. [SessionEnd.md](SessionEnd.md)의 cooperative 시간 예산과 진단/자식 정리 한계를 적용한다. 이 문단은 0.23 당시 범위이다.
 
 0.24.0은 C++/API/MCP 실제 clear, 즉시 SessionStart(clear), 새 ID/부모 기록, 백그라운드 셸·자식·완료 알림의 전환과 복구를 구현한다. 세부 경계는 [SessionClear.md](SessionClear.md)를 따른다. 참조의 전체 UI/팀/git/LSP/worktree/플러그인 캐시 초기화, watchPaths, 권한/나머지 훅과 실제 제품 consumer 검증은 남아 있으며 전체 목표는 partial이다.
+
+0.25.0은 Ask 전용 PermissionRequest, allow/deny/interrupt, 입력 변경 뒤 스키마·준비·호스트 거부 재검사, C++ 구조화 응답과 명시적 권한 갱신 처리기를 API/IPC/MCP 실행 경로에 연결한다. [PermissionRequest.md](PermissionRequest.md)를 따른다. 기본 설정의 지속 갱신, 자동 제안 생성, 원격 응답 중개와 PermissionDenied 분류기 재시도 등은 남아 있으므로 전체 목표는 partial이다.

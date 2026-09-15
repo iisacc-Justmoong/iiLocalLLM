@@ -34,6 +34,47 @@ std::shared_ptr<a::ToolRegistry> files(const QString& root) {
 class CommandHooksTests final:public QObject {
     Q_OBJECT
 private slots:
+    void permissionRequestDecisionsKeepTheirOwnInputAndUpdates() {
+        QTemporaryDir work;a::CommandHookOptions options;options.workingDirectory=work.path();
+        const QJsonArray updates{QJsonObject{{"type","addRules"},{"destination","session"},{"behavior","allow"},{"rules",QJsonArray{QJsonObject{{"toolName","Write"}}}}}};
+        auto reply=[](const QJsonObject& decision){return output({{"hookSpecificOutput",QJsonObject{{"hookEventName","PermissionRequest"},{"decision",decision}}}});};
+        const auto allow=reply({{"behavior","allow"},{"updatedInput",QJsonObject{{"path","target.txt"},{"content","CONTENTS"}}},{"updatedPermissions",updates}});
+        a::CommandHooks hooks(config("PermissionRequest","cat > request.json; "+allow,"Write|Edit"),options);
+        a::HookInput input{a::HookKind::PermissionRequest,"session","run",{"id","Write",{{"path","source.txt"},{"content","ORIGINAL"}}},{},{},
+            {{"permission_mode","default"},{"permission_suggestions",updates},{"transcript_path","/private/transcript.jsonl"}}};
+        const auto result=hooks.callback()(input,{});QVERIFY(result.permissionResponse);QVERIFY(!result.block);
+        QCOMPARE(result.permissionResponse->behavior,a::PermissionBehavior::Allow);QCOMPARE(result.permissionResponse->updatedPermissions,updates);
+        QCOMPARE(result.permissionResponse->updatedArguments->value("content"),"CONTENTS");
+        QFile payload(work.filePath("request.json"));QVERIFY(payload.open(QIODevice::ReadOnly));const auto body=QJsonDocument::fromJson(payload.readAll()).object();
+        QCOMPARE(body["permission_suggestions"],updates);QCOMPARE(body["tool_input"],input.call.arguments);QCOMPARE(body["hook_event_name"],"PermissionRequest");
+        // Different completion times, not configuration order. A later denial
+        // must not mix into the earlier allow's input/update payload.
+        a::CommandHooks race(commands("PermissionRequest",QJsonArray{
+            QJsonObject{{"type","command"},{"command","sleep .15; "+reply({{"behavior","deny"},{"interrupt",true}})}},
+            QJsonObject{{"type","command"},{"command",allow}}}),options);
+        const auto first=race.callback()(input,{});QVERIFY(first.permissionResponse);QCOMPARE(first.permissionResponse->behavior,a::PermissionBehavior::Allow);
+        QVERIFY(!first.stop&&!first.block&&!first.permissionResponse->interrupt);QCOMPARE(first.permissionResponse->updatedPermissions,updates);
+    }
+    void permissionRequestErrorsAndNonzeroExitCannotGrantAccess() {
+        QTemporaryDir work;a::CommandHookOptions options;options.workingDirectory=work.path();
+        auto reply=[](QJsonObject decision){return output({{"hookSpecificOutput",QJsonObject{{"hookEventName","PermissionRequest"},{"decision",decision}}}});};
+        const a::HookInput input{a::HookKind::PermissionRequest,"s","r",{"id","Write",{}},{},{}};
+        for(const QJsonObject decision:{QJsonObject{{"behavior","ask"}},QJsonObject{{"behavior","allow"},{"interrupt",true}},
+            QJsonObject{{"behavior","deny"},{"updatedInput",QJsonObject{}}},QJsonObject{{"behavior","allow"},{"updatedInput",QJsonArray{}}},
+            QJsonObject{{"behavior","allow"},{"updatedPermissions",QJsonArray{QJsonObject{{"type","unknown"}}}}},
+            QJsonObject{{"behavior","allow"},{"updatedPermissions",QJsonArray{QJsonObject{{"type","setMode"},{"mode","auto"},{"destination","session"}}}}}}) {
+            const auto result=a::CommandHooks(config("PermissionRequest",reply(decision)),options).callback()(input,{});
+            QVERIFY(!result.permissionResponse);QCOMPARE(result.diagnostics.last().toObject()["outcome"],"non_blocking_error");
+        }
+        const auto denied=a::CommandHooks(config("PermissionRequest",reply({{"behavior","allow"}})+"; printf EXIT_DENIED >&2; exit 2"),options).callback()(input,{});
+        QVERIFY(denied.permissionResponse);QCOMPARE(denied.permissionResponse->behavior,a::PermissionBehavior::Deny);QCOMPARE(denied.permissionResponse->message,"EXIT_DENIED");
+        const auto failure=a::CommandHooks(config("PermissionRequest",reply({{"behavior","allow"}})+"; exit 1"),options).callback()(input,{});
+        QVERIFY(!failure.permissionResponse);QCOMPARE(failure.diagnostics.last().toObject()["outcome"],"non_blocking_error");
+        auto registry=files(work.path());a::ToolRunnerOptions runner;runner.hooks={a::CommandHooks(config("PermissionRequest",reply({{"behavior","allow"},
+            {"updatedInput",QJsonObject{{"path","actual.txt"},{"content","ACTUAL"}}}})),options).callback()};
+        const auto result=a::ToolRunner(registry,std::make_shared<a::RulePolicy>(),runner).run({"id","Write",{{"path","original.txt"},{"content","ORIGINAL"}}},{"s","r",work.path()});
+        QVERIFY2(!result.isError,qPrintable(result.text));QVERIFY(!QFileInfo::exists(work.filePath("original.txt")));QFile actual(work.filePath("actual.txt"));QVERIFY(actual.open(QIODevice::ReadOnly));QCOMPARE(actual.readAll(),"ACTUAL");
+    }
     void inputAndSessionLifecyclePayloadsPreserveContextAndControlBoundaries() {
         QTemporaryDir work;a::CommandHookOptions options;options.workingDirectory=work.path();
         const auto response=output({{"decision","block"},{"reason","IGNORED_START_REASON"},{"continue",false},

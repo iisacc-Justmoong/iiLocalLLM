@@ -1,5 +1,29 @@
 # 구현 검증 기록
 
+## 2026-09-15 권한 요청과 구조화 호스트 응답 (0.25.0)
+
+C++ ToolRunner/Engine에 Ask 전용 PermissionRequest, 구조화 응답, 입력 수정 후 스키마·준비 대상·최종 호스트 거부 재검사, 일반 거부와 실행 취소, 명시적 권한 갱신 처리기를 연결했다. API·native IPC·MCP와 임베디드 호스트가 같은 경로를 사용한다. 병렬 명령의 첫 완료 결정은 behavior·입력·권한 목록을 함께 보존하며, 구조화 응답 콜백이 있으면 도구를 직렬 분류한다. 계약과 참조 차이는 [PermissionRequest.md](PermissionRequest.md)에 있다.
+
+| 검증 경계 | 최종 관측 |
+|---|---|
+| Release 전체, inference 라벨 제외 | 55/55, 108.50초 |
+| ASan·UBSan, llama 비활성 Debug | 53/53, 114.97초; 계측 오류 보고 없음 |
+| 별도 설치 소비자 | 27/27, 48.13초 |
+| API·native IPC CLI | TaskCreate 승인 입력 변경, 거부 시 미게시, 인증과 임베디드 구조화 응답 통과 |
+| MCP HTTP·공식 stdio | 실제 파일 변경, 거부, 수정 입력의 스키마/명시적 거부 재검사, 갱신 처리기 없는 요청 실패 통과 |
+| 실제 Qwen3 8B, 소스/설치본 | 권한 훅에서 입력을 변경하여 정확한 파일 생성, interrupt로 cancelled 종료 통과 |
+| 설치/ABI | 0.25 공개 헤더 40개·문서·카탈로그·라이선스 일치, 실제 설치 라이브러리 로딩 |
+
+새 응답 API가 없을 때 컴파일 실패한 permission-request-red.log를 보존했다. 초기 전송 검사에서는 공식 stdio 연결이 앞선 HTTP 연결에서 만든 파일을 읽지 않고 덮어쓰려다 기존 read-before-edit 검사에 실패했다. fixture에 해당 파일을 먼저 Read하는 단계를 추가했다. 이 실패는 보호 규칙이 승인 입력 변경에도 유지되는 증거이며 생산 코드 결함을 고쳤다는 주장이 아니다. 원문은 permission-request-wire.log이다. 최종 전체 검사는 모든 빌드를 마친 뒤 직렬로 실행했다.
+
+네이티브 모델은 request-native.txt와 MODEL_CONTENT를 요청하고, 권한 훅은 프롬프트에 없는 임의 값을 permission-native-applied.txt로 쓰도록 입력을 교체했다. 원래 경로는 생성되지 않았으며 파일 내용과 PostToolUse 입력이 훅 응답과 일치했다. transcript의 모델 호출은 원래 입력을 유지한다. 별도 request-interrupt.txt 호출은 파일을 만들지 않고 cancelled로 끝났다. 기존 허용/거부 Write, Stop 중단, UserPromptSubmit 문맥, SessionStart(clear) 문맥 검사도 통과했다.
+
+모델은 model://qwen3-8b-q4, 5027783488바이트, SHA-256 d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785이다. 해시를 이번 검증에서 다시 계산했다. context 8192, temperature 0, 응답 상한 1024, thinking=false/tool_grammar=false를 사용했다. 소스/설치 증거는 permission-request-source-native.json과 permission-request-installed-native.json이다. 공식 stdio 클라이언트는 Python MCP SDK 1.26.0이다.
+
+설치는 build/permission-request-stage, 소비자는 build/permission-request-consumer/build이다. 라이브러리 SHA-256은 2b14af3e42a0f3075bcafd0e1800a54a3412a5d67f4762d717d57820ba22d538, Mach-O UUID는 84B6D858-B8EB-387D-B7C1-9F9DF1A2EFA1이다. 실행 파일 UUID와 CMake 설치 RPATH 변환 후 해시도 일치하며 iillm은 libiiLocalLLM/llama/ggml에 직접 링크되지 않는다. 런타임 경로 환경 변수를 비우고 설치 라이브러리 로딩을 확인했다. 전체 기록은 build/permission-request-verification.json, permission-request-linkage.json과 각 final.log/XML에 있다.
+
+기본 설정의 지속 권한 갱신, 자동 제안 생성, 원격 request_id 응답 중개, PermissionDenied 분류기 재시도와 전체 하네스/앱 검증은 남아 있다. 이번 단계는 명시적 C++ 갱신 처리기를 연결하며 CLI가 갱신을 저장한 것으로 보고하지 않는다. Society/Dreamscapes 앱을 다시 패키징하지 않았고 iPhone은 사용자 지시로 제외했다. 이전 stage와 증거는 보존했으며 전체 목표는 [HarnessParity.md](HarnessParity.md)의 partial 상태이다.
+
 ## 2026-09-15 대화 초기화와 백그라운드 보존 (0.24.0)
 
 C++ Engine::clearSession, 인증 API agent.sessions.clear, MCP iiLocalLLM.agent.clear 및 new_session을 구현했다. 이전 foreground 실행과 접수 호출을 취소·정리하고, 새 ID에 SessionStart(clear)를 즉시 실행한다. 백그라운드 셸의 실제 프로세스·출력과 자식 실행은 유지하며 완료 알림을 새 소유자에게 옮긴다. 연속 clear, 같은 자식의 여러 실행, 큐 상한 실패/재시도, 저장소 재개, 호스트 종료 경합을 검사했다. 정확한 범위와 부분 실패 계약은 [SessionClear.md](SessionClear.md)에 있다.
