@@ -157,6 +157,16 @@ public:
         };
         frozen->add(std::move(permissions));
         if (!options.engine) return frozen;
+        options.engine->bindProjectMemoryTools(*frozen,false);
+        if(options.engine->projectMemoryEnabled()) {
+            Tool memory;memory.definition={"iiLocalLLM.agent.memory.get","Inspect this connection owner's project memory index and search topic metadata/content. query is a case-insensitive literal.",
+                {{"type","object"},{"additionalProperties",false},{"properties",QJsonObject{{"query",QJsonObject{{"type","string"},{"maxLength",512}}}}}},
+                {},true,true,false,false,{{"source","builtin.memory.control"}}};
+            memory.execute=[self](const QJsonObject& args,const ToolContext& context) {
+                const auto owner=self->sessionId(self->conversation(context.sessionId),context.cancellation);
+                return ToolResult{"Project memory",self->options.engine->memory(owner,args["query"].toString(),context.cancellation)};
+            };frozen->add(std::move(memory));
+        }
         if(auto questions=options.engine->userQuestionTool())frozen->add(std::move(*questions));
         if(const auto plans=options.engine->planning()) {
             for(auto native:plans->tools(policy,false))frozen->add(std::move(native));
@@ -352,7 +362,7 @@ public:
         if (!options.artifactsDirectory.isEmpty()) context.artifactsDirectory = QDir(options.artifactsDirectory).filePath(context.sessionId + '/' + context.runId);
         const auto source = frozen->get(name).definition.metadata["source"].toString();
         auto bindContext = [&](bool history=false) {
-            const bool native=source=="builtin.workspace"||source=="builtin.shell"||source=="builtin.shell.control"||source=="builtin.plan"||source=="builtin.user-question";
+            const bool native=source=="builtin.workspace"||source=="builtin.shell"||source=="builtin.shell.control"||source=="builtin.plan"||source=="builtin.user-question"||source=="builtin.memory";
             if(options.engine&&(native||!options.tools.hooks.isEmpty()||options.engine->planning())) {
                 const auto owner=sessionId(conversation(request.sessionId),context.cancellation);
                 context.planningSessionId=owner;
@@ -379,10 +389,11 @@ public:
         const bool subagentControl = options.engine && source == "builtin.subagent.control";
         const bool sessionControl=options.engine&&source=="builtin.session.control"&&name=="iiLocalLLM.agent.clear";
         const bool planControl=options.engine&&(source=="builtin.plan.control"||source=="builtin.plan");
+        const bool memoryControl=options.engine&&source=="builtin.memory.control";
         // Native questions wait for a person and do not mutate the app. Holding
         // the registry's shared lock here would block all exclusive app tools.
         const bool userQuestion = source == "builtin.user-question" && name == "AskUserQuestion";
-        if (shellControl || inputControl || subagentControl || sessionControl || planControl || userQuestion) { bindContext(userQuestion); return wireResult(runner.run(call, context,observe)); }
+        if (shellControl || inputControl || subagentControl || sessionControl || planControl || userQuestion || memoryControl) { bindContext(userQuestion); return wireResult(runner.run(call, context,observe)); }
         std::shared_lock shared(execution, std::defer_lock); std::unique_lock exclusive(execution, std::defer_lock);
         if (runner.concurrencySafe(call)) acquire(shared, context.cancellation); else acquire(exclusive, context.cancellation);
         bindContext(true);
@@ -408,6 +419,10 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
         return result;
     };
     server.handlers["tools/call"] = [state](const auto& params, const auto& request) { return state->call(params, request); };
+    if(state->options.engine&&state->options.engine->projectMemoryEnabled())
+        server.experimentalCapabilities["iisacc/projectMemory"]=QJsonObject{{"schema","iisacc.project-memory/1"},
+            {"getTool","iiLocalLLM.agent.memory.get"},{"forgetTool","MemoryForget"},{"scope","host-workspace"},
+            {"fileTools",QJsonArray{"Read","Write","Edit","Glob","Grep"}}};
     if(state->options.engine&&state->options.engine->userQuestionTool()) {
         const auto definition=state->options.engine->userQuestionTool()->definition;
         server.experimentalCapabilities["iisacc/userQuestions"]=QJsonObject{{"schema","iisacc.user-question/1"},

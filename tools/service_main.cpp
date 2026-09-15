@@ -69,6 +69,7 @@ int main(int argc, char** argv)
         {"agent-no-apps", "Disable discovery of running local applications."},
         {"agent-no-plan-mode", "Disable session planning and review tools."},
         {"agent-no-user-questions", "Disable AskUserQuestion."},
+        {"agent-no-memory", "Disable persistent project memory context and file access."},
         {"agent-question-preview", "User question preview format (markdown or html).", "format", "markdown"},
         {"agent-no-tasks", "Disable persistent task and todo tools for the agent API."},
         {"agent-no-skills", "Disable local skill discovery and invocation."},
@@ -112,7 +113,7 @@ int main(int argc, char** argv)
         std::optional<a::ApiOptions> agentConfig;
         std::shared_ptr<const a::PermissionPolicy> agentPolicy;
         if (parser.isSet("agent-workspace") || parser.isSet("agent-state") || parser.isSet("agent-credentials") || parser.isSet("agent-allow")
-            || parser.isSet("agent-no-auto-compact") || parser.isSet("agent-no-project-context") || parser.isSet("agent-context-exclude")
+            || parser.isSet("agent-no-auto-compact") || parser.isSet("agent-no-project-context") || parser.isSet("agent-context-exclude") || parser.isSet("agent-no-memory")
             || parser.isSet("agent-mcp-config") || parser.isSet("agent-mcp-project") || parser.isSet("agent-mcp-eager")
             || parser.isSet("agent-apps-dir") || parser.isSet("agent-no-apps") || parser.isSet("agent-no-plan-mode") || parser.isSet("agent-no-user-questions") || parser.isSet("agent-question-preview") || parser.isSet("agent-no-tasks") || parser.isSet("agent-no-background")
             || parser.isSet("agent-no-skills") || parser.isSet("agent-skills-dir") || parser.isSet("agent-no-subagents") || parser.isSet("agent-subagent-options")
@@ -141,6 +142,7 @@ int main(int argc, char** argv)
             config.engine.taskToolsEnabled = !parser.isSet("agent-no-tasks");
             config.engine.planToolsEnabled = !parser.isSet("agent-no-plan-mode");
             config.engine.userQuestionsEnabled = !parser.isSet("agent-no-user-questions");
+            config.engine.projectMemoryEnabled = !parser.isSet("agent-no-memory");
             config.engine.userQuestions.previewFormat = parser.value("agent-question-preview");
             config.engine.skills.enabled = !parser.isSet("agent-no-skills");
             config.engine.skills.directories = parser.values("agent-skills-dir");

@@ -43,6 +43,7 @@ int main(int argc, char** argv) {
         {"no-apps", "Disable discovery of running local applications."},
         {"no-plan-mode", "Disable session planning and review tools."},
         {"no-user-questions", "Disable AskUserQuestion."},
+        {"no-memory", "Disable persistent project memory context and file access."},
         {"question-preview", "User question preview format (markdown or html).", "format", "markdown"},
         {"no-tasks", "Disable persistent task and todo tools."},
         {"no-skills", "Disable local skill discovery and invocation in the agent."},
@@ -195,6 +196,7 @@ int main(int argc, char** argv) {
             engineOptions.taskToolsEnabled = !parser.isSet("no-tasks");
             engineOptions.planToolsEnabled = !parser.isSet("no-plan-mode");
             engineOptions.userQuestionsEnabled = !parser.isSet("no-user-questions");
+            engineOptions.projectMemoryEnabled = !parser.isSet("no-memory");
             engineOptions.userQuestions.previewFormat = parser.value("question-preview");
             engineOptions.skills.enabled = !parser.isSet("no-skills");
             engineOptions.skills.directories = parser.values("skills-dir");

@@ -1,5 +1,34 @@
 # 구현 검증 기록
 
+## 2026-09-16 C++ 프로젝트 메모리 (0.37.0)
+
+프로젝트별 Markdown 저장소와 `MEMORY.md` 자동 문맥을 Engine·기존 파일 도구·인증 API·IPC·MCP에 연결했다. 새 세션과 재생성한 Engine은 같은 프로젝트 메모리를 읽는다. 주제 메모의 메타데이터·리터럴 검색, 현재 해시를 요구하는 삭제와 백업을 제공한다. 기존 Qt와 libyaml 기반 Frontmatter를 재사용하며 새로운 생산 의존성은 없다. 저장 범위, 정책, 파일 한도와 API/MCP 소유권 차이는 [ProjectMemory.md](ProjectMemory.md)를 따른다.
+
+| 검증 경계 | 관측 |
+|---|---|
+| Release 전체, inference 라벨 제외 | 80/80, 실패·건너뛰기 0 |
+| ASan·UBSan, llama 비활성 Debug | 77/77, 실패·건너뛰기 0 |
+| 새 설치 패키지만 사용하는 별도 소비자 | 45/45, 실패·건너뛰기 0 |
+| 실제 모델 | 소스·설치본 각각 Qwen3 8B의 Read → Write → 새 대화 회상, 메모리 비활성 대조 실행 |
+| 실제 전송 | 소스·설치 daemon HTTP, iillm IPC, MCP HTTP 및 공식 Python MCP stdio |
+| 설치 산출물 | 공개 헤더 46개, 실행 진입점 4개 버전 0.37.0, 라이브러리 해시·UUID, 설치 문서·QML·카탈로그와 실제 로더 경로 |
+
+초기 테스트는 공개 인터페이스의 구현이 없어 링크 단계에서 실패했다. 이후 입력 변경 훅이 메모리 API의 최초 경로 검사를 우회하는 회귀와, base를 작업 폴더 안에 두었을 때 일반 파일 검색에서 다른 프로젝트 메모리가 노출되는 회귀를 재현했다. 도구 재준비 단계의 경로 검사와 호스트 전용 protectedPaths 제외 목록으로 수정했다. 실패 증거는 `build/project-memory-red-build.log`, `project-memory-engine-red-tests.log`, `project-memory-isolation-red-tests.log`에 보존한다. 별도의 읽기 전용 자식 테스트 실패는 fixture에서 Agent 실행 허용을 빠뜨린 것이므로 테스트 정책을 수정했다. 이 실패를 제품 결함이나 통과 결과로 합산하지 않는다.
+
+회귀는 UTF-8 문자 경계와 200줄·25,000바이트 인덱스 한도, 잘못된 YAML·메타데이터, 검색과 스캔 한도, 심볼릭 링크·디렉터리 교체, 취소, 명시적 거부, 읽은 이후 변경된 파일, 동시 작성자 간 충돌, 삭제 전 해시 검사와 백업을 포함한다. Engine에서는 새 세션·fork·clear·재생성, 매 호출 시 인덱스 갱신, 압축 예산 반영과 transcript 중복 방지, 읽기 전용 자식의 메모리 공유와 쓰기 도구 제외를 검사했다. 인증 API는 서로 다른 두 client ID의 메모리를 분리하고 다른 소유자의 세션·메모리 경로를 거부한다.
+
+실제 모델 검사는 `tests/project_memory_runtime_smoke.cpp`이다. 최초 프롬프트에 없는 임의 코드를 파일에 넣고, 모델이 Read 결과에서 읽어 MEMORY.md에 저장하게 했다. 원본 파일을 삭제한 뒤 새 Engine의 빈 대화에 파일 도구 없이 자동 메모리 문맥만 전달했으며 두 실행 모두 정확한 코드를 반환했다. 같은 조건에서 메모리를 끄면 `MISSING`을 반환했다. 도구 선택과 단계별 system 지침은 호스트가 지정하지만 도구 인자·저장 내용·회상 답변은 실제 ServiceModel/llama.cpp가 생성한다. 자유로운 자율 메모리 선택이나 자동 추출의 검증은 아니다.
+
+소스 실행은 저장 3턴·175토큰, 회상 1턴·13토큰, 비활성 대조 1턴·3토큰이었다. 설치 소비자는 각각 3턴·181토큰, 1턴·15토큰, 1턴·3토큰이었다. 모델은 `model://qwen3-8b-q4`, GGUF 5,027,783,488바이트, SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`이며 각 로딩에서 manifest 무결성을 검사한다. 두 결과와 원문은 `build/project-memory-{source,installed}-native.json` 및 각각의 stdout/stderr 로그에 있다.
+
+전송 검사는 인증 HTTP·IPC의 조회·읽기·수정·삭제, client ID 격리, 오래된 해시의 삭제 거부와 백업을 확인한다. MCP HTTP와 공식 stdio 클라이언트에서도 메모리 조회와 연결 소유자의 native 파일 도구가 동작했다. 같은 호스트 Engine/workspace의 MCP 연결은 프로젝트 메모리를 공유하며 client ID별 API 저장소와 다른 계약이다. 전송 fixture의 모델 이름은 제어 경로 검사에만 쓰며 이 전송 검사를 실제 추론으로 보고하지 않는다. 결과는 `build/project-memory-{source,installed}-official-wire.json`이다.
+
+검증 전 소스 파일 354개의 SHA-256을 고정하고 전체 검사 후 같음을 확인했다. 검사 종료 후 이 검증 문서만 갱신하고 설치 문서와 다시 대조한다. 설치 prefix는 `build/project-memory-stage`, 소비자 빌드는 `build/project-memory-consumer/build`이다. Release 라이브러리 SHA-256은 `887f68eac6e4c469a5735e5e9a0581997f51ebd32fea14d23867a3f65c1593f5`이며 stage와 동일하다. 실행 파일은 CMake 설치의 RPATH 변환을 반영해 바이트 동일성을 비교했다. 경로 환경변수를 제거한 소비자가 stage의 0.37 라이브러리를 로딩하고 iillm이 LLM 런타임을 링크하지 않는 것도 확인했다. C++ 소비자는 ABI 0.37 헤더와 라이브러리로 함께 다시 빌드해야 한다.
+
+종합 증거는 `build/project-memory-verification.json`, 소스 고정 목록은 `project-memory-tested-source.json`, 개별 검사는 `project-memory-{release,sanitizer,package,linkage}.json`과 CTest XML에 기록한다. 이번 검증은 macOS arm64의 SDK 소스·별도 설치 패키지 범위이다. 기본 홈 SDK나 Society·Dreamscapes 앱을 0.37로 갱신한 증거와 구분한다. 기존 사용자 데몬 PID 14909를 중단하지 않았으며 iPhone은 사용자 지시대로 제외한다.
+
+전체 하네스는 31개 영역 중 23 partial·8 pending이다. 메모리 영역도 부분 구현이며 모델 기반 관련도 선택, 세션 기록 검색, 자동 추출·dream 정리, Git worktree 공유와 사용자/관리/원격 설정 계층은 남아 있다. 이번 검사로 전체 하네스 또는 모든 플랫폼 호환 완료를 주장하지 않는다.
+
 ## 2026-09-15 C++ 질문 수신함과 LVRS 앱 화면 (0.36.0)
 
 Qt Core의 `QuestionInbox`를 사용자 질문 브로커에 연결하고 LVRS `UserQuestionsSheet.qml`을 설치 산출물로 제공한다. Society와 Dreamscapes의 로컬 MCP `AskUserQuestion`은 각 앱 화면에서 응답을 받는다. 대기 중에도 일반 앱 도구의 실행 잠금을 점유하지 않으며, 원격 사용자 상호작용 도구는 비대화형 검증 에이전트에서 제외한다. 기존 Qt·LVRS와 브로커를 재사용하며 새로운 생산 의존성은 없다. [QuestionUI.md](QuestionUI.md)에 수명·스레드·입력·미리보기·앱 연결 계약을 기록한다.

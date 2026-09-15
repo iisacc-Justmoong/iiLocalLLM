@@ -73,6 +73,7 @@ struct ToolContext {
     QString planningSessionId; // MCP owner binding; never accepted from model or wire input.
     QJsonObject approvedToolPreview; // Original prepared metadata, populated only after a trusted Allow response.
     QString planningState; // Admission snapshot used by the planning execution barrier.
+    QStringList protectedPaths; // Host-only file/search exclusions; never accepted from model or wire metadata.
 };
 struct ModelRequest {
     QString model;

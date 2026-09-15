@@ -17,7 +17,7 @@
 | web | WebFetch/WebSearch·컨텐츠 변환·캐시·네트워크 정책 | pending |
 | multimodal | 이미지·PDF·노트북·음성 입력과 모델별 지원 협상 | pending |
 | context | 프롬프트 조합·CLAUDE/AGENTS 규칙·첨부·요약·microcompact·cache 관리 | partial |
-| memory | 프로젝트 Markdown 메모리·검색·자동 정리·세션 메모리 | pending |
+| memory | 프로젝트 Markdown 메모리·검색·자동 정리·세션 메모리 | partial |
 | sessions | JSONL 영속 기록·resume/fork·압축 경계·파일 rewind | partial |
 | subagents | 전문 에이전트·부모 컨텍스트 fork·모델/도구/권한 범위·백그라운드 알림 | partial |
 | teams | 동일 프로세스/별도 프로세스 팀·mailbox·작업·권한 전달·worktree | pending |
@@ -128,3 +128,7 @@ C++ HTTP/HTTPS POST·JSON 응답을 공통 생명주기와 권한 경로에 연�
 0.34는 세션 계획 파일·Enter/ExitPlanMode·호스트 수정 검토·변경 충돌 검사·API/MCP 소유자 제어를 추가했다. 0.35는 C++ AskUserQuestion·호스트 답변과 주석·질문 불변 검증·API/IPC/MCP 노출을 추가한다. 기존 JSON Schema 및 PermissionRequests를 재사용해 새 생산 의존성은 없다. [PlanMode.md](PlanMode.md)·[UserQuestions.md](UserQuestions.md)·[Verification.md](Verification.md)에 계약과 증거를 기록한다. 실제 앱 질문/승인 화면, 인터뷰와 이미지 첨부 등 전체 호환성은 진행 중이며 31개 영역의 21 partial·10 pending 상태를 유지한다.
 
 0.36은 C++ QuestionInbox와 LVRS 질문 화면, 로컬 앱 MCP 질문과 자동 검증 도구 필터를 추가한다. 선택·여러 줄 자유 입력/메모·부분 답변·대기열·포커스·취소 계약은 [QuestionUI.md](QuestionUI.md)를 따른다. 전체 채팅/승인 화면·인터뷰·이미지·서식 미리보기·모바일/Windows 라우팅은 남아 있다. 현재 31개 영역 중 22 partial·9 pending이며 전체 하네스 완료가 아니다.
+
+## 0.37 프로젝트 메모리
+
+C++ 프로젝트별 Markdown 저장, MEMORY.md 자동 문맥, 목록·검색, 기존 파일 도구 연결과 해시를 확인하는 삭제·백업을 추가한다. 새 세션·분기·clear·압축과 자식 실행, 인증 API·MCP·CLI의 범위를 [ProjectMemory.md](ProjectMemory.md)에 기록한다. 다른 앱의 API 메모리와 비공개 저장 영역을 구분한다. 자동 추출·dream 정리, 모델 기반 회상·세션 검색, 전체 설정·팀·전문 에이전트·worktree·원격과 실제 앱/플랫폼 전체 검증은 미완료이다. memory는 partial이며 전체 목표의 완료를 뜻하지 않는다.

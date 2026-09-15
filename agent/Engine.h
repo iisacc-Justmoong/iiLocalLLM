@@ -10,6 +10,7 @@
 #include "AsyncHooks.h"
 #include "PlanMode.h"
 #include "UserQuestions.h"
+#include "ProjectMemory.h"
 #include "../Service.h"
 
 namespace iiLocalLLM::agent {
@@ -46,6 +47,8 @@ struct EngineOptions {
     bool planToolsDeferred = true;
     bool userQuestionsEnabled = false; // Embedded hosts opt in; daemon/agent MCP enable by default.
     UserQuestionOptions userQuestions;
+    bool projectMemoryEnabled = false; // Embedded hosts opt in; daemon and agent MCP enable by default.
+    ProjectMemoryOptions projectMemory; // Empty directory uses sessionsDirectory/memory.
 };
 class IILOCALLLM_EXPORT Engine {
 public:
@@ -68,6 +71,12 @@ public:
     QJsonObject cancelHooks(const QString& sessionId, const QString& hookId = {}) const;
     SkillCatalog skills(const QString& sessionId, const CancellationToken& = {}) const;
     QJsonObject permissions(const QString& sessionId, const CancellationToken& = {}) const;
+    bool projectMemoryEnabled() const;
+    QJsonObject memory(const QString& sessionId,const QString& query = {},const CancellationToken& = {}) const;
+    // Host registry composition; preserves the original workspace tool schemas.
+    void bindProjectMemoryTools(ToolRegistry&,bool deferredForget = true) const;
+    ToolResult runMemoryTool(const QString& sessionId,const QString& name,const QJsonObject& arguments = {},
+        const CancellationToken& = {},const EventCallback& = {},std::shared_ptr<PermissionRequests> = {}) const;
     QStringList sessions() const;
     Session forkSession(const QString& id, const QString& throughMessageId = {});
     // Cancel/join this session's accepted work, stop its native background jobs,

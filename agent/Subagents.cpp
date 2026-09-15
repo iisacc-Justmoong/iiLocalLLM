@@ -137,6 +137,8 @@ public:
             && options.maxTurns>=1 && options.maxTurns<=10000 && options.maxRuntimeMs>=1 && options.maxRuntimeMs<=86400000
             && options.definitions.size()<=128 && options.allowedModels.size()<=128 && options.modelAliases.size()<=128,"Invalid subagent host configuration");
         options.workingDirectory=QFileInfo(options.workingDirectory).canonicalFilePath(); options.stateDirectory=QFileInfo(options.stateDirectory).canonicalFilePath();
+        if(parent.projectMemoryEnabled&&parent.projectMemory.directory.isEmpty())
+            parent.projectMemory.directory=QDir(parent.sessionsDirectory).absoluteFilePath("memory");
         require(!options.workingDirectory.isEmpty() && QFileInfo(options.workingDirectory).isDir() && !QDir(options.workingDirectory).isRoot(),"Invalid subagent workspace");
         require(!QFileInfo(ownership.fileName()).isSymLink(),"Subagent ownership lock is a symlink",ErrorCode::StorageFailure);
         ownership.setStaleLockTime(0); require(ownership.tryLock(0),"Subagent store already owned or inaccessible",ErrorCode::AlreadyExists);

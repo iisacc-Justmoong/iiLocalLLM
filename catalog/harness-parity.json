@@ -151,15 +151,34 @@
         "docs/Compaction.md",
         "agent/PromptState.h",
         "tests/input_lifecycle_tests.cpp",
-        "docs/InputLifecycle.md"
+        "docs/InputLifecycle.md",
+        "agent/ProjectMemory.h",
+        "agent/ProjectMemory.cpp",
+        "agent/WorkspaceTools.cpp",
+        "tests/project_memory_tests.cpp",
+        "tests/project_memory_engine_tests.cpp",
+        "tests/project_memory_runtime_smoke.cpp",
+        "tests/project_memory_wire.py",
+        "docs/ProjectMemory.md"
       ],
-      "remaining": "Native prompt measurement, micro compaction, bounded rolling summaries and project instructions implemented. Managed/user instructions, attachments, session memory, reactive overflow recovery and server cache edits remain."
+      "remaining": "Native prompt measurement, micro compaction, bounded rolling summaries and project instructions implemented. Managed/user instructions, attachments, session memory, reactive overflow recovery and server cache edits remain. Version 0.37 adds opt-in C++ project memory and automatic index context, native memory file operations, owner-bound API/MCP controls and CLI defaults. This does not complete automatic extraction, session search, consolidation or all app/platform integrations; see ProjectMemory.md."
     },
     {
       "id": "memory",
       "requirement": "프로젝트 Markdown 메모리·검색·자동 정리·세션 메모리",
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "agent/ProjectMemory.h",
+        "agent/ProjectMemory.cpp",
+        "agent/Engine.cpp",
+        "agent/WorkspaceTools.cpp",
+        "tests/project_memory_tests.cpp",
+        "tests/project_memory_engine_tests.cpp",
+        "tests/project_memory_runtime_smoke.cpp",
+        "tests/project_memory_wire.py",
+        "docs/ProjectMemory.md"
+      ],
+      "remaining": "C++ project Markdown storage, bounded MEMORY.md context, topic scanning and literal search, native Read/Write/Edit/Glob/Grep routing, hash-bound removal with backup, per-client API ownership, MCP and CLI are implemented in 0.37. Model-ranked recall, session-history search, turn-end extraction, automatic dream consolidation, Git worktree sharing, user/managed/remote setting precedence, specialist/team memory and remote synchronization remain. See ProjectMemory.md for storage and authorization boundaries and Verification.md for qualification evidence."
     },
     {
       "id": "sessions",
@@ -336,9 +355,18 @@
         "qml/UserQuestionsSheet.qml",
         "tests/question_inbox_tests.cpp",
         "tests/question_sheet_tests.cpp",
-        "docs/QuestionUI.md"
+        "docs/QuestionUI.md",
+        "agent/ProjectMemory.h",
+        "agent/ProjectMemory.cpp",
+        "agent/Engine.cpp",
+        "agent/WorkspaceTools.cpp",
+        "tests/project_memory_tests.cpp",
+        "tests/project_memory_engine_tests.cpp",
+        "tests/project_memory_runtime_smoke.cpp",
+        "tests/project_memory_wire.py",
+        "docs/ProjectMemory.md"
       ],
-      "remaining": "C++ sessions, POSIX stdio, authenticated loopback Streamable HTTP, resumable SSE, CLI, app ToolRegistry export and local agent tools are implemented. Shell controls share conversation ownership and stop on connection close. Remote TLS/proxy qualification, legacy SSE, OAuth, Windows stdio and MCP asynchronous tasks remain. Version 0.24 implements native C++/API/MCP session clear with immediate SessionStart(clear), fresh context identity, background job ownership and pending notification transfer. Per-owner commits are atomic; cross-store clear is not transactional. Shared MCP connections and unimplemented UI/team/git/LSP/worktree/plugin caches remain outside clear. See SessionClear.md. Version 0.28 reserves separate HTTP response and MCP active/retained stream capacity for registered controls. Slow JSON/SSE writers, disconnects, replay ownership and mixed legacy batches retain their admission class; connection queues and control capacity remain bounded. See ControlCapacity.md. Version 0.34 adds C++ session plan files, Enter/ExitPlanMode, revision/hash-bound host review and edits, execution barriers, resume/fork/clear, and authenticated API/IPC/MCP controls. Interview UI, semantic prompt authorization, auto-mode restoration, team approval, remote snapshot recovery and actual app review remain; see PlanMode.md. Version 0.35 implements C++ AskUserQuestion, trusted host answers/annotations, immutable question review, partial/free-text/multiple-choice results, Engine/API/IPC/MCP exposure and capability discovery. Native model, installed consumer and wire checks are recorded in Verification.md. Version 0.36 adds the C++ QuestionInbox and LVRS question sheet for local app MCP calls. Image attachments, rich previews, interview UI, complete approval screens and channel-specific activation remain; see UserQuestions.md and QuestionUI.md."
+      "remaining": "C++ sessions, POSIX stdio, authenticated loopback Streamable HTTP, resumable SSE, CLI, app ToolRegistry export and local agent tools are implemented. Shell controls share conversation ownership and stop on connection close. Remote TLS/proxy qualification, legacy SSE, OAuth, Windows stdio and MCP asynchronous tasks remain. Version 0.24 implements native C++/API/MCP session clear with immediate SessionStart(clear), fresh context identity, background job ownership and pending notification transfer. Per-owner commits are atomic; cross-store clear is not transactional. Shared MCP connections and unimplemented UI/team/git/LSP/worktree/plugin caches remain outside clear. See SessionClear.md. Version 0.28 reserves separate HTTP response and MCP active/retained stream capacity for registered controls. Slow JSON/SSE writers, disconnects, replay ownership and mixed legacy batches retain their admission class; connection queues and control capacity remain bounded. See ControlCapacity.md. Version 0.34 adds C++ session plan files, Enter/ExitPlanMode, revision/hash-bound host review and edits, execution barriers, resume/fork/clear, and authenticated API/IPC/MCP controls. Interview UI, semantic prompt authorization, auto-mode restoration, team approval, remote snapshot recovery and actual app review remain; see PlanMode.md. Version 0.35 implements C++ AskUserQuestion, trusted host answers/annotations, immutable question review, partial/free-text/multiple-choice results, Engine/API/IPC/MCP exposure and capability discovery. Native model, installed consumer and wire checks are recorded in Verification.md. Version 0.36 adds the C++ QuestionInbox and LVRS question sheet for local app MCP calls. Image attachments, rich previews, interview UI, complete approval screens and channel-specific activation remain; see UserQuestions.md and QuestionUI.md. Version 0.37 adds opt-in C++ project memory and automatic index context, native memory file operations, owner-bound API/MCP controls and CLI defaults. This does not complete automatic extraction, session search, consolidation or all app/platform integrations; see ProjectMemory.md."
     },
     {
       "id": "api",
@@ -394,9 +422,18 @@
         "tests/user_questions_tests.cpp",
         "tests/user_questions_wire.py",
         "tests/user_questions_runtime_smoke.cpp",
-        "docs/UserQuestions.md"
+        "docs/UserQuestions.md",
+        "agent/ProjectMemory.h",
+        "agent/ProjectMemory.cpp",
+        "agent/Engine.cpp",
+        "agent/WorkspaceTools.cpp",
+        "tests/project_memory_tests.cpp",
+        "tests/project_memory_engine_tests.cpp",
+        "tests/project_memory_runtime_smoke.cpp",
+        "tests/project_memory_wire.py",
+        "docs/ProjectMemory.md"
       ],
-      "remaining": "Authenticated HTTP/native IPC sessions, attached parent runs, ordered events, cancellation, background shells and delegated child controls/history with thin CLI are implemented. Durable background parent jobs, idempotent response replay, complete iisacc product workflows remain. Version 0.24 implements native C++/API/MCP session clear with immediate SessionStart(clear), fresh context identity, background job ownership and pending notification transfer. Per-owner commits are atomic; cross-store clear is not transactional. Shared MCP connections and unimplemented UI/team/git/LSP/worktree/plugin caches remain outside clear. See SessionClear.md. Version 0.27 adds opt-in connection-bound permission requests, an independent API/MCP control path, hook/client first-decision arbitration, bounded response replay, cancellation/expiry and child-channel propagation. Control methods are not model tools. durable prompt recovery, actual app approval UI and full reference protocol parity remain. See PermissionRequests.md. Version 0.28 reserves separate HTTP response and MCP active/retained stream capacity for registered controls. Slow JSON/SSE writers, disconnects, replay ownership and mixed legacy batches retain their admission class; connection queues and control capacity remain bounded. See ControlCapacity.md. Version 0.30 returns a complete SSE done/error frame for backend or hook cancellation while the HTTP client remains connected; true disconnect/server shutdown still abandons the stream. Version 0.34 adds C++ session plan files, Enter/ExitPlanMode, revision/hash-bound host review and edits, execution barriers, resume/fork/clear, and authenticated API/IPC/MCP controls. Interview UI, semantic prompt authorization, auto-mode restoration, team approval, remote snapshot recovery and actual app review remain; see PlanMode.md. Version 0.35 implements C++ AskUserQuestion, trusted host answers/annotations, immutable question review, partial/free-text/multiple-choice results, Engine/API/IPC/MCP exposure and capability discovery. Native model, installed consumer and wire checks are recorded in Verification.md. Version 0.36 adds the C++ QuestionInbox and LVRS question sheet for local app MCP calls. Image attachments, rich previews, interview UI, complete approval screens and channel-specific activation remain; see UserQuestions.md and QuestionUI.md."
+      "remaining": "Authenticated HTTP/native IPC sessions, attached parent runs, ordered events, cancellation, background shells and delegated child controls/history with thin CLI are implemented. Durable background parent jobs, idempotent response replay, complete iisacc product workflows remain. Version 0.24 implements native C++/API/MCP session clear with immediate SessionStart(clear), fresh context identity, background job ownership and pending notification transfer. Per-owner commits are atomic; cross-store clear is not transactional. Shared MCP connections and unimplemented UI/team/git/LSP/worktree/plugin caches remain outside clear. See SessionClear.md. Version 0.27 adds opt-in connection-bound permission requests, an independent API/MCP control path, hook/client first-decision arbitration, bounded response replay, cancellation/expiry and child-channel propagation. Control methods are not model tools. durable prompt recovery, actual app approval UI and full reference protocol parity remain. See PermissionRequests.md. Version 0.28 reserves separate HTTP response and MCP active/retained stream capacity for registered controls. Slow JSON/SSE writers, disconnects, replay ownership and mixed legacy batches retain their admission class; connection queues and control capacity remain bounded. See ControlCapacity.md. Version 0.30 returns a complete SSE done/error frame for backend or hook cancellation while the HTTP client remains connected; true disconnect/server shutdown still abandons the stream. Version 0.34 adds C++ session plan files, Enter/ExitPlanMode, revision/hash-bound host review and edits, execution barriers, resume/fork/clear, and authenticated API/IPC/MCP controls. Interview UI, semantic prompt authorization, auto-mode restoration, team approval, remote snapshot recovery and actual app review remain; see PlanMode.md. Version 0.35 implements C++ AskUserQuestion, trusted host answers/annotations, immutable question review, partial/free-text/multiple-choice results, Engine/API/IPC/MCP exposure and capability discovery. Native model, installed consumer and wire checks are recorded in Verification.md. Version 0.36 adds the C++ QuestionInbox and LVRS question sheet for local app MCP calls. Image attachments, rich previews, interview UI, complete approval screens and channel-specific activation remain; see UserQuestions.md and QuestionUI.md. Version 0.37 adds opt-in C++ project memory and automatic index context, native memory file operations, owner-bound API/MCP controls and CLI defaults. This does not complete automatic extraction, session search, consolidation or all app/platform integrations; see ProjectMemory.md."
     },
     {
       "id": "discovery",
@@ -709,9 +746,18 @@
         "qml/UserQuestionsSheet.qml",
         "tests/question_inbox_tests.cpp",
         "tests/question_sheet_tests.cpp",
-        "docs/QuestionUI.md"
+        "docs/QuestionUI.md",
+        "agent/ProjectMemory.h",
+        "agent/ProjectMemory.cpp",
+        "agent/Engine.cpp",
+        "agent/WorkspaceTools.cpp",
+        "tests/project_memory_tests.cpp",
+        "tests/project_memory_engine_tests.cpp",
+        "tests/project_memory_runtime_smoke.cpp",
+        "tests/project_memory_wire.py",
+        "docs/ProjectMemory.md"
       ],
-      "remaining": "Public MCP client/server headers and a POSIX MCP executable are installed and tested through fresh C++ consumers. Complete app integration and platform qualification remain. Version 0.24 implements native C++/API/MCP session clear with immediate SessionStart(clear), fresh context identity, background job ownership and pending notification transfer. Per-owner commits are atomic; cross-store clear is not transactional. Shared MCP connections and unimplemented UI/team/git/LSP/worktree/plugin caches remain outside clear. See SessionClear.md."
+      "remaining": "Public MCP client/server headers and a POSIX MCP executable are installed and tested through fresh C++ consumers. Complete app integration and platform qualification remain. Version 0.24 implements native C++/API/MCP session clear with immediate SessionStart(clear), fresh context identity, background job ownership and pending notification transfer. Per-owner commits are atomic; cross-store clear is not transactional. Shared MCP connections and unimplemented UI/team/git/LSP/worktree/plugin caches remain outside clear. See SessionClear.md. Version 0.37 adds opt-in C++ project memory and automatic index context, native memory file operations, owner-bound API/MCP controls and CLI defaults. This does not complete automatic extraction, session search, consolidation or all app/platform integrations; see ProjectMemory.md."
     },
     {
       "id": "conditional",

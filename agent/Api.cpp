@@ -57,7 +57,8 @@ QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.se
     "agent.agents.run", "agent.agents.output", "agent.agents.stop", "agent.agents.list", "agent.agents.profiles",
     "agent.inputs.enqueue", "agent.inputs.list", "agent.inputs.remove", "agent.inputs.run", "agent.sessions.end", "agent.sessions.clear",
     "agent.permissions.pending", "agent.permissions.respond", "agent.hooks.status", "agent.hooks.cancel",
-    "agent.plan.get", "agent.plan.enter", "agent.plan.exit", "agent.questions.ask"}; }
+    "agent.plan.get", "agent.plan.enter", "agent.plan.exit", "agent.questions.ask",
+    "agent.memory.get", "agent.memory.read", "agent.memory.write", "agent.memory.edit", "agent.memory.glob", "agent.memory.grep", "agent.memory.forget"}; }
 bool hookControl(const QString& method) {return method=="agent.hooks.status"||method=="agent.hooks.cancel";}
 bool inputControl(const QString& method) {
     return method == "agent.inputs.enqueue" || method == "agent.inputs.list" || method == "agent.inputs.remove" || method=="agent.plan.get";
@@ -105,6 +106,7 @@ public:
             && options.maxConcurrentInputControls >= 1 && options.maxConcurrentInputControls <= 16
             && options.maxQueuedInputControls >= 0 && options.maxQueuedInputControls <= 10000, "Invalid agent API configuration");
         require(!options.engine.permissionRequests,"Agent API assigns private permission channels; configure ApiOptions.permissionRequests");
+        require(options.engine.projectMemory.directory.isEmpty(),"Agent API assigns private project memory per client");
         if(options.permissionRequests) {
             PermissionRequests validate(*options.permissionRequests);
             require(options.permissionRequests->maxRequestBytes<=options.maxResultBytes-256,"Permission requests must fit the API result limit");
@@ -176,7 +178,27 @@ public:
                 {"input_queue_enabled", true}, {"skills_enabled", options.engine.skills.enabled}, {"subagents_enabled", options.subagentsEnabled},
                 {"hooks_enabled",!options.engine.hooks.isEmpty()},{"async_hook_controls_enabled",true},
                 {"max_async_hook_wake_runs",options.engine.maxAsyncHookWakeRuns},{"permission_requests_enabled",bool(client->permissionRequests)},
-                {"user_questions_enabled",bool(client->engine->userQuestionTool())}};
+                {"user_questions_enabled",bool(client->engine->userQuestionTool())},{"project_memory_enabled",client->engine->projectMemoryEnabled()}};
+        }
+        if(method=="agent.memory.get") {
+            fields(p,{"session_id","query"});const auto id=text(p,"session_id");
+            require(!p.contains("query")||p["query"].isString(),"Invalid memory query");
+            require(client->engine->sessionMetadata(id).workingDirectory==options.workingDirectory,"Session belongs to a different workspace",ErrorCode::NotFound);
+            return client->engine->memory(id,p["query"].toString(),job->token);
+        }
+        static const QMap<QString,QString> memoryMethods{{"agent.memory.read","Read"},{"agent.memory.write","Write"},
+            {"agent.memory.edit","Edit"},{"agent.memory.glob","Glob"},{"agent.memory.grep","Grep"},{"agent.memory.forget","MemoryForget"}};
+        if(memoryMethods.contains(method)) {
+            const auto id=text(p,"session_id");auto arguments=p;arguments.remove("session_id");
+            require(client->engine->sessionMetadata(id).workingDirectory==options.workingDirectory,"Session belongs to a different workspace",ErrorCode::NotFound);
+            auto future=std::async(std::launch::async,[client,id,name=memoryMethods[method],arguments,job,callback] {
+                return client->engine->runMemoryTool(id,name,arguments,job->token,[callback](const Event& event){if(callback)callback(toJson(event));});
+            });
+            bool timedOut=false;while(future.wait_for(10ms)!=std::future_status::ready) {
+                timedOut|=Clock::now()>=job->deadline;if(timedOut)job->token.cancel();
+            }
+            const auto value=future.get();require(!timedOut&&Clock::now()<job->deadline,"Agent API request deadline exceeded",ErrorCode::Timeout);
+            return QJsonObject{{"text",value.text},{"result",value.data},{"is_error",value.isError}};
         }
         static const QMap<QString, QString> agentMethods{{"agent.agents.run", "Agent"}, {"agent.agents.output", "AgentOutput"},
             {"agent.agents.stop", "AgentStop"}, {"agent.agents.list", "AgentList"}, {"agent.agents.profiles", "AgentProfiles"}};

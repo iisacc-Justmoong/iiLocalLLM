@@ -67,6 +67,11 @@ public:
             for(auto tool:plans->tools(this->policy))configured->add(std::move(tool));
         }
         if(this->options.userQuestionsEnabled)configured->add(agent::userQuestionTool(this->options.userQuestions));
+        if(this->options.projectMemoryEnabled) {
+            if(this->options.projectMemory.directory.isEmpty())this->options.projectMemory.directory=QDir(this->options.sessionsDirectory).absoluteFilePath("memory");
+            memory=std::make_shared<ProjectMemory>(this->options.projectMemory);
+            configured->add(memory->forgetTool());
+        }
     }
     std::shared_ptr<Model> model;
     std::shared_ptr<ToolRegistry> registry;
@@ -76,6 +81,7 @@ public:
     InputQueue inputs;
     std::shared_ptr<TaskStore> tasks;
     std::shared_ptr<PlanMode> plans;
+    std::shared_ptr<ProjectMemory> memory;
     QThreadPool pool;
     std::mutex mutex;
     std::mutex joining;
@@ -449,6 +455,7 @@ public:
                 if (!before.feedback.isEmpty()) append({{}, MessageRole::User, before.feedback});
                 const auto& session = lease->session();
                 const auto turnRegistry = registry->snapshot();
+                if(memory) {memory->bindWorkspaceTools(*turnRegistry);turnRegistry->add(memory->forgetTool());}
                 for (const auto& tool : additionalTools()) turnRegistry->add(tool);
                 const auto skillCatalog = detail::executableSkills(session.workingDirectory, options.skills, bool(options.forkedSkill), token);
                 const auto skillContext = skillCatalog.message();
@@ -492,6 +499,7 @@ public:
                 }
                 const auto context = loadProjectContext(session.workingDirectory, projectContextPaths(session.messages), options.projectContext, token);
                 if (!context.files.isEmpty()) base.messages.append(context.message());
+                if(memory)base.messages.append(memory->message(session.workingDirectory,token));
                 if (context.fingerprint != lastContextFingerprint) {
                     lastContextFingerprint = context.fingerprint;
                     send({EventKind::InstructionsLoaded, runId, session.id, {}, {}, context.toJson(false)});
@@ -647,6 +655,7 @@ Engine::~Engine() {
 Session Engine::createSession(QString model, QString workspace, QString systemPrompt) {
     std::lock_guard lock(d->mutex);
     if(d->stopping)throw Error(ErrorCode::ShuttingDown,"Agent engine is shutting down");
+    if(d->memory)d->memory->directory(workspace);
     auto session=d->store.create(std::move(model),std::move(systemPrompt),std::move(workspace));
     d->createdSessions.insert(session.id);d->touchedSessions.insert(session.id);
     return session;
@@ -930,6 +939,45 @@ QJsonObject Engine::permissions(const QString& id,const CancellationToken& token
     auto result=d->policy->describe(context);if(context.planModeActive)result["mode"]="plan";return result;
 }
 std::shared_ptr<PlanMode> Engine::planning() const{return d->plans;}
+bool Engine::projectMemoryEnabled() const {return bool(d->memory);}
+QJsonObject Engine::memory(const QString& id,const QString& query,const CancellationToken& token) const {
+    const auto session=d->store.metadata(id);token.throwIfCancelled();
+    if(!d->memory)return {{"enabled",false}};
+    Impl::NativeOperation operation(*d,id,token);return d->memory->snapshot(session.workingDirectory,query,operation.token);
+}
+void Engine::bindProjectMemoryTools(ToolRegistry& registry,bool deferred) const {
+    if(d->memory) {d->memory->bindWorkspaceTools(registry);registry.add(d->memory->forgetTool(deferred));}
+}
+ToolResult Engine::runMemoryTool(const QString& id,const QString& name,const QJsonObject& arguments,const CancellationToken& token,
+    const EventCallback& callback,std::shared_ptr<PermissionRequests> requests) const {
+    if(!d->memory)throw Error(ErrorCode::RuntimeUnavailable,"Project memory is disabled");
+    if(!QStringList{"Read","Write","Edit","Glob","Grep","MemoryForget"}.contains(name))throw Error(ErrorCode::NotFound,"Unknown memory operation");
+    const auto session=d->store.metadata(id);Impl::NativeOperation operation(*d,id,token);
+    const auto directory=d->memory->directory(session.workingDirectory,operation.token);
+    auto args=arguments;if(!args.contains("path")&&(name=="Glob"||name=="Grep"))args["path"]=directory;
+    const auto path=QDir::cleanPath(args["path"].toString());
+    if(!QDir::isAbsolutePath(path)||(path!=directory&&!path.startsWith(directory+'/')))
+        throw Error(ErrorCode::InvalidArgument,"Memory API paths must stay inside the owned project's memory directory");
+    auto registry=d->registry->snapshot();bindProjectMemoryTools(*registry,false);
+    const auto tool=registry->get(name);
+    if(tool.isMcp||tool.definition.metadata["source"]!=(name=="MemoryForget"?"builtin.memory":"builtin.workspace"))
+        throw Error(ErrorCode::InvalidArgument,"Memory API requires the host's native file tool");
+    auto restricted=tool;
+    restricted.prepare=[prepare=tool.prepare,directory](const QJsonObject& input,const ToolContext& context) {
+        const auto path=QDir::cleanPath(input["path"].toString());
+        if(!QDir::isAbsolutePath(path)||(path!=directory&&!path.startsWith(directory+'/')))
+            throw Error(ErrorCode::InvalidArgument,"Updated memory API path escapes its owned directory");
+        return prepare(input,context);
+    };
+    registry->replace({name},{std::move(restricted)});
+    ToolContext context{id,uuid(),session.workingDirectory,QDir(d->options.sessionsDirectory).filePath(id+"/artifacts"),operation.token};
+    context.transcriptPath=transcriptPath(id);context.sessionSnapshot=std::make_shared<Session>(session);
+    if(!d->options.hooks.isEmpty())context.asyncHooks=d->hookScope(id);context.hookCancellation=operation.token;
+    context.permissionRequests=requests?requests:d->options.permissionRequests;
+    ToolRunnerOptions options{d->options.hooks,d->options.permission,24000,d->options.permissionResponse,d->options.permissionUpdates,
+        context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks),d->plans};
+    return ToolRunner(registry,d->policy,options).run({uuid(),name,args},context,callback);
+}
 std::optional<Tool> Engine::userQuestionTool(bool deferred) const {
     if(!d->options.userQuestionsEnabled)return std::nullopt;
     auto options=d->options.userQuestions;options.deferred=deferred;return agent::userQuestionTool(options);
