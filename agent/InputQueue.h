@@ -15,6 +15,14 @@ public:
     QJsonObject enqueue(const QString& sessionId, const QJsonObject& input, const CancellationToken& = {}) const;
     QJsonObject snapshot(const QString& sessionId, int offset = 0, int limit = 100, const CancellationToken& = {}) const;
     QJsonObject remove(const QString& sessionId, const QString& inputId, const CancellationToken& = {}) const;
+    // Trusted lifecycle transfer of selected pending notifications. Preserves
+    // IDs/payload, assigns destination ordering, writes destination before source
+    // acknowledgement. Retrying after a partial write is safe; delivery must
+    // deduplicate IDs by payload, excluding the queue-local sequence number.
+    // Never call from a delivery callback. Both delivery locks are acquired.
+    // pendingAtDestination receives the selected IDs still queued at destination,
+    // including an earlier interrupted transfer. from==to only queries those IDs.
+    int transferNotifications(const QString& from,const QString& to,const QStringList& inputIds,const CancellationToken& = {},QStringList* pendingAtDestination = nullptr) const;
     // Calls persist under the queue lock, then acknowledges each committed item.
     // persist must be idempotent by input.id and must not re-enter this queue or
     // call external observers. A crash between persist and acknowledgement can

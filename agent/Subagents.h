@@ -34,6 +34,10 @@ public:
         bool block = false, int timeoutMs = 30000, const CancellationToken& = {}) const;
     QJsonObject stop(const QString& parentSessionId, const QString& agentId, const CancellationToken& = {});
     QJsonArray list(const QString& parentSessionId) const;
+    // Trusted lifecycle operation. Running/completed background children retain
+    // their IDs, execution and transcripts. Pending completion input follows.
+    // Ownership commits before notification migration; failures can be retried.
+    QJsonArray transferSession(const QString& from,const QString& to,const CancellationToken& = {});
     AgentProfileCatalog profiles(const CancellationToken& = {}) const;
     // Captures this object through shared ownership. The registry passed to the
     // constructor must not contain these tools (avoids recursive ownership).

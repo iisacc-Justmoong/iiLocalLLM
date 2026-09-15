@@ -1,5 +1,7 @@
 # 백그라운드 셸 작업
 
+0.24.0의 SessionClear는 실행 ID·프로세스·출력 파일을 유지한 채 소유권을 새 세션으로 넘긴다. 이전 ID의 조회/중지는 거부하고 새 ID로 제어한다. [SessionClear.md](SessionClear.md)를 따른다.
+
 구현 계약과 검증을 이 문서에 기록한다. `TaskStore`의 계획 상태와 실제 실행 상태는 별개이다. 실행은 C++ `ShellTasks`, 기존 Qt 6.8.3의 QProcess·QLockFile·QSaveFile 및 표준 C++ 스레드를 사용한다. 새 런타임 의존성이나 Python 실행기를 도입하지 않는다. [QProcess](https://doc.qt.io/qt-6.8/qprocess.html)와 [QSaveFile](https://doc.qt.io/qt-6.8/qsavefile.html)의 공개 계약을 확인했다.
 
 참조는 분석한 저장소의 `c8cd253554319f32ff64ff7000636199f720c9bc`이다. Bash의 `run_in_background`, TaskOutput의 대기/조회와 TaskStop의 종료를 독립적으로 구현한다. 출력 대기를 취소해도 원래 실행은 계속된다. 프로세스 종료는 명시적 TaskStop, 실행 시간/출력 상한 또는 호스트의 정상 종료로 수행한다. 호스트 비정상 종료 후 남은 실행은 결과 미확인 상태로 복구하며 명령을 재실행하거나 저장된 PID를 종료하지 않는다.

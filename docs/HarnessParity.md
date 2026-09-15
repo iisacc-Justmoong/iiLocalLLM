@@ -95,4 +95,6 @@
 
 0.22.0은 C++ UserPromptSubmit·SessionStart, 원본 판정 보존·모델 문맥 제외, 큐 준비/확인 분리·재진입·취소·확인 실패 복구, 사용자 스킬과 내부 자식 지시 구분을 API/CLI/MCP에 연결한다. SessionEnd·clear·watchPaths·PermissionRequest/Denied 및 나머지 훅 실행기와 전체 앱 검증은 남아 있다. hooks와 전체 목표는 partial이며 [InputLifecycle.md](InputLifecycle.md)를 따른다.
 
-0.23.0은 SessionEnd와 C++ endSession/close, 인증 API 세션 종료, MCP 교체·연결 종료·stdio 신호 정리를 구현한다. API 접수 요청과 Engine 대기 작업을 취소하고 활성화별 중복을 방지한다. [SessionEnd.md](SessionEnd.md)의 cooperative 시간 예산과 진단/자식 정리 한계를 적용한다. SessionStart(clear), 전체 clear 정책·watchPaths·권한/나머지 훅과 앱 consumer 검증은 남아 있으며 전체 목표는 partial이다.
+0.23.0은 SessionEnd와 C++ endSession/close, 인증 API 세션 종료, MCP 교체·연결 종료·stdio 신호 정리를 구현한다. API 접수 요청과 Engine 대기 작업을 취소하고 활성화별 중복을 방지한다. [SessionEnd.md](SessionEnd.md)의 cooperative 시간 예산과 진단/자식 정리 한계를 적용한다. 이 문단은 0.23 당시 범위이다.
+
+0.24.0은 C++/API/MCP 실제 clear, 즉시 SessionStart(clear), 새 ID/부모 기록, 백그라운드 셸·자식·완료 알림의 전환과 복구를 구현한다. 세부 경계는 [SessionClear.md](SessionClear.md)를 따른다. 참조의 전체 UI/팀/git/LSP/worktree/플러그인 캐시 초기화, watchPaths, 권한/나머지 훅과 실제 제품 consumer 검증은 남아 있으며 전체 목표는 partial이다.

@@ -155,6 +155,45 @@ int InputQueue::deliver(const QString& id, bool includeLater, int limit,
     return deliver(id,includeLater,limit,[](const QJsonObject&){return QJsonObject{};},
         [&](const QJsonObject& input,const QJsonObject&){persist(input);return true;},token);
 }
+int InputQueue::transferNotifications(const QString& from,const QString& to,const QStringList& inputIds,const CancellationToken& token,QStringList* pendingAtDestination) const {
+    require(validId(from)&&validId(to)&&inputIds.size()<=10000,"Invalid notification transfer");
+    QSet<QString> ids;for(const auto& id:inputIds){require(validId(id),"Invalid notification identity");ids.insert(id);}
+    if(pendingAtDestination)pendingAtDestination->clear();
+    if(ids.isEmpty())return 0;
+    if(from==to) {
+        LockedState queue(directory_,from,options_,token);
+        for(const auto& input:queue.read().inputs)if(ids.contains(input["id"].toString())) {
+            require(input["kind"]=="notification","Only notification identities can be queried");
+            if(pendingAtDestination)pendingAtDestination->append(input["id"].toString());
+        }
+        return 0;
+    }
+    const auto first=std::min(from,to),second=std::max(from,to);
+    LockedState firstDelivery(directory_,first,options_,token,"delivery.lock"),secondDelivery(directory_,second,options_,token,"delivery.lock");
+    LockedState firstQueue(directory_,first,options_,token),secondQueue(directory_,second,options_,token);
+    auto& source=from==first?firstQueue:secondQueue;auto& destination=to==first?firstQueue:secondQueue;
+    auto previous=source.read(),next=destination.read();int moved=0;bool inserted=false;
+    auto identity=[](QJsonObject value){value.remove("sequence");return value;};
+    for(auto input:previous.inputs)if(ids.contains(input["id"].toString())) {
+        require(input["kind"]=="notification","Only notifications can follow a session clear");
+        const auto present=std::find_if(next.inputs.begin(),next.inputs.end(),[&](const auto& item){return item["id"]==input["id"];});
+        if(present!=next.inputs.end())require(identity(*present)==identity(input),"Conflicting notification transfer",ErrorCode::ProtocolError);
+        else {
+            require(next.inputs.size()<options_.maxPending,"Destination input queue is full",ErrorCode::QueueFull);
+            require(next.nextSequence<maximum,"Input queue sequence exhausted",ErrorCode::ResourceLimit);
+            input["sequence"]=double(next.nextSequence++);next.inputs.append(input);inserted=true;
+        }
+        ++moved;
+    }
+    if(pendingAtDestination)for(const auto& input:next.inputs)if(ids.contains(input["id"].toString())) {
+        require(input["kind"]=="notification","Transferred identity is not a notification",ErrorCode::ProtocolError);
+        pendingAtDestination->append(input["id"].toString());
+    }
+    if(!moved)return 0;
+    token.throwIfCancelled();if(inserted)destination.write(next,token);
+    previous.inputs.removeIf([&](const auto& input){return ids.contains(input["id"].toString());});
+    source.write(previous,{});return moved;
+}
 int InputQueue::deliver(const QString& id,bool includeLater,int limit,
     const std::function<QJsonObject(const QJsonObject&)>& prepare,
     const std::function<bool(const QJsonObject&,const QJsonObject&)>& persist,const CancellationToken& token) const {

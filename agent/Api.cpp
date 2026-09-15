@@ -54,7 +54,7 @@ QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.se
     "agent.tasks.create", "agent.tasks.get", "agent.tasks.list", "agent.tasks.update", "agent.tasks.claim", "agent.todos.write", "agent.todos.get",
     "agent.shell.start", "agent.shell.output", "agent.shell.stop", "agent.shell.list",
     "agent.agents.run", "agent.agents.output", "agent.agents.stop", "agent.agents.list", "agent.agents.profiles",
-    "agent.inputs.enqueue", "agent.inputs.list", "agent.inputs.remove", "agent.inputs.run", "agent.sessions.end"}; }
+    "agent.inputs.enqueue", "agent.inputs.list", "agent.inputs.remove", "agent.inputs.run", "agent.sessions.end", "agent.sessions.clear"}; }
 bool inputControl(const QString& method) {
     return method == "agent.inputs.enqueue" || method == "agent.inputs.list" || method == "agent.inputs.remove";
 }
@@ -66,6 +66,7 @@ QJsonObject sessionObject(const Session& s, int offset = 0, int limit = 0) {
     QJsonObject value{{"session_id", s.id}, {"model", s.model}, {"system", s.systemPrompt},
         {"working_directory", s.workingDirectory}, {"message_count", s.messages.size()}, {"messages", messages}};
     value["compaction_count"] = s.compactions.size();
+    if(!s.parentSessionId.isEmpty())value["parent_session_id"]=s.parentSessionId;
     if (!s.compactions.isEmpty()) value["compaction"] = toJson(s.compactions.last());
     if (end < s.messages.size()) value["next_offset"] = end;
     return value;
@@ -74,7 +75,7 @@ bool nested(const QString& path, const QString& root) { return path == root || p
 }
 class Api::Impl : public std::enable_shared_from_this<Impl> {
 public:
-    struct Client { QString id; QByteArray digest; std::shared_ptr<Engine> engine; std::shared_ptr<Subagents> subagents; std::mutex creation; QSet<QString> ending; };
+    struct Client { QString id; QByteArray digest; std::shared_ptr<Engine> engine; std::shared_ptr<Subagents> subagents; std::mutex creation; QSet<QString> ending; int reservedSessions=0; };
     struct Job {
         QString id, method, clientId; QJsonObject params; CancellationToken token;
         Clock::time_point deadline; std::atomic_bool running = false;
@@ -238,7 +239,7 @@ public:
             fields(p, {"model", "system"}); const auto model = text(p, "model"), prompt = text(p, "system", false);
             require(model.size() <= 512 && prompt.size() <= options.engine.maxInputCharacters, "Agent session input exceeds limit");
             std::lock_guard lock(client->creation);
-            require(client->engine->sessions().size() < options.maxSessionsPerClient, "Agent session limit reached", ErrorCode::ResourceLimit);
+            require(client->engine->sessions().size()+client->reservedSessions < options.maxSessionsPerClient, "Agent session limit reached", ErrorCode::ResourceLimit);
             return sessionObject(client->engine->createSession(model, options.workingDirectory, prompt));
         }
         if (method == "agent.sessions.list") {
@@ -255,15 +256,24 @@ public:
             fields(p, {"session_id", "offset", "limit"});
             return sessionObject(session(client, p), integer(p, "offset", 0, 0, 1000000), integer(p, "limit", 32, 0, 100));
         }
-        if(method=="agent.sessions.end") {
-            fields(p,{"session_id","reason"});const auto original=client->engine->sessionMetadata(text(p,"session_id"));
+        if(method=="agent.sessions.end"||method=="agent.sessions.clear") {
+            const bool clear=method=="agent.sessions.clear";
+            fields(p,clear?QSet<QString>{"session_id"}:QSet<QString>{"session_id","reason"});const auto original=client->engine->sessionMetadata(text(p,"session_id"));
             require(original.workingDirectory==options.workingDirectory,"Session belongs to a different workspace",ErrorCode::NotFound);
             auto reason=text(p,"reason",false);if(!p.contains("reason"))reason="other";
             require(QStringList{"clear","resume","logout","prompt_input_exit","other","bypass_permissions_disabled"}.contains(reason),"Invalid session exit reason");
+            struct Reservation {std::shared_ptr<Client> client;bool held=false;
+                ~Reservation(){if(held){std::lock_guard lock(client->creation);--client->reservedSessions;}}} reservation{client};
+            if(clear) {
+                std::lock_guard lock(client->creation);
+                require(client->engine->sessions().size()+client->reservedSessions<options.maxSessionsPerClient,"Agent session limit reached",ErrorCode::ResourceLimit);
+                ++client->reservedSessions;reservation.held=true;
+            }
             {
                 std::unique_lock lock(mutex);job->token.throwIfCancelled();
                 require(!client->ending.contains(original.id),"Agent session is ending",ErrorCode::ModelInUse);client->ending.insert(original.id);
-                auto belongs=[&](const auto& candidate){return candidate->clientId==client->id&&candidate->params["session_id"]==original.id&&candidate->method!="agent.sessions.end";};
+                auto belongs=[&](const auto& candidate){return candidate->clientId==client->id&&candidate->params["session_id"]==original.id
+                    &&candidate->method!="agent.sessions.end"&&candidate->method!="agent.sessions.clear";};
                 for(const auto& [_,candidate]:active)if(belongs(candidate))candidate->token.cancel();
                 // Queued jobs see cancellation before entering perform(). Running
                 // jobs finish their Engine admission/cleanup before SessionEnd.
@@ -271,6 +281,12 @@ public:
             }
             struct Finish {Impl& state;std::shared_ptr<Client> client;QString id;
                 ~Finish(){std::lock_guard lock(state.mutex);client->ending.remove(id);state.changed.notify_all();}} finish{*this,client,original.id};
+            if(clear) {
+                auto result=client->engine->clearSession(original.id);
+                // Report the committed replacement even if cooperative cleanup
+                // exceeded the request budget; do not hide its new identity.
+                result["deadline_exceeded"]=Clock::now()>=job->deadline;return result;
+            }
             const auto result=client->engine->endSession(original.id,reason);
             require(Clock::now()<job->deadline,"Agent API request deadline exceeded after session cleanup",ErrorCode::Timeout);
             return result;
@@ -290,7 +306,7 @@ public:
         if (method == "agent.sessions.fork") {
             fields(p, {"session_id", "through_message_id"}); const auto original = session(client, p);
             std::lock_guard lock(client->creation);
-            require(client->engine->sessions().size() < options.maxSessionsPerClient, "Agent session limit reached", ErrorCode::ResourceLimit);
+            require(client->engine->sessions().size()+client->reservedSessions < options.maxSessionsPerClient, "Agent session limit reached", ErrorCode::ResourceLimit);
             auto result = sessionObject(client->engine->forkSession(original.id, text(p, "through_message_id", false)));
             result["parent_session_id"] = original.id; return result;
         }
@@ -350,7 +366,7 @@ public:
                 {"state", job->running ? "running" : "queued"}, {"cancel_requested", job->token.isCancelled()}});
             return handle;
         }
-        const bool control = inputControl(method) || method == "agent.sessions.end" || method == "agent.agents.output" || method == "agent.agents.stop" || method == "agent.agents.list";
+        const bool control = inputControl(method) || method == "agent.sessions.end" || method == "agent.sessions.clear" || method == "agent.agents.output" || method == "agent.agents.stop" || method == "agent.agents.list";
         const auto used = std::count_if(active.begin(), active.end(), [control](const auto& item) { return item.second->inputControl == control; });
         const auto capacity = control ? options.maxConcurrentInputControls + options.maxQueuedInputControls
             : options.maxConcurrentRequests + options.maxQueuedRequests;

@@ -66,6 +66,8 @@ if event == "PreToolUse":
 elif event == "SessionStart":
     initial = root / "initial.txt"
     fields = {"hookEventName": event, "additionalContext": "SESSION_START_CONTEXT"}
+    if value["source"] == "clear" and (root / "clear-context.txt").exists():
+        fields["additionalContext"] = (root / "clear-context.txt").read_text()
     if initial.exists():
         fields["initialUserMessage"] = initial.read_text()
     print(json.dumps({"continue": False, "decision": "block", "reason": "IGNORED_START_ERROR",
@@ -243,6 +245,23 @@ elif event == "Stop" and (root / "stop").exists():
             assert not rpc("agent.sessions.end", {"session_id": initial_owner})["ended"]
             assert rpc("agent.sessions.get", {"session_id": initial_owner})["messages"] == initial_history
             report["session_end"] = {"api_authentication": True, "invalid_reason": True, "cli": ended, "history_preserved": True, "repeat_idempotent": True}
+            clear_old = rpc("agent.sessions.create", {"model": args.model})["session_id"]
+            rpc("agent.run", {"session_id": clear_old, "prompt": "BLOCK_USER_PROMPT BEFORE_CLEAR"})
+            old_history = rpc("agent.sessions.get", {"session_id": clear_old})["messages"]
+            rpc("agent.sessions.clear", {"session_id": clear_old}, other, 404)
+            cleared = rpc("agent.sessions.clear", {"session_id": clear_old})
+            assert cleared["complete"] and cleared["session_id"] != clear_old, cleared
+            fresh = rpc("agent.sessions.get", {"session_id": cleared["session_id"]})
+            assert fresh["parent_session_id"] == clear_old and len(fresh["messages"]) == 1, fresh
+            assert fresh["messages"][0]["metadata"]["iilocal.session_start"] == "clear", fresh
+            assert rpc("agent.sessions.get", {"session_id": clear_old})["messages"] == old_history
+            report["session_clear"] = {"api": cleared, "new_history": fresh, "old_history_preserved": True}
+            parameters = private("clear-parameters", {"session_id": cleared["session_id"]})
+            cli_clear = subprocess.run([cli, "--socket", str(root / "s"), "--auth-file", auth, "rpc", "agent.sessions.clear", parameters],
+                env=env, text=True, capture_output=True, timeout=15)
+            cli_result = json.loads(cli_clear.stdout)
+            assert cli_clear.returncode == 0 and cli_result["complete"] and cli_result["previous_session_id"] == cleared["session_id"], cli_clear
+            report["session_clear"]["cli"] = cli_result
             if args.catalog:
                 results = []
                 for allowed in (True, False):
@@ -283,6 +302,18 @@ elif event == "Stop" and (root / "stop").exists():
                     "max_turns": 4, "options": {"temperature": 0, "max_tokens": 1024}})
                 assert outcome["status"] == "completed" and (workspace / "hook-context.txt").read_text() == content, outcome
                 report["model_input_context"] = {"passed": True, "outcome": outcome, "content": content}
+                content = "CLEAR_" + secrets.token_hex(16)
+                (root / "clear-context.txt").write_text('Write path="clear-context.txt", content="' + content + '". Do not add a newline.')
+                cleared = rpc("agent.sessions.clear", {"session_id": session})
+                assert cleared["complete"], cleared
+                fresh = rpc("agent.sessions.get", {"session_id": cleared["session_id"]})
+                assert len(fresh["messages"]) == 1 and content in fresh["messages"][0]["text"], fresh
+                outcome = rpc("agent.run", {"session_id": cleared["session_id"],
+                    "prompt": "Follow the new SessionStart instruction. Call Write once with its exact path and content, then return DONE.",
+                    "max_turns": 4, "options": {"temperature": 0, "max_tokens": 1024}})
+                assert outcome["status"] == "completed" and (workspace / "clear-context.txt").read_text() == content, outcome
+                report["model_clear_context"] = {"passed": True, "clear": cleared, "outcome": outcome, "content": content}
+                (root / "clear-context.txt").unlink()
 
         events = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]
         assert [e["reason"] for e in events if e["hook_event_name"] == "SessionEnd" and e["session_id"] == owner] == ["other"]
@@ -333,6 +364,15 @@ elif event == "Stop" and (root / "stop").exists():
             events = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]
             assert [e["reason"] for e in events if e["hook_event_name"] == "SessionEnd" and e["session_id"] == previous_id] == ["clear"]
             report["session_end"]["mcp_replace_clear"] = True
+            assert outcome["structuredContent"]["clear"]["complete"], outcome
+            assert [e["source"] for e in events if e["hook_event_name"] == "SessionStart" and e["session_id"] == mcp_id] == ["clear"]
+            # The explicit control runs without invoking the model or borrowing
+            # the foreground tool lock. Hook diagnostics are part of its report.
+            status, data, _, _ = post(url.port, "/mcp", {"jsonrpc": "2.0", "id": "clear-control", "method": "tools/call",
+                "params": {"name": "iiLocalLLM.agent.clear", "arguments": {}}}, session=identity)
+            assert status == 200 and data["result"]["structuredContent"]["complete"], data
+            report["session_clear"]["mcp_http"] = data["result"]["structuredContent"]
+            mcp_id = data["result"]["structuredContent"]["session_id"]
 
             assert not call("rewrite.txt").get("isError")
             assert not (workspace / "rewrite.txt").exists() and (workspace / "rewritten.txt").read_text() == "REWRITTEN"
@@ -411,6 +451,11 @@ elif event == "Stop" and (root / "stop").exists():
                             denied = await session.call_tool("iiLocalLLM.agent.run", {"prompt": prompt})
                             assert denied.isError and "USER_PROMPT_" in denied.structuredContent["error_message"], denied
                         stdio_id = denied.structuredContent["session_id"]
+                        cleared = await session.call_tool("iiLocalLLM.agent.clear", {})
+                        assert not cleared.isError and cleared.structuredContent["complete"], cleared
+                        assert cleared.structuredContent["previous_session_id"] == stdio_id
+                        stdio_id = cleared.structuredContent["session_id"]
+                        report["session_clear"]["official_stdio"] = cleared.structuredContent
                         result = await session.call_tool("Write", {"path": "stdio.txt", "content": "OFFICIAL"})
                         assert not result.isError and (workspace / "stdio.txt").read_text() == "OFFICIAL"
                         (root / "block").touch()

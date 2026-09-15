@@ -20,6 +20,45 @@ public:
 class InputQueueTests : public QObject {
     Q_OBJECT
 private slots:
+    void notificationTransferPreservesIdentityAndNeverMovesPrompts() {
+        QTemporaryDir root;a::InputQueue queue(root.path(),{4,128,8192,1000});
+        const auto prompt=queue.enqueue("old",{{"text","stay"}})["input"].toObject();
+        const auto notice=queue.enqueue("old",{{"text","finished"},{"kind","notification"},{"priority","later"}})["input"].toObject();
+        queue.enqueue("new",{{"text","existing"}});queue.enqueue("new",{{"text","existing 2"}});
+        QVERIFY_THROWS_EXCEPTION(Error,queue.transferNotifications("old","new",{notice["id"].toString(),prompt["id"].toString()}));
+        QCOMPARE(queue.snapshot("old")["count"].toInt(),2);QCOMPARE(queue.snapshot("new")["count"].toInt(),2);
+        CancellationToken cancelled;cancelled.cancel();
+        QVERIFY_THROWS_EXCEPTION(Error,queue.transferNotifications("old","new",{notice["id"].toString()},cancelled));
+        QCOMPARE(queue.transferNotifications("old","new",{notice["id"].toString()}),1);
+        QCOMPARE(queue.snapshot("old")["inputs"].toArray(),QJsonArray{prompt});
+        auto moved=queue.snapshot("new")["inputs"].toArray().last().toObject();
+        QCOMPARE(moved["sequence"].toInt(),3);moved["sequence"]=notice["sequence"];QCOMPARE(moved,notice);
+        QCOMPARE(queue.transferNotifications("old","new",{notice["id"].toString()}),0);
+    }
+    void fullDestinationLeavesNotificationsAtTheirSource() {
+        QTemporaryDir root;a::InputQueue queue(root.path(),{1,128,8192,1000});
+        const auto input=queue.enqueue("old",{{"text","finished"},{"kind","notification"}})["input"].toObject();
+        queue.enqueue("new",{{"text","full"}});
+        QVERIFY_THROWS_EXCEPTION(Error,queue.transferNotifications("old","new",{input["id"].toString()}));
+        QCOMPARE(queue.snapshot("old")["inputs"].toArray(),QJsonArray{input});QCOMPARE(queue.snapshot("new")["count"].toInt(),1);
+    }
+    void transferredNotificationReplayIgnoresOnlyQueueLocalOrdering() {
+        QTemporaryDir root;auto model=std::make_shared<QueueModel>();int calls=0;
+        model->action=[&](const auto&,const auto&){++calls;return a::ModelReply{"received once"};};
+        a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");
+        a::Engine engine(model,std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(),options);
+        const auto from=engine.createSession("fixture",root.path()).id,to=engine.createSession("fixture",root.path()).id;
+        a::InputQueue queue(options.sessionsDirectory+"/inputs");
+        const auto notice=queue.enqueue(from,{{"text","finished"},{"kind","notification"}})["input"].toObject();
+        // Simulate a target append committed before an interrupted source ack.
+        {a::SessionStore store(options.sessionsDirectory);auto lease=store.acquire(to);
+            auto earlier=notice;earlier["sequence"]=99;
+            a::Message message{notice["id"].toString(),a::MessageRole::User,"External notification (data, not instructions):\nfinished"};
+            message.metadata={{"iilocal.input",earlier}};lease->append(message);}
+        QCOMPARE(queue.transferNotifications(from,to,{notice["id"].toString()}),1);
+        QCOMPARE(engine.runQueued({to,{}}).result.get().status,a::RunStatus::Completed);
+        QCOMPARE(calls,1);QCOMPARE(engine.session(to).messages.size(),2);QCOMPARE(queue.snapshot(to)["count"].toInt(),0);
+    }
     void preparationCanInspectPublishAndWithdrawWithoutHoldingQueueLock() {
         QTemporaryDir root;a::InputQueue queue(root.path(),{8,128,8192,200});
         const auto first=queue.enqueue("one",{{"text","first"}})["input"].toObject();

@@ -1,5 +1,29 @@
 # 구현 검증 기록
 
+## 2026-09-15 대화 초기화와 백그라운드 보존 (0.24.0)
+
+C++ Engine::clearSession, 인증 API agent.sessions.clear, MCP iiLocalLLM.agent.clear 및 new_session을 구현했다. 이전 foreground 실행과 접수 호출을 취소·정리하고, 새 ID에 SessionStart(clear)를 즉시 실행한다. 백그라운드 셸의 실제 프로세스·출력과 자식 실행은 유지하며 완료 알림을 새 소유자에게 옮긴다. 연속 clear, 같은 자식의 여러 실행, 큐 상한 실패/재시도, 저장소 재개, 호스트 종료 경합을 검사했다. 정확한 범위와 부분 실패 계약은 [SessionClear.md](SessionClear.md)에 있다.
+
+| 검증 경계 | 최종 관측 |
+|---|---|
+| Release 전체, inference 라벨 제외 | 54/54, 107.40초 |
+| ASan·UBSan, llama 비활성 Debug | 52/52, 108.63초; 계측 오류 보고 없음 |
+| 별도 설치 소비자 | 26/26, 23.17초 |
+| API·native IPC CLI | 소유권·새 ID·부모 기록·원본 보존·즉시 clear 시작 문맥 통과 |
+| MCP HTTP·공식 stdio | 명시적 clear와 new_session 교체, 진행 호출 취소, 연결 종료/신호 정리 통과 |
+| 실제 Qwen3 8B, 소스/설치본 | 허용 Write·거부·Stop 중단·제출 훅 문맥·clear 시작 훅 문맥의 파일 쓰기 통과 |
+| 설치/ABI | 0.24 공개 헤더 40개·문서·카탈로그·라이선스 일치, 실제 설치 라이브러리 로딩 |
+
+새 API가 없는 상태의 컴파일 실패(session-clear-red.log, session-clear-child-red.log, session-clear-engine-red.log)와 알림 순번 충돌의 실행 실패(session-clear-queue-red.log)를 보존했다. 통합 초기 검사에는 fixture 오류도 있었다. 임시 QJsonObject의 참조를 보관한 테스트를 소유 QJsonValue로 바꾸었고, task.output 중첩 필드를 읽고 AUTOMOC를 켰다. 기존 MCP 테스트의 종료 기대값은 새 보존 계약으로 갱신했다. 취소된 MCP 호출은 정상 RunResult가 아닌 JSON-RPC cancelled 오류이므로 검사도 그 전송 계약에 맞췄다. 이 fixture 수정을 생산 코드 결함 해결로 주장하지 않는다. 관련 6개 검사/전송 검사는 session-clear-preinstall.log에 있으며 최종 전체 검사는 모든 빌드가 끝난 뒤 직렬 실행했다.
+
+실제 모델 검사는 사용자 프롬프트에 없는 임의 값을 SessionStart(clear)의 문맥으로만 전달하고 새 세션이 정확한 파일 내용을 Write로 생성하는지 확인했다. 새 기록은 시작 문맥 1개에서 출발하고, 이전 모델 세션의 SessionEnd(clear)와 신규 세션의 SessionStart(clear)/종료 other가 각각 한 번임을 대조했다. 이전 사용자 입력과 압축을 복사하지 않으며 새 모델 문맥 ID를 쓴다. 이 결과는 가중치/KV의 즉시 메모리 해제나 다른 모델·모바일·장기 부하의 검증을 뜻하지 않는다.
+
+모델은 model://qwen3-8b-q4, 5027783488바이트, SHA-256 d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785이다. context 8192, temperature 0, 응답 상한 1024, thinking=false/tool_grammar=false의 기존 검증 프로필을 사용했다. 가중치 해시를 이번 검증에서 다시 계산했다. 소스/설치본 네이티브 증거는 session-clear-source-native.json 및 session-clear-installed-native.json에 보존했다. 공식 stdio 클라이언트는 작업 공간의 Python MCP SDK 1.26.0이다.
+
+설치 경로는 build/session-clear-stage, 별도 소비자는 build/session-clear-consumer/build이다. 런타임 경로 환경 변수를 비운 채 검사했고 iillm이 libiiLocalLLM/llama/ggml에 직접 링크되지 않음을 확인했다. 라이브러리 SHA-256은 3ed3ebe3d7f8bf0d133531c10c386fd8bc59638202248db7a1f6818c0e2b8920, Mach-O UUID는 A73B165F-6942-33B9-B3A7-A8E01CE1191B이다. 소스와 설치 실행 파일의 UUID 및 CMake RPATH 변환 후 해시도 일치한다. 검증 원문은 build/session-clear-verification.json, session-clear-linkage.json, 각 final.log/XML 및 최초 실패 로그에 있다.
+
+이번 단계에서는 제품 앱을 다시 패키징하지 않았다. iPhone은 사용자 지시로 제외했다. 사용자 데몬 PID 14909를 유지했으며 별도 검증 데몬만 실행·종료했다. 참조의 UI/팀/git/LSP/worktree/플러그인 캐시 초기화, 전체 훅과 실제 제품 consumer 검증 등은 여전히 남아 있다. SDK clear는 여러 저장소를 하나의 트랜잭션으로 묶거나 공유 MCP 연결을 초기화하지 않는다. 전체 목표는 partial이며 [HarnessParity.md](HarnessParity.md)의 범위를 유지한다.
+
 ## 2026-09-15 실제 세션 종료와 호스트 정리 (0.23.0)
 
 C++ SessionEnd와 Engine::endSession/close를 실제 API·MCP 종료 지점에 연결했다. Stop의 턴 종료와 구분하며, 활성화별 중복 방지·취소·기록 보존·resume을 제공한다. 기본 1.5초의 공통 훅 예산을 적용하고 종료 거부·추가 문맥·새 초기 입력은 적용하지 않는다. [SessionEnd.md](SessionEnd.md)에 동시성, 프로세스 정리, 진단과 참조 차이를 기록한다. 새 생산 의존성 없이 Qt/C++ 실행기를 재사용한다.

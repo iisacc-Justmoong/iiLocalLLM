@@ -1,6 +1,7 @@
 #include "Subagents.h"
 #include "SkillsInternal.h"
 #include "PermissionRules.h"
+#include "SessionOwners.h"
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -30,7 +31,7 @@ bool nested(const QString& path,const QString& root) { return path==root || path
 bool terminal(const QString& s) { return s!="running" && s!="queued"; }
 QJsonObject publicState(const QJsonObject& state) {
     QJsonObject result;
-    for(const auto& key:{"agentId","agent_type","session_id","model","status","description","finished","retrieval_status","tool_uses","duration_ms","result","error","delivery_error","notification_id","skill"})
+    for(const auto& key:{"agentId","agent_type","session_id","model","status","description","finished","retrieval_status","tool_uses","duration_ms","result","error","delivery_error","notification_id","notification_transfer_error","skill"})
         if(state.contains(key))result.insert(key,state[key]);
     return result;
 }
@@ -93,10 +94,12 @@ public:
     QLockFile ownership;
     QThreadPool pool;
     mutable std::mutex mutex;
+    std::mutex transferring;
     mutable std::condition_variable changed;
     bool stopping=false;
     struct Job { QJsonObject state; CancellationToken token; bool done=true; bool awaitingForeground=false; RunResult outcome; };
     std::map<QString,std::shared_ptr<Job>> jobs;
+    std::unique_ptr<detail::SessionOwners> owners;
     static QString rootPath(QString path,const QString& workspace) {
         require(!path.trimmed().isEmpty() && !QFileInfo(path).isSymLink() && QDir().mkpath(path),"Cannot create subagent state",ErrorCode::StorageFailure);
         path=QFileInfo(path).canonicalFilePath();
@@ -119,6 +122,7 @@ public:
         require(!options.workingDirectory.isEmpty() && QFileInfo(options.workingDirectory).isDir() && !QDir(options.workingDirectory).isRoot(),"Invalid subagent workspace");
         require(!QFileInfo(ownership.fileName()).isSymLink(),"Subagent ownership lock is a symlink",ErrorCode::StorageFailure);
         ownership.setStaleLockTime(0); require(ownership.tryLock(0),"Subagent store already owned or inaccessible",ErrorCode::AlreadyExists);
+        owners=std::make_unique<detail::SessionOwners>(QDir(options.stateDirectory).filePath("session-owners.json"),options.maxRecords);
         if(options.definitions.isEmpty() && !options.profiles.enabled) options.definitions.append(SubagentDefinition{});
         QSet<QString> names; for(const auto& definition:options.definitions) {checkProfile(definition);require(!names.contains(definition.name),"Duplicate subagent definition");names.insert(definition.name);}
         for(const auto& name:options.allowedModels) require(!name.trimmed().isEmpty() && name.size()<=256,"Invalid allowed subagent model");
@@ -145,9 +149,21 @@ public:
                 && state["parent_session_id"].isString() && state["session_id"].isString() && state["profile"].isObject()
                 && QStringList{"queued","running","completed","cancelled","failed","turn_limit","interrupted"}.contains(state["status"].toString()),"Corrupt subagent record",ErrorCode::ProtocolError);
             const auto child=children.metadata(state["session_id"].toString());require(child.model==state["model"] && child.workingDirectory==options.workingDirectory,"Subagent transcript identity mismatch",ErrorCode::ProtocolError);
+            if(state.contains("notification_refs")) {
+                require(state["notification_refs"].isArray()&&state["notification_refs"].toArray().size()<=10000,"Invalid notification receipts",ErrorCode::ProtocolError);
+                QSet<QString> seen;
+                for(const auto& value:state["notification_refs"].toArray()) {
+                    const auto ref=value.toObject();const auto id=ref["id"].toString(),owner=ref["owner"].toString();
+                    require(value.isObject()&&ref.size()==2&&!id.isEmpty()&&id.size()<=128&&!owner.isEmpty()&&owner.size()<=128&&!seen.contains(id),"Invalid notification receipt",ErrorCode::ProtocolError);seen.insert(id);
+                }
+            }
             auto job=std::make_shared<Job>();job->state=state;
             if(!terminal(state["status"].toString())) {job->state["status"]="interrupted";job->state["error"]="Previous host ended without a final outcome; execution was not repeated.";write(*job);}
             jobs.emplace(id,std::move(job));
+        }
+        QSet<QString> known;for(const auto& [id,_]:jobs)known.insert(id);owners->validateKnown(known);
+        for(const auto& [_,job]:jobs)try {moveNotification(*job);}catch(const std::exception& error) {
+            job->state["notification_transfer_error"]=QString::fromUtf8(error.what());
         }
     }
     static void safeId(const QString& id) {
@@ -163,7 +179,41 @@ public:
             && file.write(bytes)==bytes.size() && file.commit(),"Cannot commit subagent record",ErrorCode::StorageFailure);
     }
     std::shared_ptr<Job> owned(const QString& parentId,const QString& id) const {
-        safeId(id);const auto it=jobs.find(id);require(it!=jobs.end() && it->second->state["parent_session_id"]==parentId,"Subagent not found",ErrorCode::NotFound);return it->second;
+        safeId(id);const auto it=jobs.find(id);require(it!=jobs.end() && owner(*it->second)==parentId,"Subagent not found",ErrorCode::NotFound);return it->second;
+    }
+    QString owner(const Job& job) const {return owners->owner(job.state["agentId"].toString(),job.state["parent_session_id"].toString());}
+    static QJsonArray notificationRefs(const Job& job) {
+        if(job.state.contains("notification_refs"))return job.state["notification_refs"].toArray();
+        const auto id=job.state["notification_id"].toString();
+        return id.isEmpty()?QJsonArray{}:QJsonArray{QJsonObject{{"id",id},{"owner",job.state["notification_owner"].toString(job.state["parent_session_id"].toString())}}};
+    }
+    QJsonArray pendingRefs(const QJsonArray& refs) {
+        QMap<QString,QStringList> groups;for(const auto& value:refs){const auto ref=value.toObject();groups[ref["owner"].toString()].append(ref["id"].toString());}
+        QJsonArray result;for(auto it=groups.cbegin();it!=groups.cend();++it) {
+            QStringList pending;notifications.transferNotifications(it.key(),it.key(),it.value(),{},&pending);
+            for(const auto& id:pending)result.append(QJsonObject{{"id",id},{"owner",it.key()}});
+        }
+        return result;
+    }
+    void moveNotification(Job& job) {
+        QString to;QJsonArray refs;
+        {std::lock_guard lock(mutex);to=owner(job);refs=notificationRefs(job);}
+        if(refs.isEmpty())return;
+        QMap<QString,QStringList> groups;for(const auto& value:refs){const auto ref=value.toObject();groups[ref["owner"].toString()].append(ref["id"].toString());}
+        // Delivery preparation may inspect child state. Never hold the child
+        // mutex while waiting on an input delivery lock.
+        QJsonArray remaining;
+        for(auto it=groups.cbegin();it!=groups.cend();++it) {
+            QStringList pending;notifications.transferNotifications(it.key(),to,it.value(),{},&pending);
+            for(const auto& id:pending)remaining.append(QJsonObject{{"id",id},{"owner",to}});
+        }
+        {std::lock_guard lock(mutex);
+            // A trusted host may resume a child during queue I/O. Keep any new
+            // invocation's receipts, replacing only the captured stable IDs.
+            QSet<QString> captured;for(const auto& value:refs)captured.insert(value.toObject()["id"].toString());
+            for(const auto& value:notificationRefs(job))if(!captured.contains(value.toObject()["id"].toString()))remaining.append(value);
+            auto updated=job;updated.state["notification_refs"]=remaining;updated.state["notification_owner"]=to;updated.state.remove("notification_transfer_error");
+            write(updated);job.state=std::move(updated.state);}
     }
     bool modelAllowed(const QString& name,const QString& parentModel,const SubagentDefinition& p) const {
         return name==parentModel || options.allowedModels.contains(name) || options.modelAliases.values().contains(name)
@@ -267,17 +317,19 @@ public:
         catch(const Error& error) {result.status=RunStatus::Failed;result.errorCode=error.code();result.errorMessage="Child shell cleanup: "+QString::fromUtf8(error.what());}
         catch(const std::exception& error) {result.status=RunStatus::Failed;result.errorCode=ErrorCode::RuntimeFailure;result.errorMessage="Child shell cleanup: "+QString::fromUtf8(error.what());}
         try {
-            bool notify=false;QString owner,id;
-            {std::lock_guard lock(mutex);job->state["status"]=enumName(result.status);job->state["result"]=toJson(result);
+            // Serialize completion publication with trusted ownership transfer.
+            // enqueue has no external callbacks; the queue never borrows us.
+            std::lock_guard lock(mutex);job->state["status"]=enumName(result.status);job->state["result"]=toJson(result);
                 job->state["duration_ms"]=double(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now()-started).count());
-                owner=job->state["parent_session_id"].toString();id=job->state["agentId"].toString();
-                notify=options.completionNotifications&&job->state["background"].toBool();write(*job);}
-            if(notify) {
+            const auto destination=owner(*job),id=job->state["agentId"].toString();write(*job);
+            if(options.completionNotifications&&job->state["background"].toBool()) {
                 const QJsonObject notice{{"agentId",id},{"status",enumName(result.status)},{"session_id",result.sessionId},
                     {"text",result.text.left(16000)},{"error_code",iiLocalLLM::enumName(result.errorCode)},{"error_message",result.errorMessage}};
-                const auto queued=notifications.enqueue(owner,{{"kind","notification"},{"priority","later"},
+                const auto queued=notifications.enqueue(destination,{{"kind","notification"},{"priority","later"},
                     {"text","Subagent execution finished. Inspect AgentOutput for the full recorded result.\n"+QString::fromUtf8(QJsonDocument(notice).toJson(QJsonDocument::Compact))}});
-                std::lock_guard lock(mutex);job->state["notification_id"]=queued["input"].toObject()["id"];write(*job);
+                auto receipts=notificationRefs(*job);receipts.append(QJsonObject{{"id",queued["input"].toObject()["id"]},{"owner",destination}});
+                job->state["notification_refs"]=pendingRefs(receipts);
+                job->state["notification_id"]=queued["input"].toObject()["id"];job->state["notification_owner"]=destination;write(*job);
             }
         } catch(const std::exception& error) {std::lock_guard lock(mutex);job->state["delivery_error"]=QString::fromUtf8(error.what());}
         {std::lock_guard lock(mutex);
@@ -393,7 +445,8 @@ ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args
         Impl::Job accepted;accepted.state=job->state;
         accepted.state["status"]="queued";accepted.state["prompt"]=request.prompt;accepted.state["description"]=args["description"].toString(job->state["description"].toString());
         accepted.state["background"]=background;accepted.state["tool_uses"]=0;
-        for(const auto& key:{"result","notification_id","delivery_error","error","duration_ms"})accepted.state.remove(key);
+        accepted.state["notification_refs"]=d->pendingRefs(Impl::notificationRefs(accepted));
+        for(const auto& key:{"result","notification_id","notification_owner","notification_transfer_error","delivery_error","error","duration_ms"})accepted.state.remove(key);
         try {d->write(accepted);}catch(...) {
             if(resume.isEmpty()) {
                 const auto directory=QDir(d->options.stateDirectory).filePath("sessions/"+request.sessionId);
@@ -422,16 +475,40 @@ QJsonObject Subagents::output(const QString& parent,const QString& id,bool block
     require(timeoutMs>=0&&timeoutMs<=86401000,"Invalid subagent output timeout");token.throwIfCancelled();
     std::unique_lock lock(d->mutex);const auto job=d->owned(parent,id);const auto end=Clock::now()+std::chrono::milliseconds(timeoutMs);
     while(block&&!job->done&&Clock::now()<end){token.throwIfCancelled();d->changed.wait_for(lock,5ms);}
-    auto result=job->state;result["finished"]=job->done;result["retrieval_status"]=job->done?"success":block?"timeout":"not_ready";return result;
+    // A trusted transfer can occur while a direct C++ output wait is asleep.
+    (void)d->owned(parent,id);
+    auto result=job->state;result["owner_session_id"]=d->owner(*job);result["finished"]=job->done;result["retrieval_status"]=job->done?"success":block?"timeout":"not_ready";return result;
 }
 QJsonObject Subagents::stop(const QString& parent,const QString& id,const CancellationToken& token) {
     token.throwIfCancelled();std::lock_guard lock(d->mutex);const auto job=d->owned(parent,id);if(!job->done)job->token.cancel();return {{"agentId",id},{"stop_requested",!job->done},{"status",job->state["status"]}};
 }
 QJsonArray Subagents::list(const QString& parent) const {
     std::lock_guard lock(d->mutex);QJsonArray items;
-    for(const auto& [id,job]:d->jobs) if(job->state["parent_session_id"]==parent) items.append(QJsonObject{{"agentId",id},{"agent_type",job->state["agent_type"]},
+    for(const auto& [id,job]:d->jobs) if(d->owner(*job)==parent) items.append(QJsonObject{{"agentId",id},{"agent_type",job->state["agent_type"]},
         {"status",job->state["status"]},{"description",job->state["description"]},{"session_id",job->state["session_id"]},{"model",job->state["model"]},{"finished",job->done}});
     return items;
+}
+QJsonArray Subagents::transferSession(const QString& from,const QString& to,const CancellationToken& token) {
+    token.throwIfCancelled();require(from!=to,"A background transfer requires a new session");
+    const auto source=d->parentStore.metadata(from),target=d->parentStore.metadata(to);
+    require(source.workingDirectory==d->options.workingDirectory&&target.workingDirectory==d->options.workingDirectory,"Background transfer crosses workspaces",ErrorCode::NotFound);
+    std::lock_guard transfer(d->transferring);QStringList ids;QList<std::shared_ptr<Impl::Job>> jobs;
+    {std::lock_guard lock(d->mutex);require(!d->stopping,"Subagent host is shutting down",ErrorCode::ShuttingDown);
+    for(const auto& [id,job]:d->jobs) {
+        const auto owner=d->owner(*job);bool retry=false;
+        for(const auto& value:Impl::notificationRefs(*job))retry|=value.toObject()["owner"]==from;
+        if(job->state["background"].toBool() && (owner==from||(owner==to&&retry))){ids.append(id);jobs.append(job);}
+    }
+    }
+    // Recover any earlier destination before advancing ownership again. Otherwise
+    // a second clear after a partial first transfer could orphan a queued notice.
+    for(const auto& job:jobs)d->moveNotification(*job);
+    {std::lock_guard lock(d->mutex);token.throwIfCancelled();require(!d->stopping,"Subagent host is shutting down",ErrorCode::ShuttingDown);d->owners->transfer(ids,to);}
+    // After the ownership commit, finish acknowledgement independently of caller
+    // cancellation. Queue errors leave the stable notice at source for retry.
+    for(const auto& job:jobs)try {d->moveNotification(*job);}
+        catch(const std::exception& error){std::lock_guard lock(d->mutex);job->state["notification_transfer_error"]=QString::fromUtf8(error.what());throw;}
+    d->changed.notify_all();return QJsonArray::fromStringList(ids);
 }
 AgentProfileCatalog Subagents::profiles(const CancellationToken& token) const {
     return discoverAgentProfiles(d->options.workingDirectory,d->options.profiles,d->options.definitions,token);
@@ -473,6 +550,7 @@ QList<Tool> Subagents::makeTools(std::shared_ptr<Subagents> owner,bool includeAg
         QJsonObject props;if(needsId)props["agent_id"]=id;
         if(name=="AgentOutput"){props["block"]=QJsonObject{{"type","boolean"}};props["timeout_ms"]=QJsonObject{{"type","integer"},{"minimum",0},{"maximum",60000}};}
         tool.definition.inputSchema={{"type","object"},{"additionalProperties",false},{"properties",props}};if(needsId)tool.definition.inputSchema["required"]=QJsonArray{"agent_id"};
+        if(name=="AgentList")tool.transferSession=[owner](const auto& from,const auto& to,const auto& token){return owner->transferSession(from,to,token);};
         tool.execute=[owner,name](const auto& args,const auto& context){QJsonObject result;
             if(name=="AgentProfiles")result=owner->profiles(context.cancellation).toJson();
             else if(name=="AgentList")result={{"agents",owner->list(context.sessionId)}};

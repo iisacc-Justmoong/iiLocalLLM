@@ -1,5 +1,7 @@
 # 에이전트 HTTP·native IPC API
 
+0.24.0의 `agent.sessions.clear`는 `{session_id}`로 소유 세션을 비우고 새 ID·완료 여부·진단을 반환한다. 새 세션 상한을 사전 예약하고 백그라운드 작업/알림을 보존한다. [SessionClear.md](SessionClear.md)를 따른다.
+
 0.23.0의 `agent.sessions.end`는 `{session_id, reason?}`을 받아 소유한 세션의 접수 요청을 취소·정리하고 `{session_id, reason, ended, timed_out, diagnostics}`를 반환한다. reason 기본값은 other이다. 제어 worker를 사용하며 원문과 큐를 보존한다. 다음 명시적 실행은 resume한다. API close도 활성 세션을 정리한다. 상세 수명과 취소 계약은 [SessionEnd.md](SessionEnd.md)를 따른다.
 
 0.20.0의 `agent.permissions.get`은 호스트가 선택한 `working_directories`와 출처별

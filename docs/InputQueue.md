@@ -1,5 +1,7 @@
 # 대화별 입력 큐 (0.13.0)
 
+0.24.0의 transferNotifications는 선택된 완료 알림의 ID·내용을 유지하고 목적지 순번을 새로 부여한다. 목적지 기록 후 원본을 확인 처리하며 예외·재시도·세션 초기화 계약은 [SessionClear.md](SessionClear.md)에 있다.
+
 대화 중 입력을 영속화하고 기존 실행에 전달하는 C++ SDK 계약이다. 참조는 고정 Claude Code 분석본 c8cd253554319f32ff64ff7000636199f720c9bc의 `types/textInputTypes.ts`, `utils/messageQueueManager.ts`, `utils/queueProcessor.ts`이다. C++과 Qt의 QLockFile·QSaveFile을 재사용하며 새 런타임 의존성은 없다.
 
 `InputQueue`는 대화 ID별 입력을 별도 개인 저장소에 원자적으로 보관한다. 입력은 `text`, `kind`(prompt/notification), `priority`(now/next/later), `context_paths`이다. prompt의 기본 우선순위는 next, notification은 later이다. 같은 종류·우선순위 안에서는 저장 순서대로 처리한다. 입력 ID·순번은 저장소가 생성하며 호출자가 지정할 수 없다. JSON·타입·용량·경로 오류와 손상된 상태를 거절한다.

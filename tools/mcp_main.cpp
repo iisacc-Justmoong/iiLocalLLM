@@ -26,7 +26,7 @@ void interrupt(int) { interrupted.store(true,std::memory_order_relaxed); }
 }
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.23.0");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.24.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},
@@ -131,6 +131,7 @@ int main(int argc, char** argv) {
         const bool agent = parser.isSet("model");
         if (agent) {
             hostRules.append({"iiLocalLLM.agent.run", a::PermissionBehavior::Allow});
+            hostRules.append({"iiLocalLLM.agent.clear", a::PermissionBehavior::Allow});
             // The inner native Agent/AgentStop call still evaluates host policy.
             hostRules.append({"iiLocalLLM.agent.agents.run", a::PermissionBehavior::Allow});
             hostRules.append({"iiLocalLLM.agent.agents.stop", a::PermissionBehavior::Allow});

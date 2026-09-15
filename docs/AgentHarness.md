@@ -1,5 +1,7 @@
 # C++ 에이전트 실행 계층
 
+0.24.0은 Engine::clearSession과 즉시 SessionStart(clear), 백그라운드 작업의 소유권/알림 전환을 제공한다. [SessionClear.md](SessionClear.md)에 실제 초기화 범위와 부분 실패 계약을 기록한다.
+
 0.23.0의 Engine::endSession/close는 활성 세션의 종료 훅, 실행·입력 접수 차단, 진행/대기 작업 취소와 기록 보존을 API·MCP에 연결한다. [SessionEnd.md](SessionEnd.md)에 정확한 수명·시간 예산·남은 호환 범위를 기록한다.
 
 전체 목표와 미완료 영역은 [HarnessParity.md](HarnessParity.md) 및 `catalog/harness-parity.json`에서 추적한다. 이 문서는 현재 추가한 네이티브 실행 계층의 실제 계약을 설명한다. 기존 daemon의 HTTP에는 모델의 함수 도구 호출을 연결했다. C++ stdio MCP 클라이언트와 도구 어댑터는 [MCP.md](MCP.md), 외부에서 앱 도구와 로컬 에이전트를 호출하는 서버는 [MCPServer.md](MCPServer.md)에 설명한다. 인증된 에이전트 실행·세션 관리 IPC·HTTP/SSE는 [AgentAPI.md](AgentAPI.md)에 설명한다. 전체 MCP/하네스 호환 및 실제 앱 연결은 아직 미완료이다.

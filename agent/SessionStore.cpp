@@ -25,8 +25,12 @@ QString safeId(const QString& id) {
     return id;
 }
 Session publish(const QString& root, qint64 maximum, Session value) {
+    if(!value.parentSessionId.isEmpty()) {
+        safeId(value.parentSessionId);
+        if(value.parentSessionId==value.id)throw Error(ErrorCode::InvalidArgument,"A session cannot be its own parent");
+    }
     const auto header = line({{"type", "session"}, {"version", 2}, {"id", value.id}, {"model", value.model},
-        {"system_prompt", value.systemPrompt}, {"working_directory", value.workingDirectory}});
+        {"system_prompt", value.systemPrompt}, {"working_directory", value.workingDirectory},{"parent_session_id",value.parentSessionId}});
     if (header.size() > 4 * 1024 * 1024 || header.size() > maximum)
         throw Error(ErrorCode::ResourceLimit, "Agent transcript header exceeds limit");
     const auto directory = QDir(root).filePath(value.id);
@@ -138,7 +142,7 @@ Session SessionStore::fork(const QString& id, const QString& throughMessageId) c
     }
     if (!pendingToolCalls(value.messages).isEmpty())
         throw Error(ErrorCode::InvalidArgument, "Cannot fork across an unresolved tool call");
-    value.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    value.parentSessionId=id;value.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     return publish(directory_, maxTranscriptBytes_, std::move(value));
 }
 Session SessionStore::createFromSnapshot(Session value,const std::function<void(const QString&, QList<Message>&)>& initialize) const {
@@ -147,6 +151,7 @@ Session SessionStore::createFromSnapshot(Session value,const std::function<void(
         || !pendingToolCalls(value.messages).isEmpty())
         throw Error(ErrorCode::InvalidArgument, "Invalid or unresolved child session snapshot");
     value.workingDirectory = workspace;
+    if(!value.id.isEmpty())value.parentSessionId=value.id;
     value.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     if(initialize) initialize(value.id,value.messages);
     if(!pendingToolCalls(value.messages).isEmpty()) throw Error(ErrorCode::InvalidArgument,"Unresolved initialized child snapshot");
@@ -175,6 +180,10 @@ std::unique_ptr<SessionLease> SessionStore::acquire(const QString& id) const {
         throw Error(ErrorCode::ProtocolError, "Invalid agent transcript header");
     d->version = header["version"].toInt();
     d->value = {id, header["model"].toString(), header["system_prompt"].toString(), header["working_directory"].toString(), {}};
+    if(header.contains("parent_session_id")) {
+        if(!header["parent_session_id"].isString()||header["parent_session_id"]==id)throw Error(ErrorCode::ProtocolError,"Invalid session parent");
+        d->value.parentSessionId=header["parent_session_id"].toString();if(!d->value.parentSessionId.isEmpty())safeId(d->value.parentSessionId);
+    }
     while (!d->file.atEnd()) {
         const auto start = d->file.pos();
         const auto bytes = d->file.readLine(4 * 1024 * 1024 + 1);
@@ -213,7 +222,12 @@ Session SessionStore::metadata(const QString& id) const {
     if (h["type"] != "session" || (h["version"] != 1 && h["version"] != 2) || h["id"] != id || !h["model"].isString()
         || h["model"].toString().isEmpty() || !h["system_prompt"].isString() || !h["working_directory"].isString())
         throw Error(ErrorCode::ProtocolError, "Invalid agent transcript header");
-    return {id, h["model"].toString(), h["system_prompt"].toString(), h["working_directory"].toString(), {}};
+    Session result{id, h["model"].toString(), h["system_prompt"].toString(), h["working_directory"].toString(), {}};
+    if(h.contains("parent_session_id")) {
+        if(!h["parent_session_id"].isString()||h["parent_session_id"]==id)throw Error(ErrorCode::ProtocolError,"Invalid session parent");
+        result.parentSessionId=h["parent_session_id"].toString();if(!result.parentSessionId.isEmpty())safeId(result.parentSessionId);
+    }
+    return result;
 }
 QStringList SessionStore::list() const {
     QStringList result;

@@ -1,5 +1,6 @@
 #include "ShellTasks.h"
 #include "ShellProcess.h"
+#include "SessionOwners.h"
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -79,6 +80,7 @@ public:
     std::mutex joining;
     std::map<QString, std::shared_ptr<Job>> jobs;
     std::unique_ptr<QLockFile> lock;
+    std::unique_ptr<detail::SessionOwners> owners;
     bool closing = false;
     static QString outputPath(const Job& job) { return QDir(job.directory).filePath("output.log"); }
     static void save(const Job& job) {
@@ -94,11 +96,14 @@ public:
         value["output_file"] = outputPath(job); return value;
     }
     std::shared_ptr<Job> find(const QString& session, const QString& id) const {
+        std::lock_guard guard(mutex);return findLocked(session,id);
+    }
+    std::shared_ptr<Job> findLocked(const QString& session,const QString& id) const {
         require(sessionValid(session) && taskValid(id), "Invalid shell task identity");
-        std::lock_guard guard(mutex); const auto found = jobs.find(id);
+        const auto found = jobs.find(id);
         require(found != jobs.end(), "Shell task not found", ErrorCode::NotFound);
         std::lock_guard item(found->second->mutex);
-        require(found->second->metadata["session_id"] == session, "Shell task not found", ErrorCode::NotFound);
+        require(owners->owner(id,found->second->metadata["session_id"].toString()) == session, "Shell task not found", ErrorCode::NotFound);
         return found->second;
     }
     Impl(QString root, QString state, ShellTaskOptions o) : options(o) {
@@ -118,6 +123,7 @@ public:
         require(!QFileInfo(lockPath).isSymLink(), "Shell state lock must not be a symlink", ErrorCode::StorageFailure);
         lock = std::make_unique<QLockFile>(lockPath); lock->setStaleLockTime(0);
         require(lock->tryLock(0), "Shell state is already owned or inaccessible", ErrorCode::AlreadyExists);
+        owners=std::make_unique<detail::SessionOwners>(QDir(directory).filePath("session-owners.json"),options.maxRecords);
         const auto entries = QDir(directory).entryInfoList({"sh-*"}, QDir::AllEntries | QDir::NoDotAndDotDot, QDir::Name);
         require(entries.size() <= o.maxRecords, "Shell history exceeds configured record capacity", ErrorCode::ResourceLimit);
         for (const auto& entry : entries) {
@@ -149,6 +155,7 @@ public:
             }
             job->metadata = m; job->ready = job->done = true; if (recover) save(*job); jobs.emplace(entry.fileName(), job);
         }
+        QSet<QString> ids;for(const auto& [id,_]:jobs)ids.insert(id);owners->validateKnown(ids);
     }
     void execute(const std::shared_ptr<Job>& job) noexcept {
         QString status = "failed", errorCode, errorText; QJsonValue exitCode(QJsonValue::Null);
@@ -254,11 +261,14 @@ QJsonObject ShellTasks::output(const QString& session, const QString& id, bool b
     // page bytes alongside the display string for lossless consumers.
     task["output_base64"] = QString::fromLatin1(bytes.toBase64()); task["offset"] = double(offset);
     task["next_offset"] = double(offset + bytes.size()); task["has_more"] = offset + bytes.size() < file.size();
-    return {{"retrieval_status", job->done ? "success" : block ? "timeout" : "not_ready"}, {"task", task}};
+    const auto status=job->done?"success":block?"timeout":"not_ready";
+    guard.unlock();(void)d->find(session,id); // Recheck ownership after a blocking wait.
+    return {{"retrieval_status",status},{"task",task}};
 }
 QJsonObject ShellTasks::stop(const QString& session, const QString& id, const CancellationToken& token) {
-    token.throwIfCancelled(); auto job = d->find(session, id); std::unique_lock guard(job->mutex);
+    token.throwIfCancelled();std::unique_lock owner(d->mutex);auto job=d->findLocked(session,id);std::unique_lock guard(job->mutex);
     require(!job->done, "Shell task is not running"); job->cancel.cancel();
+    owner.unlock();
     while (!job->done) { job->changed.wait_for(guard, std::chrono::milliseconds(10)); token.throwIfCancelled(); }
     return {{"task_id", id}, {"task_type", "local_bash"}, {"command", job->metadata["command"]}, {"status", job->metadata["status"]},
         {"message", "Shell task reached a terminal state after stop was requested"}};
@@ -267,7 +277,7 @@ QJsonArray ShellTasks::list(const QString& session, int offset, int limit) const
     require(sessionValid(session) && offset >= 0 && offset <= 1000000 && limit > 0 && limit <= 100, "Invalid shell list request");
     std::vector<QJsonObject> values;
     { std::lock_guard guard(d->mutex); for (const auto& [id, job] : d->jobs) {
-        std::lock_guard item(job->mutex); if (job->metadata["session_id"] != session) continue;
+        std::lock_guard item(job->mutex); if (d->owners->owner(id,job->metadata["session_id"].toString()) != session) continue;
         auto value = Impl::view(*job); value.remove("command"); values.push_back(value);
     } }
     std::sort(values.begin(), values.end(), [](const auto& a, const auto& b) {
@@ -276,6 +286,16 @@ QJsonArray ShellTasks::list(const QString& session, int offset, int limit) const
         return a["task_id"].toString() < b["task_id"].toString();
     });
     QJsonArray result; for (size_t n = size_t(offset); n < values.size() && result.size() < limit; ++n) result.append(values[n]); return result;
+}
+QJsonArray ShellTasks::transferSession(const QString& from,const QString& to,const CancellationToken& token) {
+    require(sessionValid(from)&&sessionValid(to)&&from!=to,"Invalid shell session transfer");token.throwIfCancelled();
+    std::lock_guard lock(d->mutex);require(!d->closing,"Shell host is closing",ErrorCode::ShuttingDown);
+    QStringList ids;QJsonArray result;
+    for(const auto& [id,job]:d->jobs) {
+        std::lock_guard item(job->mutex);
+        if(d->owners->owner(id,job->metadata["session_id"].toString())==from){ids.append(id);result.append(id);}
+    }
+    token.throwIfCancelled();d->owners->transfer(ids,to);return result;
 }
 bool ShellTasks::ownsOutput(const QString& session, const QString& path) const {
     const auto parent = QFileInfo(path).dir(); if (QFileInfo(path).fileName() != "output.log" || !taskValid(parent.dirName())) return false;
@@ -315,6 +335,7 @@ void registerShellTaskControls(ToolRegistry& registry, std::shared_ptr<ShellTask
         if (values.size() == limit) data["next_offset"] = offset + limit;
         return result(data);
     };
+    list.transferSession=[tasks](const QString& from,const QString& to,const CancellationToken& token){return tasks->transferSession(from,to,token);};
     for (auto* tool : {&output, &stop, &list}) {
         tool->definition.deferred = deferred; tool->definition.concurrencySafe = true;
         tool->definition.metadata = {{"source", "builtin.shell.control"}, {"search_hint", "background shell task output logs stop running"}};

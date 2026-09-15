@@ -94,9 +94,11 @@
         "agent/ShellTasks.cpp",
         "tests/shell_tasks_tests.cpp",
         "tests/shell_runtime_smoke.cpp",
-        "docs/BackgroundTasks.md"
+        "docs/BackgroundTasks.md",
+        "docs/SessionClear.md",
+        "tests/session_clear_tests.cpp"
       ],
-      "remaining": "Bounded foreground/background POSIX execution, TaskOutput/TaskStop, private byte-paged logs, session ownership, group cleanup and interrupted-host recovery implemented. Automatic backgrounding, persistent environment/cwd, Windows process trees, mobile and remote execution remain."
+      "remaining": "Bounded foreground/background POSIX execution, TaskOutput/TaskStop, private byte-paged logs, session ownership, group cleanup and interrupted-host recovery implemented. Automatic backgrounding, persistent environment/cwd, Windows process trees, mobile and remote execution remain. Version 0.24 implements native C++/API/MCP session clear with immediate SessionStart(clear), fresh context identity, background job ownership and pending notification transfer. Per-owner commits are atomic; cross-store clear is not transactional. Shared MCP connections and unimplemented UI/team/git/LSP/worktree/plugin caches remain outside clear. See SessionClear.md."
     },
     {
       "id": "web",
@@ -154,9 +156,11 @@
         "tests/input_lifecycle_tests.cpp",
         "docs/InputLifecycle.md",
         "docs/SessionEnd.md",
-        "tests/session_end_tests.cpp"
+        "tests/session_end_tests.cpp",
+        "docs/SessionClear.md",
+        "tests/session_clear_tests.cpp"
       ],
-      "remaining": "Original JSONL messages, versioned compaction checkpoints, resume and complete-boundary forks implemented. Artifact cloning, file rewind and full lineage management remain."
+      "remaining": "Original JSONL messages, versioned compaction checkpoints, resume and complete-boundary forks implemented. Artifact cloning, file rewind and full lineage management remain. Version 0.24 implements native C++/API/MCP session clear with immediate SessionStart(clear), fresh context identity, background job ownership and pending notification transfer. Per-owner commits are atomic; cross-store clear is not transactional. Shared MCP connections and unimplemented UI/team/git/LSP/worktree/plugin caches remain outside clear. See SessionClear.md."
     },
     {
       "id": "subagents",
@@ -182,9 +186,11 @@
         "tests/skill_permission_tests.cpp",
         "docs/Permissions.md",
         "tests/working_directories_tests.cpp",
-        "docs/WorkingDirectories.md"
+        "docs/WorkingDirectories.md",
+        "docs/SessionClear.md",
+        "tests/session_clear_tests.cpp"
       ],
-      "remaining": "C++ child conversations, foreground/background execution, explicit parent-context fork, resume, cancellation/deadlines and notifications are implemented. File/JSON profile hierarchy, live catalogs, host model aliases, strict scope intersections, inline skill preloads and C++ SubagentStart/SubagentStop callbacks are added in 0.16. Full builtin roles and conditional selection, plugin lifecycle/worktree-directory fallback, agent-specific MCP/memory and external hooks, automatic transition during a running foreground task, teams/mailbox, worktree/remote isolation, unified task routing, trace/cost aggregation and complete real-app qualification remain. Profile bodies are original C++ implementation prompts, not copied reference prompts. See Verification.md for separate model-level outcomes. C++ synchronous context:fork skills for user and model invocation, isolated prompts, authorized agent/model selection and final-result forwarding are implemented in 0.17. Scheduled background fork and effort remain. Invocation-scoped allowed-tools, host-deny/ask precedence, child inheritance and non-restoration on resume are implemented in 0.18. See Permissions.md for boundaries."
+      "remaining": "C++ child conversations, foreground/background execution, explicit parent-context fork, resume, cancellation/deadlines and notifications are implemented. File/JSON profile hierarchy, live catalogs, host model aliases, strict scope intersections, inline skill preloads and C++ SubagentStart/SubagentStop callbacks are added in 0.16. Full builtin roles and conditional selection, plugin lifecycle/worktree-directory fallback, agent-specific MCP/memory and external hooks, automatic transition during a running foreground task, teams/mailbox, worktree/remote isolation, unified task routing, trace/cost aggregation and complete real-app qualification remain. Profile bodies are original C++ implementation prompts, not copied reference prompts. See Verification.md for separate model-level outcomes. C++ synchronous context:fork skills for user and model invocation, isolated prompts, authorized agent/model selection and final-result forwarding are implemented in 0.17. Scheduled background fork and effort remain. Invocation-scoped allowed-tools, host-deny/ask precedence, child inheritance and non-restoration on resume are implemented in 0.18. See Permissions.md for boundaries. Version 0.24 implements native C++/API/MCP session clear with immediate SessionStart(clear), fresh context identity, background job ownership and pending notification transfer. Per-owner commits are atomic; cross-store clear is not transactional. Shared MCP connections and unimplemented UI/team/git/LSP/worktree/plugin caches remain outside clear. See SessionClear.md."
     },
     {
       "id": "teams",
@@ -265,9 +271,11 @@
         "tests/working_directories_tests.cpp",
         "docs/WorkingDirectories.md",
         "docs/SessionEnd.md",
-        "tests/session_end_tests.cpp"
+        "tests/session_end_tests.cpp",
+        "docs/SessionClear.md",
+        "tests/session_clear_tests.cpp"
       ],
-      "remaining": "C++ sessions, POSIX stdio, authenticated loopback Streamable HTTP, resumable SSE, CLI, app ToolRegistry export and local agent tools are implemented. Shell controls share conversation ownership and stop on connection close/reset. Remote TLS/proxy qualification, legacy SSE, OAuth, Windows stdio and MCP asynchronous tasks remain."
+      "remaining": "C++ sessions, POSIX stdio, authenticated loopback Streamable HTTP, resumable SSE, CLI, app ToolRegistry export and local agent tools are implemented. Shell controls share conversation ownership and stop on connection close. Remote TLS/proxy qualification, legacy SSE, OAuth, Windows stdio and MCP asynchronous tasks remain. Version 0.24 implements native C++/API/MCP session clear with immediate SessionStart(clear), fresh context identity, background job ownership and pending notification transfer. Per-owner commits are atomic; cross-store clear is not transactional. Shared MCP connections and unimplemented UI/team/git/LSP/worktree/plugin caches remain outside clear. See SessionClear.md."
     },
     {
       "id": "api",
@@ -304,9 +312,11 @@
         "tests/working_directories_tests.cpp",
         "docs/WorkingDirectories.md",
         "docs/SessionEnd.md",
-        "tests/session_end_tests.cpp"
+        "tests/session_end_tests.cpp",
+        "docs/SessionClear.md",
+        "tests/session_clear_tests.cpp"
       ],
-      "remaining": "Authenticated HTTP/native IPC sessions, attached parent runs, ordered events, cancellation, background shells and delegated child controls/history with thin CLI are implemented. Durable background parent jobs, idempotent response replay, live permission mediation and complete iisacc product workflows remain."
+      "remaining": "Authenticated HTTP/native IPC sessions, attached parent runs, ordered events, cancellation, background shells and delegated child controls/history with thin CLI are implemented. Durable background parent jobs, idempotent response replay, live permission mediation and complete iisacc product workflows remain. Version 0.24 implements native C++/API/MCP session clear with immediate SessionStart(clear), fresh context identity, background job ownership and pending notification transfer. Per-owner commits are atomic; cross-store clear is not transactional. Shared MCP connections and unimplemented UI/team/git/LSP/worktree/plugin caches remain outside clear. See SessionClear.md."
     },
     {
       "id": "discovery",
@@ -402,9 +412,11 @@
         "tests/input_lifecycle_tests.cpp",
         "docs/InputLifecycle.md",
         "docs/SessionEnd.md",
-        "tests/session_end_tests.cpp"
+        "tests/session_end_tests.cpp",
+        "docs/SessionClear.md",
+        "tests/session_clear_tests.cpp"
       ],
-      "remaining": "C++ model/tool/stop/compaction, pre-commit TaskCreated/TaskCompleted and SubagentStart/SubagentStop callbacks are implemented. Version 0.21 adds explicit host-configured desktop POSIX command hooks, JSON stdin and output, updatedInput, invocation-only permission candidates under existing host rules, stop/cancel diagnostics, bounded parallelism, process-local per-session once, process cleanup and API/CLI/MCP integration. Start precedes child Engine.run and has no runId yet. Full lifecycle, HTTP/prompt/agent/async runners, updated MCP output, durable once state, agent/skill/plugin hooks merging and cross-platform/real-app qualification remain. See CommandHooks.md for deliberate differences from the reference. Version 0.22 adds UserPromptSubmit for direct/queued user prompts and user skills, stable transcript dispositions, block-vs-stop context handling and SessionStart activation/resume/compact with initial queued messages. SessionStart(clear), full clear policy, watchPaths and PermissionRequest/Denied remain; Stop and arbitrary tool denials do not substitute for these events. See InputLifecycle.md. Version 0.23 implements SessionEnd with per-activation idempotence, cooperative budget, explicit C++/API end and host/MCP shutdown. Engine and API queues are cancelled before ending; stdio EOF/SIGINT/SIGTERM and HTTP DELETE are qualified. Child cancellation is requested, not joined per-session; closure diagnostics are not durable. See SessionEnd.md."
+      "remaining": "C++ model/tool/stop/compaction, pre-commit TaskCreated/TaskCompleted and SubagentStart/SubagentStop callbacks are implemented. Version 0.21 adds explicit host-configured desktop POSIX command hooks, JSON stdin and output, updatedInput, invocation-only permission candidates under existing host rules, stop/cancel diagnostics, bounded parallelism, process-local per-session once, process cleanup and API/CLI/MCP integration. Start precedes child Engine.run and has no runId yet. Full lifecycle, HTTP/prompt/agent/async runners, updated MCP output, durable once state, agent/skill/plugin hooks merging and cross-platform/real-app qualification remain. See CommandHooks.md for deliberate differences from the reference. Version 0.22 adds UserPromptSubmit for direct/queued user prompts and user skills, stable transcript dispositions, block-vs-stop context handling and SessionStart activation/resume/compact with initial queued messages. Full reference clear caches, watchPaths and PermissionRequest/Denied remain; Stop and arbitrary tool denials do not substitute for these events. See InputLifecycle.md. Version 0.23 implements SessionEnd with per-activation idempotence, cooperative budget, explicit C++/API end and host/MCP shutdown. Engine and API queues are cancelled before ending; stdio EOF/SIGINT/SIGTERM and HTTP DELETE are qualified. Child cancellation is requested, not joined per-session; closure diagnostics are not durable. See SessionEnd.md. Version 0.24 implements native C++/API/MCP session clear with immediate SessionStart(clear), fresh context identity, background job ownership and pending notification transfer. Per-owner commits are atomic; cross-store clear is not transactional. Shared MCP connections and unimplemented UI/team/git/LSP/worktree/plugin caches remain outside clear. See SessionClear.md."
     },
     {
       "id": "tasks",
@@ -547,9 +559,11 @@
         "tests/input_lifecycle_tests.cpp",
         "docs/InputLifecycle.md",
         "docs/SessionEnd.md",
-        "tests/session_end_tests.cpp"
+        "tests/session_end_tests.cpp",
+        "docs/SessionClear.md",
+        "tests/session_clear_tests.cpp"
       ],
-      "remaining": "Public MCP client/server headers and a POSIX MCP executable are installed and tested through fresh C++ consumers. Complete app integration and platform qualification remain."
+      "remaining": "Public MCP client/server headers and a POSIX MCP executable are installed and tested through fresh C++ consumers. Complete app integration and platform qualification remain. Version 0.24 implements native C++/API/MCP session clear with immediate SessionStart(clear), fresh context identity, background job ownership and pending notification transfer. Per-owner commits are atomic; cross-store clear is not transactional. Shared MCP connections and unimplemented UI/team/git/LSP/worktree/plugin caches remain outside clear. See SessionClear.md."
     },
     {
       "id": "conditional",

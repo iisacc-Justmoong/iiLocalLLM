@@ -55,6 +55,11 @@ public:
     // then run non-vetoing SessionEnd hooks. Retains history; a later run resumes.
     // Cancellation is checked before admission; admitted cleanup owns its token.
     QJsonObject endSession(const QString& id, QString reason = "other", const CancellationToken& = {});
+    // Ends this activation with reason clear, preserves background jobs, creates
+    // an empty session and runs SessionStart(clear) immediately. Old history and
+    // pending user input remain addressable under the previous ID. Check complete
+    // and diagnostics: independent owners/files are not one atomic transaction.
+    QJsonObject clearSession(const QString& id,const CancellationToken& = {});
     // Stops admission and closes all sessions touched by this Engine. Idempotent.
     QJsonArray close(QString reason = "other");
     ProjectContext context(const QString& sessionId, const QStringList& targetPaths = {}, const CancellationToken& = {}) const;
@@ -80,6 +85,7 @@ public:
     ToolResult runTaskTool(const QString& sessionId, const QString& name, const QJsonObject& arguments = {},
         const CancellationToken& = {}, const EventCallback& = {}) const;
 private:
+    QJsonObject endSessionImpl(const QString&,QString,const CancellationToken&,bool clear);
     RunHandle submit(RunRequest, EventCallback, bool compactOnly, QString instructions = {}, bool queuedOnly = false);
     class Impl;
     std::unique_ptr<Impl> d;

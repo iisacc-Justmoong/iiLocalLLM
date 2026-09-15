@@ -1,8 +1,10 @@
 # 사용자 입력과 세션 시작 생명주기
 
+0.24.0은 [SessionClear.md](SessionClear.md)의 실제 초기화와 즉시 SessionStart(clear)를 추가한다. 현재 ABI는 0.24이다. 아래 0.22/0.23 설명은 당시 구현 범위이다.
+
 0.23.0에서 [SessionEnd.md](SessionEnd.md)의 실제 세션 종료가 추가되었다. endSession 뒤 같은 ID를 실행하면 resume하며, 아래의 0.22 구현 시점 설명과 구분한다.
 
-0.22.0은 C++ UserPromptSubmit·SessionStart 콜백과 호스트 명령 훅을 기존 Engine·API·CLI·MCP 실행 경로에 연결한다. HookResult::initialUserMessage, RunRequest::userPrompt, EngineOptions::sessionStartHooks가 추가되어 현재 ABI는 0.22이다. 소비자는 새 헤더와 라이브러리로 함께 다시 빌드한다.
+0.22.0은 C++ UserPromptSubmit·SessionStart 콜백과 호스트 명령 훅을 기존 Engine·API·CLI·MCP 실행 경로에 연결한다. HookResult::initialUserMessage, RunRequest::userPrompt, EngineOptions::sessionStartHooks가 추가되며 0.22에서 ABI가 변경되었다. 소비자는 새 헤더와 라이브러리로 함께 다시 빌드한다.
 
 ## 사용자 제출
 
@@ -51,6 +53,6 @@ initialUserMessage는 비어 있지 않으면 일반 next 우선순위 prompt로
 
 daemon의 --agent-hooks FILE, MCP의 --hooks FILE은 기존의 workspace 밖 소유자 전용 설정 파일 규칙을 따른다. 원격 호출로 훅이나 호스트 출처를 바꾸는 기능은 없다. 추가 생산 의존성 없이 기존 Qt JSON·QLockFile·C++ 명령 실행기를 재사용한다. Python은 검증용 클라이언트와 테스트 훅에만 사용한다.
 
-고정 참조 c8cd253554319f32ff64ff7000636199f720c9bc의 processUserInput.ts, sessionStart.ts, hooks.ts, coreSchemas.ts를 확인했다. SessionStart의 clear·watchPaths, SessionEnd, PermissionRequest/Denied, 다른 생명주기와 HTTP/prompt/agent/async 훅은 남아 있다. 특히 참조의 PermissionDenied는 조건부 자동 분류 경로와 연결되므로 모든 도구 거부를 그 사건으로 대신하지 않는다. SessionEnd도 매 턴의 Stop으로 대신하지 않는다.
+고정 참조 c8cd253554319f32ff64ff7000636199f720c9bc의 processUserInput.ts, sessionStart.ts, hooks.ts, coreSchemas.ts를 확인했다. 0.23/0.24에서 SessionEnd와 SessionStart(clear)를 추가했다. watchPaths, PermissionRequest/Denied, 다른 생명주기와 HTTP/prompt/agent/async 훅은 남아 있다. 특히 참조의 PermissionDenied는 조건부 자동 분류 경로와 연결되므로 모든 도구 거부를 그 사건으로 대신하지 않는다. SessionEnd도 매 턴의 Stop으로 대신하지 않는다.
 
 tests/input_lifecycle_tests.cpp는 차단/중단·재개·압축·분기·스킬·자식 범위·큐 재진입·취소·확인 실패를 검사한다. tests/command_hooks_wire.py는 실제 명령 프로세스와 인증 API·CLI·MCP의 같은 동작을 검증하며 선택적으로 실제 로컬 모델을 사용한다. 소스·메모리 검사·설치 consumer·네이티브 실행의 결과는 [Verification.md](Verification.md)에 구분한다. 전체 하네스 목표는 [HarnessParity.md](HarnessParity.md)의 partial 상태로 유지한다.

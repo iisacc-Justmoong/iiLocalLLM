@@ -20,7 +20,7 @@
 
 동일 활성화에 여러 종료 호출이 겹치면 정리를 직렬화하고 훅은 한 번만 실행한다. 오류·시간 초과·continue:false·block도 그 활성화의 종료를 되돌리지 않는다. 이후 같은 세션 ID로 실행하면 기록과 미소비 입력 큐를 유지한 채 SessionStart(resume)를 보낸다. close는 Engine 전체의 새 실행·생성·분기·네이티브 도구 접수를 막으며 반복 호출은 추가 훅을 실행하지 않는다. endSession은 기록을 삭제하지 않는다.
 
-MCP 새 대화는 새 ID를 생성한다. 교체 중 identity 잠금을 잡고 훅을 실행하지 않으며 같은 연결의 identity 접근은 model_in_use로 거부한다. 교체가 종료 뒤 취소/저장 오류로 실패하면 이전 ID가 남을 수 있으며 이후 명시적 실행은 그 기록을 resume한다. 새 ID의 SessionStart는 현재 startup이다. 참조의 clear 시작 문맥·캐시 초기화·백그라운드 보존 정책 전체는 아직 구현하지 않았다.
+0.24.0의 MCP 새 대화와 C++/API clear는 백그라운드 작업을 보존하고 새 ID에 SessionStart(clear)를 즉시 실행한다. 이전 기록은 유지한다. 세부 순서·부분 실패·공유 MCP 연결의 경계는 [SessionClear.md](SessionClear.md)를 따른다. endSession(id,"clear") 자체는 기존 종료 API이며 신규 대화를 만들지 않으므로 실제 초기화에는 clearSession을 사용한다.
 
 ## 정리와 동시성
 

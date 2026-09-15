@@ -8,6 +8,7 @@
 #include <map>
 #include <mutex>
 #include <shared_mutex>
+#include <condition_variable>
 
 namespace iiLocalLLM::agent {
 namespace {
@@ -36,7 +37,20 @@ template<class Lock> void acquire(Lock& lock, const CancellationToken& token) {
 }
 class Bridge : public std::enable_shared_from_this<Bridge> {
 public:
-    struct Conversation { std::timed_mutex mutex, identity; QString id; bool resetting=false; };
+    struct Conversation {
+        std::timed_mutex mutex,identity;QString id;bool resetting=false;
+        std::map<QString,CancellationToken> active;std::condition_variable_any changed;
+    };
+    struct Invocation {
+        std::shared_ptr<Conversation> conversation;QString id;CancellationToken token;
+        Invocation(std::shared_ptr<Conversation> owner,QString id,const CancellationToken& parent)
+            :conversation(std::move(owner)),id(std::move(id)),token(CancellationToken::linkedTo(parent)) {
+            std::unique_lock lock(conversation->identity,std::defer_lock);acquire(lock,token);
+            if(conversation->resetting)throw Error(ErrorCode::ModelInUse,"MCP conversation is being replaced");
+            conversation->active.emplace(this->id,token);
+        }
+        ~Invocation(){std::lock_guard lock(conversation->identity);conversation->active.erase(id);conversation->changed.notify_all();}
+    };
     std::shared_ptr<ToolRegistry> registry;
     std::shared_ptr<const PermissionPolicy> policy;
     McpServerOptions options;
@@ -61,16 +75,23 @@ public:
         if (conversations.size() >= size_t(options.maxAgentSessions)) throw Error(ErrorCode::QueueFull, "MCP agent session limit reached");
         auto value = std::make_shared<Conversation>(); conversations.emplace(session, value); return value;
     }
-    QString sessionId(const std::shared_ptr<Conversation>& conversation, const CancellationToken& token, bool create = true, bool reset = false) {
+    QString sessionId(const std::shared_ptr<Conversation>& conversation, const CancellationToken& token, bool create = true, bool reset = false,QJsonObject* cleared=nullptr,const QString& current={}) {
         std::unique_lock guard(conversation->identity, std::defer_lock); acquire(guard, token);
         if(conversation->resetting)throw Error(ErrorCode::ModelInUse,"MCP conversation is being replaced");
         if (reset && !conversation->id.isEmpty()) {
-            const auto previous=conversation->id;conversation->resetting=true;guard.unlock();
-            try {options.engine->endSession(previous,"clear",token);}
+            const auto previous=conversation->id;conversation->resetting=true;
+            for(const auto& [id,active]:conversation->active)if(id!=current)active.cancel();
+            conversation->changed.wait(guard,[&]{return conversation->active.empty()||(conversation->active.size()==1&&conversation->active.contains(current));});
+            guard.unlock();
+            QJsonObject report;
+            try {report=options.engine->clearSession(previous,token);}
             catch(...){guard.lock();conversation->resetting=false;throw;}
-            guard.lock();conversation->resetting=false;token.throwIfCancelled();
+            guard.lock();conversation->resetting=false;
+            if(!report["session_id"].toString().isEmpty())conversation->id=report["session_id"].toString();
+            if(cleared)*cleared=report;
+            return conversation->id;
         }
-        if ((create && conversation->id.isEmpty()) || reset)
+        if (create && (conversation->id.isEmpty() || reset))
             conversation->id = options.engine->createSession(options.model, options.workingDirectory, options.systemPrompt).id;
         return conversation->id;
     }
@@ -153,8 +174,17 @@ public:
                 {"turns", QJsonObject{{"type", "integer"}}}, {"usage", QJsonObject{{"type", "object"}}}}}};
         auto executeAgent = [self](const QJsonObject& args, const ToolContext& context, bool compactOnly, bool queuedOnly = false) {
             auto conversation = self->conversation(context.sessionId);
+            QJsonObject cleared;
+            // Clearing owns cancellation, so it must precede the per-run lock
+            // held by an active foreground model call on this connection.
+            if(args["new_session"].toBool())self->sessionId(conversation,context.cancellation,true,true,&cleared,context.runId);
             std::unique_lock lock(conversation->mutex, std::defer_lock); acquire(lock, context.cancellation);
-            const auto id = self->sessionId(conversation, context.cancellation, !compactOnly, args["new_session"].toBool());
+            const auto id = self->sessionId(conversation, context.cancellation, !compactOnly);
+            if(!cleared.isEmpty()&&!cleared["complete"].toBool()) {
+                RunResult failed;failed.sessionId=id;failed.status=RunStatus::Failed;failed.errorCode=ErrorCode::StorageFailure;
+                failed.errorMessage="Conversation replacement requires attention; inspect clear.diagnostics before continuing.";
+                auto data=toJson(failed);data["clear"]=cleared;return ToolResult{failed.errorMessage,data,true};
+            }
             if (compactOnly && id.isEmpty()) throw Error(ErrorCode::NotFound, "This MCP connection has no conversation to compact");
             RunRequest request{id, args["prompt"].toString(), self->options.generation, args["max_turns"].toInt(self->options.maxAgentTurns)};
             request.skill = args["skill"].toString(); request.skillArguments = args["skill_arguments"].toString();
@@ -169,7 +199,8 @@ public:
             while (handle.result.wait_for(10ms) != std::future_status::ready)
                 if (context.cancellation.isCancelled()) handle.cancel();
             const auto result = handle.result.get(); context.cancellation.throwIfCancelled();
-            return ToolResult{result.text.isEmpty() ? result.errorMessage : result.text, toJson(result), result.status != RunStatus::Completed};
+            auto data=toJson(result);if(!cleared.isEmpty())data["clear"]=cleared;
+            return ToolResult{result.text.isEmpty() ? result.errorMessage : result.text, data, result.status != RunStatus::Completed};
         };
         run.execute = [executeAgent](const auto& args, const auto& context) { return executeAgent(args, context, false); };
         Tool compact;
@@ -188,6 +219,16 @@ public:
         queuedRun.definition.inputSchema = {{"type", "object"}, {"additionalProperties", false}, {"properties", queuedProperties}};
         queuedRun.execute = [executeAgent](const auto& args, const auto& context) { return executeAgent(args, context, false, true); };
         frozen->add(std::move(queuedRun));
+        Tool clear;clear.definition.name="iiLocalLLM.agent.clear";
+        clear.definition.description="Cancel this connection's foreground work, preserve background jobs, and start an empty conversation with SessionStart(clear). Does not invoke the model.";
+        clear.definition.concurrencySafe=true;clear.definition.metadata={{"source","builtin.session.control"}};
+        clear.definition.inputSchema={{"type","object"},{"additionalProperties",false},{"properties",QJsonObject{}}};
+        clear.execute=[self](const QJsonObject&,const ToolContext& context) {
+            QJsonObject report;self->sessionId(self->conversation(context.sessionId),context.cancellation,false,true,&report);
+            if(report.isEmpty())throw Error(ErrorCode::NotFound,"This MCP connection has no conversation to clear");
+            return ToolResult{report["complete"].toBool()?"Conversation cleared.":"Conversation replacement requires attention; inspect diagnostics.",report,!report["complete"].toBool()};
+        };
+        frozen->add(std::move(clear));
         Tool skills; skills.definition.name = "iiLocalLLM.agent.skills.list";
         skills.definition.description = "List local skill metadata and unsupported features for this connection's agent. Does not load a model or execute a skill.";
         skills.definition.readOnly = true; skills.definition.concurrencySafe = true;
@@ -253,11 +294,16 @@ public:
         ToolRunner runner(frozen, policy, options.tools);
         ToolCall call{uuid(), name, params["arguments"].toObject()};
         ToolContext context{request.sessionId, uuid(), options.workingDirectory, {}, request.cancellation, request.progress};
+        std::unique_ptr<Invocation> invocation;
+        if(options.engine&&name!="iiLocalLLM.agent.clear") {
+            invocation=std::make_unique<Invocation>(conversation(request.sessionId),context.runId,request.cancellation);
+            context.cancellation=invocation->token;
+        }
         if (!options.artifactsDirectory.isEmpty()) context.artifactsDirectory = QDir(options.artifactsDirectory).filePath(context.sessionId + '/' + context.runId);
         const auto source = frozen->get(name).definition.metadata["source"].toString();
         auto bindContext = [&] {
             if (options.engine && (source == "builtin.workspace" || source == "builtin.shell" || source == "builtin.shell.control")) {
-                context.sessionId = sessionId(conversation(request.sessionId), request.cancellation);
+                context.sessionId = sessionId(conversation(request.sessionId), context.cancellation);
                 context.transcriptPath=options.engine->transcriptPath(context.sessionId);
             }
         };
@@ -270,9 +316,10 @@ public:
         const bool inputControl = options.engine && source == "builtin.input.control"
             && QStringList{"iiLocalLLM.agent.inputs.enqueue", "iiLocalLLM.agent.inputs.list", "iiLocalLLM.agent.inputs.remove"}.contains(name);
         const bool subagentControl = options.engine && source == "builtin.subagent.control";
-        if (shellControl || inputControl || subagentControl) { bindContext(); return wireResult(runner.run(call, context,observe)); }
+        const bool sessionControl=options.engine&&source=="builtin.session.control"&&name=="iiLocalLLM.agent.clear";
+        if (shellControl || inputControl || subagentControl || sessionControl) { bindContext(); return wireResult(runner.run(call, context,observe)); }
         std::shared_lock shared(execution, std::defer_lock); std::unique_lock exclusive(execution, std::defer_lock);
-        if (runner.concurrencySafe(call)) acquire(shared, request.cancellation); else acquire(exclusive, request.cancellation);
+        if (runner.concurrencySafe(call)) acquire(shared, context.cancellation); else acquire(exclusive, context.cancellation);
         bindContext();
         return wireResult(runner.run(call, context,observe));
     }

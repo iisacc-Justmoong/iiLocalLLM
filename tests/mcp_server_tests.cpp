@@ -74,6 +74,31 @@ public:
 class McpServerTests : public QObject {
     Q_OBJECT
 private slots:
+    void clearControlInterruptsActiveRunAndDoesNotAcceptForeignSessionIds() {
+        QTemporaryDir root;auto registry=std::make_shared<a::ToolRegistry>();auto model=std::make_shared<HistoryModel>();
+        auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);a::EngineOptions engineConfig;engineConfig.sessionsDirectory=root.filePath("sessions");
+        QStringList starts;engineConfig.hooks.append([&](const a::HookInput& input,const CancellationToken&){
+            if(input.kind==a::HookKind::SessionStart)starts.append(input.context["source"].toString());return a::HookResult{};});
+        auto engine=std::make_shared<a::Engine>(model,registry,policy,engineConfig);
+        a::McpServerOptions config;config.workingDirectory=root.path();config.engine=engine;config.model="fixture";
+        auto options=a::mcpServerOptions(registry,policy,config);m::ServerSession first(options),second(options);initialize(first);initialize(second);
+        QVERIFY(call(second,2,"iiLocalLLM.agent.clear")["isError"].toBool());
+        first.receive(request(2,"tools/call",{{"name","iiLocalLLM.agent.run"},{"arguments",QJsonObject{{"prompt","hold"}}}}));
+        QTRY_VERIFY(model->waiting.load());
+        first.receive(request(3,"tools/call",{{"name","iiLocalLLM.agent.clear"},{"arguments",QJsonObject{}}}));
+        QJsonObject run,cleared;QElapsedTimer timer;timer.start();
+        while((run.isEmpty()||cleared.isEmpty())&&timer.elapsed()<3000)for(const auto& value:first.takeMessages(20)) {
+            const auto message=value.toObject();if(message["id"]==2)run=message;if(message["id"]==3)cleared=message["result"].toObject();
+        }
+        model->released=true;
+        QVERIFY2(run.contains("error"),qPrintable(QString::fromUtf8(QJsonDocument(run).toJson())));QVERIFY(cleared["structuredContent"].toObject()["complete"].toBool());
+        QCOMPARE(run["error"].toObject()["data"].toObject()["error_code"],"cancelled");
+        const auto id=cleared["structuredContent"].toObject()["session_id"].toString();QVERIFY(engine->session(id).messages.isEmpty());
+        QCOMPARE(starts,(QStringList{"startup","clear"}));
+        QVERIFY(call(second,3,"iiLocalLLM.agent.clear",{{"session_id",id}})["isError"].toBool());
+        QCOMPARE(call(first,4,"iiLocalLLM.agent.run",{{"prompt","fresh"}})["structuredContent"].toObject()["text"],"fresh");
+        first.close();second.close();
+    }
     void sessionEndFollowsConversationReplacementAndConnectionClose() {
         QTemporaryDir root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
         auto model=std::make_shared<HistoryModel>();auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
@@ -198,7 +223,7 @@ private slots:
         QVERIFY(!call(first, 13, "iiLocalLLM.agent.inputs.run")["isError"].toBool());
         QCOMPARE(call(first, 14, "iiLocalLLM.agent.inputs.list")["structuredContent"].toObject()["count"].toInt(), 0);
     }
-    void newConversationStopsPreviousShells() {
+    void newConversationPreservesPreviousBackgroundShells() {
 #if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
         QSKIP("Background shell execution requires a desktop POSIX host");
 #endif
@@ -215,9 +240,12 @@ private slots:
         const auto original = call(session, 3, "iiLocalLLM.agent.session")["structuredContent"].toObject()["session_id"].toString();
         const auto reset = call(session, 4, "iiLocalLLM.agent.run", {{"prompt", "New session"}, {"new_session", true}});
         QVERIFY(!reset["isError"].toBool());
-        QCOMPARE(shells->output(original, taskId, false, 0, 0, 1024)["task"].toObject()["status"], "killed");
-        QVERIFY(call(session, 5, "ShellTaskList")["structuredContent"].toObject()["tasks"].toArray().isEmpty());
-        QVERIFY(call(session, 6, "TaskOutput", {{"task_id", taskId}, {"block", false}})["isError"].toBool());
+        const auto fresh=reset["structuredContent"].toObject()["session_id"].toString();
+        QVERIFY(reset["structuredContent"].toObject()["clear"].toObject()["complete"].toBool());
+        QVERIFY_THROWS_EXCEPTION(Error,shells->output(original,taskId,false));
+        QCOMPARE(call(session, 5, "ShellTaskList")["structuredContent"].toObject()["tasks"].toArray().size(),1);
+        QVERIFY(!call(session, 6, "TaskOutput", {{"task_id", taskId}, {"block", false}})["isError"].toBool());
+        session.close();QCOMPARE(shells->output(fresh,taskId,false)["task"].toObject()["status"],"killed");
     }
     void shellControlsShareAgentIdentityAndInterruptDuringRun() {
 #if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)

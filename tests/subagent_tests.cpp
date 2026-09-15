@@ -41,6 +41,79 @@ struct Host {
 class SubagentTests final : public QObject {
     Q_OBJECT
 private slots:
+    void allPendingCompletionsOfAResumedBackgroundChildAreTransferred() {
+        Host h;h.model->next=[](const auto&,const auto&){return a::ModelReply{"DONE"};};auto agents=h.start();
+        const auto old=h.parent(),next=h.parent();
+        const auto id=agents->run(h.context(old),{{"prompt","first"},{"run_in_background",true}}).data["agentId"].toString();
+        QVERIFY(agents->output(old.id,id,true)["finished"].toBool());
+        agents->run(h.context(old),{{"prompt","second"},{"resume",id},{"run_in_background",true}});
+        QVERIFY(agents->output(old.id,id,true)["finished"].toBool());
+        a::InputQueue queue(h.engineOptions.sessionsDirectory+"/inputs");QCOMPARE(queue.snapshot(old.id)["count"],2);
+        QCOMPARE(agents->transferSession(old.id,next.id),QJsonArray{id});
+        QCOMPARE(queue.snapshot(old.id)["count"],0);QCOMPARE(queue.snapshot(next.id)["count"],2);
+        queue.deliver(next.id,true,256,[](const QJsonObject&){});
+        agents->run(h.context(next),{{"prompt","third"},{"resume",id},{"run_in_background",true}});
+        const auto result=agents->output(next.id,id,true);QCOMPARE(result["notification_refs"].toArray().size(),1);
+        QCOMPARE(queue.snapshot(next.id)["count"],1);
+    }
+    void interruptedNotificationTransferCanBeRetriedAndRecoveredAfterReopen() {
+        Host h;h.engineOptions.inputQueue.maxPending=1;h.model->next=[](const auto&,const auto&){return a::ModelReply{"DONE"};};
+        auto agents=h.start();const auto old=h.parent(),next=h.parent(),last=h.parent();
+        const auto id=agents->run(h.context(old),{{"prompt","complete"},{"run_in_background",true}}).data["agentId"].toString();
+        QVERIFY(agents->output(old.id,id,true)["finished"].toBool());a::InputQueue queue(h.engineOptions.sessionsDirectory+"/inputs",h.engineOptions.inputQueue);
+        auto full=queue.enqueue(next.id,{{"text","full"}})["input"].toObject();
+        QVERIFY_THROWS_EXCEPTION(Error,agents->transferSession(old.id,next.id));
+        QCOMPARE(agents->list(next.id).size(),1);QVERIFY(agents->list(old.id).isEmpty());QCOMPARE(queue.snapshot(old.id)["count"],1);
+        queue.remove(next.id,full["id"].toString());QCOMPARE(agents->transferSession(old.id,next.id),QJsonArray{id});
+        QCOMPARE(queue.snapshot(old.id)["count"],0);QCOMPARE(queue.snapshot(next.id)["count"],1);
+        full=queue.enqueue(last.id,{{"text","full"}})["input"].toObject();
+        QVERIFY_THROWS_EXCEPTION(Error,agents->transferSession(next.id,last.id));agents->close();agents.reset();
+        queue.remove(last.id,full["id"].toString());agents=h.start();QCOMPARE(agents->list(last.id).size(),1);
+        QCOMPARE(queue.snapshot(next.id)["count"],0);QCOMPARE(queue.snapshot(last.id)["count"],1);
+        QVERIFY(!agents->output(last.id,id).contains("notification_transfer_error"));
+    }
+    void deliveryPreparationCanInspectChildrenWhileTransferWaits() {
+        Host h;h.model->next=[](const auto&,const auto&){return a::ModelReply{"DONE"};};
+        auto agents=h.start();const auto old=h.parent(),next=h.parent();
+        const auto id=agents->run(h.context(old),{{"prompt","complete"},{"run_in_background",true}}).data["agentId"].toString();
+        QVERIFY(agents->output(old.id,id,true)["finished"].toBool());a::InputQueue queue(h.engineOptions.sessionsDirectory+"/inputs");
+        std::atomic_bool entered=false,inspect=false;
+        auto delivery=std::async(std::launch::async,[&]{return queue.deliver(old.id,true,1,[&](const QJsonObject&) {
+            entered=true;const auto deadline=std::chrono::steady_clock::now()+2s;
+            while(!inspect&&std::chrono::steady_clock::now()<deadline)std::this_thread::sleep_for(1ms);
+            if(agents->list(next.id).size()!=1)throw std::runtime_error("Transfer did not publish the new owner");return QJsonObject{};
+        },[](const auto&,const auto&){return true;});});
+        QTRY_VERIFY(entered.load());auto transfer=std::async(std::launch::async,[&]{return agents->transferSession(old.id,next.id);});
+        QTRY_COMPARE(agents->list(next.id).size(),1);inspect=true;
+        QCOMPARE(delivery.wait_for(1s),std::future_status::ready);QCOMPARE(delivery.get(),1);
+        QCOMPARE(transfer.wait_for(1s),std::future_status::ready);QCOMPARE(transfer.get(),QJsonArray{id});
+    }
+    void backgroundChildrenAndPendingNotificationsFollowTheirNewOwner() {
+        Host h;std::atomic_bool entered=false,release=false;int executions=0;
+        h.model->next=[&](const auto& request,const CancellationToken& token) {
+            ++executions;
+            if(request.messages.last().text=="wait") {entered=true;while(!release&&!token.isCancelled())std::this_thread::sleep_for(1ms);token.throwIfCancelled();}
+            return a::ModelReply{"CHILD_FINISHED"};
+        };
+        auto agents=h.start();const auto old=h.parent(),next=h.parent(),third=h.parent();
+        const auto complete=agents->run(h.context(old),{{"prompt","complete"},{"run_in_background",true}}).data["agentId"].toString();
+        QVERIFY(agents->output(old.id,complete,true)["finished"].toBool());
+        const auto foreground=agents->run(h.context(old),{{"prompt","foreground"}}).data["agentId"].toString();
+        const auto running=agents->run(h.context(old),{{"prompt","wait"},{"run_in_background",true}}).data["agentId"].toString();
+        QTRY_VERIFY_WITH_TIMEOUT(entered.load(),3000);
+        const auto ids=agents->transferSession(old.id,next.id);QCOMPARE(ids.size(),2);QVERIFY(ids.contains(complete));QVERIFY(ids.contains(running));
+        QCOMPARE(agents->list(old.id).size(),1);QCOMPARE(agents->list(old.id).first().toObject()["agentId"],foreground);
+        QVERIFY_THROWS_EXCEPTION(Error,agents->output(old.id,running));
+        a::InputQueue queue(h.engineOptions.sessionsDirectory+"/inputs");
+        QCOMPARE(queue.snapshot(old.id)["count"].toInt(),0);QCOMPARE(queue.snapshot(next.id)["count"].toInt(),1);
+        const auto notice=queue.snapshot(next.id)["inputs"].toArray().first().toObject();
+        QCOMPARE(agents->transferSession(next.id,third.id).size(),2);
+        QCOMPARE(queue.snapshot(next.id)["count"].toInt(),0);QCOMPARE(queue.snapshot(third.id)["inputs"].toArray().first().toObject()["id"],notice["id"]);
+        release=true;const auto result=agents->output(third.id,running,true);QCOMPARE(result["status"],"completed");
+        QCOMPARE(executions,3);QCOMPARE(queue.snapshot(third.id)["count"].toInt(),2);
+        agents->close();agents.reset();agents=h.start();QCOMPARE(agents->list(third.id).size(),2);QCOMPARE(agents->list(old.id).size(),1);
+        QCOMPARE(agents->output(third.id,running)["result"].toObject()["text"],"CHILD_FINISHED");
+    }
     void childrenUseLiveAdditionalDirectoriesWithoutWideningToolScope() {
         Host h;const auto extra=h.root.filePath("shared");QVERIFY(QDir().mkpath(extra));QVERIFY(QDir().mkpath(h.workspace+"/.claude"));
         auto configure=[&](bool enabled) {

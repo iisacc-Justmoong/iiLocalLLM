@@ -15,6 +15,9 @@ struct Tool {
     std::function<bool(const QJsonObject&)> canRunConcurrently;
     // Runs once after input-changing hooks, before permission. Must have no execution side effects.
     std::function<PreparedTool(const QJsonObject&, const ToolContext&)> prepare;
+    // Optional trusted host lifecycle operation; never exported in tool schemas
+    // or dispatchable by a model/MCP caller. Install on one control per owner.
+    std::function<QJsonArray(const QString&,const QString&,const CancellationToken&)> transferSession;
 };
 class IILOCALLLM_EXPORT ToolRegistry {
 public:

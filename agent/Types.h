@@ -101,6 +101,7 @@ struct Session {
     QString workingDirectory;
     QList<Message> messages;
     QList<Compaction> compactions;
+    QString parentSessionId; // Optional lineage; not an authorization grant.
 };
 struct RunRequest {
     QString sessionId;

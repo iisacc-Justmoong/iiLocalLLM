@@ -1,5 +1,7 @@
 # C++ MCP 서버와 앱 도구 제공
 
+0.24.0은 `iiLocalLLM.agent.clear {}`로 해당 연결의 진행·대기 호출을 취소하고, 백그라운드 작업을 보존한 새 대화를 즉시 시작한다. 모델 실행은 하지 않는다. `agent.run`의 `new_session`도 같은 초기화를 사용하며 결과에 `clear`를 포함한다. [SessionClear.md](SessionClear.md)를 따른다.
+
 0.23.0은 연결 종료·HTTP DELETE·stdio EOF/SIGINT/SIGTERM에서 SessionEnd(other), new_session 교체에서 SessionEnd(clear)를 실행한다. 종료 정리는 연결 소유 세션만 대상으로 한다. HTTP DELETE 수락과 실제 정리 완료는 별개이며, 재개·시간 예산·진단 보존 한계는 [SessionEnd.md](SessionEnd.md)를 따른다.
 
 `mcp::ServerSession`은 연결별 JSON-RPC 상태를 제공하고 `mcp::serveStdio`는 POSIX stdin/stdout 전송을 연결한다. `agent::mcpServerOptions`는 앱이 등록한 ToolRegistry를 기존 스키마·권한·훅을 유지하면서 MCP 도구로 공개한다. 배포 실행 파일은 `iillm-mcp`다. 생산 경로는 C++·Qt이며 공식 Python MCP SDK는 독립 교차 검증에만 사용한다.
@@ -115,7 +117,7 @@ iillm-mcp는 기본 작업·Todo 도구 일곱 개를 추가하며 --no-tasks로
 
 데스크톱 POSIX iillm-mcp는 Bash의 `run_in_background`와 TaskOutput·TaskStop·ShellTaskList를 제공하며 `--no-background`로 비활성화한다. 계획 작업의 `--no-tasks`와 독립적이다. 모델 없이도 실행할 수 있고, Engine이 있으면 파일·셸 도구와 에이전트가 같은 대화 소유권을 사용한다.
 
-TaskOutput 대기 또는 agent.run 중에도 같은 연결에서 TaskStop을 처리할 수 있다. 제어 도구만 실행 잠금 밖에서 처리하며 기존 스키마·권한·소유권 검사는 유지한다. 연결 종료와 `new_session=true`는 이전 대화의 실행을 중단한다. 다른 연결은 작업 ID나 출력 경로를 알아도 접근할 수 없다. 저장소 위치와 수명은 [BackgroundTasks.md](BackgroundTasks.md)에 있다. 이 기능은 일반 tools/call이며 MCP 비동기 tasks 규격은 아직 미완료이다.
+TaskOutput 대기 또는 agent.run 중에도 같은 연결에서 TaskStop을 처리할 수 있다. 제어 도구만 실행 잠금 밖에서 처리하며 기존 스키마·권한·소유권 검사는 유지한다. 연결 종료는 해당 대화의 실행을 중단한다. 0.24의 `new_session=true`는 foreground를 정리하고 background 실행은 새 소유자로 넘긴다. 다른 연결은 작업 ID나 출력 경로를 알아도 접근할 수 없다. 저장소 위치와 수명은 [BackgroundTasks.md](BackgroundTasks.md)에 있다. 이 기능은 일반 tools/call이며 MCP 비동기 tasks 규격은 아직 미완료이다.
 
 ## 입력 큐 도구 (0.13.0)
 

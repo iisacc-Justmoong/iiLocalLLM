@@ -49,6 +49,20 @@ bool executing(const QByteArray& pid) {
 class ShellTaskTests : public QObject {
     Q_OBJECT
 private slots:
+    void liveTasksTransferOwnershipWithoutRestartingTheirProcess() {
+        Fixture f;const auto id=f.start("printf $$ > worker.pid; printf before; while [ ! -f release ]; do sleep .02; done; printf after");
+        const auto pidPath=f.context.workingDirectory+"/worker.pid";QTRY_VERIFY(!read(pidPath).isEmpty());const auto pid=read(pidPath);
+        const auto moved=f.tasks->transferSession(f.context.sessionId,"session-b");QCOMPARE(moved,QJsonArray{id});
+        QVERIFY(f.tasks->list(f.context.sessionId).isEmpty());QCOMPARE(f.tasks->list("session-b").size(),1);QVERIFY(executing(pid));
+        QVERIFY_THROWS_EXCEPTION(Error,f.tasks->output(f.context.sessionId,id,false));
+        QFile release(f.context.workingDirectory+"/release");QVERIFY(release.open(QIODevice::WriteOnly));release.close();
+        const auto done=f.tasks->output("session-b",id,true,5000);QCOMPARE(done["task"].toObject()["output"],"beforeafter");
+        QCOMPARE(read(pidPath),pid);const auto output=done["task"].toObject()["output_file"].toString();
+        QVERIFY(f.tasks->ownsOutput("session-b",output));QVERIFY(!f.tasks->ownsOutput(f.context.sessionId,output));
+        f.tasks->close();a::ShellTasks reopened(f.context.workingDirectory,f.root.filePath("state"));
+        QCOMPARE(reopened.list("session-b").size(),1);QVERIFY(reopened.list(f.context.sessionId).isEmpty());
+        QCOMPARE(reopened.output("session-b",id,false)["task"].toObject()["output"],"beforeafter");
+    }
     void initTestCase() {
 #if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
         QSKIP("Background shell execution requires a desktop POSIX host");

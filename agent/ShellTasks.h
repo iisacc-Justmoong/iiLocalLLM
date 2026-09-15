@@ -22,6 +22,9 @@ public:
         qint64 offset = 0, int limitBytes = 24576, const CancellationToken& = {}) const;
     QJsonObject stop(const QString& sessionId, const QString& taskId, const CancellationToken& = {});
     QJsonArray list(const QString& sessionId, int offset = 0, int limit = 100) const;
+    // Trusted host lifecycle action. Keeps processes, output paths and IDs;
+    // atomically transfers this owner's background records to another session.
+    QJsonArray transferSession(const QString& from,const QString& to,const CancellationToken& = {});
     bool ownsOutput(const QString& sessionId, const QString& path) const;
     bool containsStatePath(const QString& path) const;
     void close();
