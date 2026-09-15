@@ -72,4 +72,4 @@ permission_request_tests는 Ask 전용 호출, 원본과 변경 스냅샷 구분
 
 참조는 미러 커밋 c8cd253554319f32ff64ff7000636199f720c9bc의 entrypoints/sdk/coreSchemas.ts:425/875, utils/hooks.ts:4157, hooks/toolPermission/PermissionContext.ts:217, cli/structuredIO.ts:787, utils/permissions/permissions.ts:398이다. 구조와 호출 순서를 관찰하여 C++로 작성했으며 참조 TypeScript를 이식하지 않았다. SDK는 입력 수정 후 호스트 Deny를 다시 검사하고 명령들이 끝날 때까지 기다린다는 자체 경계를 둔다.
 
-기본 계층형 설정의 지속 갱신은 0.26에서 구현했다. 권한 제안 생성, 원격 클라이언트가 request_id로 답하는 중개 API, SDK 응답과 훅의 경합·취소, 자동 분류기의 PermissionDenied 재시도는 남아 있다. 모든 일반 거부를 PermissionDenied 훅으로 대체하지 않는다. 실제 Society/Dreamscapes 앱 패키징·플랫폼 검증 및 전체 하네스 목표는 partial이다.
+기본 계층형 설정의 지속 갱신은 0.26에서 구현했다. 0.27은 선택적 [원격 권한 요청](PermissionRequests.md), request_id 응답과 훅 경합·취소를 추가한다. 위 순서는 원격 채널이 비활성인 기본 경로이다. 권한 제안 생성과 자동 분류기의 PermissionDenied 재시도는 남아 있다. 모든 일반 거부를 PermissionDenied 훅으로 대체하지 않는다. 실제 Society/Dreamscapes 앱 패키징·플랫폼 검증 및 전체 하네스 목표는 partial이다.

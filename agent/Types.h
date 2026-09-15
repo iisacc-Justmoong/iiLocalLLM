@@ -5,12 +5,13 @@
 
 namespace iiLocalLLM::agent {
 struct Session;
+class PermissionRequests;
 
 enum class MessageRole { User, Assistant, Tool };
 enum class RunStatus { Completed, Cancelled, TurnLimit, Failed };
 enum class EventKind { Started, ModelDelta, Message, ToolStarted, ToolProgress, ToolFinished,
     PermissionRequested, Hook, Finished, InstructionsLoaded, CompactionStarted, CompactionProgress, Compacted,
-    InputDelivered, Interrupted };
+    InputDelivered, Interrupted, PermissionResolved };
 struct ToolCall {
     QString id;
     QString name;
@@ -59,6 +60,7 @@ struct ToolContext {
     QStringList allowedTools; // Trusted invocation grants, never restored from transcript metadata.
     QStringList workingDirectories; // Host policy snapshot, replaced by ToolRunner before preparation; never accepted from wire input.
     QString transcriptPath; // Host-owned transcript location for hooks; empty for standalone tool calls.
+    std::shared_ptr<PermissionRequests> permissionRequests; // Trusted channel override; never accepted from wire input.
 };
 struct ModelRequest {
     QString model;
@@ -114,6 +116,7 @@ struct RunRequest {
     QJsonObject promptMetadata; // Trusted C++ host provenance, never accepted from API/IPC/MCP input.
     QStringList allowedTools; // Trusted host/child invocation grants; expires at the end of this run.
     bool userPrompt = true; // C++ host provenance. Internal delegated instructions are not user submissions.
+    std::shared_ptr<PermissionRequests> permissionRequests; // Trusted per-run channel; not transcript/model authority.
 };
 struct RunUsage {
     qint64 promptTokens = 0;

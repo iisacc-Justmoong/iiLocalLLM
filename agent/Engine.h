@@ -36,6 +36,7 @@ struct EngineOptions {
     int sessionEndTimeoutMs = 1500; // Shared cooperative budget for this session's end hooks.
     PermissionResponseCallback permissionResponse;
     PermissionUpdateCallback permissionUpdates;
+    std::shared_ptr<PermissionRequests> permissionRequests;
 };
 class IILOCALLLM_EXPORT Engine {
 public:
@@ -77,15 +78,16 @@ public:
     bool backgroundTasksEnabled() const;
     bool subagentsEnabled() const;
     QList<ToolDefinition> subagentToolDefinitions() const;
+    bool permissionRequestsEnabled() const;
     void stopSubagents(const QString& sessionId) const; // Host lifecycle cleanup, independent of model permissions.
     ToolResult runSubagentTool(const QString& sessionId, const QString& name, const QJsonObject& arguments = {},
-        const CancellationToken& = {}, const EventCallback& = {}) const;
+        const CancellationToken& = {}, const EventCallback& = {}, std::shared_ptr<PermissionRequests> = {}) const;
     ToolResult runShellTool(const QString& sessionId, const QString& name, const QJsonObject& arguments = {},
-        const CancellationToken& = {}, const EventCallback& = {}) const;
+        const CancellationToken& = {}, const EventCallback& = {}, std::shared_ptr<PermissionRequests> = {}) const;
     // Uses the same policy and hooks as model calls. Available during an active
     // run; the task transaction uses a separate lock from the transcript lease.
     ToolResult runTaskTool(const QString& sessionId, const QString& name, const QJsonObject& arguments = {},
-        const CancellationToken& = {}, const EventCallback& = {}) const;
+        const CancellationToken& = {}, const EventCallback& = {}, std::shared_ptr<PermissionRequests> = {}) const;
 private:
     QJsonObject endSessionImpl(const QString&,QString,const CancellationToken&,bool clear);
     RunHandle submit(RunRequest, EventCallback, bool compactOnly, QString instructions = {}, bool queuedOnly = false);

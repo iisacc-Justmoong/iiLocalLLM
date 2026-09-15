@@ -195,10 +195,14 @@ agent.tasks.create/get/list/update/claim 및 agent.todos.write/get을 추가한�
 
 0.17.0에서는 `context: fork` 스킬을 같은 API·MCP·CLI 호출로 별도 자식에서 실행한다. 직접 호출은 자식 결과를 반환하고 모델의 `Skill` 호출은 후속 부모 턴에 결과를 전달한다. 본문 분리·권한·모델·사용량·큐 입력과 참조 차이는 [Skills.md](Skills.md)의 별도 자식 실행 계약을 따른다.
 
-0.18.0의 스킬 allowed-tools와 인자 권한 규칙은 [Permissions.md](Permissions.md)를 따른다. API·IPC·MCP 입력은 allowed_tools/prompt_metadata 같은 호스트 전용 권한·출처 필드를 받지 않는다. 모델 Skill의 PermissionRequested 이벤트에는 고정된 permission_preview가 있다. 원격 권한 응답 중개는 아직 지원하지 않는다.
+0.18.0의 스킬 allowed-tools와 인자 권한 규칙은 [Permissions.md](Permissions.md)를 따른다. API·IPC·MCP 입력은 allowed_tools/prompt_metadata 같은 호스트 전용 권한·출처 필드를 받지 않는다. 모델 Skill의 PermissionRequested 이벤트에는 고정된 permission_preview가 있다. 원격 권한 응답 중개는 0.27의 PermissionRequests.md 계약으로 추가되었다.
 
 0.19.0의 `agent.permissions.get`은 인증된 `session_id`만 받아 현재 호스트 권한 snapshot을 반환한다. 다른 앱의 세션은 조회할 수 없으며 원격 mode·rule·설정 파일 변경은 허용하지 않는다. `iiLocalLLMD --agent-permission-settings FILE`의 출처·문법·미지원 범위는 [PermissionSettings.md](PermissionSettings.md)를 따른다.
 
 0.21.0은 `--agent-hooks FILE`로 호스트 명령 훅을 연결한다. `agent.info.hooks_enabled`는 활성 여부이고 원격 등록/변경은 제공하지 않는다. 기존 `hook` 스트림 이벤트에 명령 SHA·종료 결과·제한된 출력 진단을 전달한다. 생성/완료 작업의 게시 전 차단과 실제 에이전트 도구/종료 처리에 동일하게 적용한다. [CommandHooks.md](CommandHooks.md)를 따른다.
 
 0.22의 agent.run과 agent.inputs.run은 동일한 UserPromptSubmit·SessionStart 계약을 적용한다. 입력 차단은 RunResult status=failed/error_code=invalid_argument, continue:false는 cancelled이며 원본 메시지에 판정을 보존한다. 큐에서 확인한 차단 입력은 자동 재실행하지 않는다. 최초 활성화/새 Engine의 재개/압축 문맥을 적용하고 원격 userPrompt·sessionStartHooks·prompt_metadata는 허용하지 않는다. 기존 인증·소유권·hook 이벤트를 유지한다. [InputLifecycle.md](InputLifecycle.md)를 참조한다.
+
+## 0.27 앱 권한 요청
+
+인증 API/native IPC와 MCP 연결별 승인 채널, 독립 제어 처리, 훅·앱 경쟁, 취소·기한·중복 응답을 추가한다. [PermissionRequests.md](PermissionRequests.md)에 활성화·요청·응답 계약과 참조 차이를 기술한다. 전체 하네스와 실제 앱 통합 완료를 의미하지 않는다.

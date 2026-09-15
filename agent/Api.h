@@ -1,6 +1,7 @@
 #pragma once
 #include "Engine.h"
 #include "Subagents.h"
+#include "PermissionRequests.h"
 #include "../Rpc.h"
 #include <QtCore/QMap>
 
@@ -22,6 +23,7 @@ struct ApiOptions {
     int maxQueuedInputControls = 16;
     bool subagentsEnabled = false; // Embedded hosts opt in; daemon enables by default.
     SubagentOptions subagents; // workspace/state are assigned per authenticated client.
+    std::optional<PermissionRequestsOptions> permissionRequests; // Opt-in; one channel per authenticated client.
 };
 // One authenticated service shared by HTTP and native IPC. App identities own
 // separate persistent Engine stores. Model, registry and policy are host-owned.

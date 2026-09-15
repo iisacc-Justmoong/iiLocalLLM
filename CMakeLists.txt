@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(iiLocalLLM VERSION 0.26.0 LANGUAGES CXX)
+project(iiLocalLLM VERSION 0.27.0 LANGUAGES CXX)
 
 if(PROJECT_IS_TOP_LEVEL AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     if(DEFINED ENV{HOME})
@@ -64,6 +64,7 @@ target_sources(iiLocalLLM PRIVATE agent/Subagents.cpp agent/AgentProfiles.cpp ag
 target_sources(iiLocalLLM PRIVATE agent/Skills.cpp agent/SkillsInternal.h agent/ContextFile.h)
 target_sources(iiLocalLLM PRIVATE agent/PermissionRules.cpp agent/PermissionRules.h agent/PermissionRulesInternal.h)
 target_sources(iiLocalLLM PRIVATE agent/PermissionSettings.cpp agent/PermissionSettings.h)
+target_sources(iiLocalLLM PRIVATE agent/PermissionRequests.cpp agent/PermissionRequests.h)
 target_sources(iiLocalLLM PRIVATE agent/CommandHooks.cpp agent/CommandHooks.h)
 add_library(iiLocalLLM::iiLocalLLM ALIAS iiLocalLLM)
 target_compile_features(iiLocalLLM PUBLIC cxx_std_20)
@@ -166,6 +167,11 @@ if(BUILD_TESTING)
     set_target_properties(iiLocalLLMPermissionUpdatesTests PROPERTIES AUTOMOC ON)
     add_test(NAME iiLocalLLM.permission_updates COMMAND iiLocalLLMPermissionUpdatesTests)
     set_tests_properties(iiLocalLLM.permission_updates PROPERTIES TIMEOUT 90)
+    add_executable(iiLocalLLMPermissionRequestsTests tests/permission_requests_tests.cpp)
+    target_link_libraries(iiLocalLLMPermissionRequestsTests PRIVATE iiLocalLLM Qt6::Test)
+    set_target_properties(iiLocalLLMPermissionRequestsTests PROPERTIES AUTOMOC ON)
+    add_test(NAME iiLocalLLM.permission_requests COMMAND iiLocalLLMPermissionRequestsTests)
+    set_tests_properties(iiLocalLLM.permission_requests PROPERTIES TIMEOUT 90)
     add_executable(iiLocalLLMShellTaskTests tests/shell_tasks_tests.cpp)
     target_link_libraries(iiLocalLLMShellTaskTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
     set_target_properties(iiLocalLLMShellTaskTests PROPERTIES AUTOMOC ON)
@@ -377,6 +383,10 @@ if(BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/permission_settings_wire.py $<TARGET_FILE:iiLocalLLMD> $<TARGET_FILE:iillm> $<TARGET_FILE:iiLocalLLMMcpServer>
                 --report ${CMAKE_CURRENT_BINARY_DIR}/permission-settings-wire.json)
             set_tests_properties(iiLocalLLM.permission_settings_wire PROPERTIES TIMEOUT 180)
+            add_test(NAME iiLocalLLM.permission_requests_wire COMMAND ${Python3_EXECUTABLE} -B
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/permission_requests_wire.py $<TARGET_FILE:iiLocalLLMD> $<TARGET_FILE:iillm> $<TARGET_FILE:iiLocalLLMMcpServer>
+                --report ${CMAKE_CURRENT_BINARY_DIR}/permission-requests-wire.json)
+            set_tests_properties(iiLocalLLM.permission_requests_wire PROPERTIES TIMEOUT 180)
             add_test(NAME iiLocalLLM.working_directories_wire COMMAND ${Python3_EXECUTABLE} -B
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/permission_settings_wire.py $<TARGET_FILE:iiLocalLLMD> $<TARGET_FILE:iillm> $<TARGET_FILE:iiLocalLLMMcpServer>
                 --additional-directories --report ${CMAKE_CURRENT_BINARY_DIR}/working-directories-wire.json)
@@ -556,7 +566,7 @@ install(TARGETS iiLocalLLMService iiLocalLLMD iillm RUNTIME DESTINATION ${CMAKE_
 install(FILES iiLocalLLM.h Types.h Parameters.h Hardware.h Memory.h ModelManifest.h ModelCatalog.h ModelInfo.h ModelPull.h Runtime.h Service.h Rpc.h LocalIpcServer.h HttpApiServer.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES agent/Types.h agent/Tools.h agent/SessionStore.h agent/Engine.h agent/ProjectContext.h agent/Compaction.h agent/Api.h agent/McpTools.h agent/McpServer.h agent/ToolSearch.h agent/McpConnections.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/agent)
 install(FILES agent/TaskStore.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/agent)
-install(FILES agent/InputQueue.h agent/Skills.h agent/Subagents.h agent/AgentProfiles.h agent/PermissionRules.h agent/PermissionSettings.h agent/CommandHooks.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/agent)
+install(FILES agent/InputQueue.h agent/Skills.h agent/Subagents.h agent/AgentProfiles.h agent/PermissionRules.h agent/PermissionSettings.h agent/PermissionRequests.h agent/CommandHooks.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/agent)
 install(FILES agent/ShellTasks.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/agent)
 install(FILES agent/ObjectTools.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/agent)
 install(FILES mcp/Client.h mcp/HttpClient.h mcp/Server.h mcp/HttpServer.h mcp/LocalApplications.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mcp)

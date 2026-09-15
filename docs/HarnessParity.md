@@ -102,3 +102,7 @@
 0.25.0은 Ask 전용 PermissionRequest, allow/deny/interrupt, 입력 변경 뒤 스키마·준비·호스트 거부 재검사, C++ 구조화 응답과 명시적 권한 갱신 처리기를 API/IPC/MCP 실행 경로에 연결한다. [PermissionRequest.md](PermissionRequest.md)를 따른다. 이 문단은 0.25 당시 범위이다.
 
 0.26.0은 SettingsPermissionPolicy의 여섯 갱신 연산, 사용자/프로젝트/로컬 파일 저장, session/cliArg 격리와 clear/fork/자식 접수 상속을 추가한다. CLI·API·MCP의 승인 응답이 기본 갱신을 적용한다. 개별 파일 잠금·원자적 교체와 여러 파일의 부분 커밋 경계는 [PermissionUpdates.md](PermissionUpdates.md)를 따른다. 자동 제안·원격 승인 중개·분류기/PermissionDenied·전체 보안/설정/앱 검증은 남아 있으므로 전체 목표는 partial이다.
+
+## 0.27 앱 권한 요청
+
+인증 API/native IPC와 MCP 연결별 승인 채널, 독립 제어 처리, 훅·앱 경쟁, 취소·기한·중복 응답을 추가한다. [PermissionRequests.md](PermissionRequests.md)에 활성화·요청·응답 계약과 참조 차이를 기술한다. 전체 하네스와 실제 앱 통합 완료를 의미하지 않는다.

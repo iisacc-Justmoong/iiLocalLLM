@@ -119,6 +119,7 @@ struct ToolRunnerOptions {
     int maxResultCharacters = 24000;
     PermissionResponseCallback permissionResponse; // Used after request hooks, before the legacy bool callback.
     PermissionUpdateCallback permissionUpdates; // Trusted host operation; must apply all updates or throw.
+    std::shared_ptr<PermissionRequests> permissionRequests; // Optional remote channel, racing local request handlers.
 };
 class IILOCALLLM_EXPORT ToolRunner {
 public:

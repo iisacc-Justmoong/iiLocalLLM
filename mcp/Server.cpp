@@ -4,6 +4,7 @@
 #include <QtCore/QThreadPool>
 #include <QtCore/QUuid>
 #include <chrono>
+#include <algorithm>
 #include <climits>
 #include <condition_variable>
 #include <deque>
@@ -87,6 +88,7 @@ public:
         CancellationToken cancellation;
         Clock::time_point deadline;
         bool responded = false;
+        bool control = false;
         double lastProgress = -1;
     };
     struct Reverse {
@@ -108,7 +110,7 @@ public:
     std::mutex joining;
     std::mutex receiving;
     std::condition_variable changed;
-    QThreadPool workers;
+    QThreadPool workers, controlWorkers;
     std::thread timer;
     bool closed = false, notifiedClosed = false;
     int phase = 0; // new, initialize response sent, initialized
@@ -126,7 +128,8 @@ public:
     qsizetype outgoingBytes = 0, notificationBytes = 0, pageBytes = 0;
 
     explicit Impl(ServerOptions o) : options(std::move(o)), batches(int(std::min<qint64>(1000000,
-        qint64(options.maxNotifications) + options.maxConcurrentRequests + options.maxQueuedRequests)), options.maxQueuedBytes, options.maxMessageBytes) {
+        qint64(options.maxNotifications) + options.maxConcurrentRequests + options.maxQueuedRequests
+        + options.maxConcurrentControlRequests + options.maxQueuedControlRequests)), options.maxQueuedBytes, options.maxMessageBytes) {
         require(options.initializeTimeoutMs > 0 && options.requestTimeoutMs > 0
             && options.maxConcurrentRequests > 0 && options.maxQueuedRequests >= 0
             && options.maxConcurrentRequests <= 1024 && options.maxQueuedRequests <= 100000
@@ -135,6 +138,8 @@ public:
             && options.maxRequestsPerSession > 0 && options.listPageSize > 0
             && options.maxListItems > 0 && options.maxListSnapshots > 0 && options.cursorTimeoutMs > 0,
             "Invalid MCP server limits", ErrorCode::InvalidArgument);
+        require(options.maxConcurrentControlRequests>=1&&options.maxConcurrentControlRequests<=16
+            &&options.maxQueuedControlRequests>=0&&options.maxQueuedControlRequests<=10000,"Invalid MCP control limits",ErrorCode::InvalidArgument);
         require(options.implementation["name"].isString() && !options.implementation["name"].toString().isEmpty()
             && options.implementation["version"].isString(), "Invalid MCP server implementation", ErrorCode::InvalidArgument);
         require(!options.protocolVersions.isEmpty(), "No MCP server protocol versions", ErrorCode::InvalidArgument);
@@ -146,6 +151,11 @@ public:
                 "Invalid or reserved MCP server handler", ErrorCode::InvalidArgument);
         for (const auto& [name, handler] : options.lists)
             require(handler && !listField(name).isEmpty(), "Invalid MCP list handler", ErrorCode::InvalidArgument);
+        for(const auto& [name,handler]:options.controlHandlers)
+            require(handler&&!name.isEmpty()&&!options.handlers.contains(name)&&name!="initialize"&&name!="ping"
+                &&!QStringList{"notifications","tasks","tools","resources","prompts"}.contains(name.section('/',0,0)),
+                "Invalid, duplicate or reserved MCP control handler",ErrorCode::InvalidArgument);
+        if(!options.experimentalCapabilities.isEmpty())capabilities["experimental"]=options.experimentalCapabilities;
         if (options.lists.contains("tools/list") || options.handlers.contains("tools/call")) {
             require(options.lists.contains("tools/list") && options.handlers.contains("tools/call"), "MCP tools require list and call handlers", ErrorCode::InvalidArgument);
             capabilities["tools"] = QJsonObject{{"listChanged", true}};
@@ -160,6 +170,7 @@ public:
         }
         require(!options.handlers.contains("resources/subscribe") || capabilities.contains("resources"), "Cannot subscribe without resources", ErrorCode::InvalidArgument);
         workers.setMaxThreadCount(options.maxConcurrentRequests);
+        controlWorkers.setMaxThreadCount(options.maxConcurrentControlRequests);
         initializationDeadline = Clock::now() + std::chrono::milliseconds(options.initializeTimeoutMs);
     }
     void emitFrameLocked(const QJsonValue& message, const QString& channel = {}) {
@@ -294,7 +305,7 @@ public:
             QJsonObject result;
             if (!listField(job->method).isEmpty()) result = list(job, context);
             else if (job->method == "resources/unsubscribe" && !options.handlers.contains(job->method)) result = {};
-            else result = options.handlers.at(job->method)(job->params, context);
+            else result = (job->control?options.controlHandlers:options.handlers).at(job->method)(job->params, context);
             job->cancellation.throwIfCancelled(); validateResult(job->method, result);
             if (context.protocolVersion == "2025-03-26") result = legacyResult(job->method, std::move(result));
             response = {{"jsonrpc", "2.0"}, {"id", job->id}, {"result", result}};
@@ -404,7 +415,8 @@ public:
                 rpcRequire(capabilities.contains(feature), "MCP capability not available", -32601);
             const bool listMethod = !listField(method).isEmpty();
             const bool unsubscribe = method == "resources/unsubscribe" && capabilities["resources"].toObject()["subscribe"] == true;
-            rpcRequire(listMethod || unsubscribe || options.handlers.contains(method), "Unknown MCP method", -32601);
+            const bool control=options.controlHandlers.contains(method);
+            rpcRequire(listMethod || unsubscribe || control || options.handlers.contains(method), "Unknown MCP method", -32601);
             rpcRequire(!params.contains("task"), "MCP task-augmented requests are not supported");
             if (method == "tools/call" || method == "prompts/get") {
                 rpcRequire(params["name"].isString() && !params["name"].toString().isEmpty(), "Missing MCP name");
@@ -418,14 +430,17 @@ public:
                 rpcRequire(params["uri"].isString() && !params["uri"].toString().isEmpty(), "Missing MCP resource URI");
             if (method == "resources/subscribe")
                 rpcRequire(subscriptions.contains(params["uri"].toString()) || subscriptions.size() < options.maxNotifications, "MCP subscription limit reached", -32000);
-            rpcRequire(jobs.size() < size_t(options.maxConcurrentRequests + options.maxQueuedRequests), "MCP server request queue is full", -32000);
+            const auto used=std::count_if(jobs.begin(),jobs.end(),[control](const auto& value){return value.second->control==control;});
+            const auto capacity=control?options.maxConcurrentControlRequests+options.maxQueuedControlRequests:options.maxConcurrentRequests+options.maxQueuedRequests;
+            rpcRequire(used<capacity, "MCP server request queue is full", -32000);
             auto job = std::make_shared<Job>(); job->id = id; job->key = requestKey; job->method = method; job->params = params;
+            job->control=control;
             job->channel = channel;
             job->progressToken = params.value("_meta").toObject().value("progressToken");
             if (!job->progressToken.isUndefined()) { try { key(job->progressToken); } catch (const Error&) { throw RpcError(-32602, "Invalid MCP progress token"); } }
             job->deadline = Clock::now() + std::chrono::milliseconds(options.requestTimeoutMs);
             jobs.emplace(requestKey, job); auto self = shared_from_this();
-            workers.start([self, job] { self->execute(job); });
+            (control?controlWorkers:workers).start([self, job] { self->execute(job); });
         } catch (const RpcError& e) { safeEmitLocked(rpcError(id, e.rpcCode(), QString::fromUtf8(e.what()), e.data()), channel); }
         catch (...) { stopLocked(std::current_exception()); throw; }
     }
@@ -454,6 +469,7 @@ public:
         { std::lock_guard lock(mutex); stopLocked(); }
         if (timer.joinable()) timer.join();
         workers.waitForDone();
+        controlWorkers.waitForDone();
         if (!notifiedClosed) {
             notifiedClosed = true;
             if (options.onClosed) { try { options.onClosed(sessionId); } catch (...) {} }

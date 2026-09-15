@@ -5,6 +5,7 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QUuid>
 #include <chrono>
+#include <cmath>
 #include <map>
 #include <mutex>
 #include <shared_mutex>
@@ -35,11 +36,18 @@ template<class Lock> void acquire(Lock& lock, const CancellationToken& token) {
     while (!lock.try_lock_for(10ms)) token.throwIfCancelled();
     token.throwIfCancelled();
 }
+EventCallback permissionEvents(const ToolContext& context) {
+    return [progress=context.progress](const Event& event) {
+        if(progress&&(event.kind==EventKind::Hook||event.kind==EventKind::PermissionRequested||event.kind==EventKind::PermissionResolved))
+            progress({{"progress",1},{"message",enumName(event.kind)},{"_meta",QJsonObject{{"iisacc/agentEvent",toJson(event)}}}});
+    };
+}
 class Bridge : public std::enable_shared_from_this<Bridge> {
 public:
     struct Conversation {
         std::timed_mutex mutex,identity;QString id;bool resetting=false;
         std::map<QString,CancellationToken> active;std::condition_variable_any changed;
+        std::shared_ptr<PermissionRequests> permissionRequests;
     };
     struct Invocation {
         std::shared_ptr<Conversation> conversation;QString id;CancellationToken token;
@@ -67,13 +75,18 @@ public:
         if (!options.artifactsDirectory.isEmpty()) options.artifactsDirectory = QFileInfo(options.artifactsDirectory).absoluteFilePath();
         if (options.engine && options.model.isEmpty()) throw Error(ErrorCode::InvalidArgument, "MCP agent model is required");
         if (options.engine && options.taskStore) throw Error(ErrorCode::InvalidArgument, "Use the Engine task store or an independent MCP task store, not both");
+        if(options.tools.permissionRequests||(options.engine&&options.engine->permissionRequestsEnabled()))
+            throw Error(ErrorCode::InvalidArgument,"MCP bridge assigns private permission channels; configure McpServerOptions.permissionRequests");
+        if(options.permissionRequests){PermissionRequests validate(*options.permissionRequests);}
     }
     std::shared_ptr<Conversation> conversation(const QString& session) {
         std::lock_guard lock(mutex);
         const auto found = conversations.find(session);
         if (found != conversations.end()) return found->second;
         if (conversations.size() >= size_t(options.maxAgentSessions)) throw Error(ErrorCode::QueueFull, "MCP agent session limit reached");
-        auto value = std::make_shared<Conversation>(); conversations.emplace(session, value); return value;
+        auto value = std::make_shared<Conversation>();
+        if(options.permissionRequests)value->permissionRequests=std::make_shared<PermissionRequests>(*options.permissionRequests);
+        conversations.emplace(session, value); return value;
     }
     QString sessionId(const std::shared_ptr<Conversation>& conversation, const CancellationToken& token, bool create = true, bool reset = false,QJsonObject* cleared=nullptr,const QString& current={}) {
         std::unique_lock guard(conversation->identity, std::defer_lock); acquire(guard, token);
@@ -99,6 +112,7 @@ public:
         QString owner = connection; std::shared_ptr<Conversation> current;
         { std::lock_guard guard(mutex); const auto found = conversations.find(connection);
             if (found != conversations.end()) { current = found->second; conversations.erase(found); } }
+        if(current&&current->permissionRequests)current->permissionRequests->close();
         if (options.engine) {
             if (!current) return;
             owner = sessionId(current, {}, false); if (owner.isEmpty()) return;
@@ -144,7 +158,7 @@ public:
             Tool tool; tool.definition = definition;
             tool.execute = [self, nativeName](const QJsonObject& args, const ToolContext& context) {
                 const auto id = self->sessionId(self->conversation(context.sessionId), context.cancellation);
-                return self->options.engine->runSubagentTool(id, nativeName, args, context.cancellation);
+                return self->options.engine->runSubagentTool(id, nativeName, args, context.cancellation,permissionEvents(context),context.permissionRequests);
             };
             frozen->add(std::move(tool));
         }
@@ -153,7 +167,7 @@ public:
             tool.execute = [self, name = definition.name](const QJsonObject& args, const ToolContext& context) {
                 auto conversation = self->conversation(context.sessionId);
                 const auto id = self->sessionId(conversation, context.cancellation);
-                return self->options.engine->runTaskTool(id, name, args, context.cancellation);
+                return self->options.engine->runTaskTool(id, name, args, context.cancellation,permissionEvents(context),context.permissionRequests);
             };
             frozen->add(std::move(tool));
         }
@@ -187,6 +201,7 @@ public:
             }
             if (compactOnly && id.isEmpty()) throw Error(ErrorCode::NotFound, "This MCP connection has no conversation to compact");
             RunRequest request{id, args["prompt"].toString(), self->options.generation, args["max_turns"].toInt(self->options.maxAgentTurns)};
+            request.permissionRequests=context.permissionRequests;
             request.skill = args["skill"].toString(); request.skillArguments = args["skill_arguments"].toString();
             for (const auto& path : args["context_paths"].toArray()) request.contextPaths.append(path.toString());
             int progress = 0;
@@ -291,9 +306,22 @@ public:
             if (e.code() == ErrorCode::NotFound) throw mcp::RpcError(-32602, "Unknown MCP tool: " + name);
             throw;
         }
-        ToolRunner runner(frozen, policy, options.tools);
+        auto runnerOptions=options.tools;
+        if(options.permissionRequests)runnerOptions.permissionRequests=conversation(request.sessionId)->permissionRequests;
+        ToolRunner runner(frozen, policy, runnerOptions);
         ToolCall call{uuid(), name, params["arguments"].toObject()};
         ToolContext context{request.sessionId, uuid(), options.workingDirectory, {}, request.cancellation, request.progress};
+        context.permissionRequests=runnerOptions.permissionRequests;
+        // Hooks, nested runs and tool progress all share one MCP request token.
+        // Serialize their notifications with a monotonic bridge step counter.
+        if(request.progress) {
+            struct Progress {std::mutex mutex;quint64 step=0;};auto state=std::make_shared<Progress>();
+            context.progress=[state,send=request.progress](QJsonObject data) {
+                std::lock_guard lock(state->mutex);auto metadata=data["_meta"].toObject();
+                metadata["iisacc/sourceProgress"]=QJsonObject{{"progress",data.value("progress")},{"total",data.value("total")}};
+                data["_meta"]=metadata;data["progress"]=double(++state->step);data.remove("total");send(data);
+            };
+        }
         std::unique_ptr<Invocation> invocation;
         if(options.engine&&name!="iiLocalLLM.agent.clear") {
             invocation=std::make_unique<Invocation>(conversation(request.sessionId),context.runId,request.cancellation);
@@ -309,7 +337,7 @@ public:
         };
         int hookProgress=0;
         auto observe=[&](const Event& event) {
-            if(event.kind==EventKind::Hook&&request.progress)request.progress({{"progress",++hookProgress},{"message","hook"},
+            if((event.kind==EventKind::Hook||event.kind==EventKind::PermissionRequested||event.kind==EventKind::PermissionResolved)&&context.progress)context.progress({{"progress",++hookProgress},{"message",enumName(event.kind)},
                 {"_meta",QJsonObject{{"iisacc/agentEvent",toJson(event)}}}});
         };
         const bool shellControl = source == "builtin.shell.control" && QStringList{"TaskOutput", "TaskStop", "ShellTaskList"}.contains(name);
@@ -339,6 +367,26 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
         return result;
     };
     server.handlers["tools/call"] = [state](const auto& params, const auto& request) { return state->call(params, request); };
+    if(state->options.permissionRequests) {
+        server.experimentalCapabilities["iisacc/permissionRequests"]=QJsonObject{{"schema","iisacc.permission-request/1"},
+            {"pendingMethod","iisacc/permissions/pending"},{"respondMethod","iisacc/permissions/respond"}};
+        for(const auto& method:QStringList{"iisacc/permissions/pending","iisacc/permissions/respond"})
+            server.controlHandlers[method]=[state,method](const QJsonObject& params,const mcp::ServerRequestContext& request) {
+                request.cancellation.throwIfCancelled();const bool pending=method.endsWith("/pending");
+                const QStringList keys=pending?QStringList{"after","limit","_meta"}:QStringList{"request_id","decision","_meta"};
+                for(auto i=params.begin();i!=params.end();++i)if(!keys.contains(i.key()))throw mcp::RpcError(-32602,"Unknown permission parameter: "+i.key());
+                auto broker=state->conversation(request.sessionId)->permissionRequests;
+                if(!pending) {
+                    if(!params["request_id"].isString()||!params["decision"].isObject())throw mcp::RpcError(-32602,"Permission request_id and decision are required");
+                    return broker->respond(params["request_id"].toString(),params["decision"].toObject());
+                }
+                const auto after=params.value("after");const auto cursor=after.toDouble();const auto limit=params.value("limit");const auto count=limit.toDouble(32);
+                if((!after.isUndefined()&&(!after.isDouble()||cursor<0||cursor>9007199254740991.0||std::floor(cursor)!=cursor))
+                    ||(!limit.isUndefined()&&(!limit.isDouble()||count<1||count>128||std::floor(count)!=count)))throw mcp::RpcError(-32602,"Invalid permission page");
+                // Leave room for the JSON-RPC envelope in the default 8 MiB frame.
+                return broker->pending(qint64(cursor),int(count),5*1024*1024);
+            };
+    }
     server.onClosed = [state](const QString& session) { state->closeConnection(session); };
     return server;
 }

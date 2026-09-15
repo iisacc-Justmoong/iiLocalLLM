@@ -384,6 +384,7 @@ ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args
     const auto resume=args["resume"].toString();std::shared_ptr<Impl::Job> job;SubagentDefinition definition;RunRequest request;QString id;
     const auto catalog=profiles(context.cancellation);
     const auto configureRequest=[&]{
+        request.permissionRequests=context.permissionRequests;
         const int cap=std::min(d->options.maxTurns,definition.maxTurns);
         if(args.contains("max_turns")) require(args["max_turns"].isDouble() && args["max_turns"].toDouble()==std::floor(args["max_turns"].toDouble()) && args["max_turns"].toDouble()>=1 && args["max_turns"].toDouble()<=cap,"Invalid subagent turn limit");
         request.prompt=args["prompt"].toString();request.maxTurns=args["max_turns"].toInt(cap);

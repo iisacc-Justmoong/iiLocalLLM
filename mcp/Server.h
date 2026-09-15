@@ -16,7 +16,7 @@ struct ServerRequestContext {
 using ServerRequestHandler = std::function<QJsonObject(const QJsonObject&, const ServerRequestContext&)>;
 using ServerListHandler = std::function<QJsonArray(const ServerRequestContext&)>;
 struct ServerOptions {
-    QJsonObject implementation{{"name", "iiLocalLLM"}, {"version", "0.23.0"}};
+    QJsonObject implementation{{"name", "iiLocalLLM"}, {"version", "0.27.0"}};
     QString instructions;
     QStringList protocolVersions{"2025-11-25", "2025-06-18", "2025-03-26"};
     std::map<QString, ServerRequestHandler> handlers;
@@ -37,6 +37,12 @@ struct ServerOptions {
     int maxListItems = 10000;
     int maxListSnapshots = 8;
     int cursorTimeoutMs = 60000;
+    // Host control RPCs use a separate bounded pool, so waiting tools cannot
+    // starve the very replies that release them. Never advertised as tools.
+    std::map<QString, ServerRequestHandler> controlHandlers;
+    int maxConcurrentControlRequests = 2;
+    int maxQueuedControlRequests = 16;
+    QJsonObject experimentalCapabilities;
 };
 struct ServerFrame {
     QJsonValue message;

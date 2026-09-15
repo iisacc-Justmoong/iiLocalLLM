@@ -363,6 +363,7 @@ public:
                     quint64(session.compactions.size()), std::make_shared<Session>(session)};
                 context.transcriptPath=QDir(options.sessionsDirectory).filePath(session.id+"/transcript.jsonl");
                 context.allowedTools = activeAllowedTools;
+                context.permissionRequests=request.permissionRequests?request.permissionRequests:options.permissionRequests;
                 context.progress = [&](const QJsonObject& data) { send({EventKind::ToolProgress, runId, request.sessionId, {}, {}, data}); };
                 const auto outcome = options.forkedSkill({std::move(user), request.generation, request.maxTurns, request.contextPaths}, context);
                 result = outcome.result; result.runId = runId; result.sessionId = request.sessionId;
@@ -438,7 +439,8 @@ public:
                     if (compactOnly) { result.text = checkpoint.summary; result.status = RunStatus::Completed; break; }
                     modelRequest = base; modelRequest.messages.append(modelMessages(session));
                 }
-                const ToolRunner runner(turnRegistry, policy, {options.hooks, options.permission, 24000, options.permissionResponse, options.permissionUpdates});
+                const auto permissionRequests=request.permissionRequests?request.permissionRequests:options.permissionRequests;
+                const ToolRunner runner(turnRegistry, policy, {options.hooks, options.permission, 24000, options.permissionResponse, options.permissionUpdates, permissionRequests});
                 qsizetype streamed = 0;
                 auto reply = model->generate(modelRequest, token, [&](const QString& text) {
                     token.throwIfCancelled(); streamed += text.size();
@@ -475,6 +477,7 @@ public:
                     result.text = reply.text; result.status = RunStatus::Completed; break;
                 }
                 ToolContext toolBase{session.id, runId, session.workingDirectory, lease->artifactsDirectory(), token, {}, quint64(session.compactions.size()), std::make_shared<Session>(session)};
+                toolBase.permissionRequests=permissionRequests;
                 toolBase.transcriptPath=QDir(options.sessionsDirectory).filePath(session.id+"/transcript.jsonl");
                 auto runTool = [&](const ToolCall& call) {
                     auto context = toolBase;
@@ -739,8 +742,9 @@ void Engine::stopSubagents(const QString& id) const {
         if (!state["finished"].toBool()) stop.execute({{"agent_id", state["agentId"]}}, context);
     }
 }
+bool Engine::permissionRequestsEnabled() const {return bool(d->options.permissionRequests);}
 ToolResult Engine::runSubagentTool(const QString& id, const QString& name, const QJsonObject& args,
-    const CancellationToken& token, const EventCallback& callback) const {
+    const CancellationToken& token, const EventCallback& callback, std::shared_ptr<PermissionRequests> requests) const {
     if (!subagentsEnabled()) throw Error(ErrorCode::RuntimeUnavailable, "Subagents are disabled by the host");
     if (!QStringList{"Agent", "AgentOutput", "AgentStop", "AgentList", "AgentProfiles"}.contains(name)) throw Error(ErrorCode::NotFound, "Unknown subagent tool");
     token.throwIfCancelled();
@@ -753,15 +757,16 @@ ToolResult Engine::runSubagentTool(const QString& id, const QString& name, const
     ToolContext context{id, uuid(), session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), operation.token};
     context.transcriptPath=transcriptPath(id);
     context.sessionSnapshot = std::make_shared<Session>(session);
+    context.permissionRequests=requests?requests:d->options.permissionRequests;
     const auto callId = uuid();
     context.progress = [callback, id, runId = context.runId, callId](const QJsonObject& data) {
         if (callback) callback({EventKind::ToolProgress, runId, id, callId, {}, data});
     };
-    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates});
+    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests});
     return runner.run({callId, name, args}, context, callback);
 }
 ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJsonObject& args,
-    const CancellationToken& token, const EventCallback& callback) const {
+    const CancellationToken& token, const EventCallback& callback, std::shared_ptr<PermissionRequests> requests) const {
     if (!backgroundTasksEnabled()) throw Error(ErrorCode::RuntimeUnavailable, "Background shell tasks are disabled by the host");
     if (!QStringList{"Bash", "TaskOutput", "TaskStop", "ShellTaskList"}.contains(name)) throw Error(ErrorCode::NotFound, "Unknown shell task tool");
     token.throwIfCancelled(); const auto session = d->store.metadata(id); auto registry = d->registry->snapshot();
@@ -771,7 +776,8 @@ ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJ
         throw Error(ErrorCode::InvalidArgument, "Shell control must refer to the host's native tool");
     ToolContext context{id, uuid(), session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), operation.token};
     context.transcriptPath=transcriptPath(id);
-    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates});
+    context.permissionRequests=requests?requests:d->options.permissionRequests;
+    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests});
     return runner.run({uuid(), name, args}, context, callback);
 }
 Session Engine::sessionMetadata(const QString& id) const { return d->store.metadata(id); }
@@ -784,7 +790,7 @@ SkillCatalog Engine::skills(const QString& id, const CancellationToken& token) c
     return detail::executableSkills(d->store.metadata(id).workingDirectory, d->options.skills, bool(d->options.forkedSkill), token);
 }
 ToolResult Engine::runTaskTool(const QString& id, const QString& name, const QJsonObject& args,
-    const CancellationToken& token, const EventCallback& callback) const {
+    const CancellationToken& token, const EventCallback& callback, std::shared_ptr<PermissionRequests> requests) const {
     if (!d->tasks) throw Error(ErrorCode::RuntimeUnavailable, "Task tools are disabled by the host");
     token.throwIfCancelled();
     const auto session = d->store.metadata(id);
@@ -793,7 +799,8 @@ ToolResult Engine::runTaskTool(const QString& id, const QString& name, const QJs
     for (auto tool : d->taskToolsFor(id, runId, callback)) registry->add(std::move(tool));
     ToolContext context{id, runId, session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), operation.token};
     context.transcriptPath=transcriptPath(id);
-    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates});
+    context.permissionRequests=requests?requests:d->options.permissionRequests;
+    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests});
     return runner.run({uuid(), name, args}, context, callback);
 }
 RunHandle Engine::compact(CompactRequest request, EventCallback callback) {

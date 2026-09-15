@@ -10,11 +10,12 @@ namespace iiLocalLLMClient {
 // Remote callers can inspect the result; they cannot provide this file or mode.
 inline std::shared_ptr<const iiLocalLLM::agent::PermissionPolicy> permissionConfig(
     const QString& path,const QString& workspace,QList<iiLocalLLM::agent::PermissionRule> cli,
-    QList<iiLocalLLM::agent::PermissionRule> host={},const QStringList& additionalDirectories={}) {
+    QList<iiLocalLLM::agent::PermissionRule> host={},const QStringList& additionalDirectories={},
+    iiLocalLLM::agent::PermissionMode fallback=iiLocalLLM::agent::PermissionMode::DontAsk) {
     using namespace iiLocalLLM; namespace a=agent;
     if(path.isEmpty()) {
         a::PermissionSettingsOptions options;options.workingDirectory=workspace;options.enabledSources.clear();
-        options.fallbackMode=a::PermissionMode::DontAsk;options.additionalDirectories=additionalDirectories;
+        options.fallbackMode=fallback;options.additionalDirectories=additionalDirectories;
         auto policy=std::make_shared<a::SettingsPermissionPolicy>(options,std::move(cli),std::move(host));
         (void)policy->snapshot();return policy;
     }
@@ -26,7 +27,7 @@ inline std::shared_ptr<const iiLocalLLM::agent::PermissionPolicy> permissionConf
     const auto object=document.object();
     const QSet<QString> known{"user_directory","managed_directory","home_directory","enabled_sources","flag_files","settings","mode"};
     for(auto i=object.begin();i!=object.end();++i)if(!known.contains(i.key()))throw Error(ErrorCode::InvalidArgument,"Unknown permission settings host field: "+i.key());
-    a::PermissionSettingsOptions options;options.workingDirectory=workspace;options.fallbackMode=a::PermissionMode::DontAsk;
+    a::PermissionSettingsOptions options;options.workingDirectory=workspace;options.fallbackMode=fallback;
     options.additionalDirectories=additionalDirectories;
     auto text=[](const QJsonValue& value) {
         if(!value.isString()||value.toString().trimmed().isEmpty()||value.toString().size()>4096||value.toString().contains(QChar::Null))

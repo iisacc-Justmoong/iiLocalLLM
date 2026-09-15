@@ -118,3 +118,7 @@ EngineOptions.taskToolsEnabled로 작업 도구를 활성화한다. TaskStore는
 0.18.0의 스킬 allowed-tools와 인자 권한 규칙은 [Permissions.md](Permissions.md)를 따른다. API·IPC·MCP 입력은 allowed_tools/prompt_metadata 같은 호스트 전용 권한·출처 필드를 받지 않는다. 모델 Skill의 PermissionRequested 이벤트에는 고정된 permission_preview가 있다. 원격 권한 응답 중개는 아직 지원하지 않는다.
 
 0.22는 사용자 제출·세션 활성화 훅을 C++ Engine에 연결한다. 내부 자식 지시와 모델 Skill 실행에는 사용자 제출 훅을 반복하지 않고 자식의 기존 SubagentStart/Stop을 유지한다. 원문·차단·중단과 prepare/persist 큐의 실패 계약은 [InputLifecycle.md](InputLifecycle.md)에 명시한다.
+
+## 0.27 앱 권한 요청
+
+인증 API/native IPC와 MCP 연결별 승인 채널, 독립 제어 처리, 훅·앱 경쟁, 취소·기한·중복 응답을 추가한다. [PermissionRequests.md](PermissionRequests.md)에 활성화·요청·응답 계약과 참조 차이를 기술한다. 전체 하네스와 실제 앱 통합 완료를 의미하지 않는다.

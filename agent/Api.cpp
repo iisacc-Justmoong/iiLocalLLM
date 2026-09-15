@@ -13,6 +13,7 @@
 #include <QtCore/QUuid>
 #include <chrono>
 #include <algorithm>
+#include <cmath>
 #include <map>
 #include <mutex>
 #include <condition_variable>
@@ -54,7 +55,8 @@ QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.se
     "agent.tasks.create", "agent.tasks.get", "agent.tasks.list", "agent.tasks.update", "agent.tasks.claim", "agent.todos.write", "agent.todos.get",
     "agent.shell.start", "agent.shell.output", "agent.shell.stop", "agent.shell.list",
     "agent.agents.run", "agent.agents.output", "agent.agents.stop", "agent.agents.list", "agent.agents.profiles",
-    "agent.inputs.enqueue", "agent.inputs.list", "agent.inputs.remove", "agent.inputs.run", "agent.sessions.end", "agent.sessions.clear"}; }
+    "agent.inputs.enqueue", "agent.inputs.list", "agent.inputs.remove", "agent.inputs.run", "agent.sessions.end", "agent.sessions.clear",
+    "agent.permissions.pending", "agent.permissions.respond"}; }
 bool inputControl(const QString& method) {
     return method == "agent.inputs.enqueue" || method == "agent.inputs.list" || method == "agent.inputs.remove";
 }
@@ -75,7 +77,7 @@ bool nested(const QString& path, const QString& root) { return path == root || p
 }
 class Api::Impl : public std::enable_shared_from_this<Impl> {
 public:
-    struct Client { QString id; QByteArray digest; std::shared_ptr<Engine> engine; std::shared_ptr<Subagents> subagents; std::mutex creation; QSet<QString> ending; int reservedSessions=0; };
+    struct Client { QString id; QByteArray digest; std::shared_ptr<Engine> engine; std::shared_ptr<Subagents> subagents; std::mutex creation; QSet<QString> ending; int reservedSessions=0; std::shared_ptr<PermissionRequests> permissionRequests; };
     struct Job {
         QString id, method, clientId; QJsonObject params; CancellationToken token;
         Clock::time_point deadline; std::atomic_bool running = false;
@@ -100,6 +102,11 @@ public:
             && options.maxResultBytes >= 1024 && options.requestTimeoutMs > 0
             && options.maxConcurrentInputControls >= 1 && options.maxConcurrentInputControls <= 16
             && options.maxQueuedInputControls >= 0 && options.maxQueuedInputControls <= 10000, "Invalid agent API configuration");
+        require(!options.engine.permissionRequests,"Agent API assigns private permission channels; configure ApiOptions.permissionRequests");
+        if(options.permissionRequests) {
+            PermissionRequests validate(*options.permissionRequests);
+            require(options.permissionRequests->maxRequestBytes<=options.maxResultBytes-256,"Permission requests must fit the API result limit");
+        }
         options.workingDirectory = QFileInfo(options.workingDirectory).canonicalFilePath();
         require(!options.workingDirectory.isEmpty() && QFileInfo(options.workingDirectory).isDir(), "Agent API workspace must exist");
         require(options.engine.projectContext.rootDirectory.isEmpty()
@@ -122,6 +129,10 @@ public:
             client->digest = QCryptographicHash::hash(it.value().toUtf8(), QCryptographicHash::Sha256);
             require(!digests.contains(client->digest), "Agent API tokens must be distinct"); digests.insert(client->digest);
             auto engineOptions = options.engine;
+            if(options.permissionRequests) {
+                client->permissionRequests=std::make_shared<PermissionRequests>(*options.permissionRequests);
+                engineOptions.permissionRequests=client->permissionRequests;
+            }
             const auto directory = QString::fromLatin1(QCryptographicHash::hash(client->id.toUtf8(), QCryptographicHash::Sha256).toHex());
             engineOptions.sessionsDirectory = QDir(options.stateDirectory).filePath(directory + "/sessions");
             if (options.subagentsEnabled) {
@@ -161,7 +172,7 @@ public:
                 {"auto_compact_enabled", options.engine.compaction.automatic}, {"tool_search_enabled", options.engine.toolSearch.enabled},
                 {"task_tools_enabled", client->engine->taskToolsEnabled()}, {"background_tasks_enabled", client->engine->backgroundTasksEnabled()},
                 {"input_queue_enabled", true}, {"skills_enabled", options.engine.skills.enabled}, {"subagents_enabled", options.subagentsEnabled},
-                {"hooks_enabled",!options.engine.hooks.isEmpty()}};
+                {"hooks_enabled",!options.engine.hooks.isEmpty()},{"permission_requests_enabled",bool(client->permissionRequests)}};
         }
         static const QMap<QString, QString> agentMethods{{"agent.agents.run", "Agent"}, {"agent.agents.output", "AgentOutput"},
             {"agent.agents.stop", "AgentStop"}, {"agent.agents.list", "AgentList"}, {"agent.agents.profiles", "AgentProfiles"}};
@@ -357,6 +368,20 @@ public:
         require(!client->ending.contains(params.value("session_id").toString()),"Agent session is ending",ErrorCode::ModelInUse);
         require(QJsonDocument(params).toJson(QJsonDocument::Compact).size() <= options.maxResultBytes, "Agent API parameters exceed limit", ErrorCode::ResourceLimit);
         auto promise = std::make_shared<std::promise<QJsonValue>>(); RpcHandle handle{uuid(), {}, promise->get_future().share()};
+        // These bounded broker operations never acquire an Engine/session lease or
+        // enter the worker pools that may already be waiting for this answer.
+        if(method=="agent.permissions.pending"||method=="agent.permissions.respond") {
+            require(bool(client->permissionRequests),"Remote permission requests are disabled",ErrorCode::RuntimeUnavailable);
+            if(method.endsWith(".pending")) {
+                fields(params,{"after","limit"});const auto after=params.value("after");const auto cursor=after.toDouble();
+                require(after.isUndefined()||(after.isDouble()&&cursor>=0&&cursor<=9007199254740991.0&&std::floor(cursor)==cursor),"Invalid permission cursor");
+                promise->set_value(client->permissionRequests->pending(qint64(cursor),integer(params,"limit",32,1,128),std::min(options.maxResultBytes,64*1024*1024)));
+            } else {
+                fields(params,{"request_id","decision"});require(params["decision"].isObject(),"Permission decision must be an object");
+                promise->set_value(client->permissionRequests->respond(text(params,"request_id"),params["decision"].toObject()));
+            }
+            return handle;
+        }
         if (method == "agent.cancel" || method == "agent.status") {
             fields(params, {"request_id"}); const auto found = active.find(text(params, "request_id"));
             require(found != active.end() && found->second->clientId == client->id, "Agent request was not found", ErrorCode::NotFound);
@@ -382,7 +407,8 @@ public:
     }
     void stop() {
         std::lock_guard join(joining);
-        { std::lock_guard lock(mutex); stopping = true; for (const auto& [id, job] : active) job->token.cancel(); }
+        { std::lock_guard lock(mutex); stopping = true; for (const auto& [id, job] : active) job->token.cancel();
+            for(const auto& [id,client]:clients)if(client->permissionRequests)client->permissionRequests->close(); }
         workers.waitForDone();
         inputWorkers.waitForDone();
         for (const auto& [id, client] : clients) client->engine->close();

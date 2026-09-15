@@ -1,5 +1,6 @@
 #pragma once
 #include "Engine.h"
+#include "PermissionRequests.h"
 #include "../mcp/Server.h"
 
 namespace iiLocalLLM::agent {
@@ -16,6 +17,7 @@ struct McpServerOptions {
     GenerationOptions generation;
     int maxAgentTurns = 32;
     int maxAgentSessions = 64;
+    std::optional<PermissionRequestsOptions> permissionRequests; // One channel per MCP connection.
 };
 // Exports a live registry through schema validation, policy and hooks. The export
 // coordinates concurrent read-safe calls and exclusive calls across connections.

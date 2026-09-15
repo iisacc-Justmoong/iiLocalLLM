@@ -1,5 +1,6 @@
 #include "Tools.h"
 #include "PermissionResponses.h"
+#include "PermissionRequests.h"
 #include "PermissionRulesInternal.h"
 #include <jsoncons/json.hpp>
 #include <jsoncons_ext/jsonschema/jsonschema.hpp>
@@ -12,6 +13,7 @@
 #include <map>
 #include <shared_mutex>
 #include <mutex>
+#include <future>
 
 namespace iiLocalLLM::agent {
 namespace {
@@ -154,7 +156,7 @@ void PermissionPolicy::applyUpdates(const QJsonArray&,const ToolContext&) const 
 bool ToolRunner::concurrencySafe(const ToolCall& call) const {
     try { const auto entry = registry_->resolve(call.name); entry->validateInput(call.arguments); const auto& tool = entry->tool;
         // Input-changing hooks can change the scheduling classification. Serialize those runs.
-        return options_.hooks.isEmpty() && !options_.permissionResponse
+        return options_.hooks.isEmpty() && !options_.permissionResponse && !options_.permissionRequests
             && (tool.canRunConcurrently ? tool.canRunConcurrently(call.arguments) : tool.definition.concurrencySafe);
     } catch (...) { return false; }
 }
@@ -212,24 +214,80 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
             auto data = toJson(call);
             if (tool.prepare) data["permission_preview"] = toJson(prepared.definition);
             if(!decision.suggestions.isEmpty())data["permission_suggestions"]=decision.suggestions;
-            event(callback, EventKind::PermissionRequested, context, call, decision.reason, data);
             auto requestContext=hookContext;requestContext["permission_reason"]=decision.reason;
             requestContext["permission_mode"]=policy_->describe(context)["mode"].toString("unknown");
             if(tool.prepare)requestContext["permission_preview"]=toJson(prepared.definition);
             if(!decision.suggestions.isEmpty())requestContext["permission_suggestions"]=decision.suggestions;
             std::optional<PermissionResponse> response;
-            for(const auto& hook:options_.hooks) {
+            const auto channel=context.permissionRequests?context.permissionRequests:options_.permissionRequests;
+            if(channel) {
+                const auto ticket=channel->begin(call,decision,context,tool.prepare?toJson(prepared.definition):QJsonObject{});
+                const auto localToken=CancellationToken::linkedTo(context.cancellation);
+                struct LocalResult {QJsonArray diagnostics;QString feedback;bool won=false;};
+                std::future<LocalResult> local;
+                QJsonObject resolution;
+                try {
+                    if(!options_.hooks.isEmpty()||options_.permissionResponse||options_.permission) {
+                        local=std::async(std::launch::async,[&] {
+                            LocalResult result;
+                            try {
+                                std::optional<PermissionResponse> answer;QString source="hook";
+                                for(const auto& hook:options_.hooks) {
+                                    localToken.throwIfCancelled();
+                                    const auto value=hook({HookKind::PermissionRequest,context.sessionId,context.runId,call,{},decision.reason,requestContext},localToken);
+                                    for(const auto& diagnostic:value.diagnostics)result.diagnostics.append(diagnostic);
+                                    if(!value.feedback.isEmpty()){if(!result.feedback.isEmpty())result.feedback+='\n';result.feedback+=value.feedback;}
+                                    if(value.stop)answer=PermissionResponse{PermissionBehavior::Deny,value.stopReason,{}, {},true};
+                                    else if(value.block)answer=PermissionResponse{PermissionBehavior::Deny,value.feedback};
+                                    else if(value.permissionResponse)answer=value.permissionResponse;
+                                    if(answer)break;
+                                }
+                                localToken.throwIfCancelled();auto localContext=context;localContext.cancellation=localToken;
+                                if(!answer&&options_.permissionResponse){source="host_callback";answer=options_.permissionResponse(call,decision,localContext);}
+                                if(!answer&&options_.permission){source="host_callback";answer=PermissionResponse{options_.permission(call,decision,localContext)?PermissionBehavior::Allow:PermissionBehavior::Deny};}
+                                if(answer)result.won=channel->settle(ticket,*answer,source);
+                            }catch(const std::exception& error) {
+                                if(!localToken.isCancelled()) {
+                                    result.diagnostics.append(QJsonObject{{"hook_event_name","PermissionRequest"},{"outcome","handler_error"},{"message",QString::fromUtf8(error.what())}});
+                                    result.won=channel->settle(ticket,{PermissionBehavior::Deny,"Permission handler failed"},"handler_error");
+                                }
+                            }catch(...) {
+                                if(!localToken.isCancelled())result.won=channel->settle(ticket,{PermissionBehavior::Deny,"Unknown permission handler failure"},"handler_error");
+                            }
+                            return result;
+                        });
+                    }
+                    event(callback,EventKind::PermissionRequested,context,call,decision.reason,ticket.request);
+                    response=channel->wait(ticket,context.cancellation,&resolution);localToken.cancel();
+                    if(local.valid()) {
+                        const auto result=local.get();
+                        for(const auto& diagnostic:result.diagnostics)event(callback,EventKind::Hook,context,call,{},diagnostic.toObject());
+                        if(result.won&&!result.feedback.isEmpty()){if(!beforeFeedback.isEmpty())beforeFeedback+='\n';beforeFeedback+=result.feedback;}
+                    }
+                    event(callback,EventKind::PermissionResolved,context,call,{},resolution);
+                }catch(...) {
+                    localToken.cancel();channel->dismiss(ticket);
+                    if(local.valid())try{(void)local.get();}catch(...){}
+                    // Preserve the original failure even if the observer also throws.
+                    try {if(resolution.isEmpty())(void)channel->wait(ticket,{},&resolution);
+                        event(callback,EventKind::PermissionResolved,context,call,{},resolution);}catch(...){}
+                    throw;
+                }
+            } else {
+                event(callback, EventKind::PermissionRequested, context, call, decision.reason, data);
+                for(const auto& hook:options_.hooks) {
+                    context.cancellation.throwIfCancelled();
+                    const auto r=hook({HookKind::PermissionRequest,context.sessionId,context.runId,call,{},decision.reason,requestContext},context.cancellation);
+                    hookEvents(r);
+                    if(!r.feedback.isEmpty()){if(!beforeFeedback.isEmpty())beforeFeedback+='\n';beforeFeedback+=r.feedback;}
+                    if(r.block)response=PermissionResponse{PermissionBehavior::Deny,r.feedback};
+                    else if(r.permissionResponse)response=r.permissionResponse;
+                    if(response)break;
+                }
                 context.cancellation.throwIfCancelled();
-                const auto r=hook({HookKind::PermissionRequest,context.sessionId,context.runId,call,{},decision.reason,requestContext},context.cancellation);
-                hookEvents(r);
-                if(!r.feedback.isEmpty()){if(!beforeFeedback.isEmpty())beforeFeedback+='\n';beforeFeedback+=r.feedback;}
-                if(r.block)response=PermissionResponse{PermissionBehavior::Deny,r.feedback};
-                else if(r.permissionResponse)response=r.permissionResponse;
-                if(response)break;
+                if(!response&&options_.permissionResponse)response=options_.permissionResponse(call,decision,context);
+                if(!response)response=PermissionResponse{options_.permission&&options_.permission(call,decision,context)?PermissionBehavior::Allow:PermissionBehavior::Deny};
             }
-            context.cancellation.throwIfCancelled();
-            if(!response&&options_.permissionResponse)response=options_.permissionResponse(call,decision,context);
-            if(!response)response=PermissionResponse{options_.permission&&options_.permission(call,decision,context)?PermissionBehavior::Allow:PermissionBehavior::Deny};
             context.cancellation.throwIfCancelled();detail::validatePermissionResponse(*response);
             allowed=response->behavior==PermissionBehavior::Allow;
             if(!response->message.isEmpty())decision.reason=response->message;

@@ -1,5 +1,31 @@
 # 구현 검증 기록
 
+## 2026-09-15 앱 권한 요청·응답 중개 (0.27.0)
+
+C++ PermissionRequests와 ToolRunner의 훅/앱 경쟁을 구현했다. 첫 결정만 입력·정책 변경에 적용하고 늦은 응답, 같은 결정 재전송, 취소·기한·종료를 처리한다. API는 인증 클라이언트별, MCP는 연결별 채널을 사용하며 parent/child 실행으로 소유권을 전달한다. API/native IPC와 MCP 확장 제어 경로, 호스트 CLI 설정, 독립 MCP 제어 작업 풀을 제공한다. 응답 메서드는 모델 도구 목록에 없다. 계약과 참조 차이는 [PermissionRequests.md](PermissionRequests.md)에 있다.
+
+| 검증 경계 | 최종 관측 |
+|---|---|
+| Release 전체, inference 라벨 제외 | 58/58, 109.97초 |
+| ASan·UBSan, llama 비활성 Debug | 56/56, 121.84초; 계측 오류 보고 없음 |
+| 별도 설치 소비자 | 29/29, 26.20초 |
+| C++ 실제 파일·동시성 | 앱/훅 승자, 늦은 입력 무시, 8개 동시 응답의 단일 승자, 중복·채널 격리, 기한·취소·이력 제한 통과 |
+| API/MCP dispatcher | 일반 큐 포화 중 조회·응답, 다른 클라이언트/연결 거부, 모델/자식 실행의 채널 전달 통과 |
+| API·native IPC CLI | HTTP TaskCreate를 IPC 응답으로 변경, 거부 시 미게시, 잘못된 응답과 재전송 통과 |
+| MCP HTTP·공식 Python stdio | 앱 입력 변경으로 실제 파일 생성, 변경 대상의 호스트 deny 재검사, 연결 격리와 비도구 제어 경로 통과 |
+| 실제 Qwen3 8B, 소스/설치본 | API 모델 Write의 승인 입력을 native IPC로 변경해 정확한 임의 바이트 생성, 앱 interrupt로 run cancelled 통과 |
+| 설치/ABI | 공개 헤더 41개·문서·카탈로그·라이선스 일치, 실제 stage 라이브러리 로딩 |
+
+새 공개 API가 없는 컴파일 실패는 permission-requests-red.log와 permission-requests-race-red.log에 보존한다. 새 테스트의 임시 JSON 객체 참조 수명 오류는 Release에서 재현되었고 CrashReporter 프레임이 테스트의 QJsonValueConstRef 접근을 가리켰다. value()로 값을 소유하도록 고쳤다. ASan의 Qt 바이너리 접근에서 재현되지 않았다는 이유로 해결로 간주하지 않고 Release도 다시 검사했다. SDK 생산 코드의 충돌 수정으로 보고하지 않는다. MCP 테스트의 event/kind 필드, sanitizer의 긴 Unix 소켓 경로, 공식 Python RequestParams의 확장 필드 누락도 각각 수정했다. 원문은 permission-requests-transport-tests.log, permission-requests-retest.log, permission-requests-san-repair-tests.log, permission-requests-official-focused.log에 있다.
+
+호스트 설정의 잘못된 타입·필드·범위·권한·위치 16건을 모델 초기화 전에 거부한다. 공식 Python MCP SDK 1.26.0은 확장 필드를 허용하는 RequestParams 하위 모델과 표준 send_request로 실제 stdio 응답을 보냈다. MCP 진행 알림은 중첩 모델·도구·훅에 단조 증가 step을 부여하고 원래 진행값을 별도 메타데이터로 보존한다.
+
+모델은 model://qwen3-8b-q4, 5027783488바이트, SHA-256 d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785이다. 파일 해시를 이번 검증에서 다시 계산했다. context 8192, temperature 0, 출력 상한 1024, thinking=false/tool_grammar=false로 실행했다. 실제 모델 검증은 API 실행과 native IPC 승인이다. MCP에서는 실제 파일 도구의 HTTP/공식 stdio 실행과 C++ 모델/자식 채널 전달을 검사했으며 이를 MCP Qwen 생성 증거로 대체하지 않는다.
+
+설치는 build/permission-requests-stage, 소비자는 build/permission-requests-consumer/build이다. 라이브러리 SHA-256은 b2954560ae85f729155d787c9f74c8c709b0af53ed074c5abfc4f1527310b404, Mach-O UUID는 52EB33BD-947A-391A-B3D1-BCBC5499EFA0이다. 실행 파일 UUID 및 CMake 설치 RPATH 변환 후 해시가 일치하고 iillm은 libiiLocalLLM/llama/ggml에 직접 링크되지 않는다. 라이브러리 경로 환경 변수를 비운 설치 로딩을 확인했다. build/permission-requests-verification.json, permission-requests-linkage.json, 각 final.log/XML과 source/installed-native.json에 증거를 보존한다.
+
+accepted는 결정 접수이며 도구·정책 저장 완료가 아니다. 완료 이력은 영속적이지 않다. 협조하지 않는 C++ 콜백을 강제로 중단하지 않는다. 독립 제어 처리는 dispatcher 큐의 보장이고 HTTP 작업자/SSE 총량 포화의 제어 예약은 남아 있다. 자동 제안·분류기, 전체 OS/설정/플러그인/앱 기능 역시 남아 있다. Society/Dreamscapes를 이번 단계에서 다시 패키징하지 않았고 iPhone은 사용자 지시로 제외했다. 기존 stage·증거와 실행 중인 사용자 daemon은 보존한다. 전체 목표는 partial이다.
+
 ## 2026-09-15 승인 권한 갱신·저장·세션 상속 (0.26.0)
 
 C++ SettingsPermissionPolicy에 규칙 추가/교체/삭제, 모드 변경, 디렉터리 추가/삭제를 구현했다. user/project/local 파일 저장과 session/cliArg 메모리를 구분하고 Engine fork/clear 및 자식 접수/재개에 런타임 상태를 전달한다. ToolRunner는 승인 입력의 스키마를 먼저 검사하고 정책 갱신 후 작업 경계·준비 대상·최종 거부를 확인한다. CLI·API·native IPC·MCP가 기본 정책 갱신을 사용한다. 계약과 참조 차이는 [PermissionUpdates.md](PermissionUpdates.md)에 기록한다.
