@@ -148,6 +148,9 @@ ToolRunner::ToolRunner(std::shared_ptr<ToolRegistry> registry, std::shared_ptr<c
     : registry_(std::move(registry)), policy_(std::move(policy)), options_(std::move(options)) {
     if (!registry_ || !policy_ || options_.maxResultCharacters < 1) throw Error(ErrorCode::InvalidArgument, "Invalid tool runner configuration");
 }
+void PermissionPolicy::applyUpdates(const QJsonArray&,const ToolContext&) const {
+    throw Error(ErrorCode::RuntimeUnavailable,"Permission updates require a trusted host handler or mutable policy");
+}
 bool ToolRunner::concurrencySafe(const ToolCall& call) const {
     try { const auto entry = registry_->resolve(call.name); entry->validateInput(call.arguments); const auto& tool = entry->tool;
         // Input-changing hooks can change the scheduling classification. Serialize those runs.
@@ -242,13 +245,14 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
                     const auto current=policy_->decide(prepared.definition,call.arguments,context);
                     if(current.behavior==PermissionBehavior::Deny)throw Error(ErrorCode::InvalidArgument,"Tool permission denied: "+current.reason);
                 };
-                if(response->updatedArguments){call.arguments=*response->updatedArguments;reprepare();}
-                checkDeny();
+                if(response->updatedArguments){call.arguments=*response->updatedArguments;entry->validateInput(call.arguments);}
                 if(!response->updatedPermissions.isEmpty()) {
-                    if(!options_.permissionUpdates)throw Error(ErrorCode::RuntimeUnavailable,"Permission updates require a trusted host handler");
-                    options_.permissionUpdates(response->updatedPermissions,context);context.cancellation.throwIfCancelled();
-                    reprepare();checkDeny();
-                }
+                    if(options_.permissionUpdates)options_.permissionUpdates(response->updatedPermissions,context);
+                    else policy_->applyUpdates(response->updatedPermissions,context);
+                    context.cancellation.throwIfCancelled();
+                    reprepare();
+                } else if(response->updatedArguments)reprepare();
+                checkDeny();
             }
         }
         if (!allowed) throw Error(ErrorCode::InvalidArgument, "Tool permission denied: " + decision.reason);

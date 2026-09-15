@@ -49,6 +49,8 @@ Read the requested files and report findings with their paths.
 
 `model: inherit`는 부모 모델을 사용한다. 파일의 모델 지정은 사용 권한이 아니다. 부모 모델, 호스트 `allowedModels`, `modelAliases`의 대상, 신뢰된 C++ 호스트 프로파일의 모델만 선택할 수 있다. 별칭은 명시적 문자열 매핑이며 `sonnet`/`opus`/`haiku`를 임의로 로컬 모델에 대응시키지 않는다. 재개에서도 현재 호스트의 모델 허용 여부를 확인한다.
 
+0.26은 자식 접수 시 승인된 부모의 런타임 권한을 독립 복사하고 재개 때 현재 부모 상태를 다시 받는다. 완료 후 자식 메모리 갱신은 버리며 파일 갱신은 유지한다. [PermissionUpdates.md](PermissionUpdates.md)의 수명 계약을 따른다.
+
 부모 정책의 Deny와 Ask는 프로파일이 Allow로 바꾸지 못한다. `dontAsk`는 남은 Ask를 Deny로 바꾸며 `plan`은 기존 C++ Plan 정책의 제한을 더한다. `default`, `inherit`, `acceptEdits`, `bypassPermissions`도 부모 정책을 상한으로 유지한다. 참조의 전체 권한 설정 병합이나 자동 분류 모드와 동일하다는 뜻은 아니다. `auto`는 실행 미지원이다.
 
 `background: true`는 호출 인자의 false와 관계없이 백그라운드 실행을 선택한다. 실행 중인 동기 작업을 자동으로 백그라운드로 바꾸는 기능은 아직 없다. `skills`는 새 자식에 한 번 인라인으로 사전 로딩한다. 기존 스킬 검증·본문 크기 제한을 적용하고 새 자식 세션 ID로 `${CLAUDE_SESSION_ID}`를 치환한 뒤 대화를 원자적으로 저장한다. 로딩 실패 시 대화와 작업 기록을 남기지 않는다. 모델 호출을 금지한 스킬, 없는 스킬, 미지원 기능이 있는 스킬은 실패한다. 참조가 일부 누락된 스킬을 경고 후 건너뛰는 것과 구별된다. 스킬 로딩 자체는 도구 권한을 넓히지 않으며 `Skill` 도구가 없는 프로파일도 사전 로딩은 사용할 수 있다.

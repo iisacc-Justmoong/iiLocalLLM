@@ -1,6 +1,8 @@
 #include "PermissionSettings.h"
 #include "PermissionRules.h"
 #include "ContextFile.h"
+#include "PermissionResponses.h"
+#include "PermissionSettingsFile.h"
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
@@ -8,6 +10,7 @@
 #include <QtCore/QSet>
 #include <algorithm>
 #include <mutex>
+#include <map>
 #ifdef Q_OS_UNIX
 #include <dirent.h>
 #include <cerrno>
@@ -133,16 +136,27 @@ void validate(const QJsonObject& data) {
     }
 }
 }
-struct SettingsPermissionPolicy::DirectoryBindings {
-    std::mutex mutex;
+struct SettingsPermissionPolicy::Runtime {
+    QJsonObject permissions;
+    std::optional<QList<PermissionRule>> cliRules;
+    std::optional<QStringList> cliDirectories;
+    std::optional<PermissionMode> mode;
+    QSet<QString> removedDirectories;
     QHash<QString,QString> targets;
 };
+struct SettingsPermissionPolicy::State {
+    std::mutex mutex;
+    QHash<QString,QString> targets;
+    QHash<QString,Runtime> sessions;
+};
 SettingsPermissionPolicy::SettingsPermissionPolicy(PermissionSettingsOptions options, QList<PermissionRule> cli, QList<PermissionRule> host)
-    : options_(std::move(options)), cliRules_(std::move(cli)), hostRules_(std::move(host)),directoryBindings_(std::make_shared<DirectoryBindings>()) {
+    : options_(std::move(options)), cliRules_(std::move(cli)), hostRules_(std::move(host)),state_(std::make_shared<State>()) {
     require(options_.maxFileBytes > 0 && options_.maxFileBytes <= 1024 * 1024 && options_.maxTotalBytes >= options_.maxFileBytes
         && options_.maxTotalBytes <= 16 * 1024 * 1024 && options_.maxFiles > 0 && options_.maxFiles <= 1024
         && options_.maxDirectories > 0 && options_.maxDirectories <= 1024
-        && options_.additionalDirectories.size() <= options_.maxDirectories, "Invalid permission settings limits");
+        && options_.additionalDirectories.size() <= options_.maxDirectories
+        && options_.maxRuntimeSessions>0&&options_.maxRuntimeSessions<=65536
+        && options_.updateLockTimeoutMs>0&&options_.updateLockTimeoutMs<=60000, "Invalid permission settings limits");
     options_.workingDirectory = QFileInfo(options_.workingDirectory).canonicalFilePath();
     require(!options_.workingDirectory.isEmpty() && QFileInfo(options_.workingDirectory).isDir(), "Permission settings workspace must exist");
     for (const auto& source : options_.enabledSources) require(QStringList{"user", "project", "local"}.contains(source), "Unknown permission setting source: " + source);
@@ -153,8 +167,17 @@ SettingsPermissionPolicy::SettingsPermissionPolicy(PermissionSettingsOptions opt
     RulePolicy(PermissionMode::Default, cliRules_ + hostRules_);
 }
 PermissionSettingsSnapshot SettingsPermissionPolicy::snapshot(const CancellationToken& token) const {
-    std::lock_guard bindingGuard(directoryBindings_->mutex);token.throwIfCancelled();
-    auto directoryTargets=directoryBindings_->targets;
+    std::lock_guard guard(state_->mutex);Runtime runtime;return snapshotLocked({{}, {},options_.workingDirectory,{},token},runtime,{});
+}
+PermissionSettingsSnapshot SettingsPermissionPolicy::sessionSnapshot(const ToolContext& context) const {
+    std::lock_guard guard(state_->mutex);auto runtime=state_->sessions.value(context.sessionId);
+    auto result=snapshotLocked(context,runtime,{});
+    if(state_->sessions.contains(context.sessionId))state_->sessions[context.sessionId].targets=std::move(runtime.targets);
+    return result;
+}
+PermissionSettingsSnapshot SettingsPermissionPolicy::snapshotLocked(const ToolContext& context,Runtime& runtime,const QHash<QString,QJsonObject>& replacements) const {
+    const auto& token=context.cancellation;token.throwIfCancelled();
+    auto directoryTargets=state_->targets, runtimeTargets=runtime.targets;
     QList<Layer> layers; qint64 total = 0;
     auto add = [&](QString source, QString path, QString root, QJsonObject data, QString sha = {}) {
         token.throwIfCancelled(); require(layers.size() < options_.maxFiles, "Too many permission settings files", ErrorCode::ResourceLimit);
@@ -162,7 +185,7 @@ PermissionSettingsSnapshot SettingsPermissionPolicy::snapshot(const Cancellation
     };
     auto file = [&](const QString& source, const QString& path, const QString& root, bool required = false) {
         token.throwIfCancelled(); const QFileInfo info(path);
-        const auto loaded=settingsBytes(root,path,options_.maxFileBytes,token);
+        const auto loaded=replacements.contains(path)?std::optional<QByteArray>(QJsonDocument(replacements[path]).toJson()):settingsBytes(root,path,options_.maxFileBytes,token);
         if(!loaded) { require(!required,"Settings file does not exist: "+path);return; }
         const auto& bytes=*loaded;
         total += bytes.size(); require(total <= options_.maxTotalBytes, "Permission settings exceed byte limit", ErrorCode::ResourceLimit);
@@ -188,6 +211,7 @@ PermissionSettingsSnapshot SettingsPermissionPolicy::snapshot(const Cancellation
         file("policySettings", options_.managedDirectory + "/managed-settings.json", options_.managedDirectory);
         for(const auto& path:fragments(options_.managedDirectory,options_.maxFiles,token)) file("policySettings",path,options_.managedDirectory,true);
     }
+    if(!runtime.permissions.isEmpty())add("session",{},options_.workingDirectory,{{"permissions",runtime.permissions}});
     PermissionSettingsSnapshot result; QJsonObject merged, managed;
     for (const auto& layer : layers) {
         merged = merge(merged, layer.data);
@@ -201,6 +225,7 @@ PermissionSettingsSnapshot SettingsPermissionPolicy::snapshot(const Cancellation
     const auto permissions = merged.value("permissions").toObject();
     result.bypassDisabled = permissions.value("disableBypassPermissionsMode") == "disable";
     QList<PermissionMode> modes;
+    if(runtime.mode)modes.append(*runtime.mode);
     if (options_.modeOverride) modes.append(*options_.modeOverride);
     if (permissions.contains("defaultMode")) modes.append(parseMode(permissions["defaultMode"].toString()));
     modes.append(options_.fallbackMode); modes.append(PermissionMode::Default);
@@ -209,52 +234,62 @@ PermissionSettingsSnapshot SettingsPermissionPolicy::snapshot(const Cancellation
         if (!QStringList{"allow", "deny", "ask", "defaultMode", "disableBypassPermissionsMode", "disableAutoMode", "additionalDirectories"}.contains(i.key()))
             result.unsupportedFeatures.append("permissions." + i.key());
     }
-    result.workingDirectories={options_.workingDirectory};QSet<QString> directoryInputs,activeBindings;
-    auto directory=[&](const QString& input,const QString& source,const QString& authority) {
+    auto absoluteDirectory=[&](QString input) {
+        if(input.startsWith('~')) {
+            require((input=="~"||input.startsWith("~/"))&&!options_.homeDirectory.isEmpty(),"Additional directory home expansion requires an explicit homeDirectory");
+            input=input=="~"?options_.homeDirectory:QDir(options_.homeDirectory).filePath(input.mid(2));
+        }
+        return QDir::cleanPath(QDir::isAbsolutePath(input)?input:QDir(options_.workingDirectory).filePath(input));
+    };
+    QSet<QString> runtimeDirectories;
+    for(const auto& input:runtime.permissions.value("additionalDirectories").toArray())runtimeDirectories.insert(absoluteDirectory(input.toString()));
+    if(runtime.cliDirectories)for(const auto& input:*runtime.cliDirectories)runtimeDirectories.insert(absoluteDirectory(input));
+    result.workingDirectories={options_.workingDirectory};QSet<QString> directoryInputs,activeBindings,activeRuntime;
+    auto directory=[&](const QString& input,const QString& source,const QString& authority,bool ephemeral=false,bool visible=true) {
         token.throwIfCancelled();
         require(input.size()<=4096&&!input.contains(QChar::Null)&&!input.contains("://"),"Invalid additional directory path");
         const bool duplicate=directoryInputs.contains(input);
-        if(!duplicate) {
+        if(!duplicate&&visible) {
             require(directoryInputs.size()<options_.maxDirectories,"Too many additional directories",ErrorCode::ResourceLimit);
             directoryInputs.insert(input);
         }
         QJsonObject entry{{"input",input},{"source",source}};
-        if(input.trimmed().isEmpty()) { entry["status"]="empty";if(!duplicate)result.additionalDirectories.append(entry);return; }
-        auto path=input;
-        if(path.startsWith('~')) {
-            require((path=="~"||path.startsWith("~/"))&&!options_.homeDirectory.isEmpty(),"Additional directory home expansion requires an explicit homeDirectory");
-            path=path=="~"?options_.homeDirectory:QDir(options_.homeDirectory).filePath(path.mid(2));
-        }
-        path=QDir::cleanPath(QDir::isAbsolutePath(path)?path:QDir(options_.workingDirectory).filePath(path));
-        const auto bindingKey=authority+QChar::Null+input;activeBindings.insert(bindingKey);
+        if(input.trimmed().isEmpty()) { entry["status"]="empty";if(!duplicate&&visible)result.additionalDirectories.append(entry);return; }
+        const auto path=absoluteDirectory(input);auto& targets=ephemeral?runtimeTargets:directoryTargets;
+        const auto bindingKey=authority+QChar::Null+input;(ephemeral?activeRuntime:activeBindings).insert(bindingKey);
         const QFileInfo info(path);const auto canonical=info.canonicalFilePath();entry["path"]=path;
         if(canonical.isEmpty()||!info.exists())entry["status"]="not_found";
         else if(!info.isDir())entry["status"]="not_directory";
         else {
             // A source's directory grant stays bound to its first resolved target.
             // A changed settings digest is new host authority; a changed symlink is not.
-            auto bound=directoryTargets.value(bindingKey);
-            if(bound.isEmpty()) {bound=canonical;directoryTargets.insert(bindingKey,bound);}
+            auto bound=targets.value(bindingKey);
+            if(bound.isEmpty()) {bound=canonical;targets.insert(bindingKey,bound);}
             entry["canonical_path"]=bound;
             if(bound!=canonical)entry["observed_canonical_path"]=canonical;
             auto covered=[&](const QString& value) {return std::any_of(result.workingDirectories.cbegin(),result.workingDirectories.cend(),[&](const auto& root) {
                 return value==root||value.startsWith(root.endsWith('/')?root:root+'/');
             });};
             const bool already=covered(path)&&covered(bound);
-            entry["status"]=bound!=canonical?"target_changed":already?"already_covered":"active";
-            if(!already) {result.workingDirectories.append(path);result.workingDirectories.append(bound);result.workingDirectories.removeDuplicates();}
+            const bool removed=runtime.removedDirectories.contains(path);
+            entry["status"]=removed?"removed":bound!=canonical?"target_changed":already?"already_covered":"active";
+            if(!already&&!removed&&visible) {result.workingDirectories.append(path);result.workingDirectories.append(bound);result.workingDirectories.removeDuplicates();}
         }
         // Deduplicate inspection entries, never the authority bindings: removing
         // one settings source must not make an existing CLI grant bind anew.
-        if(!duplicate)result.additionalDirectories.append(entry);
+        if(!duplicate&&visible)result.additionalDirectories.append(entry);
     };
     // Directory arrays are merged independently of the managed-only tool-rule filter.
     for(const auto& layer:layers)
         for(const auto& value:layer.data.value("permissions").toObject().value("additionalDirectories").toArray())
-            directory(value.toString(),layer.source,layer.source+QChar::Null+layer.path+QChar::Null+layer.sha);
-    for(const auto& value:options_.additionalDirectories)directory(value,"cliArg","cliArg");
+            directory(value.toString(),layer.source,layer.source=="session"?QString("session"):layer.source+QChar::Null+layer.path+QChar::Null+layer.sha,
+                layer.source=="session",layer.source=="session"||!runtimeDirectories.contains(absoluteDirectory(value.toString())));
+    for(const auto& value:options_.additionalDirectories)directory(value,"cliArg","cliArg",false,!runtime.cliDirectories&&!runtimeDirectories.contains(absoluteDirectory(value)));
+    if(runtime.cliDirectories)for(const auto& value:*runtime.cliDirectories)directory(value,"cliArg","cliArg",true);
     for(auto i=directoryTargets.begin();i!=directoryTargets.end();)
         if(!activeBindings.contains(i.key()))i=directoryTargets.erase(i);else ++i;
+    for(auto i=runtimeTargets.begin();i!=runtimeTargets.end();)
+        if(!activeRuntime.contains(i.key()))i=runtimeTargets.erase(i);else ++i;
     for (const auto& layer : layers) {
         if (result.managedRulesOnly && layer.source != "policySettings") continue;
         const auto p = layer.data.value("permissions").toObject();
@@ -263,23 +298,26 @@ PermissionSettingsSnapshot SettingsPermissionPolicy::snapshot(const Cancellation
             for (const auto& value : parsePermissionRules(values)) result.rules.append({value, behavior, layer.source, layer.root, options_.homeDirectory, true});
         }
     }
-    if (!result.managedRulesOnly) for(auto rule:cliRules_) { rule.source="cliArg";result.rules.append(std::move(rule)); }
+    if (!result.managedRulesOnly) for(auto rule:runtime.cliRules.value_or(cliRules_)) { rule.source="cliArg";result.rules.append(std::move(rule)); }
     for(auto rule:hostRules_) { rule.source="host";result.rules.append(std::move(rule)); }
     // Ordinary edit grants cannot rewrite the authority that grants them.
     // An embedding host's interactive approval callback can approve this Ask;
     // standalone DontAsk hosts deny it. Existing explicit denies still win.
-    for(const auto& name:{"settings.json","settings.local.json"})
+    for(const auto& name:{"settings.json","settings.local.json",".settings.json.iillm-permissions.lock",".settings.local.json.iillm-permissions.lock",".settings.json.*.tmp",".settings.local.json.*.tmp"})
         result.rules.append({"Edit(//**/.claude/"+QString(name)+")",PermissionBehavior::Ask,"host.settingsProtection",options_.workingDirectory,options_.homeDirectory,true});
     for(const auto& layer:layers)if(!layer.path.isEmpty()) {
         auto path=layer.path;path.replace("\\","\\\\").replace("(","\\(").replace(")","\\)");
         for(const auto& tool:{"Write","Edit"})result.rules.append({QString(tool)+'('+path+')',PermissionBehavior::Ask,"host.settingsProtection"});
+        const auto lockPath=QFileInfo(layer.path).absolutePath()+"/."+QFileInfo(layer.path).fileName()+".iillm-permissions.lock";
+        auto escaped=lockPath;escaped.replace("\\","\\\\").replace("(","\\(").replace(")","\\)");
+        for(const auto& tool:{"Write","Edit"})result.rules.append({QString(tool)+'('+escaped+')',PermissionBehavior::Ask,"host.settingsProtection"});
     }
     result.unsupportedFeatures.removeDuplicates();
-    RulePolicy(result.mode, result.rules);directoryBindings_->targets=std::move(directoryTargets);return result;
+    RulePolicy(result.mode, result.rules);state_->targets=std::move(directoryTargets);runtime.targets=std::move(runtimeTargets);return result;
 }
 PermissionDecision SettingsPermissionPolicy::decide(const ToolDefinition& tool, const QJsonObject& args, const ToolContext& context) const {
     require(QFileInfo(context.workingDirectory).canonicalFilePath() == options_.workingDirectory, "Permission settings workspace mismatch");
-    const auto current = snapshot(context.cancellation);
+    const auto current = sessionSnapshot(context);
     for (const auto& feature : current.unsupportedFeatures) if (feature.startsWith("permissions."))
         throw Error(ErrorCode::RuntimeUnavailable, "Unsupported permission settings feature: " + feature);
     auto scoped=context;scoped.workingDirectories=current.workingDirectories+PermissionPolicy::workingDirectories(context);
@@ -288,14 +326,153 @@ PermissionDecision SettingsPermissionPolicy::decide(const ToolDefinition& tool, 
 }
 QStringList SettingsPermissionPolicy::workingDirectories(const ToolContext& context) const {
     require(QFileInfo(context.workingDirectory).canonicalFilePath() == options_.workingDirectory, "Permission settings workspace mismatch");
-    const auto current=snapshot(context.cancellation);
+    const auto current=sessionSnapshot(context);
     for(const auto& feature:current.unsupportedFeatures)if(feature.startsWith("permissions."))
         throw Error(ErrorCode::RuntimeUnavailable,"Unsupported permission settings feature: "+feature);
     auto paths=current.workingDirectories+PermissionPolicy::workingDirectories(context);paths.removeDuplicates();return paths;
 }
 QJsonObject SettingsPermissionPolicy::describe(const ToolContext& context) const {
     require(QFileInfo(context.workingDirectory).canonicalFilePath() == options_.workingDirectory, "Permission settings workspace mismatch");
-    return snapshot(context.cancellation).toJson();
+    return sessionSnapshot(context).toJson();
+}
+namespace {
+QString normalizedRule(QString value) {
+    const auto parsed=parsePermissionRules({value});require(parsed.size()==1,"Permission update requires one rule");value=parsed.first();
+    for(const auto& suffix:{QString("(*)"),QString("()")})if(value.endsWith(suffix)&&!value.left(value.size()-suffix.size()).contains('('))value.chop(suffix.size());
+    return value;
+}
+QString updateRule(const QJsonObject& value) {
+    const auto tool=value["toolName"].toString();
+    require(!tool.contains('(')&&!tool.contains(')')&&parsePermissionRules({tool})==QStringList{tool},"Invalid permission update tool name");
+    auto content=value["ruleContent"].toString();if(content.isEmpty()||content=="*")return tool;
+    content.replace("\\","\\\\").replace("(","\\(").replace(")","\\)");return normalizedRule(tool+'('+content+')');
+}
+QStringList strings(const QJsonArray& values){QStringList result;for(const auto& value:values)result.append(value.toString());return result;}
+void checkUpdateContext(const PermissionSettingsOptions& options,const ToolContext& context) {
+    context.cancellation.throwIfCancelled();
+    require(!context.sessionId.isEmpty()&&context.sessionId.size()<=512&&!context.sessionId.contains(QChar::Null),"Permission updates require a session identity");
+    require(QFileInfo(context.workingDirectory).canonicalFilePath()==options.workingDirectory,"Permission settings workspace mismatch");
+}
+}
+void SettingsPermissionPolicy::applyUpdates(const QJsonArray& updates,const ToolContext& context) const {
+    checkUpdateContext(options_,context);detail::validatePermissionUpdates(updates);if(updates.isEmpty())return;
+    std::lock_guard guard(state_->mutex);
+    require(state_->sessions.contains(context.sessionId)||state_->sessions.size()<options_.maxRuntimeSessions,"Permission runtime session limit reached",ErrorCode::ResourceLimit);
+    auto candidate=state_->sessions.value(context.sessionId);const auto initial=snapshotLocked(context,candidate,{});
+    for(const auto& feature:initial.unsupportedFeatures)if(feature.startsWith("permissions."))throw Error(ErrorCode::RuntimeUnavailable,"Unsupported permission settings feature: "+feature);
+    auto absolute=[&](QString input) {
+        require(!input.trimmed().isEmpty()&&input.size()<=4096&&!input.contains(QChar::Null)&&!input.contains("://"),"Invalid permission update directory");
+        if(input.startsWith('~')) {
+            require((input=="~"||input.startsWith("~/"))&&!options_.homeDirectory.isEmpty(),"Additional directory home expansion requires an explicit homeDirectory");
+            input=input=="~"?options_.homeDirectory:QDir(options_.homeDirectory).filePath(input.mid(2));
+        }
+        return QDir::cleanPath(QDir::isAbsolutePath(input)?input:QDir(options_.workingDirectory).filePath(input));
+    };
+    struct Target {QString root,destination;std::unique_ptr<detail::PermissionSettingsFile> file;};
+    std::map<QString,Target> targets;QHash<QString,QString> paths;
+    // Resolve and validate every destination before opening any file for write.
+    for(const auto& value:updates) {
+        const auto update=value.toObject();const auto destination=update["destination"].toString();QString path,root;
+        if(destination=="userSettings") {
+            require(options_.enabledSources.contains("user")&&!options_.userDirectory.isEmpty(),"Permission update destination is disabled: userSettings");
+            root=options_.userDirectory;path=root+"/settings.json";
+        } else if(destination=="projectSettings"||destination=="localSettings") {
+            const bool project=destination=="projectSettings";require(options_.enabledSources.contains(project?"project":"local"),"Permission update destination is disabled: "+destination);
+            root=options_.workingDirectory;path=root+(project?"/.claude/settings.json":"/.claude/settings.local.json");
+        }
+        if(update["type"]=="setMode"&&update["mode"]=="bypassPermissions")require(!initial.bypassDisabled,"Managed policy disables bypass permissions");
+        for(const auto& rule:update["rules"].toArray())(void)updateRule(rule.toObject());
+        for(const auto& directory:update["directories"].toArray())(void)absolute(directory.toString());
+        if(path.isEmpty())continue;
+        require(!targets.contains(path)||targets.at(path).destination==destination,"Permission destinations refer to the same file");
+        targets.try_emplace(path,Target{root,destination,{}});paths[destination]=path;
+    }
+    QHash<QString,QJsonObject> proposed;
+    for(auto& [path,target]:targets) {
+        target.file=std::make_unique<detail::PermissionSettingsFile>(target.root,path,options_.maxFileBytes,options_.updateLockTimeoutMs,context.cancellation);
+        QJsonObject data;
+        if(target.file->bytes()&&!target.file->bytes()->trimmed().isEmpty()) {
+            QJsonParseError error;const auto document=QJsonDocument::fromJson(*target.file->bytes(),&error);
+            require(error.error==QJsonParseError::NoError&&document.isObject(),"Settings file must contain a JSON object");data=document.object();
+        }
+        validate(data);proposed[path]=data;
+    }
+    for(const auto& value:updates) {
+        context.cancellation.throwIfCancelled();const auto update=value.toObject();
+        const auto type=update["type"].toString(),destination=update["destination"].toString(),behavior=update["behavior"].toString();
+        const auto filePath=paths.value(destination);auto permissions=filePath.isEmpty()?candidate.permissions:proposed[filePath]["permissions"].toObject();
+        if(type.endsWith("Rules")) {
+            const auto flag=behavior=="allow"?PermissionBehavior::Allow:behavior=="deny"?PermissionBehavior::Deny:PermissionBehavior::Ask;
+            QStringList wanted;for(const auto& item:update["rules"].toArray()){const auto rule=updateRule(item.toObject());if(!wanted.contains(rule))wanted.append(rule);}
+            if(destination=="cliArg") {
+                auto cli=candidate.cliRules.value_or(cliRules_);
+                cli.removeIf([&](const PermissionRule& rule){return rule.behavior==flag&&(type=="replaceRules"||(type=="removeRules"&&wanted.contains(normalizedRule(rule.toolPattern))));});
+                if(type!="removeRules")for(const auto& rule:wanted) {
+                    const bool exists=std::any_of(cli.cbegin(),cli.cend(),[&](const auto& r){return r.behavior==flag&&normalizedRule(r.toolPattern)==rule;});
+                    if(!exists)cli.append({rule,flag,"cliArg",options_.workingDirectory,options_.homeDirectory,true});
+                }
+                candidate.cliRules=std::move(cli);
+            } else {
+                auto previous=parsePermissionRules(strings(permissions[behavior].toArray()));for(auto& rule:previous)rule=normalizedRule(rule);previous.removeDuplicates();
+                if(type=="replaceRules")previous=wanted;
+                else if(type=="removeRules")previous.removeIf([&](const QString& rule){return wanted.contains(rule);});
+                else for(const auto& rule:wanted)if(!previous.contains(rule))previous.append(rule);
+                permissions[behavior]=QJsonArray::fromStringList(previous);
+            }
+        } else if(type=="setMode") {
+            candidate.mode=parseMode(update["mode"].toString());if(!filePath.isEmpty())permissions["defaultMode"]=update["mode"];
+        } else {
+            QStringList wanted;for(const auto& item:update["directories"].toArray()){const auto path=absolute(item.toString());if(!wanted.contains(path))wanted.append(path);}
+            auto previous=destination=="cliArg"?candidate.cliDirectories.value_or(options_.additionalDirectories):strings(permissions["additionalDirectories"].toArray());
+            if(destination=="cliArg"&&!candidate.cliDirectories)for(const auto& input:previous) {
+                const auto key=QString("cliArg")+QChar::Null+input;if(state_->targets.contains(key))candidate.targets[key]=state_->targets[key];
+            }
+            if(type=="addDirectories")for(const auto& path:wanted) {
+                previous.removeIf([&](const QString& old){return absolute(old)==path;});previous.append(path);candidate.removedDirectories.remove(path);
+                // This explicit new grant may bind to a newly selected target.
+                for(auto it=candidate.targets.begin();it!=candidate.targets.end();)
+                    if(it.key().startsWith(destination+QChar::Null)&&absolute(it.key().section(QChar::Null,1))==path)it=candidate.targets.erase(it);else ++it;
+            } else {
+                previous.removeIf([&](const QString& old){return wanted.contains(absolute(old));});
+                for(const auto& path:wanted)candidate.removedDirectories.insert(path);
+            }
+            if(destination=="cliArg")candidate.cliDirectories=std::move(previous);
+            else permissions["additionalDirectories"]=QJsonArray::fromStringList(previous);
+        }
+        if(!filePath.isEmpty()) {auto document=proposed[filePath];document["permissions"]=permissions;validate(document);proposed[filePath]=document;}
+        else if(destination=="session")candidate.permissions=std::move(permissions);
+    }
+    qint64 runtimeBytes=QJsonDocument(candidate.permissions).toJson(QJsonDocument::Compact).size();
+    if(candidate.cliRules)for(const auto& rule:*candidate.cliRules)runtimeBytes+=rule.toolPattern.size()*2;
+    if(candidate.cliDirectories)for(const auto& directory:*candidate.cliDirectories)runtimeBytes+=directory.size()*2;
+    for(const auto& directory:candidate.removedDirectories)runtimeBytes+=directory.size()*2;
+    require(runtimeBytes<=options_.maxFileBytes&&candidate.removedDirectories.size()<=options_.maxDirectories,"Permission runtime exceeds limit",ErrorCode::ResourceLimit);
+    for(const auto& data:proposed)require(QJsonDocument(data).toJson().size()<=options_.maxFileBytes,"Updated permission settings exceed file limit",ErrorCode::ResourceLimit);
+    const auto previousTargets=state_->targets;QStringList committed;
+    try {
+        // Preflight the complete effective policy under the same in-process lock.
+        // No persistent document is changed until every proposed layer validates.
+        const auto effective=snapshotLocked(context,candidate,proposed);
+        if(candidate.mode==PermissionMode::Bypass)require(!effective.bypassDisabled,"Managed policy disables bypass permissions");
+        context.cancellation.throwIfCancelled();
+        // Once publication starts, finish the admitted batch despite cancellation.
+        // Files are individually atomic; an I/O failure can still leave a prefix.
+        for(auto& [path,target]:targets){target.file->commit(QJsonDocument(proposed[path]).toJson());committed.append(target.destination);}
+        state_->sessions[context.sessionId]=std::move(candidate);
+    } catch(const Error& error) {
+        state_->targets=previousTargets;
+        throw Error(error.code(),QString::fromUtf8(error.what())+(committed.isEmpty()?QString():"; already committed: "+committed.join(", ")));
+    } catch(...) {state_->targets=previousTargets;throw;}
+}
+void SettingsPermissionPolicy::inheritSession(const ToolContext& parent,const ToolContext& child) const {
+    checkUpdateContext(options_,parent);checkUpdateContext(options_,child);if(parent.sessionId==child.sessionId)return;
+    std::lock_guard guard(state_->mutex);
+    if(!state_->sessions.contains(parent.sessionId)){state_->sessions.remove(child.sessionId);return;}
+    require(state_->sessions.contains(child.sessionId)||state_->sessions.size()<options_.maxRuntimeSessions,"Permission runtime session limit reached",ErrorCode::ResourceLimit);
+    state_->sessions[child.sessionId]=state_->sessions.value(parent.sessionId);
+}
+void SettingsPermissionPolicy::forgetSession(const ToolContext& context) const {
+    checkUpdateContext(options_,context);std::lock_guard guard(state_->mutex);state_->sessions.remove(context.sessionId);
 }
 QJsonObject PermissionSettingsSnapshot::toJson() const {
     QJsonArray entries;

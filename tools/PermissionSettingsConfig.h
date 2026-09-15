@@ -13,7 +13,6 @@ inline std::shared_ptr<const iiLocalLLM::agent::PermissionPolicy> permissionConf
     QList<iiLocalLLM::agent::PermissionRule> host={},const QStringList& additionalDirectories={}) {
     using namespace iiLocalLLM; namespace a=agent;
     if(path.isEmpty()) {
-        if(additionalDirectories.isEmpty())return std::make_shared<a::RulePolicy>(a::PermissionMode::DontAsk,cli+host);
         a::PermissionSettingsOptions options;options.workingDirectory=workspace;options.enabledSources.clear();
         options.fallbackMode=a::PermissionMode::DontAsk;options.additionalDirectories=additionalDirectories;
         auto policy=std::make_shared<a::SettingsPermissionPolicy>(options,std::move(cli),std::move(host));

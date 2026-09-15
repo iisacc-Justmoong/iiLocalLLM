@@ -132,7 +132,7 @@ async def basic(binary, root, http=False):
             shell_names = {"TaskOutput", "TaskStop", "ShellTaskList"}
             assert {item.name for item in definitions} == {"Read", "Write", "Edit", "Glob", "Grep", "Bash", "iiLocalLLM.agent.permissions.get"} | task_names | shell_names, sorted(item.name for item in definitions)
             inspection = await session.call_tool("iiLocalLLM.agent.permissions.get", {})
-            assert not inspection.isError and inspection.structuredContent["provider"] == "rules"
+            assert not inspection.isError and inspection.structuredContent["provider"] == "settings"
             assert all(item.meta["iisacc/appId"] == "com.iisacc.iiLocalLLM" for item in definitions)
             created = await session.call_tool("TaskCreate", {"subject": "Verify package", "description": "Inspect the installed output"})
             assert not created.isError and created.structuredContent["task"]["id"] == "1", created

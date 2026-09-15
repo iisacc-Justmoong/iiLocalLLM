@@ -1,8 +1,8 @@
 # 계층형 권한 설정
 
-0.20.0의 C++ `SettingsPermissionPolicy`는 파일 기반 권한 설정과 추가 디렉터리를 읽는다.
-`ToolContext`, 설정 Options/Snapshot과 `PermissionPolicy` 가상 함수가 바뀌므로 ABI는
-0.20이다. 헤더·라이브러리·소비자를 함께 다시 빌드한다. 기존 네이티브
+C++ `SettingsPermissionPolicy`는 파일 기반 권한 설정과 추가 디렉터리를 읽는다.
+0.26.0은 승인된 설정의 저장과 세션별 갱신을 추가한다. 정책 가상 함수와 설정 Options가
+바뀌므로 현재 ABI는 0.26이다. 갱신 계약은 [PermissionUpdates.md](PermissionUpdates.md)를 따른다. 헤더·라이브러리·소비자를 함께 다시 빌드한다. 기존 네이티브
 `RulePolicy` 문법·스킬 권한 수명은 [Permissions.md](Permissions.md)를 따른다.
 
 ## 출처와 우선순위
@@ -52,7 +52,7 @@ flag 규칙과 `--allow`/`--agent-allow`를 최초 판단부터 제외한다. �
 ```
 
 mode는 `default`, `acceptEdits`, `dontAsk`, `bypassPermissions`, `plan`이다.
-명시적 호스트 mode → 병합된 defaultMode → fallbackMode → default 순서이며
+승인된 세션 mode → 명시적 호스트 mode → 병합된 defaultMode → fallbackMode → default 순서이며
 `disableBypassPermissionsMode: "disable"`이면 bypass 후보를 건너뛴다.
 `disableAutoMode: "disable"`은 받지만 auto mode·자동 분류기는 아직 없다.
 
@@ -102,7 +102,8 @@ node-ignore는 검사 기준으로만 사용했고 제품 의존성에 포함하
 
 ## 호스트·앱 연결
 
-독립 실행 호스트는 명시적으로 opt in한다. 호스트 설정 파일은 workspace 밖의
+독립 실행 호스트의 파일 출처는 명시적으로 opt in한다. 설정 파일을 주지 않은 CLI도
+SettingsPermissionPolicy를 사용하지만 파일 출처는 끄고 dontAsk를 기본값으로 쓴다. 호스트 설정 파일은 workspace 밖의
 현재 사용자 소유 일반 파일이어야 하고 POSIX 권한은 0600 등으로 제한한다.
 심볼릭 링크는 받지 않으며 128KiB까지 읽는다. 상대 경로는 이 파일의 부모 기준이다.
 
@@ -124,7 +125,7 @@ node-ignore는 검사 기준으로만 사용했고 제품 의존성에 포함하
 
 | 연결 | 조회 |
 |---|---|
-| C++ | `SettingsPermissionPolicy::snapshot()`, `Engine::permissions(sessionId)` |
+| C++ | `snapshot()`은 기본 설정, `describe(context)`와 `Engine::permissions(sessionId)`는 세션별 설정 |
 | 인증 HTTP·IPC | `agent.permissions.get` + `session_id` |
 | 얇은 CLI | `iillm --auth-file FILE agent permissions get SESSION` |
 | MCP stdio·인증 Streamable HTTP | `iiLocalLLM.agent.permissions.get`, 빈 인자 |

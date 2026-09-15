@@ -59,6 +59,17 @@ class ScopedPolicy final : public PermissionPolicy {
 public:
     ScopedPolicy(std::shared_ptr<const PermissionPolicy> p,QJsonObject o,QJsonObject c):parent(std::move(p)),original(std::move(o)),current(std::move(c)){}
     QStringList workingDirectories(const ToolContext& c) const override { return parent->workingDirectories(c); }
+    QJsonObject describe(const ToolContext& c) const override {
+        auto result=parent->describe(c);result["parent_mode"]=result["mode"];
+        for(const auto& profile:{original,current}) {
+            if(profile["permission_mode"]=="plan")result["mode"]="plan";
+            else if(profile["permission_mode"]=="dontAsk"&&result["mode"]!="plan")result["mode"]="dontAsk";
+        }
+        return result;
+    }
+    void applyUpdates(const QJsonArray& updates,const ToolContext& c) const override {parent->applyUpdates(updates,c);}
+    void inheritSession(const ToolContext& from,const ToolContext& to) const override {parent->inheritSession(from,to);}
+    void forgetSession(const ToolContext& c) const override {parent->forgetSession(c);}
     PermissionDecision decide(const ToolDefinition& t,const QJsonObject& a,const ToolContext& c) const override {
         if(!allowed(t,original)||!allowed(t,current)) return {PermissionBehavior::Deny,"Tool is outside this subagent's scope"};
         auto decision=parent->decide(t,a,c);
@@ -265,10 +276,12 @@ public:
             {std::lock_guard lock(mutex);job->state["status"]="running";original=job->state["profile"].toObject();write(*job);
                 hookContext={{"agent_id",job->state["agentId"]},{"agent_type",definition.name},{"parent_session_id",job->state["parent_session_id"]}};}
             hookContext["transcript_path"]=QDir(options.stateDirectory).filePath("sessions/"+request.sessionId+"/transcript.jsonl");
+            auto scopedPolicy=std::make_shared<ScopedPolicy>(policy,original,current);
             QString startFeedback;
             for(const auto& hook:parent.hooks) {
                 job->token.throwIfCancelled();
-                const auto value=hook({HookKind::SubagentStart,request.sessionId,{}, {},{},request.prompt,hookContext},job->token);
+                auto startContext=hookContext;startContext["permission_mode"]=scopedPolicy->describe({request.sessionId,{},options.workingDirectory,{},job->token})["mode"].toString("unknown");
+                const auto value=hook({HookKind::SubagentStart,request.sessionId,{}, {},{},request.prompt,startContext},job->token);
                 if(progress)for(const auto& diagnostic:value.diagnostics)
                     progress(QJsonObject{{"agentId",hookContext["agent_id"]},{"event",toJson(Event{EventKind::Hook,{},request.sessionId,{}, {},diagnostic.toObject()})}});
                 if(value.stop)throw Error(ErrorCode::Cancelled,value.stopReason.isEmpty()?QString("Stopped by SubagentStart hook"):value.stopReason);
@@ -296,7 +309,7 @@ public:
             };
             const ToolDefinition search{"ToolSearch",{}, {}, {},true};eo.toolSearch.enabled &= eo.toolFilter(search);
             const ToolDefinition skill{"Skill",{}, {}, {},true};eo.skills.enabled &= allowed(skill,original)&&allowed(skill,current);
-            Engine engine(std::make_shared<ScopedModel>(model,original,current),scoped,std::make_shared<ScopedPolicy>(policy,original,current),eo);
+            Engine engine(std::make_shared<ScopedModel>(model,original,current),scoped,scopedPolicy,eo);
             job->token.throwIfCancelled();
             require(Clock::now()-started<std::chrono::milliseconds(options.maxRuntimeMs),"Subagent runtime deadline exceeded",ErrorCode::Timeout);
             auto handle=engine.run(request,[&](const Event& event){
@@ -313,9 +326,9 @@ public:
         } catch(const Error& error) {result.status=error.code()==ErrorCode::Cancelled?RunStatus::Cancelled:RunStatus::Failed;result.errorCode=error.code();result.errorMessage=QString::fromUtf8(error.what());}
           catch(const std::exception& error) {result.status=RunStatus::Failed;result.errorCode=ErrorCode::RuntimeFailure;result.errorMessage=QString::fromUtf8(error.what());}
           catch(...) {result.status=RunStatus::Failed;result.errorCode=ErrorCode::RuntimeFailure;result.errorMessage="Unknown subagent failure";}
-        try { stopShells(request.sessionId); }
-        catch(const Error& error) {result.status=RunStatus::Failed;result.errorCode=error.code();result.errorMessage="Child shell cleanup: "+QString::fromUtf8(error.what());}
-        catch(const std::exception& error) {result.status=RunStatus::Failed;result.errorCode=ErrorCode::RuntimeFailure;result.errorMessage="Child shell cleanup: "+QString::fromUtf8(error.what());}
+        try { stopShells(request.sessionId);policy->forgetSession({request.sessionId,{},options.workingDirectory}); }
+        catch(const Error& error) {result.status=RunStatus::Failed;result.errorCode=error.code();result.errorMessage="Child cleanup: "+QString::fromUtf8(error.what());}
+        catch(const std::exception& error) {result.status=RunStatus::Failed;result.errorCode=ErrorCode::RuntimeFailure;result.errorMessage="Child cleanup: "+QString::fromUtf8(error.what());}
         try {
             // Serialize completion publication with trusted ownership transfer.
             // enqueue has no external callbacks; the queue never borrows us.
@@ -447,8 +460,9 @@ ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args
         accepted.state["background"]=background;accepted.state["tool_uses"]=0;
         accepted.state["notification_refs"]=d->pendingRefs(Impl::notificationRefs(accepted));
         for(const auto& key:{"result","notification_id","notification_owner","notification_transfer_error","delivery_error","error","duration_ms"})accepted.state.remove(key);
-        try {d->write(accepted);}catch(...) {
+        try {d->policy->inheritSession(context,{request.sessionId,{},d->options.workingDirectory});d->write(accepted);}catch(...) {
             if(resume.isEmpty()) {
+                try {d->policy->forgetSession({request.sessionId,{},d->options.workingDirectory});}catch(...) {}
                 const auto directory=QDir(d->options.stateDirectory).filePath("sessions/"+request.sessionId);
                 QFile::remove(QDir(directory).filePath("transcript.jsonl"));QDir().rmdir(directory);
             }

@@ -9,7 +9,9 @@
 | MCP iiLocalLLM.agent.clear {} | 같은 연결의 진행·대기 호출을 취소·대기; 모델을 실행하지 않음 |
 | MCP iiLocalLLM.agent.run {new_session:true,...} | 새 대화로 초기화한 뒤 입력 실행; 기존 실행 잠금 뒤에서 처리되므로 즉시 중단에는 별도 clear 도구 사용 |
 
-순서는 기존 실행 정리 → SessionEnd(clear) → 새 세션 게시 → 백그라운드 소유권 전환 → SessionStart(clear)이다. 새 세션은 같은 모델·작업 디렉터리·호스트 system prompt를 사용하고 parent_session_id로 이전 기록을 가리킨다. 새 ID이므로 이전 대화·압축·읽은 파일 상태·선택한 도구·모델 문맥 ID를 재사용하지 않는다. 실제 추론은 다음 run까지 실행하지 않는다. 시작 훅의 additionalContext는 새 기록에, initialUserMessage는 새 입력 큐에 저장한다. 이후 같은 Engine의 run은 시작 훅을 반복하지 않는다.
+0.26의 순서는 기존 실행 정리 → SessionEnd(clear) → 새 세션 게시 → 런타임 권한 상속 → 백그라운드 소유권 전환 → SessionStart(clear)이다. 새 세션은 같은 모델·작업 디렉터리·호스트 system prompt를 사용하고 parent_session_id로 이전 기록을 가리킨다. 새 ID이므로 이전 대화·압축·읽은 파일 상태·선택한 도구·모델 문맥 ID를 재사용하지 않는다. 실제 추론은 다음 run까지 실행하지 않는다. 시작 훅의 additionalContext는 새 기록에, initialUserMessage는 새 입력 큐에 저장한다. 이후 같은 Engine의 run은 시작 훅을 반복하지 않는다.
+
+승인된 세션/cliArg 권한·모드·디렉터리 바인딩은 새 ID에 독립 복사한다. 일반 fork도 같다. 상속 실패 시 clear의 permissions 진단이나 fork 오류의 새 ID로 생성된 기록을 확인할 수 있다. 파일 설정은 공유되며 이후에도 다시 읽는다. [PermissionUpdates.md](PermissionUpdates.md)를 따른다.
 
 이전 transcript·아티팩트·대기 사용자 입력·계획 Task/Todo는 이전 ID에 남는다. 새 세션으로 복사하지 않으며 이전 기록은 명시적으로 조회·재개할 수 있다. parent_session_id는 추적 정보이며 다른 클라이언트의 기록에 접근할 권한을 주지 않는다. 기존 v1/v2 transcript의 부모 필드 생략도 읽는다.
 

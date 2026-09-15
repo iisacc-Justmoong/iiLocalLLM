@@ -64,6 +64,11 @@ public:
     virtual PermissionDecision decide(const ToolDefinition&, const QJsonObject&, const ToolContext&) const = 0;
     virtual QJsonObject describe(const ToolContext&) const { return {{"provider","custom"},{"inspection_supported",false}}; }
     virtual QStringList workingDirectories(const ToolContext&) const;
+    // Trusted host operations; no model/wire authority is implied. Immutable
+    // policies reject updates. Inheritance must not call back into the Engine.
+    virtual void applyUpdates(const QJsonArray&,const ToolContext&) const;
+    virtual void inheritSession(const ToolContext&,const ToolContext&) const {}
+    virtual void forgetSession(const ToolContext&) const {}
 };
 class IILOCALLLM_EXPORT RulePolicy final : public PermissionPolicy {
 public:

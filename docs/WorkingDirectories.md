@@ -43,6 +43,11 @@ CLI가 같은 링크를 지정한 뒤 파일 설정만 갱신·삭제해도 CLI�
 부분적인 디렉터리 권한을 남기지 않는다. 여러 설정 파일을 읽는 과정 전체가
 파일 시스템의 원자적 트랜잭션인 것은 아니다.
 
+0.26의 승인된 addDirectories/removeDirectories는 session/cliArg 상태를 세션별로 보존한다.
+삭제는 해당 세션의 같은 입력을 출처 전반에서 억제하며 명시적 추가는 억제를 해제한다.
+런타임 바인딩은 fork/clear/자식 접수에 복사하고 다른 세션의 기본 바인딩을 바꾸지 않는다.
+저장 위치·재시작·세부 예외는 [PermissionUpdates.md](PermissionUpdates.md)를 따른다.
+
 ## 도구 실행
 
 `Read`·`Write`·`Edit`는 추가 디렉터리의 절대 경로와 workspace 기준 상대 경로를

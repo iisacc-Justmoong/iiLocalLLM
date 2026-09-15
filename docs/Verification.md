@@ -1,5 +1,33 @@
 # 구현 검증 기록
 
+## 2026-09-15 승인 권한 갱신·저장·세션 상속 (0.26.0)
+
+C++ SettingsPermissionPolicy에 규칙 추가/교체/삭제, 모드 변경, 디렉터리 추가/삭제를 구현했다. user/project/local 파일 저장과 session/cliArg 메모리를 구분하고 Engine fork/clear 및 자식 접수/재개에 런타임 상태를 전달한다. ToolRunner는 승인 입력의 스키마를 먼저 검사하고 정책 갱신 후 작업 경계·준비 대상·최종 거부를 확인한다. CLI·API·native IPC·MCP가 기본 정책 갱신을 사용한다. 계약과 참조 차이는 [PermissionUpdates.md](PermissionUpdates.md)에 기록한다.
+
+| 검증 경계 | 최종 관측 |
+|---|---|
+| Release 전체, inference 라벨 제외 | 56/56, 89.25초 |
+| ASan·UBSan, llama 비활성 Debug | 54/54, 107.78초; 계측 오류 보고 없음 |
+| 별도 설치 소비자 | 28/28, 26.28초 |
+| C++ 실제 파일과 세션 | 영속 규칙/모드/디렉터리, 비권한 JSON 보존, session/cli 격리, 관리 정책, fork/clear/자식 상속과 재개 통과 |
+| 저장 실패·동시 갱신 | 사전 검증 실패 시 JSON/메모리 미게시, 잠금 취소/시간 초과, 링크 거부, 8개 작성자 30회 반복 통과 |
+| API·native IPC CLI | 기존 TaskCreate 승인 입력 변경·거부 시 미게시·인증 검사 통과 |
+| MCP HTTP·공식 Python stdio | 다음 호출 승인 생략, clear 후 세션 grant 유지, 다른 클라이언트 격리, 새 프로세스의 파일 grant 복원과 세션 grant 미복원 통과 |
+| 실제 Qwen3 8B, 소스/설치본 | 승인으로 규칙 저장 후 재시작한 daemon의 다른 클라이언트에서 재질문 없이 새 파일 생성 통과 |
+| 설치/ABI | 0.26 공개 헤더 40개·문서·카탈로그·라이선스 일치, 실제 stage 라이브러리 로딩 |
+
+새 정책 API가 없을 때의 컴파일 실패는 permission-updates-red.log에 보존했다. 초기 검사에서 추가 디렉터리가 없는 세션을 조회할 때 비상수 JSON 접근이 null 필드를 생성하는 오류를 발견하여 value() 읽기로 수정했다. 새 자식 재개 fixture가 호출 ID를 재사용하여 프로토콜 검증에 실패한 사례와 MCP clear의 응답 진단을 진행 알림에서 찾던 fixture 오류도 보존했다. 프로토콜 검증과 훅 검증을 제거하지 않았다. 경로 제거 시험의 초안은 호출자가 준 ToolContext 경로를 독립 권한으로 간주했으나 실제 구현은 이미 정책 값으로 교체했다. 이 기대값을 바로잡고 제거된 경로가 동일 호출에서도 실행되지 않음을 검사했다. 생산 코드의 경로 잔존 오류를 수정했다는 주장은 하지 않는다. 초안은 permission-updates-revocation-red.log에 보존한다. 관련 기록은 permission-updates-focused.log, permission-updates-integration-focused.log와 permission-updates-subagent-diagnostic.log이다.
+
+동시 작성자 검사는 잠금 파일의 첫 O_CREAT 열기에서 ENOENT를 재현했다. Qt/SDK와 독립된 Python os.open 경합에서도 이 macOS 27/APFS 작업 경로의 320회 중 50회가 실패했다. 기존 파일 열기와 O_EXCL 생성을 분리하고 동일 기한·취소 안에서 다시 열도록 수정했다. O_NOFOLLOW·정규 파일·단일 링크 검사는 유지한다. 수정 후 8개 동시 작성자의 30회 반복과 전체 검사가 통과했다. 원문은 permission-updates-open-race.json, permission-updates-lock-path.log, permission-updates-lock-repair.log에 있다. 다른 OS 전체에 같은 파일 시스템 현상이 있다고 일반화하지 않는다.
+
+실제 모델 검사는 기존 허용/거부 Write, Stop 취소, UserPromptSubmit 문맥, SessionStart(clear) 문맥, PermissionRequest 입력 변경/interrupt에 영속 승인과 재시작 검사를 추가했다. 첫 호출은 훅이 localSettings에 제한된 Write 규칙을 저장한 뒤 임의 내용을 정확히 파일로 쓴다. daemon 재시작 후 다른 인증 클라이언트의 새 세션도 별도 파일을 만들며 PermissionRequest 이벤트는 없다. 소스와 설치본 각각에서 수행했다. MCP의 세션 grant는 clear에는 이어지고 다른 클라이언트나 stdio 새 프로세스에는 남지 않음을 별도로 확인했다.
+
+모델은 model://qwen3-8b-q4, 5027783488바이트, SHA-256 d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785이다. 이번 검증에서 파일 해시를 다시 계산했다. context 8192, temperature 0, 출력 상한 1024, thinking=false/tool_grammar=false를 사용했다. 공식 stdio 클라이언트는 Python MCP SDK 1.26.0이며 permission-updates-source-native.json과 permission-updates-installed-native.json에 전송 결과와 훅 이벤트를 보존한다. 전체 테스트는 빌드 종료 후 직렬로 실행했다.
+
+설치는 build/permission-updates-stage, 소비자는 build/permission-updates-consumer/build이다. 라이브러리 SHA-256은 6afa60a62b673318ad160e9e4c615af25fd9ce2094d00f9bd802bf2a0d7e4717, Mach-O UUID는 6C7CE84C-41AD-3583-AF81-8D4F573841D4이다. 실행 파일 UUID와 CMake 설치 RPATH 변환 후 해시도 일치하며 iillm은 libiiLocalLLM/llama/ggml에 직접 링크되지 않는다. 라이브러리 경로 환경 변수를 비우고 설치 라이브러리 로딩을 확인했다. 전체 증거는 build/permission-updates-verification.json, permission-updates-linkage.json 및 각 final.log/XML이다.
+
+파일 하나의 교체는 원자적이지만 여러 파일과 도구 실행 전체는 트랜잭션이 아니다. 파일 설정은 그 출처를 함께 읽는 다른 세션에도 반영되고 메모리 상태는 정책 객체/세션 수명에 제한된다. 자동 권한 제안, 원격 승인 중개, 분류기/PermissionDenied, 전체 보안·설정·앱/플랫폼 검증은 남아 있다. Society/Dreamscapes를 이번 SDK 단계에서 다시 패키징하지 않았고 iPhone은 사용자 지시로 제외했다. 이전 stage와 증거는 보존하며 전체 목표는 [HarnessParity.md](HarnessParity.md)의 partial 상태이다.
+
 ## 2026-09-15 권한 요청과 구조화 호스트 응답 (0.25.0)
 
 C++ ToolRunner/Engine에 Ask 전용 PermissionRequest, 구조화 응답, 입력 수정 후 스키마·준비 대상·최종 호스트 거부 재검사, 일반 거부와 실행 취소, 명시적 권한 갱신 처리기를 연결했다. API·native IPC·MCP와 임베디드 호스트가 같은 경로를 사용한다. 병렬 명령의 첫 완료 결정은 behavior·입력·권한 목록을 함께 보존하며, 구조화 응답 콜백이 있으면 도구를 직렬 분류한다. 계약과 참조 차이는 [PermissionRequest.md](PermissionRequest.md)에 있다.

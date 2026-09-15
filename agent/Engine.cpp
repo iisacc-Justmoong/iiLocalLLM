@@ -573,6 +573,8 @@ Session Engine::forkSession(const QString& id, const QString& throughMessageId) 
     if (d->busySessions.contains(id)||d->endingSessions.contains(id)) throw Error(ErrorCode::ModelInUse, "Cannot fork an active or ending session");
     auto session=d->store.fork(id,throughMessageId);
     d->createdSessions.insert(session.id);d->touchedSessions.insert(session.id);
+    try {d->policy->inheritSession({id,{},session.workingDirectory},{session.id,{},session.workingDirectory});}
+    catch(const Error& error){throw Error(error.code(),"Permission inheritance failed for new fork "+session.id+": "+QString::fromUtf8(error.what()));}
     return session;
 }
 QJsonObject Engine::endSession(const QString& id,QString reason,const CancellationToken& caller) {
@@ -660,6 +662,9 @@ QJsonObject Engine::endSessionImpl(const QString& id,QString reason,const Cancel
         report["session_id"]=next;
     }catch(const std::exception& e){failed("create",QString::fromUtf8(e.what()));}
     if(!next.isEmpty()) {
+        try {d->policy->inheritSession({id,{},session.workingDirectory},{next,{},session.workingDirectory});}
+        catch(const std::exception& e){failed("permissions",QString::fromUtf8(e.what()));}
+        catch(...){failed("permissions","Unknown permission inheritance failure");}
         try {
             auto registry=d->registry->snapshot();for(auto tool:d->additionalTools())registry->add(std::move(tool));
             for(const auto& definition:registry->definitions()) {

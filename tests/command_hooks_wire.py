@@ -47,7 +47,7 @@ def main():
 
         credentials = private("credentials", {"society": token, "dreamscapes": other})
         auth = private("auth", token)
-        policy = private("permissions", {"enabled_sources": [], "settings": {"permissions": {
+        policy = private("permissions", {"enabled_sources": ["local"], "settings": {"permissions": {
             "defaultMode": "default", "deny": ["Edit(/denied.txt)"], "ask": ["Edit(/ask.txt)", "Write(/request-*)", "TaskCreate"]}}})
         script = private("hook.py", '''import json, pathlib, sys
 root = pathlib.Path(__file__).parent
@@ -59,7 +59,7 @@ if event == "PreToolUse":
     if (root / "block").exists():
         print("HOOK_BLOCK", file=sys.stderr)
         sys.exit(2)
-    result = {"hookEventName": event, "permissionDecision": "allow"}
+    result = {"hookEventName": event, "permissionDecision": "passthrough" if value["tool_input"]["path"].startswith("persist-") else "allow"}
     if value["tool_input"]["path"] == "rewrite.txt":
         result["updatedInput"] = {"path": "rewritten.txt", "content": "REWRITTEN"}
     print(json.dumps({"hookSpecificOutput": result}))
@@ -79,7 +79,14 @@ elif event == "PermissionRequest":
     elif path == "request-forbidden.txt":
         decision["updatedInput"] = {"path": "denied.txt", "content": "FORBIDDEN"}
     elif path == "request-updates.txt":
-        decision["updatedPermissions"] = [{"type": "addRules", "destination": "session", "behavior": "allow", "rules": [{"toolName": "Write"}]}]
+        decision["updatedPermissions"] = [{"type": "addRules", "destination": "userSettings", "behavior": "allow", "rules": [{"toolName": "Write"}]}]
+    elif path == "persist-session-other.txt":
+        decision = {"behavior": "deny", "message": "NO_SESSION_GRANT"}
+    elif path.startswith("persist-session-"):
+        decision["updatedPermissions"] = [{"type": "addRules", "destination": "session", "behavior": "allow", "rules": [{"toolName": "Write", "ruleContent": "/persist-session-*.txt"}]}]
+    elif path.startswith("persist-local-") or path.startswith("persist-native-"):
+        prefix = "persist-local" if path.startswith("persist-local-") else "persist-native"
+        decision["updatedPermissions"] = [{"type": "addRules", "destination": "localSettings", "behavior": "allow", "rules": [{"toolName": "Write", "ruleContent": "/" + prefix + "-*.txt"}]}]
     elif path == "request-invalid.txt":
         decision["updatedInput"] = {"path": "invalid-target.txt", "content": 42}
     elif path == "request-interrupt.txt":
@@ -367,12 +374,20 @@ elif event == "Stop" and (root / "stop").exists():
                 assert interrupted["status"] == "cancelled" and "REQUEST_INTERRUPT" in json.dumps(interrupted), interrupted
                 assert not (workspace / "request-interrupt.txt").exists()
                 report["model_permission_request"]["interrupt"] = interrupted
+                session = rpc("agent.sessions.create", {"model": args.model})["session_id"]
+                content = "PERSIST_" + secrets.token_hex(12)
+                outcome = rpc("agent.run", {"session_id": session, "prompt": f'Call Write exactly once with path="persist-native-first.txt" and content="{content}". Do not add a newline. Return DONE.',
+                    "max_turns": 4, "options": {"temperature": 0, "max_tokens": 1024}})
+                assert outcome["status"] == "completed" and (workspace / "persist-native-first.txt").read_text() == content, outcome
+                rules = rpc("agent.permissions.get", {"session_id": session})["rules"]
+                assert any(r["source"] == "localSettings" and r["rule"] == "Write(/persist-native-*.txt)" for r in rules), rules
+                report["model_permission_updates"] = {"first": outcome, "persisted_rule": True}
 
         events = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]
         assert [e["reason"] for e in events if e["hook_event_name"] == "SessionEnd" and e["session_id"] == owner] == ["other"]
         assert [e["reason"] for e in events if e["hook_event_name"] == "SessionEnd" and e["session_id"] == initial_owner] == ["logout"]
         report["session_end"]["daemon_shutdown_once"] = True
-        with server("api-resume", common_daemon + ["--agent-hooks", hooks, "--agent-permission-settings", policy],
+        with server("api-resume", common_daemon + ["--agent-hooks", hooks, "--agent-permission-settings", policy] + extra,
                     r"iiLocalLLM HTTP: http://127\.0\.0\.1:(\d+)") as match:
             port = int(match[1])
             outcome = rpc("agent.run", {"session_id": owner, "prompt": "BLOCK_USER_PROMPT after resume"})
@@ -381,6 +396,15 @@ elif event == "Stop" and (root / "stop").exists():
             sources = [e["source"] for e in events if e["hook_event_name"] == "SessionStart" and e["session_id"] == owner]
             assert sources == ["startup", "resume"], sources
             report["api_input_lifecycle"]["activation_resume_once"] = True
+            if args.catalog:
+                session = rpc("agent.sessions.create", {"model": args.model}, other)["session_id"]
+                content = "RESTART_" + secrets.token_hex(12)
+                outcome = rpc("agent.run", {"session_id": session, "prompt": f'Call Write exactly once with path="persist-native-restart.txt" and content="{content}". Do not add a newline. Return DONE.',
+                    "max_turns": 4, "options": {"temperature": 0, "max_tokens": 1024}}, other)
+                assert outcome["status"] == "completed" and (workspace / "persist-native-restart.txt").read_text() == content, outcome
+                events = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]
+                assert not any(e["hook_event_name"] == "PermissionRequest" and e["session_id"] == session for e in events), events
+                report["model_permission_updates"]["restart_new_client_without_request"] = outcome
 
         mcp_flags = ["--hooks", hooks, "--permission-settings", policy, "--model", args.model, "--models", str(root / "models"),
                      "--no-subagents", "--no-skills", "--allow", "iiLocalLLM.agent.inputs.*"]
@@ -395,12 +419,13 @@ elif event == "Stop" and (root / "stop").exists():
             listed = post(url.port, "/mcp", {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}, session=identity)[1]
             assert all(t["_meta"]["iisacc/hooksEnabled"] for t in listed["result"]["tools"])
 
-            def call_tool(name, arguments):
+            def call_tool(name, arguments, hook_progress=True):
                 status, data, _, frames = post(url.port, "/mcp", {"jsonrpc": "2.0", "id": secrets.token_hex(8), "method": "tools/call",
                     "params": {"name": name, "arguments": arguments, "_meta": {"progressToken": "hooks-test"}}}, session=identity)
                 assert status == 200, data
                 progress = [f for f in frames if f.get("method") == "notifications/progress"]
-                assert any(f["params"].get("_meta", {}).get("iisacc/agentEvent", {}).get("event") == "hook" for f in progress), frames
+                if hook_progress:
+                    assert any(f["params"].get("_meta", {}).get("iisacc/agentEvent", {}).get("event") == "hook" for f in progress), frames
                 return data["result"]
 
             def call(path, content="VALUE"):
@@ -435,9 +460,27 @@ elif event == "Stop" and (root / "stop").exists():
                 result = call(path)
                 assert result["isError"] and not (workspace / path).exists(), result
                 if path == "request-updates.txt":
-                    assert "trusted host handler" in json.dumps(result), result
+                    assert "destination is disabled" in json.dumps(result), result
             assert not (workspace / "denied.txt").exists() and not (workspace / "invalid-target.txt").exists()
-            report["permission_request_mcp"] = {"rewrite": True, "deny": True, "host_deny_rechecked": True, "schema_rechecked": True, "updates_without_handler_fail": True}
+            report["permission_request_mcp"] = {"rewrite": True, "deny": True, "host_deny_rechecked": True, "schema_rechecked": True, "disabled_destination_fails": True}
+            for path in ("persist-local-first.txt", "persist-local-second.txt", "persist-session-first.txt", "persist-session-second.txt"):
+                assert not call(path).get("isError") and (workspace / path).read_text() == "VALUE", path
+            cleared_permissions = call_tool("iiLocalLLM.agent.clear", {}, hook_progress=False)
+            assert not cleared_permissions.get("isError"), cleared_permissions
+            assert any(e["event"] == "hook" for e in cleared_permissions["structuredContent"]["start_diagnostics"]), cleared_permissions
+            mcp_id = cleared_permissions["structuredContent"]["session_id"]
+            assert not call("persist-session-after-clear.txt").get("isError")
+            events = [json.loads(line) for line in (root / "events.jsonl").read_text().splitlines()]
+            request_paths = [e["tool_input"].get("path") for e in events if e["hook_event_name"] == "PermissionRequest"]
+            assert request_paths.count("persist-local-first.txt") == 1 and request_paths.count("persist-session-first.txt") == 1, request_paths
+            assert not any(p in request_paths for p in ("persist-local-second.txt", "persist-session-second.txt", "persist-session-after-clear.txt")), request_paths
+            status, _, other_identity, _ = post(url.port, "/mcp", initialize, other)
+            assert status == 200
+            assert post(url.port, "/mcp", {"jsonrpc": "2.0", "method": "notifications/initialized"}, other, other_identity)[0] == 202
+            result = post(url.port, "/mcp", {"jsonrpc": "2.0", "id": 55, "method": "tools/call", "params": {
+                "name": "Write", "arguments": {"path": "persist-session-other.txt", "content": "NO"}}}, other, other_identity)[1]["result"]
+            assert result["isError"] and not (workspace / "persist-session-other.txt").exists(), result
+            report["permission_updates_mcp"] = {"persisted_rule": True, "session_grant": True, "clear_inheritance": True, "other_client_isolated": True}
             for path in ("denied.txt", "ask.txt"):
                 assert call(path)["isError"] and not (workspace / path).exists()
             (root / "block").touch()
@@ -527,6 +570,11 @@ elif event == "Stop" and (root / "stop").exists():
                         result = await session.call_tool("Write", {"path": "request-denied.txt", "content": "NO"})
                         assert result.isError and not (workspace / "request-denied.txt").exists(), result
                         report["permission_request_mcp"]["official_stdio"] = True
+                        result = await session.call_tool("Write", {"path": "persist-local-stdio.txt", "content": "PERSISTED"})
+                        assert not result.isError and (workspace / "persist-local-stdio.txt").read_text() == "PERSISTED", result
+                        result = await session.call_tool("Write", {"path": "persist-session-other.txt", "content": "NO"})
+                        assert result.isError and not (workspace / "persist-session-other.txt").exists(), result
+                        report["permission_updates_mcp"]["official_stdio_restart"] = True
                         (root / "block").touch()
                         result = await session.call_tool("Write", {"path": "stdio-blocked.txt", "content": "NO"})
                         assert result.isError and not (workspace / "stdio-blocked.txt").exists()

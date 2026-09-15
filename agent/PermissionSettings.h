@@ -1,5 +1,6 @@
 #pragma once
 #include "Tools.h"
+#include <QtCore/QHash>
 
 namespace iiLocalLLM::agent {
 struct PermissionSettingsOptions {
@@ -15,6 +16,8 @@ struct PermissionSettingsOptions {
     int maxTotalBytes = 1024 * 1024;
     int maxFiles = 128;
     int maxDirectories = 128;
+    int maxRuntimeSessions = 1024;
+    int updateLockTimeoutMs = 5000;
 };
 struct IILOCALLLM_EXPORT PermissionSettingsSnapshot {
     PermissionMode mode = PermissionMode::Default;
@@ -34,10 +37,16 @@ public:
     PermissionDecision decide(const ToolDefinition&, const QJsonObject&, const ToolContext&) const override;
     QJsonObject describe(const ToolContext&) const override;
     QStringList workingDirectories(const ToolContext&) const override;
+    void applyUpdates(const QJsonArray&,const ToolContext&) const override;
+    void inheritSession(const ToolContext&,const ToolContext&) const override;
+    void forgetSession(const ToolContext&) const override; // Drops only in-memory grants/mode; never edits settings files.
 private:
     PermissionSettingsOptions options_;
     QList<PermissionRule> cliRules_, hostRules_;
-    struct DirectoryBindings;
-    std::shared_ptr<DirectoryBindings> directoryBindings_;
+    struct Runtime;
+    struct State;
+    std::shared_ptr<State> state_;
+    PermissionSettingsSnapshot sessionSnapshot(const ToolContext&) const;
+    PermissionSettingsSnapshot snapshotLocked(const ToolContext&,Runtime&,const QHash<QString,QJsonObject>&) const;
 };
 }

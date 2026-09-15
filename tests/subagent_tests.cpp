@@ -41,6 +41,26 @@ struct Host {
 class SubagentTests final : public QObject {
     Q_OBJECT
 private slots:
+    void runtimePermissionsAreInheritedAtAdmissionAndRefreshedOnResume() {
+        Host h;a::PermissionSettingsOptions options;options.workingDirectory=h.workspace;
+        auto policy=std::make_shared<a::SettingsPermissionPolicy>(options);h.policy=policy;a::registerWorkspaceTools(*h.registry,h.workspace);
+        a::SubagentDefinition writer;writer.name="writer";writer.description="writer";writer.tools={"Write"};h.options.definitions={writer};
+        const auto parent=h.parent();const auto context=h.context(parent);
+        const QJsonObject grant{{"type","addRules"},{"destination","session"},{"behavior","allow"},{"rules",QJsonArray{QJsonObject{{"toolName","Write"},{"ruleContent","/child*.txt"}}}}};
+        policy->applyUpdates({grant},context);bool revoke=true,denied=false;QString path="child1.txt";
+        h.model->next=[&](const auto& request,const auto&) {
+            if(request.messages.last().role==a::MessageRole::Tool){denied=request.messages.last().isError;return a::ModelReply{denied?"DENIED":"DONE"};}
+            if(revoke){auto remove=grant;remove["type"]="removeRules";policy->applyUpdates({remove},context);revoke=false;}
+            return a::ModelReply{{},{{"write-"+path,"Write",{{"path",path},{"content","INHERITED"}}}}};
+        };
+        auto agents=h.start();const auto first=agents->run(context,{{"prompt","write"},{"subagent_type","writer"}});
+        QVERIFY2(!first.isError,qPrintable(first.text));QVERIFY(!denied);QVERIFY(QFileInfo::exists(h.workspace+"/child1.txt"));
+        const auto child=first.data["session_id"].toString();
+        QVERIFY(!child.isEmpty());
+        QCOMPARE(policy->decide({"Write"},{{"path","child2.txt"}},{child,{},h.workspace}).behavior,a::PermissionBehavior::Ask);
+        path="child2.txt";const auto resumed=agents->run(context,{{"prompt","write again"},{"resume",first.data["agentId"]}});
+        QVERIFY2(!resumed.isError,QJsonDocument(resumed.data).toJson().constData());QVERIFY(denied);QVERIFY(!QFileInfo::exists(h.workspace+"/child2.txt"));
+    }
     void allPendingCompletionsOfAResumedBackgroundChildAreTransferred() {
         Host h;h.model->next=[](const auto&,const auto&){return a::ModelReply{"DONE"};};auto agents=h.start();
         const auto old=h.parent(),next=h.parent();
