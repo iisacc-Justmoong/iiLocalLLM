@@ -32,7 +32,7 @@
 | tasks | 계획·Todo/Task·작업 의존성·입력 큐·백그라운드 작업/알림 | partial |
 | git | 작업 디렉터리·worktree·브랜치·변경 이력·복구 | pending |
 | editor | LSP·IDE 통신·파일 변경 알림·진단·심볼/정의/참조 | pending |
-| frontends | CLI interactive/headless·구조화 입출력·앱용 상태/이벤트·LVRS UI 바인딩 | pending |
+| frontends | CLI interactive/headless·구조화 입출력·앱용 상태/이벤트·LVRS UI 바인딩 | partial |
 | remote | 원격/bridge 실행·인증·연결 복원·메시지 라우팅 | pending |
 | settings | 프로젝트/사용자/관리 설정 우선순위·기능 gate·환경·migration | partial |
 | observability | 구조화 로그·실행 trace·사용량/비용·성능·오류 진단 | partial |
@@ -126,3 +126,5 @@ C++ HTTP/HTTPS POST·JSON 응답을 공통 생명주기와 권한 경로에 연�
 ## 0.34–0.35 계획 검토와 사용자 질문
 
 0.34는 세션 계획 파일·Enter/ExitPlanMode·호스트 수정 검토·변경 충돌 검사·API/MCP 소유자 제어를 추가했다. 0.35는 C++ AskUserQuestion·호스트 답변과 주석·질문 불변 검증·API/IPC/MCP 노출을 추가한다. 기존 JSON Schema 및 PermissionRequests를 재사용해 새 생산 의존성은 없다. [PlanMode.md](PlanMode.md)·[UserQuestions.md](UserQuestions.md)·[Verification.md](Verification.md)에 계약과 증거를 기록한다. 실제 앱 질문/승인 화면, 인터뷰와 이미지 첨부 등 전체 호환성은 진행 중이며 31개 영역의 21 partial·10 pending 상태를 유지한다.
+
+0.36은 C++ QuestionInbox와 LVRS 질문 화면, 로컬 앱 MCP 질문과 자동 검증 도구 필터를 추가한다. 선택·여러 줄 자유 입력/메모·부분 답변·대기열·포커스·취소 계약은 [QuestionUI.md](QuestionUI.md)를 따른다. 전체 채팅/승인 화면·인터뷰·이미지·서식 미리보기·모바일/Windows 라우팅은 남아 있다. 현재 31개 영역 중 22 partial·9 pending이며 전체 하네스 완료가 아니다.

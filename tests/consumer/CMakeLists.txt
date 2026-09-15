@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 project(iiLocalLLMConsumer LANGUAGES CXX)
 
-find_package(iiLocalLLM 0.35.0 CONFIG REQUIRED)
+find_package(iiLocalLLM 0.36.0 CONFIG REQUIRED)
 option(IILOCALLLM_TEST_AGENT_TOOL_GRAMMAR "Constrain catalog qualification tool generation with the upstream schema grammar" ON)
 option(IILOCALLLM_TEST_AGENT_THINKING_CONTROL "Also qualify catalog discovery with thinking explicitly disabled" OFF)
 add_executable(iiLocalLLMConsumer ../hello_world.cpp)
@@ -9,7 +9,7 @@ target_link_libraries(iiLocalLLMConsumer PRIVATE iiLocalLLM::iiLocalLLM)
 set_target_properties(iiLocalLLMConsumer PROPERTIES CXX_EXTENSIONS OFF)
 enable_testing()
 find_package(Qt6 6.8.3 EXACT REQUIRED COMPONENTS Test)
-foreach(_kind user_questions plan_mode permission_rules skill_permission permission_settings working_directories command_hooks async_hooks http_hooks model_hooks agent_hooks mcp_output_hooks input_lifecycle session_end session_clear permission_request permission_updates permission_requests input_queue subagent shell_tasks mcp_server http mcp_http_server)
+foreach(_kind question_inbox user_questions plan_mode permission_rules skill_permission permission_settings working_directories command_hooks async_hooks http_hooks model_hooks agent_hooks mcp_output_hooks input_lifecycle session_end session_clear permission_request permission_updates permission_requests input_queue subagent shell_tasks mcp_server http mcp_http_server)
     if((_kind STREQUAL "command_hooks" OR _kind STREQUAL "async_hooks") AND (NOT UNIX OR IOS OR ANDROID OR EMSCRIPTEN))
         continue()
     endif()
@@ -179,3 +179,18 @@ target_link_libraries(iiLocalLLMPlanModeConsumer PRIVATE iiLocalLLM::iiLocalLLM)
 
 add_executable(iiLocalLLMUserQuestionsConsumer ../user_questions_runtime_smoke.cpp)
 target_link_libraries(iiLocalLLMUserQuestionsConsumer PRIVATE iiLocalLLM::iiLocalLLM)
+
+set(IILOCALLLM_TEST_LVRS_DIR "" CACHE PATH "Optional installed LVRS prefix for question sheet UI tests")
+if(IILOCALLLM_TEST_LVRS_DIR)
+    find_package(Qt6 6.8.3 EXACT REQUIRED COMPONENTS Quick QuickControls2)
+    find_package(LVRS CONFIG REQUIRED PATHS "${IILOCALLLM_TEST_LVRS_DIR}/lib/cmake/LVRS" NO_DEFAULT_PATH)
+    add_executable(iiLocalLLMQuestionSheetConsumer ../question_sheet_tests.cpp)
+    target_link_libraries(iiLocalLLMQuestionSheetConsumer PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test Qt6::Quick LVRS::LVRS)
+    set_target_properties(iiLocalLLMQuestionSheetConsumer PROPERTIES AUTOMOC ON QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
+    target_compile_definitions(iiLocalLLMQuestionSheetConsumer PRIVATE
+        QUESTION_QML_DIR="${IILOCALLLM_QML_DIR}"
+        QUESTION_LVRS_IMPORT_PATH="${IILOCALLLM_TEST_LVRS_DIR}/lib/qt6/qml")
+    add_test(NAME iiLocalLLM.installed_question_sheet COMMAND iiLocalLLMQuestionSheetConsumer)
+    set_tests_properties(iiLocalLLM.installed_question_sheet PROPERTIES TIMEOUT 90
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QML_DISABLE_DISK_CACHE=1;IILOCALLLM_DISABLE_APP_MCP=1")
+endif()

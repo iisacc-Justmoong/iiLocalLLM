@@ -1,5 +1,29 @@
 # 구현 검증 기록
 
+## 2026-09-15 C++ 질문 수신함과 LVRS 앱 화면 (0.36.0)
+
+Qt Core의 `QuestionInbox`를 사용자 질문 브로커에 연결하고 LVRS `UserQuestionsSheet.qml`을 설치 산출물로 제공한다. Society와 Dreamscapes의 로컬 MCP `AskUserQuestion`은 각 앱 화면에서 응답을 받는다. 대기 중에도 일반 앱 도구의 실행 잠금을 점유하지 않으며, 원격 사용자 상호작용 도구는 비대화형 검증 에이전트에서 제외한다. 기존 Qt·LVRS와 브로커를 재사용하며 새로운 생산 의존성은 없다. [QuestionUI.md](QuestionUI.md)에 수명·스레드·입력·미리보기·앱 연결 계약을 기록한다.
+
+| 검증 경계 | 관측 |
+|---|---|
+| Release 전체, inference 라벨 제외 | 76/76, 224.58초 |
+| ASan·UBSan, llama 비활성 Debug | 73/73, 235.07초 |
+| 새 설치 소비자, 설치 QML 포함 | 43/43, 80.23초 |
+| 실제 모델 | 소스·설치본 각각 Qwen3 8B, 질문 → 호스트 답변 → 임의 코드 정확히 응답 |
+| 실제 전송 | 소스·설치 daemon HTTP, iillm IPC, MCP HTTP 및 공식 Python MCP stdio |
+
+수신함 회귀는 잘못된 응답의 대기 유지, 변경 없는 스냅샷, 취소·만료·지연 응답, 소유·차용 브로커 수명과 질문 대기 중 MCP 변경 도구 실행을 포함한다. QML 회귀는 단일·복수 선택, 반복 선택, 선택 해제, 한글·여러 줄 자유 입력과 주석, `__proto__` 질문 키, 요청 추가 중 초점·초안 유지, 건너뛰기·거절·Escape, 4개 질문 스크롤과 정확한 선택 미리보기를 검사한다. 이미지 첨부와 인터뷰 화면은 제공하지 않으며 미리보기는 일반 텍스트이다.
+
+초기 GUI 검사에서 LVRS TextEditor의 RichText 기본값이 답변에 HTML 문서를 넣는 현상과 바인딩 순환을 확인했다. 편집기 준비 후 PlainText 및 초안 바인딩을 설정하고 같은 초안 값의 갱신을 생략했다. Qt가 중첩 null-prototype 주석 객체를 QJson null로 변환하는 현상은 내부 주석 객체를 일반 객체로 전달하도록 수정했다. 바깥 질문 키 사전은 null-prototype을 유지한다. 복수 선택 문자열과 선택하지 않은 옵션 이름이 같을 때 잘못된 미리보기를 첨부하지 않도록 회귀를 추가했다. 최초 실패와 진단 로그는 `build/question-sheet-focused*.log` 및 `build/question-ui-aborted-qualification/`에 보존하며, 중단된 검증은 성공 증거에 포함하지 않는다.
+
+실제 모델 검사는 `tests/user_questions_runtime_smoke.cpp`이다. 도구와 응답 형식은 호스트가 제한하지만 질문·선택지와 마지막 응답은 ServiceModel/llama.cpp가 생성한다. 최초 프롬프트에 없는 코드를 브로커 응답에서만 제공했고 소스는 91토큰, 설치본은 93토큰을 생성하며 각각 2턴으로 코드를 반환했다. 이 SDK 검증은 자동 호스트 응답이며 실제 앱 화면 입력 검증과 구분한다. 모델은 `model://qwen3-8b-q4`, GGUF 5,027,783,488바이트, SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`이다. 각 로딩에서 manifest 무결성을 확인한다.
+
+최종 패키지 비교에서 네 실행 진입점의 표시 문자열이 0.35.0인 것을 발견했다. 새 실행 파일 버전 회귀에서 실패를 먼저 확인하고, 세 소스 파일의 별도 문자열을 CMake `PROJECT_VERSION` 정의로 교체했다. 이후 Release 관련 검사 5/5(23.00초), ASan·UBSan 관련 검사 5/5(25.08초), 설치된 진입점 4개와 공식 MCP를 포함한 설치 전송을 통과했다. 전체 검사 이후의 이 변경은 라이브러리 동작과 분리하여 `build/question-ui-version-correction.json`에 빌드·관련 검사·설치 전송 및 Release/ASan 라이브러리 바이트 불변 증거를 기록한다. 위 전체 검사 개수에는 이후 추가한 `executable_versions` 검사를 합산하지 않는다.
+
+최종 검증 중 소스 해시를 고정하고 종료 시 동일성을 확인했다. 설치 prefix는 `build/question-ui-final-stage`, 별도 소비자는 `build/question-ui-consumer/build`이다. 공개 헤더 45개, 설치 QML·문서·카탈로그, 버전과 실제 로더 경로 및 CMake 설치 시 RPATH 변환을 반영한 바이너리 동일성은 `build/question-ui-linkage.json`에 별도 기록한다. C++ 소비자는 ABI 0.36 헤더와 라이브러리로 함께 다시 빌드해야 한다.
+
+SDK 검사 증거는 `build/question-ui-verification.json`, `question-ui-tested-source.json`, 각 `final.log`/XML, `question-ui-{source,installed}-native.json`, `question-ui-{source,installed}-official-wire.json`이다. Society·Dreamscapes의 최종 빌드·패키징·설치·앱 화면 증거는 `build/question-ui-apps/`에서 별도로 관리한다. iPhone은 사용자 지시대로 제외하며 기존 사용자 데몬 PID 14909는 중단하거나 교체하지 않는다. 전체 하네스는 31개 영역 중 22 partial·9 pending이며 이번 화면 추가를 전체 완료로 보지 않는다.
+
 ## 2026-09-15 C++ 사용자 질문과 호스트 응답 (0.35.0)
 
 C++ AskUserQuestion을 Engine·인증 API·IPC·MCP에 연결했다. 질문·선택지·자유 입력·복수 선택·부분 응답·미리보기·주석을 제공하며 호스트 응답만 answers와 annotations를 추가할 수 있다. 원래 질문이나 metadata를 바꾸는 응답은 도구 실행 전에 거부한다. 기존 JSON Schema·ToolRunner·PermissionRequests를 재사용하며 새로운 생산 의존성은 없다. [UserQuestions.md](UserQuestions.md)에 입력, 제한, 원본과의 차이 및 남은 UI를 기록한다.

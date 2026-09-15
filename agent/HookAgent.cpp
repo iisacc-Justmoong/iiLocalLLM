@@ -13,6 +13,7 @@ bool resultTool(const ToolDefinition& tool) {return tool.name=="StructuredOutput
 bool allowed(const ToolDefinition& tool) {
     return !QStringList{"Agent","AgentOutput","AgentStop","AgentList","AgentProfiles","TaskOutput","TaskStop",
         "EnterPlanMode","ExitPlanMode","ExitPlanModeV2","AskUserQuestion","Workflow"}.contains(tool.name)
+        &&tool.metadata["requires_user_interaction"]!=true
         &&!tool.name.startsWith("iiLocalLLM.agent.")&&!tool.metadata["source"].toString().startsWith("builtin.subagent");
 }
 class VerificationPolicy final:public PermissionPolicy {

@@ -36,6 +36,9 @@ QList<Tool> mcpTools(std::shared_ptr<mcp::Client> client, const McpToolOptions& 
         tool.definition.concurrencySafe = tool.definition.readOnly;
         tool.definition.metadata = {{"source", "mcp"}, {"server_name", options.serverName}, {"remote_name", remoteName},
             {"remote_definition", remote}, {"annotations_trusted", options.trustAnnotations}};
+        // This hint only restricts unattended agents; it never grants permission.
+        if (remote["_meta"].toObject()["iisacc/userInteraction"] == true)
+            tool.definition.metadata["requires_user_interaction"] = true;
         if (!options.appId.isEmpty()) tool.definition.metadata["app_id"] = options.appId;
         tool.execute = [client, remoteName, generation](const QJsonObject& args, const ToolContext& context) {
             if (generation != client->connectionGeneration())

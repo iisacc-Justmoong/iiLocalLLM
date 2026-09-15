@@ -29,7 +29,10 @@ QJsonObject wireDefinition(const ToolDefinition& d, const QString& appId) {
     QJsonObject value{{"name", d.name}, {"description", d.description}, {"inputSchema", d.inputSchema},
         {"annotations", QJsonObject{{"readOnlyHint", d.readOnly}}}};
     if (!d.outputSchema.isEmpty()) value["outputSchema"] = d.outputSchema;
-    if (!appId.isEmpty()) value["_meta"] = QJsonObject{{"iisacc/appId", appId}};
+    QJsonObject metadata;
+    if (!appId.isEmpty()) metadata["iisacc/appId"] = appId;
+    if (d.metadata["requires_user_interaction"] == true) metadata["iisacc/userInteraction"] = true;
+    if (!metadata.isEmpty()) value["_meta"] = metadata;
     return value;
 }
 template<class Lock> void acquire(Lock& lock, const CancellationToken& token) {
@@ -376,7 +379,10 @@ public:
         const bool subagentControl = options.engine && source == "builtin.subagent.control";
         const bool sessionControl=options.engine&&source=="builtin.session.control"&&name=="iiLocalLLM.agent.clear";
         const bool planControl=options.engine&&(source=="builtin.plan.control"||source=="builtin.plan");
-        if (shellControl || inputControl || subagentControl || sessionControl || planControl) { bindContext(); return wireResult(runner.run(call, context,observe)); }
+        // Native questions wait for a person and do not mutate the app. Holding
+        // the registry's shared lock here would block all exclusive app tools.
+        const bool userQuestion = source == "builtin.user-question" && name == "AskUserQuestion";
+        if (shellControl || inputControl || subagentControl || sessionControl || planControl || userQuestion) { bindContext(userQuestion); return wireResult(runner.run(call, context,observe)); }
         std::shared_lock shared(execution, std::defer_lock); std::unique_lock exclusive(execution, std::defer_lock);
         if (runner.concurrencySafe(call)) acquire(shared, context.cancellation); else acquire(exclusive, context.cancellation);
         bindContext(true);

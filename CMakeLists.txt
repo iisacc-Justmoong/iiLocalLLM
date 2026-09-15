@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(iiLocalLLM VERSION 0.35.0 LANGUAGES CXX)
+project(iiLocalLLM VERSION 0.36.0 LANGUAGES CXX)
 
 if(PROJECT_IS_TOP_LEVEL AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     if(DEFINED ENV{HOME})
@@ -33,6 +33,7 @@ option(IILOCALLLM_TEST_AGENT_TOOL_GRAMMAR "Constrain catalog qualification tool 
 option(IILOCALLLM_TEST_AGENT_THINKING_CONTROL "Also qualify catalog tool discovery with the model's thinking template explicitly disabled" OFF)
 set(IILOCALLLM_TEST_MLX_MODEL "" CACHE PATH "Local MLX model for optional real inference test")
 set(IILOCALLLM_MLX_PYTHON "python3" CACHE STRING "Python interpreter containing mlx-lm")
+set(IILOCALLLM_TEST_LVRS_DIR "" CACHE PATH "Optional installed LVRS prefix for question sheet UI tests")
 set(IILOCALLLM_TEST_MCP_PYTHON "" CACHE FILEPATH "Optional test-only Python with official mcp==1.26.0")
 
 # Official mlx-lm sampling helpers: dcbcf786c0cf56f9a12fabe9468c887781431ae2 (MIT).
@@ -71,6 +72,7 @@ target_sources(iiLocalLLM PRIVATE agent/HookAgent.cpp agent/HookAgent.h)
 target_sources(iiLocalLLM PRIVATE agent/AsyncHooks.cpp agent/AsyncHooks.h)
 target_sources(iiLocalLLM PRIVATE agent/PlanMode.cpp agent/PlanMode.h agent/PlanningFiles.h)
 target_sources(iiLocalLLM PRIVATE agent/UserQuestions.cpp agent/UserQuestions.h)
+target_sources(iiLocalLLM PRIVATE agent/QuestionInbox.cpp agent/QuestionInbox.h)
 add_library(iiLocalLLM::iiLocalLLM ALIAS iiLocalLLM)
 target_compile_features(iiLocalLLM PUBLIC cxx_std_20)
 target_compile_definitions(iiLocalLLM PRIVATE IILOCALLLM_BUILDING_LIBRARY)
@@ -98,6 +100,7 @@ target_include_directories(iiLocalLLM PUBLIC
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 set_target_properties(iiLocalLLM PROPERTIES
+    AUTOMOC ON
     AUTORCC ON
     CXX_EXTENSIONS OFF
     VERSION ${PROJECT_VERSION}
@@ -116,6 +119,7 @@ endif()
 add_executable(iiLocalLLMService tools/service_main.cpp)
 add_executable(iiLocalLLMD tools/service_main.cpp)
 add_executable(iillm tools/client_main.cpp tools/IpcClient.h tools/IpcClient.cpp tools/IpcEndpoint.h)
+set(_versioned_entrypoints iillm iiLocalLLMD iiLocalLLMService)
 target_compile_features(iillm PRIVATE cxx_std_20)
 target_link_libraries(iillm PRIVATE Qt6::Core Qt6::Network)
 set_target_properties(iillm PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
@@ -131,10 +135,15 @@ get_target_property(_daemon_rpath iiLocalLLMService INSTALL_RPATH)
 set_target_properties(iiLocalLLMD PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE INSTALL_RPATH "${_daemon_rpath}")
 if(UNIX)
     add_executable(iiLocalLLMMcpServer tools/mcp_main.cpp)
+    list(APPEND _versioned_entrypoints iiLocalLLMMcpServer)
     target_link_libraries(iiLocalLLMMcpServer PRIVATE iiLocalLLM::iiLocalLLM)
     set_target_properties(iiLocalLLMMcpServer PROPERTIES OUTPUT_NAME iillm-mcp INSTALL_RPATH_USE_LINK_PATH TRUE INSTALL_RPATH "${_daemon_rpath}")
     install(TARGETS iiLocalLLMMcpServer RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 endif()
+
+foreach(_entrypoint IN LISTS _versioned_entrypoints)
+    target_compile_definitions(${_entrypoint} PRIVATE IILOCALLLM_APP_VERSION="${PROJECT_VERSION}")
+endforeach()
 
 if(BUILD_TESTING)
     add_executable(iiLocalLLMHelloWorld tests/hello_world.cpp)
@@ -181,6 +190,24 @@ if(BUILD_TESTING)
         add_test(NAME iiLocalLLM.user_questions_inference COMMAND iiLocalLLMUserQuestionsRuntimeSmoke "${IILOCALLLM_TEST_AGENT_CATALOG}" "${IILOCALLLM_TEST_AGENT_MODEL}")
         set_tests_properties(iiLocalLLM.user_questions_inference PROPERTIES TIMEOUT 300 LABELS "inference")
     endif()
+    if(IILOCALLLM_TEST_LVRS_DIR)
+        find_package(Qt6 6.8.3 EXACT REQUIRED COMPONENTS Quick QuickControls2)
+        find_package(LVRS CONFIG REQUIRED PATHS "${IILOCALLLM_TEST_LVRS_DIR}/lib/cmake/LVRS" NO_DEFAULT_PATH)
+        add_executable(iiLocalLLMQuestionSheetTests tests/question_sheet_tests.cpp)
+        target_link_libraries(iiLocalLLMQuestionSheetTests PRIVATE iiLocalLLM Qt6::Test Qt6::Quick LVRS::LVRS)
+        set_target_properties(iiLocalLLMQuestionSheetTests PROPERTIES AUTOMOC ON)
+        target_compile_definitions(iiLocalLLMQuestionSheetTests PRIVATE
+            QUESTION_QML_DIR="${CMAKE_CURRENT_SOURCE_DIR}/qml"
+            QUESTION_LVRS_IMPORT_PATH="${IILOCALLLM_TEST_LVRS_DIR}/lib/qt6/qml")
+        add_test(NAME iiLocalLLM.question_sheet COMMAND iiLocalLLMQuestionSheetTests)
+        set_tests_properties(iiLocalLLM.question_sheet PROPERTIES TIMEOUT 90
+            ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QUICK_BACKEND=software;QML_DISABLE_DISK_CACHE=1;IILOCALLLM_DISABLE_APP_MCP=1")
+    endif()
+    add_executable(iiLocalLLMQuestionInboxTests tests/question_inbox_tests.cpp)
+    target_link_libraries(iiLocalLLMQuestionInboxTests PRIVATE iiLocalLLM Qt6::Test)
+    set_target_properties(iiLocalLLMQuestionInboxTests PROPERTIES AUTOMOC ON)
+    add_test(NAME iiLocalLLM.question_inbox COMMAND iiLocalLLMQuestionInboxTests)
+    set_tests_properties(iiLocalLLM.question_inbox PROPERTIES TIMEOUT 60)
     add_executable(iiLocalLLMUserQuestionsTests tests/user_questions_tests.cpp)
     target_link_libraries(iiLocalLLMUserQuestionsTests PRIVATE iiLocalLLM Qt6::Test)
     set_target_properties(iiLocalLLMUserQuestionsTests PROPERTIES AUTOMOC ON)
@@ -350,6 +377,12 @@ if(BUILD_TESTING)
     add_test(NAME iiLocalLLM.agent_transport COMMAND iiLocalLLMAgentTransportTests)
     set_tests_properties(iiLocalLLM.agent_transport PROPERTIES TIMEOUT 60)
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    set(_versioned_executables)
+    foreach(_entrypoint IN LISTS _versioned_entrypoints)
+        list(APPEND _versioned_executables $<TARGET_FILE:${_entrypoint}>)
+    endforeach()
+    add_test(NAME iiLocalLLM.executable_versions COMMAND ${Python3_EXECUTABLE} -B
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/executable_versions.py ${PROJECT_VERSION} ${_versioned_executables})
     add_test(NAME iiLocalLLM.http_hooks_tls COMMAND ${Python3_EXECUTABLE} -B
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/http_hooks_tls.py $<TARGET_FILE:iiLocalLLMHttpHookProbe>)
     set_tests_properties(iiLocalLLM.http_hooks_tls PROPERTIES TIMEOUT 90)
@@ -667,7 +700,8 @@ install(FILES iiLocalLLM.h Types.h Parameters.h Hardware.h Memory.h ModelManifes
 install(FILES agent/Types.h agent/Tools.h agent/SessionStore.h agent/Engine.h agent/ProjectContext.h agent/Compaction.h agent/Api.h agent/McpTools.h agent/McpServer.h agent/ToolSearch.h agent/McpConnections.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/agent)
 install(FILES agent/TaskStore.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/agent)
 install(FILES agent/InputQueue.h agent/Skills.h agent/Subagents.h agent/AgentProfiles.h agent/PermissionRules.h agent/PermissionSettings.h agent/PermissionRequests.h agent/CommandHooks.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/agent)
-install(FILES agent/AsyncHooks.h agent/PlanMode.h agent/UserQuestions.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/agent)
+install(FILES agent/AsyncHooks.h agent/PlanMode.h agent/UserQuestions.h agent/QuestionInbox.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/agent)
+install(DIRECTORY qml/ DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/qml)
 install(FILES agent/ShellTasks.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/agent)
 install(FILES agent/ObjectTools.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/agent)
 install(FILES mcp/Client.h mcp/HttpClient.h mcp/Server.h mcp/HttpServer.h mcp/LocalApplications.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/mcp)

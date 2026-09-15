@@ -195,8 +195,9 @@ private slots:
     }
     void invalidResultAndForbiddenControlsCannotComplete() {
         Fixture f;f.options.hooks={configured(f.work)};int turns=0,executed=0;bool hidden=true,denied=false;
-        const QStringList forbidden{"Agent","AgentOutput","TaskOutput","TaskStop","EnterPlanMode","ExitPlanMode","AskUserQuestion","Workflow","iiLocalLLM.agent.run"};
+        const QStringList forbidden{"Agent","AgentOutput","TaskOutput","TaskStop","EnterPlanMode","ExitPlanMode","AskUserQuestion","Workflow","iiLocalLLM.agent.run","mcp__app__question"};
         for(const auto& name:forbidden){a::Tool tool;tool.definition={name,"forbidden",{{"type","object"}},{},true};
+            if(name=="mcp__app__question")tool.definition.metadata={{"source","mcp"},{"requires_user_interaction",true}};
             tool.execute=[&](const auto&,const auto&){++executed;return a::ToolResult{};};f.registry->add(tool);}
         f.model->next=[&](const a::ModelRequest& request,const CancellationToken&){
             if(!request.verificationAgent)return a::ModelReply{"main"};

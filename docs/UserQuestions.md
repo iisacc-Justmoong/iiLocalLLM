@@ -67,3 +67,5 @@ header 12문자는 표시 권고이며 강제 제한은 128이다. 빈 질문·h
 참조는 로컬로 고정한 `Exhen/claude-code-2.1.88`의 커밋 `c8cd253554319f32ff64ff7000636199f720c9bc` 중 `source/src/tools/AskUserQuestionTool/AskUserQuestionTool.tsx`, `source/src/components/permissions/AskUserQuestionPermissionRequest/AskUserQuestionPermissionRequest.tsx`이다. 저장소 유출 주장의 진위는 독립적으로 확인하지 않았다. TypeScript 소스나 시스템 프롬프트를 복사하지 않고 관측한 계약을 C++로 작성했다. 원본보다 엄격한 초기 답변 금지·질문 변경 금지·크기 제한을 적용한다.
 
 React/터미널 질문 UI, 이미지 첨부, 계획 인터뷰의 중단·피드백 흐름, 자동 선택 미리보기 조합, 채널 환경별 UI 활성화와 Society·Dreamscapes·Congregation·Thinking Space의 실제 질문 화면은 남아 있다. 이번 단계는 SDK와 전송·모델 소비 검증이며 앱을 다시 패키징하지 않는다. 전체 하네스 상태는 [HarnessParity.md](HarnessParity.md), 실행 증거는 [Verification.md](Verification.md)를 따른다.
+
+0.36.0의 C++ 수신부와 LVRS 앱 화면은 [QuestionUI.md](QuestionUI.md)에 설명한다. 텍스트 미리보기만 표시하며 이미지 첨부와 전체 인터뷰 UI는 남아 있다.
