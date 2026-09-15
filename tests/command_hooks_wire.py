@@ -1,8 +1,9 @@
-"""Real command hooks through authenticated API, CLI, MCP and optional native inference."""
+"""Configured command/HTTP hooks through API, CLI, MCP and optional native inference."""
 import argparse
 import asyncio
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from http.client import HTTPConnection
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
@@ -15,8 +16,59 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from urllib.parse import urlsplit
+
+
+@contextmanager
+def http_endpoint(script, token, report):
+    """Test-only external peer; the production hook executor stays in C++."""
+    requests, errors = [], []
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, *_):
+            pass
+
+        def do_POST(self):
+            try:
+                assert self.headers.get("Authorization") == "Bearer " + token
+                assert not self.headers.get("X-Forbidden")
+                assert self.headers.get("Content-Type") == "application/json"
+                body = self.rfile.read(int(self.headers["Content-Length"]))
+                value = json.loads(body)
+                requests.append(value["hook_event_name"])
+                executed = subprocess.run([sys.executable, "-B", script], input=body, capture_output=True, timeout=10)
+                if executed.returncode == 2:
+                    response = {"decision": "block", "reason": executed.stderr.decode().strip()}
+                else:
+                    assert executed.returncode == 0, executed.stderr.decode(errors="replace")
+                    response = json.loads(executed.stdout) if executed.stdout.strip() else {}
+                status = 200
+            except Exception as error:
+                errors.append(str(error))
+                response, status = {}, 500
+            encoded = json.dumps(response).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(encoded)))
+            self.end_headers()
+            self.wfile.write(encoded)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    worker = threading.Thread(target=server.serve_forever, daemon=True)
+    worker.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/hook"
+        assert requests and not errors, errors
+        report["http_endpoint"] = {"requests": len(requests), "events": sorted(set(requests)),
+                                   "authenticated": True, "forbidden_environment_omitted": True}
+    finally:
+        server.shutdown()
+        server.server_close()
+        worker.join(timeout=5)
 
 
 def main():
@@ -26,14 +78,15 @@ def main():
     parser.add_argument("--catalog", type=Path)
     parser.add_argument("--model", default="model://qwen3-8b-q4")
     parser.add_argument("--official-stdio", action="store_true")
+    parser.add_argument("--http-hooks", action="store_true")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     daemon, cli, mcp = (str(getattr(args, key).resolve()) for key in ("daemon", "cli", "mcp"))
-    report = {"passed": False, "binaries": [daemon, cli, mcp], "inference": bool(args.catalog)}
+    report = {"passed": False, "binaries": [daemon, cli, mcp], "inference": bool(args.catalog), "hook_type": "http" if args.http_hooks else "command"}
     env = dict(os.environ)
     for key in ("DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH", "DYLD_FALLBACK_LIBRARY_PATH", "LIBRARY_PATH"):
         env.pop(key, None)
-    with tempfile.TemporaryDirectory(prefix="hooks-wire-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="hw-") as temporary, ExitStack() as resources:
         root = Path(temporary)
         workspace = root / "work"
         workspace.mkdir()
@@ -129,6 +182,15 @@ elif event == "Stop" and (root / "stop").exists():
         settings = {"hooks": {event: [{"matcher": "Write" if "ToolUse" in event else "*",
             "hooks": [{"type": "command", "command": command, "timeout": 10}]}]
             for event in ("PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionRequest", "TaskCreated", "TaskCompleted", "Stop", "SessionStart", "UserPromptSubmit", "SessionEnd")}}
+        if args.http_hooks:
+            hook_token = secrets.token_urlsafe(36)
+            url = resources.enter_context(http_endpoint(script, hook_token, report))
+            env.update(IILOCALLLM_TEST_HOOK_TOKEN=hook_token, IILOCALLLM_TEST_FORBIDDEN="MUST_NOT_BE_SENT", no_proxy="127.0.0.1")
+            for groups in settings["hooks"].values():
+                groups[0]["hooks"] = [{"type": "http", "url": url, "timeout": 10,
+                    "headers": {"Authorization": "Bearer ${IILOCALLLM_TEST_HOOK_TOKEN}", "X-Forbidden": "$IILOCALLLM_TEST_FORBIDDEN"},
+                    "allowedEnvVars": ["IILOCALLLM_TEST_HOOK_TOKEN"]}]
+            settings.update(allowedHttpHookUrls=[url], httpHookAllowedEnvVars=["IILOCALLLM_TEST_HOOK_TOKEN"])
         hooks = private("hooks", settings)
         common_daemon = [daemon, "--socket", str(root / "s"), "--http-port", "0", "--models-root", str(root / "models"),
             "--agent-workspace", str(workspace), "--agent-state", str(root / "api-state"), "--agent-credentials", credentials,
@@ -137,7 +199,9 @@ elif event == "Stop" and (root / "stop").exists():
         invalid = 0
         for value in ([], {}, {"hooks": {"Notification": []}}, {"hooks": {"PreToolUse": [{"hooks": [{"type": "http"}]}]}},
                       {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "true", "async": True}]}]}},
-                      {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": 1}]}]}}):
+                      {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": 1}]}]}},
+                      {"hooks": {"Stop": [{"hooks": [{"type": "http", "url": "file:///etc/hosts"}]}]}},
+                      {"hooks": {}, "allowedHttpHookUrls": False}):
             bad = private("invalid", value)
             for invocation in (common_daemon + ["--agent-hooks", bad],
                                common_mcp + ["--hooks", bad, "--model", args.model, "--models", str(root / "models")]):
@@ -596,7 +660,7 @@ elif event == "Stop" and (root / "stop").exists():
         report["events"] = events; report["passed"] = True
     if args.report:
         args.report.write_text(json.dumps(report, indent=2) + "\n")
-    print(json.dumps({"passed": True, "invalid_host_cases": invalid, "inference": bool(args.catalog), "official_stdio": args.official_stdio}))
+    print(json.dumps({"passed": True, "invalid_host_cases": invalid, "inference": bool(args.catalog), "official_stdio": args.official_stdio, "hook_type": report["hook_type"]}))
 
 
 if __name__ == "__main__":

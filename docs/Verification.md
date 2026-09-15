@@ -1,5 +1,33 @@
 # 구현 검증 기록
 
+## 2026-09-15 C++ HTTP 훅 (0.29.0)
+
+HTTP/HTTPS POST와 JSON 응답을 기존 명령·C++ 훅의 생명주기·권한 결정 경로에 연결했다. URL/환경 허용 목록, 직접 연결 DNS 주소 고정, 원래 Host·SNI·인증서 검증, 프록시, 응답/기한/취소 제한을 제공한다. 기존 Qt 6.8.3 Network를 사용하며 새 생산 의존성은 없다. Python은 독립 검증용 HTTP/HTTPS 피어와 클라이언트이다. 설정과 참조 차이는 [HTTPHooks.md](HTTPHooks.md)를 따른다.
+
+| 검증 경계 | 최종 관측 |
+|---|---|
+| Release 전체, inference 라벨 제외 | 62/62, 125.72초 |
+| ASan·UBSan, llama 비활성 Debug | 60/60, 149.23초 |
+| 별도 설치 소비자 | 33/33, 35.58초; HTTP 훅과 독립 TLS 포함 |
+| 입력/응답 | UTF-8 JSON POST, 허용 환경만 헤더 치환, 2xx 객체 결정, 빈/비정상 응답, 리다이렉트 거부 |
+| 전송 제약 | URL 차단, private/mapped IP 차단, localhost DNS·Host, HTTP 프록시·NO_PROXY, 응답 크기·기한·취소 |
+| 독립 TLS 피어 | DNS localhost 인증서의 SNI/Host 유지, IP 호스트 불일치·비신뢰 인증서 거부 |
+| 공유 실행기 | once 동시 호출, 취소 후 용량 회수, HTTP/명령 PermissionRequest 첫 결정, URL/조건 중복 처리 |
+| API·CLI·MCP | 실제 입력 변경·거부·Task 이벤트·세션 시작/입력/clear/종료, 권한 저장·재시작·클라이언트 격리 |
+| 실제 Qwen3 8B | 소스/설치본 각각 9회: Write 허용/차단, Stop 취소, 입력/clear 문맥 소비, 승인 입력 변경/중단, 권한 저장/재시작 |
+| 공식 MCP stdio | SDK 1.26.0으로 실제 Write/Read·입력 변경·거부·세션 제어·권한 재사용 |
+| 설치 산출물 | 공개 헤더 41개·문서·카탈로그·라이선스, stage 실제 로딩, 얇은 CLI 연결 검증 |
+
+수정 전 HTTP 설정 거부는 http-hooks-red.log, 중복 URL을 두 번 호출한 실패는 http-hooks-dedup-red.log, 줄바꿈으로 끝난 헤더명을 받아들인 설정 검사의 실패는 http-hooks-header-red.log에 보존한다. 서로 다른 조건 검사는 네이티브 권한 규칙에 계층형 설정의 경로 표기를 사용한 테스트 구성 오류였으며 상대 경로 규칙으로 수정했다. 이 최초 결과는 http-hooks-focused.log에 있다. 첫 Release 실행은 헤더명 경계 검사를 추가하기 위해 중단했다. 종료 전 부분 로그는 http-hooks-release-before-header.log에 보존하며 위 표는 수정 후 전체 재검증이다.
+
+잘못된 호스트 설정 20건은 모델 초기화 전에 거부했다. HTTP 피어는 실제 POST의 인증 헤더·JSON 본문을 검사하며 허용되지 않은 환경 값이 전달되지 않음을 확인했다. 외부 테스트 피어는 기존 결정 fixture를 실행하므로 API·MCP의 도구 결과와 세션 상태를 동일한 계약으로 대조한다. 모델 추론은 API HTTP이며 MCP 결과는 직접 도구/세션 제어 검증이다. 모든 MCP 도구를 모델이 자율 선택했다는 의미가 아니다.
+
+모델은 model://qwen3-8b-q4, 5027783488바이트, SHA-256 d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785이다. 이번 검증에서 파일 해시를 다시 계산했다. context 8192, temperature 0, thinking=false/tool_grammar=false이며 일반 출력 상한 1024, Stop 사례 상한 64이다. 임의 문자열을 실제 Write 결과와 비교했고 차단·중단 대상 파일은 생성되지 않았음을 확인했다.
+
+설치 prefix는 build/http-hooks-stage, 소비자는 build/http-hooks-consumer/build이다. 라이브러리 SHA-256은 ad4ab648b4a48937f1f9dca178a67a2ca88edfa8e1524339c6e0fe6494872ff6, Mach-O UUID는 D19346AD-0FCE-3FD3-B2D6-F7ED5CA9C410이다. 소스/설치 라이브러리 해시와 실행 파일 UUID·설치 RPATH 변환 후 해시가 일치한다. 경로 환경 변수를 비운 소비자가 stage 라이브러리를 로드했으며 iillm은 libiiLocalLLM/llama/ggml에 직접 링크하지 않는다. 공개 CommandHookOptions 변경으로 C++ 소비자는 0.29 헤더·라이브러리와 함께 재빌드해야 한다.
+
+증거는 build/http-hooks-verification.json, http-hooks-linkage.json, 각 final.log/XML, source/installed-native.json이다. HTTPS 프록시 전송, 샌드박스 프록시 통합, CLI 추가 CA/mTLS, 로컬 async 훅 실행기, 전체 생명주기·설정/스킬/플러그인 병합, 다른 OS/실제 앱 전체 검증은 남아 있다. 이번 단계에서 Society/Dreamscapes를 재패키징하지 않았으며 iPhone은 사용자 지시로 제외한다. 기존 stage와 사용자 daemon은 보존했다. 전체 하네스 목표는 partial이다.
+
 ## 2026-09-15 HTTP·MCP 제어 용량 예약 (0.28.0)
 
 일반 HTTP 응답과 제어 응답의 동시 한도를 분리했다. 응답을 처리기에 접수할 때 예약하고 JSON/SSE 전송 종료·실패 때 회수한다. MCP도 일반/제어 활성·보관 스트림을 분리하고 재접속·혼합 배치에서 원래 분류를 유지한다. C++과 CLI 설정은 [ControlCapacity.md](ControlCapacity.md)를 따른다. 기존 cpp-httplib Response.user_data와 원자적 카운터를 재사용했으며 새 생산 의존성은 없다.

@@ -1,6 +1,8 @@
 #pragma once
 #include "Tools.h"
 #include <QtCore/QProcessEnvironment>
+#include <QtNetwork/QNetworkProxy>
+#include <QtNetwork/QSslConfiguration>
 
 namespace iiLocalLLM::agent {
 struct CommandHookOptions {
@@ -12,9 +14,14 @@ struct CommandHookOptions {
     int maxInputBytes = 1024 * 1024;
     int maxOutputBytes = 1024 * 1024;
     int maxOnceEntries = 32768;
+    QSslConfiguration httpSslConfiguration = QSslConfiguration::defaultConfiguration();
+    // nullopt reads captured HTTPS_PROXY/HTTP_PROXY and NO_PROXY. An explicit
+    // NoProxy disables proxies; a host proxy delegates destination DNS/policy.
+    std::optional<QNetworkProxy> httpProxy;
 };
-// Explicit host configuration, frozen at construction. Commands receive JSON
-// on stdin; model data is never substituted into the shell command string.
+// Explicit host configuration, frozen at construction. Supports command and
+// HTTP hooks. Commands receive JSON on stdin, HTTP endpoints receive a POST.
+// Model data is never substituted into commands, URLs or header templates.
 class IILOCALLLM_EXPORT CommandHooks {
 public:
     CommandHooks(QJsonObject settings, CommandHookOptions);

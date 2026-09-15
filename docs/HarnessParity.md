@@ -110,3 +110,7 @@
 ## 0.28 HTTP 제어 용량
 
 일반 HTTP 응답·MCP SSE의 활성/보관 용량과 승인 제어 용량을 분리한다. 느린 JSON/SSE 응답, 연결 종료와 재접속도 원래 분류의 한도에 포함한다. [ControlCapacity.md](ControlCapacity.md)에 C++·CLI 설정, 실제 전송 검사와 자원 한계를 기록한다. 입력 큐 등 임의 메서드에 제어 분류를 부여하지 않으며 영속 승인 복구·제품 승인 UI·나머지 하네스는 계속 partial이다.
+
+## 0.29 HTTP 훅
+
+C++ HTTP/HTTPS POST·JSON 응답을 공통 생명주기와 권한 경로에 연결한다. URL/환경 허용 목록, 중복 URL/조건 처리, 직접 연결 DNS 주소 고정·TLS 검증, 프록시, 취소·기한·응답 한도를 제공한다. [HTTPHooks.md](HTTPHooks.md)에 참조와의 차이 및 미검증 플랫폼/프록시 조합을 기술한다. 비동기 응답 접수 확인은 로컬 비동기 실행기 완료를 뜻하지 않는다. 전체 생명주기·prompt/agent/async 훅, 설정/스킬/플러그인 병합과 실제 앱 전체 검증은 남아 있으며 hooks 상태는 partial이다.
