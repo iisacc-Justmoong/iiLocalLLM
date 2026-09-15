@@ -123,10 +123,16 @@ public:
         std::lock_guard lock(mutex); return active.at(id).interrupted;
     }
 
-    QList<Tool> taskToolsFor(const QString& sessionId, const QString& runId, EventCallback send = {}) const {
+    std::shared_ptr<const ModelHookContext> hookContext(const Session& session) const {
+        if(options.hooks.isEmpty())return {};
+        auto context=std::make_shared<ModelHookContext>();context->model=model;context->modelName=session.model;
+        context->session=std::make_shared<Session>(session);context->tools=registry->definitions();return context;
+    }
+    QList<Tool> taskToolsFor(const Session& session, const QString& runId, EventCallback send = {}) const {
         if (!tasks) return {};
+        const auto sessionId=session.id;
         return agent::taskTools(tasks, sessionId, options.taskToolsDeferred,
-            [hooks = options.hooks, sessionId, runId, send,
+            [hooks = options.hooks, sessionId, runId, send, modelContext=hookContext(session),
                 transcript=QDir(options.sessionsDirectory).filePath(sessionId+"/transcript.jsonl")](const TaskChange& change, const CancellationToken& token) {
                 std::optional<HookKind> kind;
                 if (change.operation == "TaskCreate") kind = HookKind::TaskCreated;
@@ -136,7 +142,7 @@ public:
                 for (const auto& hook : hooks) {
                     token.throwIfCancelled();
                     const auto r = hook({*kind, sessionId, runId, {{}, change.operation, change.after}, {text, change.after}, text,
-                        {{"transcript_path",transcript}}}, token);
+                        {{"transcript_path",transcript}},modelContext}, token);
                     if(send)for(const auto& diagnostic:r.diagnostics)send({EventKind::Hook,runId,sessionId,{}, {},diagnostic.toObject()});
                     if(r.stop)throw Error(ErrorCode::Cancelled,r.stopReason.isEmpty()?QString("Stopped by hook"):r.stopReason);
                     if (send && (!r.feedback.isEmpty() || r.block))
@@ -190,9 +196,10 @@ public:
         QJsonObject context{{"cwd",session.workingDirectory},{"source",source},{"model",session.model},
             {"transcript_path",QDir(options.sessionsDirectory).filePath(session.id+"/transcript.jsonl")},
             {"permission_mode","unknown"}};
+        const auto modelContext=hookContext(session);
         for(const auto& hook:options.hooks) {
             context["permission_mode"]=policy->describe({session.id,runId,session.workingDirectory,{},token})["mode"].toString("unknown");
-            token.throwIfCancelled();const auto result=hook({HookKind::SessionStart,session.id,runId,{}, {},{},context},token);
+            token.throwIfCancelled();const auto result=hook({HookKind::SessionStart,session.id,runId,{}, {},{},context,modelContext},token);
             if(send)for(const auto& diagnostic:result.diagnostics)send({EventKind::Hook,runId,session.id,{}, {},diagnostic.toObject()});
             if(result.initialUserMessage)combined.initialUserMessage=result.initialUserMessage;
             if(!result.feedback.isEmpty()) {
@@ -237,6 +244,7 @@ public:
         bool stopHookActive=false;
         auto hooks = [&](HookKind kind, const QString& text, const QJsonObject& extra = QJsonObject{}, bool applyControl = true) {
             HookResult combined;
+            const auto modelContext=hookContext(lease->session());
             for (const auto& hook : options.hooks) {
                 token.throwIfCancelled();
                 QJsonObject context{{"cwd",lease->session().workingDirectory},
@@ -246,7 +254,7 @@ public:
                 const ToolContext permissionContext{request.sessionId,runId,lease->session().workingDirectory,{},token};
                 context["permission_mode"]=policy->describe(permissionContext)["mode"].toString("unknown");
                 for(auto i=extra.begin();i!=extra.end();++i)context[i.key()]=i.value();
-                auto r = hook({kind, request.sessionId, runId, {}, {}, text,context}, token);
+                auto r = hook({kind, request.sessionId, runId, {}, {}, text,context,modelContext}, token);
                 for(const auto& diagnostic:r.diagnostics)send({EventKind::Hook,runId,request.sessionId,{}, {},diagnostic.toObject()});
                 if(r.stop&&applyControl)throw Error(ErrorCode::Cancelled,r.stopReason.isEmpty()?QString("Stopped by hook"):r.stopReason);
                 combined.block |= r.block;combined.stop |= r.stop;
@@ -393,7 +401,7 @@ public:
                 const auto skillContext = skillCatalog.message();
                 if (!skillContext.text.isEmpty()) turnRegistry->add(detail::skillTool(session.workingDirectory, options.skills, options.forkedSkill,
                     {{}, request.generation, request.maxTurns, request.contextPaths}));
-                for (auto tool : taskToolsFor(session.id, runId, send)) turnRegistry->add(std::move(tool));
+                for (auto tool : taskToolsFor(session, runId, send)) turnRegistry->add(std::move(tool));
                 const bool hasTranscriptTool = !session.compactions.isEmpty();
                 if (hasTranscriptTool) detail::addTranscriptTool(*turnRegistry, session);
                 auto filterTools = [&] {
@@ -440,7 +448,7 @@ public:
                     modelRequest = base; modelRequest.messages.append(modelMessages(session));
                 }
                 const auto permissionRequests=request.permissionRequests?request.permissionRequests:options.permissionRequests;
-                const ToolRunner runner(turnRegistry, policy, {options.hooks, options.permission, 24000, options.permissionResponse, options.permissionUpdates, permissionRequests});
+                const ToolRunner runner(turnRegistry, policy, {options.hooks, options.permission, 24000, options.permissionResponse, options.permissionUpdates, permissionRequests,model,session.model});
                 qsizetype streamed = 0;
                 auto reply = model->generate(modelRequest, token, [&](const QString& text) {
                     token.throwIfCancelled(); streamed += text.size();
@@ -566,6 +574,7 @@ Session Engine::createSession(QString model, QString workspace, QString systemPr
     return session;
 }
 Session Engine::session(const QString& id) const { return d->store.load(id); }
+std::shared_ptr<Model> Engine::hookModel() const {return d->model;}
 QString Engine::transcriptPath(const QString& id) const {
     (void)d->store.metadata(id);return QDir(d->options.sessionsDirectory).filePath(id+"/transcript.jsonl");
 }
@@ -638,10 +647,13 @@ QJsonObject Engine::endSessionImpl(const QString& id,QString reason,const Cancel
             {"transcript_path",QDir(d->options.sessionsDirectory).filePath(id+"/transcript.jsonl")},{"permission_mode","unknown"}};
         try {context["permission_mode"]=d->policy->describe({id,{},session.workingDirectory,{},token})["mode"].toString("unknown");}
         catch(const std::exception& e){error(QString::fromUtf8(e.what()));}catch(...){error("Permission inspection failed during session end");}
+        std::shared_ptr<const ModelHookContext> modelContext;
+        try {modelContext=d->hookContext(d->store.load(id));}
+        catch(const Error& e){error(QString::fromUtf8(e.what()),enumName(e.code()));}
         for(const auto& hook:d->options.hooks) {
             if(token.isCancelled()||std::chrono::steady_clock::now()>=deadline)break;
             try {
-                const auto result=hook({HookKind::SessionEnd,id,{}, {},{},{},context},token);
+                const auto result=hook({HookKind::SessionEnd,id,{}, {},{},{},context,modelContext},token);
                 for(const auto& value:result.diagnostics)diagnostics.append(value);
                 if(result.block||result.stop||!result.feedback.isEmpty()||result.initialUserMessage)
                     diagnostics.append(QJsonObject{{"hook_event_name","SessionEnd"},{"outcome","ignored_control"}});
@@ -762,7 +774,7 @@ ToolResult Engine::runSubagentTool(const QString& id, const QString& name, const
     context.progress = [callback, id, runId = context.runId, callId](const QJsonObject& data) {
         if (callback) callback({EventKind::ToolProgress, runId, id, callId, {}, data});
     };
-    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests});
+    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests,d->model,session.model});
     return runner.run({callId, name, args}, context, callback);
 }
 ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJsonObject& args,
@@ -777,7 +789,7 @@ ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJ
     ToolContext context{id, uuid(), session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), operation.token};
     context.transcriptPath=transcriptPath(id);
     context.permissionRequests=requests?requests:d->options.permissionRequests;
-    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests});
+    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests,d->model,session.model});
     return runner.run({uuid(), name, args}, context, callback);
 }
 Session Engine::sessionMetadata(const QString& id) const { return d->store.metadata(id); }
@@ -796,11 +808,11 @@ ToolResult Engine::runTaskTool(const QString& id, const QString& name, const QJs
     const auto session = d->store.metadata(id);
     Impl::NativeOperation operation(*d,id,token);
     auto registry = std::make_shared<ToolRegistry>(); const auto runId = uuid();
-    for (auto tool : d->taskToolsFor(id, runId, callback)) registry->add(std::move(tool));
+    for (auto tool : d->taskToolsFor(session, runId, callback)) registry->add(std::move(tool));
     ToolContext context{id, runId, session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), operation.token};
     context.transcriptPath=transcriptPath(id);
     context.permissionRequests=requests?requests:d->options.permissionRequests;
-    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests});
+    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests,d->model,session.model});
     return runner.run({uuid(), name, args}, context, callback);
 }
 RunHandle Engine::compact(CompactRequest request, EventCallback callback) {
@@ -879,6 +891,7 @@ namespace {
 ConversationRequest conversationRequest(const ModelRequest& request) {
     ConversationRequest conversation;
     conversation.model = request.model; conversation.contextId = request.contextId; conversation.options = request.generation;
+    conversation.responseSchema=request.responseSchema;conversation.enableThinking=request.enableThinking;conversation.toolChoice=request.toolChoice;
     for (const auto& tool : request.tools)
         conversation.tools.append(QJsonObject{{"type", "function"}, {"function", QJsonObject{
             {"name", tool.name}, {"description", tool.description}, {"parameters", tool.inputSchema}}}});
@@ -890,8 +903,9 @@ ConversationRequest conversationRequest(const ModelRequest& request) {
         "copied character for character without JSON quoting. "
         "Do not add an introduction, explanation, example value, or Markdown code fence. Otherwise, give a concise answer after completing the work.");
     if (request.summarizing) { instruction = request.systemPrompt; conversation.toolChoice = "none"; conversation.tools = {}; }
+    else if(request.systemPromptOnly)instruction=request.systemPrompt;
     else if (!request.systemPrompt.isEmpty()) instruction = request.systemPrompt + "\n\n" + instruction;
-    if (!request.summarizing && std::any_of(request.tools.begin(), request.tools.end(), [](const auto& tool) { return tool.name == "ToolSearch"; }))
+    if (!request.summarizing && !request.systemPromptOnly && std::any_of(request.tools.begin(), request.tools.end(), [](const auto& tool) { return tool.name == "ToolSearch"; }))
         instruction += " ToolSearch only discovers tool definitions; its response is not a file or a completed action. "
             "After finding a tool, call it to obtain the actual task data before giving your final answer.";
     conversation.messages.append(QJsonObject{{"role", "system"}, {"content", instruction}});

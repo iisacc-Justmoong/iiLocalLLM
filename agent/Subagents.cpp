@@ -278,10 +278,16 @@ public:
             hookContext["transcript_path"]=QDir(options.stateDirectory).filePath("sessions/"+request.sessionId+"/transcript.jsonl");
             auto scopedPolicy=std::make_shared<ScopedPolicy>(policy,original,current);
             QString startFeedback;
+            std::shared_ptr<ModelHookContext> modelContext;
+            if(!parent.hooks.isEmpty()) {
+                modelContext=std::make_shared<ModelHookContext>();modelContext->model=std::make_shared<ScopedModel>(model,original,current);
+                modelContext->session=std::make_shared<Session>(children.load(request.sessionId));modelContext->modelName=modelContext->session->model;
+                for(const auto& tool:registry->definitions())if(allowed(tool,original)&&allowed(tool,current))modelContext->tools.append(tool);
+            }
             for(const auto& hook:parent.hooks) {
                 job->token.throwIfCancelled();
                 auto startContext=hookContext;startContext["permission_mode"]=scopedPolicy->describe({request.sessionId,{},options.workingDirectory,{},job->token})["mode"].toString("unknown");
-                const auto value=hook({HookKind::SubagentStart,request.sessionId,{}, {},{},request.prompt,startContext},job->token);
+                const auto value=hook({HookKind::SubagentStart,request.sessionId,{}, {},{},request.prompt,startContext,modelContext},job->token);
                 if(progress)for(const auto& diagnostic:value.diagnostics)
                     progress(QJsonObject{{"agentId",hookContext["agent_id"]},{"event",toJson(Event{EventKind::Hook,{},request.sessionId,{}, {},diagnostic.toObject()})}});
                 if(value.stop)throw Error(ErrorCode::Cancelled,value.stopReason.isEmpty()?QString("Stopped by SubagentStart hook"):value.stopReason);

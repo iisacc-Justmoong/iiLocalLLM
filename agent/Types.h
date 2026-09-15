@@ -70,6 +70,10 @@ struct ModelRequest {
     GenerationOptions generation;
     QString contextId;
     bool summarizing = false; // Tools are disabled; the supplied system prompt defines the summary task.
+    QJsonObject responseSchema;
+    std::optional<bool> enableThinking;
+    bool systemPromptOnly = false; // Use exactly the host's task instruction without the normal agent preamble.
+    QString toolChoice = "auto";
 };
 struct ModelReply {
     QString text;

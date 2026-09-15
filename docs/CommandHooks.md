@@ -98,6 +98,6 @@ timeout은 시작 확인 뒤 적용하며 슬롯 대기와 최대 5초 시작 �
 
 once:true는 동일 프로세스의 공유 실행기에서 세션·설정 항목별 한 번이다. 동시 호출도 먼저 예약한 하나만 실행한다. 프로세스를 시작하면 실패해도 소비하고 시작 전 실패는 예약을 반환한다. 표가 가득 차면 비차단 오류를 남기며 기존 기록을 버리지 않는다. 호스트 재시작 뒤에는 복구하지 않는다.
 
-macOS에서 검증한 데스크톱 POSIX 명령 실행기이다. Windows·iOS·Android·WASM은 명령 설정을 거부하며 Linux 실기기 검증은 별도다. HTTP 훅은 0.29에 추가했다. prompt·agent 훅, 명령 async/asyncRewake, powershell, 명령 중복 제거, PermissionDenied·Notification·Setup·ConfigChange·Worktree·파일 감시·팀/elicitation 이벤트와 스킬·에이전트·플러그인 hooks 병합은 남아 있다. 지원하지 않는 설정은 명시적으로 거부한다.
+macOS에서 검증한 데스크톱 POSIX 명령 실행기이다. Windows·iOS·Android·WASM은 명령 설정을 거부하며 Linux 실기기 검증은 별도다. HTTP 훅은 0.29에 추가했다. prompt 훅은 0.30에 추가했다([PromptHooks.md](PromptHooks.md)). agent 훅, 명령 async/asyncRewake, powershell, 명령 중복 제거, PermissionDenied·Notification·Setup·ConfigChange·Worktree·파일 감시·팀/elicitation 이벤트와 스킬·에이전트·플러그인 hooks 병합은 남아 있다. 지원하지 않는 설정은 명시적으로 거부한다.
 
 분석 기준은 고정 미러 `c8cd253554319f32ff64ff7000636199f720c9bc`의 schemas/hooks.ts, types/hooks.ts, entrypoints/sdk/coreSchemas.ts, utils/hooks.ts, services/tools/toolHooks.ts이다. 설정·stdin·JSON/종료 코드 순서·매처·권한 우선순위를 관찰해 C++로 구현했다. 미러 출처 주장의 독립 인증이나 전체 Claude Code 호환 인증은 아니다. 실행 증거는 [Verification.md](Verification.md), 남은 전체 목표는 [HarnessParity.md](HarnessParity.md)에 구분한다.

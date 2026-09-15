@@ -141,6 +141,33 @@ QList<QJsonObject> events(const Reply& reply)
 class HttpTests : public QObject {
     Q_OBJECT
 private slots:
+    void connectedRpcCancellationFinishesTheEventStream_data() {
+        QTest::addColumn<int>("code");
+        QTest::newRow("hook-cancellation")<<int(ErrorCode::Cancelled);
+        QTest::newRow("backend-shutdown")<<int(ErrorCode::ShuttingDown);
+    }
+    void connectedRpcCancellationFinishesTheEventStream() {
+        QFETCH(int,code);
+        class Handler final:public RpcHandler {
+        public:
+            ErrorCode code;
+            explicit Handler(ErrorCode c):code(c){}
+            RpcHandle dispatch(QString,QJsonObject,QString,RpcEventCallback callback) override {
+                callback({{"event","hook"},{"data",QJsonObject{{"outcome","blocked"}}}});
+                std::promise<QJsonValue> promise;auto result=promise.get_future().share();
+                promise.set_exception(std::make_exception_ptr(Error(code,"HOOK_STOP")));
+                return {"hook-stop",{},result};
+            }
+        };
+        Fixture fixture;HttpApiServer server(*fixture.service);server.setRpcHandler(std::make_shared<Handler>(ErrorCode(code)));QVERIFY(server.listen());
+        const auto response=request(server.port(),QJsonDocument(QJsonObject{{"id","request"},{"method","test/hook"},{"stream",true}}).toJson(),
+            "/v1/rpc",false,{{"Authorization","Bearer fixture"}});
+        QCOMPARE(response.status,200);QVERIFY(response.bytes.endsWith("data: [DONE]\n\n"));
+        const auto frames=events(response);QCOMPARE(frames.size(),3);QCOMPARE(frames.first()["event"],"accepted");
+        QCOMPARE(frames[1]["data"].toObject()["event"],"hook");QCOMPARE(frames.last()["event"],"done");
+        QCOMPARE(frames.last()["error"].toObject()["code"],enumName(ErrorCode(code)));
+        QCOMPARE(frames.last()["error"].toObject()["message"],"HOOK_STOP");QCOMPARE(frames.last()["request_id"],"hook-stop");
+    }
     void waitingRpcCannotOccupyThePermissionControlCapacity() {
         class Handler final:public RpcHandler {
         public:

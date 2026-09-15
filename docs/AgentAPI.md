@@ -206,3 +206,5 @@ agent.tasks.create/get/list/update/claim 및 agent.todos.write/get을 추가한�
 ## 0.27 앱 권한 요청
 
 인증 API/native IPC와 MCP 연결별 승인 채널, 독립 제어 처리, 훅·앱 경쟁, 취소·기한·중복 응답을 추가한다. [PermissionRequests.md](PermissionRequests.md)에 활성화·요청·응답 계약과 참조 차이를 기술한다. 전체 하네스와 실제 앱 통합 완료를 의미하지 않는다.
+
+0.30.0은 훅/백엔드가 작업을 `cancelled`·`shutting_down` 오류로 끝냈으나 HTTP 클라이언트는 연결된 경우에도 SSE `done` 오류와 `[DONE]`, 정상 chunk 종료를 전송한다. 실제 연결 단절이나 HTTP 서버 종료 시에는 쓰기를 중단한다. 작업 취소 오류만 보고 전송을 잘라 클라이언트에 불완전 응답을 남기지 않는다.

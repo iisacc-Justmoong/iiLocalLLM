@@ -32,11 +32,20 @@ int main(int argc, char** argv) {
             throw std::runtime_error("enable_thinking did not change the native prepared prompt");
         if (enabled->tokenize({{Role::User, "Hello"}}, {}) != thinking.tokens)
             throw std::runtime_error("Text conversation ignored enable_thinking=true");
+        request.enableThinking=false;
+        if(enabled->prepareConversation(request,{}).tokens!=noThinking.tokens)
+            throw std::runtime_error("Per-request thinking override was ignored");
+        request.enableThinking=true;
+        if(disabled->prepareConversation(request,{}).tokens!=thinking.tokens)
+            throw std::runtime_error("Per-request thinking override could not enable thinking");
+        request.enableThinking.reset();
+        if(enabled->prepareConversation(request,{}).tokens!=thinking.tokens||disabled->prepareConversation(request,{}).tokens!=noThinking.tokens)
+            throw std::runtime_error("Per-request override changed the loaded model default");
         spec.options.remove("enable_thinking");
         auto defaults = runtime->load(spec, {ComputeBackend::Cpu, {}}, {});
         if (defaults->prepareConversation(request, {}).tokens != thinking.tokens)
             throw std::runtime_error("The default thinking template contract changed");
-        std::cout << "Native thinking option type, explicit true/false, default and both prompt paths verified\n";
+        std::cout << "Native thinking option type, explicit true/false, default, request overrides and both prompt paths verified\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }
 }

@@ -50,6 +50,7 @@ public:
     Session session(const QString& id) const;
     Session sessionMetadata(const QString& id) const;
     QString transcriptPath(const QString& sessionId) const;
+    std::shared_ptr<Model> hookModel() const; // C++ host binding for direct MCP/ToolRunner hooks; not a wire capability.
     SkillCatalog skills(const QString& sessionId, const CancellationToken& = {}) const;
     QJsonObject permissions(const QString& sessionId, const CancellationToken& = {}) const;
     QStringList sessions() const;

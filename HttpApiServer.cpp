@@ -331,7 +331,9 @@ public:
             [this, state, guard, finish, envelope, deadline, disconnected = request.is_connection_closed](size_t, httplib::DataSink& sink) {
                 auto failed = [&](ErrorCode code, const QString& message) {
                     state->operation.cancel();
-                    if (code == ErrorCode::Cancelled || code == ErrorCode::ShuttingDown) return false;
+                    // A hook/backend can cancel an operation while its client
+                    // remains connected. Finish that error as a valid SSE stream.
+                    if (disconnected() || stopping.load()) return false;
                     auto result = envelope; result["event"] = "done"; result["error"] = errorObject(code, message)["error"];
                     const auto data = frame(result) + QByteArrayLiteral("data: [DONE]\n\n");
                     if (!sink.write(data.constData(), size_t(data.size()))) return false; sink.done(); return true;

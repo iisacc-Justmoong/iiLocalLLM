@@ -36,7 +36,7 @@ int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("iiLocalLLMD"));
-    app.setApplicationVersion(QStringLiteral("0.29.0"));
+    app.setApplicationVersion(QStringLiteral("0.30.0"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("iiLocalLLM local JSON IPC service"));
     parser.addHelpOption(); parser.addVersionOption();
@@ -61,7 +61,7 @@ int main(int argc, char** argv)
         {"agent-permission-settings", "Private host configuration outside the workspace for layered permission settings.", "file"},
         {"agent-permission-requests", "Private host JSON outside the workspace enabling app permission requests.", "file"},
         {"agent-add-dir", "Additional file working directory; repeat. Does not enable disk settings without --agent-permission-settings.", "directory"},
-        {"agent-hooks", "Private command/HTTP hook JSON configuration outside the workspace.", "file"},
+        {"agent-hooks", "Private command/HTTP/prompt hook JSON configuration outside the workspace.", "file"},
         {"agent-mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
         {"agent-mcp-project", "Load workspace/.mcp.json after explicit MCP configuration files."},
         {"agent-mcp-eager", "Publish all configured MCP tools to the model without ToolSearch."},

@@ -277,10 +277,11 @@ public:
         input.tool_choice = common_chat_tool_choice_parse_oaicompat(request.toolChoice.toStdString());
         input.parallel_tool_calls = request.parallelToolCalls;
         input.reasoning_format = COMMON_REASONING_FORMAT_DEEPSEEK;
-        input.enable_thinking = spec_.options.value("enable_thinking").toBool(true);
+        input.enable_thinking = request.enableThinking.value_or(spec_.options.value("enable_thinking").toBool(true));
+        if(!request.responseSchema.isEmpty())input.json_schema=QJsonDocument(request.responseSchema).toJson(QJsonDocument::Compact).toStdString();
         auto state = std::make_shared<LlamaConversationState>();
         state->chat = common_chat_templates_apply(templates_.get(), input);
-        if (!spec_.options.value("tool_grammar").toBool(true)) {
+        if (!spec_.options.value("tool_grammar").toBool(true)&&request.responseSchema.isEmpty()) {
             // Upstream object grammars constrain optional property order. Hosts
             // can use natural tool output while keeping parsing and executor validation.
             state->chat.grammar.clear();

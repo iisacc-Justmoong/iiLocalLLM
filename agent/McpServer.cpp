@@ -307,6 +307,7 @@ public:
             throw;
         }
         auto runnerOptions=options.tools;
+        if(options.engine){runnerOptions.hookModel=options.engine->hookModel();runnerOptions.hookModelName=options.model;}
         if(options.permissionRequests)runnerOptions.permissionRequests=conversation(request.sessionId)->permissionRequests;
         ToolRunner runner(frozen, policy, runnerOptions);
         ToolCall call{uuid(), name, params["arguments"].toObject()};
@@ -329,10 +330,12 @@ public:
         }
         if (!options.artifactsDirectory.isEmpty()) context.artifactsDirectory = QDir(options.artifactsDirectory).filePath(context.sessionId + '/' + context.runId);
         const auto source = frozen->get(name).definition.metadata["source"].toString();
-        auto bindContext = [&] {
+        auto bindContext = [&](bool history=false) {
             if (options.engine && (source == "builtin.workspace" || source == "builtin.shell" || source == "builtin.shell.control")) {
                 context.sessionId = sessionId(conversation(request.sessionId), context.cancellation);
                 context.transcriptPath=options.engine->transcriptPath(context.sessionId);
+                if(history&&!options.tools.hooks.isEmpty())try {context.sessionSnapshot=std::make_shared<Session>(options.engine->session(context.sessionId));}
+                    catch(const Error& error){if(error.code()!=ErrorCode::ModelInUse)throw;}
             }
         };
         int hookProgress=0;
@@ -348,7 +351,7 @@ public:
         if (shellControl || inputControl || subagentControl || sessionControl) { bindContext(); return wireResult(runner.run(call, context,observe)); }
         std::shared_lock shared(execution, std::defer_lock); std::unique_lock exclusive(execution, std::defer_lock);
         if (runner.concurrencySafe(call)) acquire(shared, context.cancellation); else acquire(exclusive, context.cancellation);
-        bindContext();
+        bindContext(true);
         return wireResult(runner.run(call, context,observe));
     }
 };

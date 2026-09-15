@@ -6,7 +6,7 @@
 #include <QtCore/QJsonDocument>
 
 namespace iiLocalLLMClient {
-inline QList<iiLocalLLM::agent::Hook> commandHookConfig(const QString& path,const QString& workspace) {
+inline QList<iiLocalLLM::agent::Hook> commandHookConfig(const QString& path,const QString& workspace,bool modelAvailable=true) {
     if(path.isEmpty())return {};
     const auto canonical=QFileInfo(path).canonicalFilePath();
     if(canonical.isEmpty()||canonical==workspace||canonical.startsWith(workspace.endsWith('/')?workspace:workspace+'/'))
@@ -15,6 +15,9 @@ inline QList<iiLocalLLM::agent::Hook> commandHookConfig(const QString& path,cons
     if(error.error!=QJsonParseError::NoError||!document.isObject())
         throw iiLocalLLM::Error(iiLocalLLM::ErrorCode::InvalidArgument,"Command hook configuration must be a private JSON object");
     iiLocalLLM::agent::CommandHookOptions options;options.workingDirectory=workspace;
-    return {iiLocalLLM::agent::CommandHooks(document.object(),options).callback()};
+    const iiLocalLLM::agent::CommandHooks hooks(document.object(),options);
+    if(!modelAvailable)for(const auto& hook:hooks.describe()["hooks"].toArray())if(hook.toObject()["hook_type"]=="prompt")
+        throw iiLocalLLM::Error(iiLocalLLM::ErrorCode::InvalidArgument,"Prompt hooks require --model and --models");
+    return {hooks.callback()};
 }
 }

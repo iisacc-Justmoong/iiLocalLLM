@@ -9,6 +9,7 @@
 #include <functional>
 #include <future>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 
 #if defined(IILOCALLLM_BUILDING_LIBRARY)
@@ -118,6 +119,8 @@ struct ConversationRequest {
     GenerationOptions options;
     qint64 keepAliveMs = -1;
     bool parallelToolCalls = true;
+    QJsonObject responseSchema; // Native structured text grammar; empty leaves ordinary text/tool generation unchanged.
+    std::optional<bool> enableThinking; // Per-request override; absent uses the loaded model's setting.
 };
 struct Usage {
     int promptTokens = 0;

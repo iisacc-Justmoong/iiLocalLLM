@@ -74,4 +74,4 @@ maxInputBytes/maxOutputBytes는 기본 각각 1 MiB이다. HTTP 출력 한도는
 
 이 버전은 macOS Qt 6.8.3에서 검증한다. HTTP 생산 코드는 Qt 경로지만 다른 OS·모바일 실기기 검증은 별도다. CommandHookOptions 공개 구조체가 변경되어 소비자는 0.29 헤더와 라이브러리로 재빌드해야 한다. 이전 바이너리의 ABI 호환을 보장하지 않는다.
 
-참조는 고정 미러 c8cd253554319f32ff64ff7000636199f720c9bc의 schemas/hooks.ts, utils/hooks/execHttpHook.ts, utils/hooks/ssrfGuard.ts, utils/proxy.ts, utils/hooks.ts와 SDK 출력 스키마이다. 미러의 진위나 Claude Code 전체 동작의 독립 인증은 아니다. 전체 생명주기, prompt/agent 훅, 비동기 실행기, 설정/스킬/플러그인 병합과 앱 전체 검증은 [HarnessParity.md](HarnessParity.md)의 partial 상태를 유지한다. 실행 증거는 [Verification.md](Verification.md)에 기록한다.
+참조는 고정 미러 c8cd253554319f32ff64ff7000636199f720c9bc의 schemas/hooks.ts, utils/hooks/execHttpHook.ts, utils/hooks/ssrfGuard.ts, utils/proxy.ts, utils/hooks.ts와 SDK 출력 스키마이다. 미러의 진위나 Claude Code 전체 동작의 독립 인증은 아니다. 프롬프트 훅은 0.30의 [PromptHooks.md](PromptHooks.md)에 별도 기록한다. 전체 생명주기, agent 훅, 비동기 실행기, 설정/스킬/플러그인 병합과 앱 전체 검증은 [HarnessParity.md](HarnessParity.md)의 partial 상태를 유지한다. 실행 증거는 [Verification.md](Verification.md)에 기록한다.

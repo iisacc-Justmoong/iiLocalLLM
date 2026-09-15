@@ -37,7 +37,7 @@ void validateConversationRequest(const ConversationRequest& r, int maxCharacters
     require(r.toolChoice == "auto" || r.toolChoice == "none" || r.toolChoice == "required", code, "Invalid tool choice");
     require(r.toolChoice != "required" || !r.tools.isEmpty(), code, "Required tool choice needs tools");
     require(!r.messages.isEmpty() && r.messages.size() <= 4096 && r.tools.size() <= 256, code, "Invalid conversation size");
-    const QJsonObject input{{"messages", r.messages}, {"tools", r.tools}};
+    const QJsonObject input{{"messages", r.messages}, {"tools", r.tools},{"response_schema",r.responseSchema}};
     require(QString::fromUtf8(QJsonDocument(input).toJson(QJsonDocument::Compact)).size() <= maxCharacters, code,
         "Conversation exceeds service input limit");
     QSet<QString> names;

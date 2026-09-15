@@ -27,7 +27,7 @@ void interrupt(int) { interrupted.store(true,std::memory_order_relaxed); }
 }
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.29.0");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.30.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},
@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
         {"permission-settings", "Private host configuration outside the workspace for layered permission settings.", "file"},
         {"permission-requests", "Private host JSON outside the workspace enabling app permission requests.", "file"},
         {"add-dir", "Additional file working directory; repeat. Does not enable disk settings without --permission-settings.", "directory"},
-        {"hooks", "Private command/HTTP hook JSON configuration outside the workspace.", "file"},
+        {"hooks", "Private command/HTTP/prompt hook JSON configuration outside the workspace.", "file"},
         {"mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
         {"mcp-project", "Load workspace/.mcp.json after explicit MCP configuration files."},
         {"mcp-eager", "Publish all configured MCP tools to the agent without ToolSearch."},
@@ -152,7 +152,7 @@ int main(int argc, char** argv) {
         const auto permissionRequests=iiLocalLLMClient::permissionRequestsConfig(parser.value("permission-requests"),workspace);
         auto policy=iiLocalLLMClient::permissionConfig(parser.value("permission-settings"),workspace,rules,hostRules,parser.values("add-dir"),permissionRequests?a::PermissionMode::Default:a::PermissionMode::DontAsk);
         if(parser.isSet("hooks")&&parser.value("hooks").isEmpty())throw std::runtime_error("--hooks requires a file");
-        const auto hooks=iiLocalLLMClient::commandHookConfig(parser.value("hooks"),workspace);
+        const auto hooks=iiLocalLLMClient::commandHookConfig(parser.value("hooks"),workspace,agent);
         std::shared_ptr<a::ShellTasks> shells;
 #if defined(Q_OS_UNIX) && !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
         if (!parser.isSet("no-background")) shells = std::make_shared<a::ShellTasks>(workspace,

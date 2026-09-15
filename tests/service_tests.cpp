@@ -227,6 +227,29 @@ private slots:
         QCOMPARE(service.converse(r).result.get().errorCode, ErrorCode::InvalidArgument);
         QCOMPARE(p->contexts.load(), 0);
     }
+    void agentModelHookControlsReachMeasurementAndGeneration()
+    {
+        auto p=std::make_shared<Probe>();Service service(options());setup(service,p,8192);
+        p->answer="{\"text\":\"{\\\"ok\\\":true}\"}";
+        agent::ServiceModel model(service);agent::ModelRequest request;request.model="model://small";
+        request.generation.maxTokens=64;request.systemPrompt="EXACT_HOST_CONDITION";request.systemPromptOnly=true;
+        request.toolChoice="none";request.enableThinking=false;
+        request.responseSchema={{"type","object"},{"properties",QJsonObject{{"ok",QJsonObject{{"type","boolean"}}}}},
+            {"required",QJsonArray{"ok"}},{"additionalProperties",false}};
+        request.tools={{"ToolSearch","Definition only",{{"type","object"}}}};
+        request.messages={{{},agent::MessageRole::User,"Check the condition"}};
+        QVERIFY(model.measure(request,{}));QCOMPARE(model.generate(request,{},{}).text,"{\"ok\":true}");
+        QCOMPARE(p->preparedConversations.size(),2);
+        for(const auto& prepared:p->preparedConversations) {
+            QCOMPARE(prepared.responseSchema,request.responseSchema);QVERIFY(prepared.enableThinking.has_value()&&!*prepared.enableThinking);
+            QCOMPARE(prepared.toolChoice,"none");QCOMPARE(prepared.messages.first().toObject()["content"],request.systemPrompt);
+        }
+        QCOMPARE(p->preparedConversations[0].messages,p->preparedConversations[1].messages);
+        request.responseSchema={};request.enableThinking.reset();request.systemPromptOnly=false;request.toolChoice="auto";
+        model.generate(request,{},{});const auto restored=p->preparedConversations.last();
+        QVERIFY(restored.responseSchema.isEmpty()&&!restored.enableThinking.has_value());QCOMPARE(restored.toolChoice,"auto");
+        QVERIFY(restored.messages.first().toObject()["content"].toString().contains("You are a local agent."));
+    }
     void agentToolObservationsPreserveDataAndExactText()
     {
         auto p = std::make_shared<Probe>(); Service service(options()); setup(service, p, 8192);

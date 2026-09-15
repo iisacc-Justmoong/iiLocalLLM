@@ -89,6 +89,12 @@ struct PermissionResponse {
     QJsonArray updatedPermissions; // Allow only; requires a trusted host update handler.
     bool interrupt = false; // Deny only; cancels the owning run as well as rejecting this tool.
 };
+struct ModelHookContext {
+    std::shared_ptr<Model> model;
+    QString modelName;
+    std::shared_ptr<const Session> session; // Host snapshot; never loaded by re-entering a leased Engine session.
+    QList<ToolDefinition> tools;
+};
 struct HookInput {
     HookKind kind;
     QString sessionId;
@@ -97,6 +103,7 @@ struct HookInput {
     ToolResult result;
     QString text;
     QJsonObject context; // Lifecycle identity, plus stop_hook_active on stop callbacks.
+    std::shared_ptr<const ModelHookContext> modelContext; // Host-only model/history, never serialized into command/HTTP input.
 };
 struct HookResult {
     bool block = false;
@@ -120,6 +127,8 @@ struct ToolRunnerOptions {
     PermissionResponseCallback permissionResponse; // Used after request hooks, before the legacy bool callback.
     PermissionUpdateCallback permissionUpdates; // Trusted host operation; must apply all updates or throw.
     std::shared_ptr<PermissionRequests> permissionRequests; // Optional remote channel, racing local request handlers.
+    std::shared_ptr<Model> hookModel;
+    QString hookModelName; // Fallback when a standalone ToolContext has no session snapshot.
 };
 class IILOCALLLM_EXPORT ToolRunner {
 public:

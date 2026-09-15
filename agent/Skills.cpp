@@ -1,3 +1,4 @@
+#include "PromptArguments.h"
 #include "Skills.h"
 #include "SkillsInternal.h"
 #include "ContextFile.h"
@@ -176,21 +177,8 @@ QList<Loaded> scan(const QString& workspace, const SkillOptions& options, const 
     }
     return result;
 }
-QStringList arguments(const QString& text) {
-    QStringList result; QString part; QChar quote; bool escape = false, started = false;
-    for (const auto c : text) {
-        if (escape) { part += c; escape = false; started = true; }
-        else if (c == '\\' && quote != '\'') { escape = true; started = true; }
-        else if (!quote.isNull()) { if (c == quote) quote = {}; else part += c; }
-        else if (c == '\'' || c == '"') { quote = c; started = true; }
-        else if (c.isSpace()) { if (started) { result.append(part); part.clear(); started = false; } }
-        else { part += c; started = true; }
-    }
-    require(quote.isNull() && !escape, "Unclosed quote or escape in skill arguments");
-    if (started) result.append(part); return result;
-}
 QString expand(const Loaded& skill, const QString& raw, const QString& session) {
-    const auto args = arguments(raw);
+    const auto args = detail::splitPromptArguments(raw);
     static const QRegularExpression placeholder(R"(\$\{CLAUDE_SKILL_DIR\}|\$\{CLAUDE_SESSION_ID\}|\$ARGUMENTS\[(\d+)\]|\$(\d+)(?!\w)|\$([A-Za-z_][A-Za-z0-9_]*)(?![\w\[]))");
     auto matches = placeholder.globalMatch(skill.body); QString output; qsizetype pos = 0; bool substitutedArgument = false;
     while (matches.hasNext()) {

@@ -1,5 +1,6 @@
 #include "CommandHooks.h"
 #include "HttpHook.h"
+#include "ModelHook.h"
 #include "PermissionRules.h"
 #include "PermissionRulesInternal.h"
 #include "PermissionResponses.h"
@@ -121,7 +122,7 @@ HookResult response(const QJsonObject& object,const QString& event,bool& suppres
 }
 class CommandHooks::Impl {
 public:
-    struct Entry {QString event,matcher,command,condition,status,sha;std::optional<detail::HttpHook> http;QRegularExpression regex;bool literal=false,once=false;int timeout=0,index=0;};
+    struct Entry {QString event,matcher,command,condition,status,sha;std::optional<detail::HttpHook> http;std::optional<detail::PromptHook> prompt;QRegularExpression regex;bool literal=false,once=false;int timeout=0,index=0;};
     CommandHookOptions options;
     QList<Entry> entries;
     QSemaphore permits;
@@ -130,7 +131,8 @@ public:
     Impl(QJsonObject settings,CommandHookOptions value):options(std::move(value)) {
         require(options.timeoutMs>0&&options.timeoutMs<=3600000&&options.maxHooks>0&&options.maxHooks<=1024
             &&options.maxConcurrentProcesses>0&&options.maxConcurrentProcesses<=32&&options.maxInputBytes>0&&options.maxInputBytes<=4*1024*1024
-            &&options.maxOutputBytes>0&&options.maxOutputBytes<=4*1024*1024&&options.maxOnceEntries>0&&options.maxOnceEntries<=1048576,"Invalid command hook limits");
+            &&options.maxOutputBytes>0&&options.maxOutputBytes<=4*1024*1024&&options.maxOnceEntries>0&&options.maxOnceEntries<=1048576
+            &&options.maxModelTokens>0&&options.maxModelTokens<=16384,"Invalid command hook limits");
         options.workingDirectory=QFileInfo(options.workingDirectory).canonicalFilePath();
         require(!options.workingDirectory.isEmpty()&&QFileInfo(options.workingDirectory).isDir(),"Command hook workspace must exist");
         permits.release(options.maxConcurrentProcesses);keys(settings,{"hooks","allowedHttpHookUrls","httpHookAllowedEnvVars"});
@@ -151,23 +153,29 @@ public:
                     require(entries.size()<options.maxHooks,"Too many command hooks",ErrorCode::ResourceLimit);
                     require(h.isObject(),"Command hook must be an object");const auto object=h.toObject();
                     const bool http=object["type"]=="http";
-                    require(http||object["type"]=="command","Unsupported hook type",ErrorCode::RuntimeUnavailable);
-                    keys(object,http?QStringList{"type","url","if","timeout","headers","allowedEnvVars","statusMessage","once"}
+                    const bool prompt=object["type"]=="prompt";
+                    require(http||prompt||object["type"]=="command","Unsupported hook type",ErrorCode::RuntimeUnavailable);
+                    keys(object,prompt?QStringList{"type","prompt","model","if","timeout","statusMessage","once"}
+                        :http?QStringList{"type","url","if","timeout","headers","allowedEnvVars","statusMessage","once"}
                         :QStringList{"type","command","if","shell","timeout","statusMessage","once","async","asyncRewake"});
                     for(const auto& flag:{"once","async","asyncRewake"})if(object.contains(flag))require(object[flag].isBool(),"Hook flag must be boolean");
                     require(!object["async"].toBool()&&!object["asyncRewake"].toBool(),"Background command hooks are not implemented",ErrorCode::RuntimeUnavailable);
                     require(!object.contains("shell")||object["shell"]=="bash","Only POSIX command hook shells are implemented",ErrorCode::RuntimeUnavailable);
 #if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID) || defined(Q_OS_WASM)
-                    if(!http)throw Error(ErrorCode::RuntimeUnavailable,"Command hooks require a desktop POSIX host");
+                    if(!http&&!prompt)throw Error(ErrorCode::RuntimeUnavailable,"Command hooks require a desktop POSIX host");
 #endif
                     Entry entry;entry.event=i.key();entry.matcher=matcher;entry.literal=literal;entry.regex=regex;
-                    if(http)entry.http=detail::parseHttpHook(object,settings);
+                    if(prompt) {
+                        entry.prompt=detail::PromptHook{string(object["prompt"]),{}};
+                        require(!entry.prompt->prompt.trimmed().isEmpty(),"Empty model hook prompt");
+                        if(object.contains("model")){entry.prompt->model=string(object["model"],256);require(!entry.prompt->model.trimmed().isEmpty(),"Empty hook model");}
+                    } else if(http)entry.http=detail::parseHttpHook(object,settings);
                     else {entry.command=string(object["command"]);require(!entry.command.trimmed().isEmpty(),"Empty hook command");}
-                    entry.timeout=options.timeoutMs;entry.once=object["once"].toBool();entry.index=entries.size();
+                    entry.timeout=prompt?30000:options.timeoutMs;entry.once=object["once"].toBool();entry.index=entries.size();
                     if(object.contains("timeout")) {const auto seconds=object["timeout"].toDouble(-1);require(seconds>0&&seconds<=3600,"Invalid hook timeout");entry.timeout=qMax(1,int(seconds*1000));}
                     if(object.contains("statusMessage"))entry.status=string(object["statusMessage"],1024);
                     if(object.contains("if")) {entry.condition=string(object["if"],4096);require(parsePermissionRules({entry.condition}).size()==1,"Hook if requires one permission rule");}
-                    entry.sha=QString::fromLatin1(QCryptographicHash::hash((http?entry.http->url:entry.command).toUtf8(),QCryptographicHash::Sha256).toHex());entries.append(std::move(entry));
+                    entry.sha=QString::fromLatin1(QCryptographicHash::hash((prompt?entry.prompt->prompt:http?entry.http->url:entry.command).toUtf8(),QCryptographicHash::Sha256).toHex());entries.append(std::move(entry));
                 }
             }
         }
@@ -193,8 +201,8 @@ public:
     HookResult execute(const Entry& entry,const HookInput& input,const QString& event,const QByteArray& payload,const CancellationToken& token) {
         bool acquired=false,reserved=false,started=false;const auto key=input.sessionId+QChar::Null+QString::number(entry.index);
         const auto begin=std::chrono::steady_clock::now();QByteArray stdoutBytes,stderrBytes;HookResult result;
-        QJsonObject diagnostic{{"hook_event_name",event},{"hook_index",entry.index},{"hook_type",entry.http?"http":"command"},
-            {entry.http?"url_sha256":"command_sha256",entry.sha},{"status_message",entry.status}};
+        QJsonObject diagnostic{{"hook_event_name",event},{"hook_index",entry.index},{"hook_type",entry.prompt?"prompt":entry.http?"http":"command"},
+            {entry.prompt?"prompt_sha256":entry.http?"url_sha256":"command_sha256",entry.sha},{"status_message",entry.status}};
         auto release=[&] {if(acquired)permits.release();if(reserved&&!started) {std::lock_guard lock(mutex);once.remove(key);}};
         try {
             if(entry.once) {
@@ -203,7 +211,14 @@ public:
                 require(once.size()<options.maxOnceEntries,"Command hook once table is full",ErrorCode::ResourceLimit);once.insert(key);reserved=true;
             }
             while(!permits.tryAcquire(1,20))token.throwIfCancelled();acquired=true;token.throwIfCancelled();
-            if(entry.http) {
+            if(entry.prompt) {
+                const auto outcome=detail::evaluatePromptHook(*entry.prompt,input,payload,options,entry.timeout,token,[&]{started=true;});
+                result=outcome.result;diagnostic["model"]=outcome.model;
+                diagnostic["history_messages"]=input.modelContext->session?modelMessages(*input.modelContext->session).size():0;
+                diagnostic["usage"]=QJsonObject{{"prompt_tokens",outcome.usage.promptTokens},{"generated_tokens",outcome.usage.generatedTokens},{"cached_tokens",outcome.usage.cachedTokens}};
+                diagnostic["outcome"]=result.block?"blocked":"success";
+                if(event=="SessionStart"||event=="SessionEnd"){result.block=false;result.stop=false;result.feedback.clear();result.stopReason.clear();}
+            } else if(entry.http) {
                 const auto outcome=detail::postHttpHook(*entry.http,payload,options,entry.timeout,token,[&]{started=true;});
                 diagnostic["http_status"]=outcome.status;diagnostic["response_bytes"]=outcome.body.size();
                 require(outcome.status>=200&&outcome.status<300,"HTTP hook returned a non-success status",ErrorCode::ProtocolError);
@@ -236,8 +251,8 @@ public:
             if(!suppress)diagnostic["stdout"]=stdoutText.left(4096);diagnostic["stderr"]=stderrText.left(4096);
             }
         } catch(const Error& error) {
-            if(error.code()==ErrorCode::Cancelled||error.code()==ErrorCode::ConsumerFailure) {release();throw;}
-            diagnostic["outcome"]="non_blocking_error";diagnostic["error_code"]=enumName(error.code());diagnostic["error"]=QString::fromUtf8(error.what());
+            if((error.code()==ErrorCode::Cancelled&&(!entry.prompt||token.isCancelled()))||error.code()==ErrorCode::ConsumerFailure) {release();throw;}
+            diagnostic["outcome"]=entry.prompt&&(error.code()==ErrorCode::Timeout||error.code()==ErrorCode::Cancelled)?"cancelled":"non_blocking_error";diagnostic["error_code"]=enumName(error.code());diagnostic["error"]=QString::fromUtf8(error.what());
         } catch(const std::exception& error) {diagnostic["outcome"]="non_blocking_error";diagnostic["error"]=QString::fromUtf8(error.what());}
         release();diagnostic["duration_ms"]=double(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-begin).count());
         result.diagnostics.append(diagnostic);return result;
@@ -246,8 +261,8 @@ public:
         token.throwIfCancelled();const auto event=eventName(input);
         QList<Entry> matching;QHash<QString,qsizetype> httpPositions;
         for(const auto& entry:entries)if(matches(entry,input,event)) {
-            if(entry.http) {
-                const auto key=entry.http->url+QChar::Null+entry.condition;
+            if(entry.http||entry.prompt) {
+                const auto key=(entry.prompt?QString("prompt")+QChar::Null+entry.prompt->prompt:QString("http")+QChar::Null+entry.http->url)+QChar::Null+entry.condition;
                 const auto found=httpPositions.constFind(key);
                 if(found!=httpPositions.cend()){matching[*found]=entry;continue;}
                 httpPositions.insert(key,matching.size());
@@ -291,10 +306,10 @@ public:
 CommandHooks::CommandHooks(QJsonObject settings,CommandHookOptions options):d(std::make_shared<Impl>(std::move(settings),std::move(options))) {}
 Hook CommandHooks::callback() const {return [impl=d](const HookInput& input,const CancellationToken& token){return impl->invoke(input,token);};}
 QJsonObject CommandHooks::describe() const {
-    bool http=false,command=false;for(const auto& e:d->entries){http|=e.http.has_value();command|=!e.http;}
+    bool http=false,command=false,prompt=false;for(const auto& e:d->entries){http|=e.http.has_value();prompt|=e.prompt.has_value();command|=!e.http&&!e.prompt;}
     QJsonArray entries;for(const auto& e:d->entries)entries.append(QJsonObject{{"event",e.event},{"matcher",e.matcher},{"condition",e.condition},{"once",e.once},
-        {"timeout_ms",e.timeout},{"hook_type",e.http?"http":"command"},{e.http?"url_sha256":"command_sha256",e.sha},{"status_message",e.status}});
-    return {{"provider",http?(command?"configured":"http"):"command"},{"hooks",entries},
+        {"timeout_ms",e.timeout},{"hook_type",e.prompt?"prompt":e.http?"http":"command"},{e.prompt?"prompt_sha256":e.http?"url_sha256":"command_sha256",e.sha},{"status_message",e.status}});
+    return {{"provider",int(http)+int(command)+int(prompt)>1?"configured":prompt?"prompt":http?"http":"command"},{"hooks",entries},
         {"max_concurrent_hooks",d->options.maxConcurrentProcesses},{"max_concurrent_processes",d->options.maxConcurrentProcesses}};
 }
 }

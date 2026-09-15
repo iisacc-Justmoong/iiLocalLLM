@@ -1,5 +1,34 @@
 # 구현 검증 기록
 
+## 2026-09-15 C++ 프롬프트 훅 (0.30.0)
+
+단일 모델 판단 훅을 C++ Engine·ToolRunner와 인증 API·native IPC CLI·MCP HTTP/stdio에 연결했다. 대화 스냅샷, 미완결 도구 호출의 임시 짝, 입력/출력 상한, 별도 취소 기한, JSON 스키마·요청별 추론 모드와 모델 사용량 진단을 추가했다. 원본 대화에서 도구를 재실행하지 않는다. 실제 검증 중 발견한 HTTP SSE의 작업 취소 후 잘림도 수정했다. 계약과 원본 차이는 [PromptHooks.md](PromptHooks.md)에 기록한다.
+
+| 검증 경계 | 최종 관측 |
+|---|---|
+| Release 전체, inference 라벨 제외 | 65/65, 143.01초 |
+| ASan·UBSan, llama 비활성 Debug | 62/62, 147.88초 |
+| 새 설치 소비자(공식 MCP 교차 검사 2건 포함) | 36/36, 41.54초 |
+| 호스트 모델 문맥 | 원본 이력 보존, pending/실제 도구 결과 구분, Task 트랜잭션 거부, 자식 시작/종료 문맥 |
+| 실행 제약 | 잘못된 JSON/타입/도구 호출 거부, 입력/출력 상한, 부모와 구분한 시간 초과, once·중복·공유 슬롯 |
+| 권한 | true가 호스트 Deny를 우회하지 않음; PermissionRequest false의 중단을 직접/앱 요청 경로에서 확인 |
+| 네이티브 문법 | 실제 Qwen2.5 0.5B에 비-JSON 출력 지시를 주어도 tool_grammar=false 상태에서 고정 ok:true JSON 생성; 소스·설치 소비자 |
+| 네이티브 추론 모드 | 실제 llama 템플릿의 요청별 true/false와 원래 로딩 기본값 복원; ServiceModel 측정/생성 전달 일치 |
+| Qwen3 8B API | 소스·설치본 각각 파일 허용/차단, Stop 중단, UserPromptSubmit 차단의 4개 실행 |
+| Qwen3 8B CLI·Task | 양쪽에서 native IPC 입력 차단 및 Task 생성 허용·게시 전 차단 |
+| Qwen3 8B MCP | 양쪽에서 HTTP 직접 Write 3건(허용·모델 차단·호스트 거부), 공식 Python SDK stdio Write 2건 |
+| SSE 오류 | 연결된 훅 취소/백엔드 종료 오류에 done·[DONE]·정상 chunk 종료; 실제 Task 차단 교차 검사 |
+
+큰 모델은 model://qwen3-8b-q4, 5,027,783,488바이트, SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`이다. 파일을 이번 검증에서 다시 해시했다. 실제 모델 질의에서 기록한 훅 진단은 소스 13개, 설치본 13개이며 UserPromptSubmit·PreToolUse·Stop·TaskCreated를 포함한다. CLI/stdio의 판단도 별도 교차 검사했지만 이 개수에는 진단을 수집한 SSE 호출만 센다. 훅 토큰은 메인 RunResult 토큰과 별도이다.
+
+최종 라이브러리 SHA-256은 `3e2dd7510bcef61dc063fa03784da72cea50d44a555c9b4aabb5eff00b96e5b7`, Mach-O UUID는 `4BBD5D5F-8634-3A04-A7E5-398BF385188E`이다. 소스와 설치 라이브러리, 세 실행 파일의 UUID와 설치 RPATH 변환 후 바이트, 41개 공개 헤더·문서·카탈로그를 대조한다. 실제 소비자의 로더가 `build/model-hooks-stage` 라이브러리를 선택하며 얇은 iillm은 모델 런타임에 링크하지 않는다. 새 ABI는 0.30 헤더/라이브러리로 소비자를 다시 빌드해야 한다.
+
+최초 컴파일 실패와 SSE 재현 실패를 보존한다. 실제 모델 첫 검사는 인증 fixture의 필수 id 누락으로, 두 번째 검사는 실제 SSE 취소 잘림으로 중단됐다. 첫 전체 검사는 64/65로 로컬 파라미터 출처 해시만 실패했다. 기존 생성기를 통해 Types.h의 선언 위치와 해시만 갱신하고 16개 생성 제어 내용이 동일함을 대조한 뒤 최종 전체 검사를 통과했다. 첫 sanitizer 전체 검사에서는 공식 MCP stdio 초기화 1건이 10초 기한을 넘겼다. 변경 없이 단독 검사와 후속 전체 검사를 통과했으며 원인 해결로 주장하지 않는다. 후속 실제 모델 검사는 MCP의 빈 커서용 SSE 이벤트를 검증 코드가 JSON으로 읽어 중단됐다. 검증 코드만 수정하고 빈 이벤트·종료 마커·잘못된 JSON 회귀 검사, Release·sanitizer의 해당 CLI 검사, 소스·설치본 전체 실제 모델 검증을 다시 통과했다. 앞선 전체 CTest 65/62/36 기록 이후 C++ 구현과 바이너리는 변경하지 않았다. 이 실패들을 성공 기록으로 대체하지 않는다.
+
+증거는 `build/model-hooks-verification.json`, `model-hooks-linkage.json`, `model-hooks-tested-source.json`, `model-hooks-*-native.json`, 각 최종 로그/XML과 `model-hooks-publication.json`에 분리한다. 커밋/원격 HEAD와 최종 전체 소스 해시는 게시 기록에서 확인한다.
+
+도구를 실행하는 type:agent 훅, 전체 훅 설정/스킬/플러그인 병합·생명주기, OS 샌드박스, 남은 하네스와 전체 앱/플랫폼 검증은 미완료이다. 이번 패키지는 별도 SDK 검증용 설치본이며 Society·Dreamscapes 앱을 재패키징하지 않았다. iPhone은 사용자 지시로 제외한다. 전체 목표는 계속 진행 중이다.
+
 ## 2026-09-15 C++ HTTP 훅 (0.29.0)
 
 HTTP/HTTPS POST와 JSON 응답을 기존 명령·C++ 훅의 생명주기·권한 결정 경로에 연결했다. URL/환경 허용 목록, 직접 연결 DNS 주소 고정, 원래 Host·SNI·인증서 검증, 프록시, 응답/기한/취소 제한을 제공한다. 기존 Qt 6.8.3 Network를 사용하며 새 생산 의존성은 없다. Python은 독립 검증용 HTTP/HTTPS 피어와 클라이언트이다. 설정과 참조 차이는 [HTTPHooks.md](HTTPHooks.md)를 따른다.

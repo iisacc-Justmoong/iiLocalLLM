@@ -164,6 +164,12 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
     auto context=suppliedContext;
     ToolResult result;
     QJsonObject hookContext;
+    std::shared_ptr<ModelHookContext> modelContext;
+    if(!options_.hooks.isEmpty()) {
+        modelContext=std::make_shared<ModelHookContext>();modelContext->model=options_.hookModel;
+        modelContext->modelName=options_.hookModelName;modelContext->session=context.sessionSnapshot;
+        modelContext->tools=registry_->definitions();
+    }
     auto hookEvents=[&](const HookResult& value) {
         for(const auto& diagnostic:value.diagnostics)event(callback,EventKind::Hook,context,call,{},diagnostic.toObject());
         if(value.stop)throw Error(ErrorCode::Cancelled,value.stopReason.isEmpty()?QString("Stopped by hook"):value.stopReason);
@@ -182,7 +188,7 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
         std::optional<PermissionDecision> hookPermission;
         for (const auto& hook : options_.hooks) {
             context.cancellation.throwIfCancelled();
-            const auto r = hook({HookKind::BeforeTool, context.sessionId, context.runId, call, {}, {},hookContext}, context.cancellation);
+            const auto r = hook({HookKind::BeforeTool, context.sessionId, context.runId, call, {}, {},hookContext,modelContext}, context.cancellation);
             hookEvents(r);
             if (r.block) throw Error(ErrorCode::InvalidArgument, "Pre-tool hook blocked execution: " + r.feedback);
             if (r.updatedArguments) call.arguments = *r.updatedArguments;
@@ -234,7 +240,7 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
                                 std::optional<PermissionResponse> answer;QString source="hook";
                                 for(const auto& hook:options_.hooks) {
                                     localToken.throwIfCancelled();
-                                    const auto value=hook({HookKind::PermissionRequest,context.sessionId,context.runId,call,{},decision.reason,requestContext},localToken);
+                                    const auto value=hook({HookKind::PermissionRequest,context.sessionId,context.runId,call,{},decision.reason,requestContext,modelContext},localToken);
                                     for(const auto& diagnostic:value.diagnostics)result.diagnostics.append(diagnostic);
                                     if(!value.feedback.isEmpty()){if(!result.feedback.isEmpty())result.feedback+='\n';result.feedback+=value.feedback;}
                                     if(value.stop)answer=PermissionResponse{PermissionBehavior::Deny,value.stopReason,{}, {},true};
@@ -277,7 +283,7 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
                 event(callback, EventKind::PermissionRequested, context, call, decision.reason, data);
                 for(const auto& hook:options_.hooks) {
                     context.cancellation.throwIfCancelled();
-                    const auto r=hook({HookKind::PermissionRequest,context.sessionId,context.runId,call,{},decision.reason,requestContext},context.cancellation);
+                    const auto r=hook({HookKind::PermissionRequest,context.sessionId,context.runId,call,{},decision.reason,requestContext,modelContext},context.cancellation);
                     hookEvents(r);
                     if(!r.feedback.isEmpty()){if(!beforeFeedback.isEmpty())beforeFeedback+='\n';beforeFeedback+=r.feedback;}
                     if(r.block)response=PermissionResponse{PermissionBehavior::Deny,r.feedback};
@@ -327,7 +333,7 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
     if(!beforeFeedback.isEmpty())result.text+='\n'+beforeFeedback;
     for (const auto& hook : options_.hooks) {
         context.cancellation.throwIfCancelled();
-        auto r = hook({HookKind::AfterTool, context.sessionId, context.runId, call, result, {},hookContext}, context.cancellation);
+        auto r = hook({HookKind::AfterTool, context.sessionId, context.runId, call, result, {},hookContext,modelContext}, context.cancellation);
         hookEvents(r);
         if (!r.feedback.isEmpty()) result.text += "\n" + r.feedback;
         if (r.block) result.isError = true;

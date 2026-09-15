@@ -20,3 +20,5 @@ Qwen3의 `/no_think`는 모델에 전달하는 소프트 지시이며 닫는 `</
 `tests/reasoning_runtime_smoke.cpp`는 실제 llama 런타임과 제어용 Jinja 템플릿으로 타입·기본값·true/false 및 두 프롬프트 경로를 검증한다. `tests/service_tests.cpp`는 추론 안에 도구 형태의 문자열이 있어도 실행 가능한 호출로 바뀌지 않는지 검증한다. `IILOCALLLM_TEST_AGENT_THINKING_CONTROL=ON`은 기존 카탈로그 수락 검사에 `enable_thinking=false`를 적용한 별도 지연 공개 검사를 추가한다. 기존 기본 설정의 검사를 대체하지 않는다.
 
 공식 MCP Python 클라이언트 환경이 함께 설정되면 `tests/agent_runtime_smoke.cpp`의 카탈로그 검사도 추가한다. 같은 Qwen3 샘플링과 추론/문법 설정에서 MCP 도구를 검색·호출하고 고정 회귀 값과 새 임의 파일 값을 실제 결과로 읽는지 확인한다. 각 대화의 검색 성공, 실제 원격 호출, 진행 이벤트, 최종 값과 호출/결과 쌍을 모두 요구한다. 실제 결과와 모델 조건은 [Verification.md](Verification.md)에 기록한다.
+
+0.30.0의 C++ `ConversationRequest.enableThinking`과 `agent::ModelRequest.enableThinking`은 구조화 요청 한 번의 선택이다. 생략하면 로딩 설정을 따르며 true/false를 명시하면 해당 요청에만 적용한다. 모델을 다시 로드하거나 일반 ChatRequest 설정을 변경하지 않는다. ServiceModel의 예산 측정·생성은 동일하게 전달하며 네이티브 테스트는 요청 후 원래 기본값이 유지되는지도 검증한다. 프롬프트 훅은 false를 명시한다([PromptHooks.md](PromptHooks.md)).
