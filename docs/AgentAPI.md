@@ -210,3 +210,5 @@ agent.tasks.create/get/list/update/claim 및 agent.todos.write/get을 추가한�
 0.30.0은 훅/백엔드가 작업을 `cancelled`·`shutting_down` 오류로 끝냈으나 HTTP 클라이언트는 연결된 경우에도 SSE `done` 오류와 `[DONE]`, 정상 chunk 종료를 전송한다. 실제 연결 단절이나 HTTP 서버 종료 시에는 쓰기를 중단한다. 작업 취소 오류만 보고 전송을 잘라 클라이언트에 불완전 응답을 남기지 않는다.
 
 0.33.0의 비동기 명령 훅은 세션/연결별로 완료 결과를 보관하고 문맥을 notification/next로 전달한다. asyncRewake 종료 코드 2는 횟수를 제한한 유휴 실행을 요청한다. 세션 종료·clear는 훅을 취소·정리하며, 자식 Engine은 실행이 끝난 뒤 자동 기동하지 않는다. 상태/취소 메서드와 기존 요청별 권한·콜백을 재사용하지 않는 경계는 [AsyncHooks.md](AsyncHooks.md)를 따른다.
+
+0.34에서 agent.plan.enter/exit/get을 추가했다. 상태 조회는 예약 제어 경로이고 검토는 기존 permission requests를 사용한다. [PlanMode.md](PlanMode.md)에 계약과 남은 범위를 기록한다.

@@ -140,3 +140,5 @@ Engine과 모델을 설정하면 `iiLocalLLM.agent.inputs.enqueue/list/remove/ru
 0.22의 네이티브 에이전트 run/inputs.run도 UserPromptSubmit·SessionStart를 사용한다. 차단·중단은 isError=true와 structuredContent의 RunResult로 반환하고 progressToken이 있으면 기존 hook 진단을 보낸다. 직접 Write 같은 도구 호출은 세션 활성화나 사용자 입력 제출로 간주하지 않는다. 새 연결은 기존 대화를 자동 재개하지 않는다. [InputLifecycle.md](InputLifecycle.md)를 따른다.
 
 0.32.0부터 훅이 설정된 가져오기 MCP 도구는 관측을 교체할 수 있으므로 재전달 tools/list에서 원격 outputSchema를 생략한다. 원격 서버가 실제 반환한 데이터의 내부 스키마 검증은 유지하고, 변경된 text/content와 빈 structuredContent를 전달한다. 일반 도구와 훅 없는 가져오기 도구의 스키마는 유지한다. [McpOutputHooks.md](McpOutputHooks.md)에 형식과 원본 메타데이터 보존 계약을 기록한다.
+
+0.34의 Engine 계획 도구는 EnterPlanMode/ExitPlanMode로 공개하며 iisacc/plan/status는 예약된 제어 메서드이다. [PlanMode.md](PlanMode.md)에 계약과 남은 범위를 기록한다.

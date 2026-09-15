@@ -67,6 +67,12 @@ struct ToolContext {
     std::shared_ptr<class AsyncHookScope> asyncHooks; // Host lifetime/delivery; never a model or wire field.
     std::optional<CancellationToken> hookCancellation; // Hard run cancellation; foreground input interrupts stay separate.
     bool forceSynchronousHooks = false;
+    QString planFilePath, plansDirectory; // Host-owned paths; only this exact plan file is accessible.
+    bool planModeActive = false;
+    int maxPlanBytes = 65536;
+    QString planningSessionId; // MCP owner binding; never accepted from model or wire input.
+    QJsonObject approvedToolPreview; // Original prepared metadata, populated only after a trusted Allow response.
+    QString planningState; // Admission snapshot used by the planning execution barrier.
 };
 struct ModelRequest {
     QString model;

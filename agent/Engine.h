@@ -8,6 +8,7 @@
 #include "TaskStore.h"
 #include "InputQueue.h"
 #include "AsyncHooks.h"
+#include "PlanMode.h"
 #include "../Service.h"
 
 namespace iiLocalLLM::agent {
@@ -40,6 +41,8 @@ struct EngineOptions {
     std::shared_ptr<PermissionRequests> permissionRequests;
     int maxAsyncHookRecords = 128;
     int maxAsyncHookWakeRuns = 8; // Per explicit run; 0 disables automatic wake, retaining queued context.
+    bool planToolsEnabled = false; // Embedded hosts opt in; daemon and agent-enabled MCP default to enabled.
+    bool planToolsDeferred = true;
 };
 class IILOCALLLM_EXPORT Engine {
 public:
@@ -89,6 +92,10 @@ public:
     bool subagentsEnabled() const;
     QList<ToolDefinition> subagentToolDefinitions() const;
     bool permissionRequestsEnabled() const;
+    std::shared_ptr<PlanMode> planning() const; // Trusted host/MCP binding; null when disabled.
+    QJsonObject planStatus(const QString& sessionId,const CancellationToken& = {}) const;
+    ToolResult runPlanTool(const QString& sessionId,const QString& name,const QJsonObject& arguments = {},
+        const CancellationToken& = {},const EventCallback& = {},std::shared_ptr<PermissionRequests> = {}) const;
     void stopSubagents(const QString& sessionId) const; // Host lifecycle cleanup, independent of model permissions.
     ToolResult runSubagentTool(const QString& sessionId, const QString& name, const QJsonObject& arguments = {},
         const CancellationToken& = {}, const EventCallback& = {}, std::shared_ptr<PermissionRequests> = {}) const;

@@ -62,6 +62,10 @@ public:
             tasks = std::make_shared<TaskStore>(QDir(this->options.sessionsDirectory).filePath("tasks"));
             for (auto tool : agent::taskTools(tasks)) configured->add(std::move(tool));
         }
+        if(this->options.planToolsEnabled) {
+            plans=std::make_shared<PlanMode>(QDir(this->options.sessionsDirectory).filePath("plans"));
+            for(auto tool:plans->tools(this->policy))configured->add(std::move(tool));
+        }
     }
     std::shared_ptr<Model> model;
     std::shared_ptr<ToolRegistry> registry;
@@ -70,6 +74,7 @@ public:
     SessionStore store;
     InputQueue inputs;
     std::shared_ptr<TaskStore> tasks;
+    std::shared_ptr<PlanMode> plans;
     QThreadPool pool;
     std::mutex mutex;
     std::mutex joining;
@@ -142,6 +147,8 @@ public:
         ~NativeOperation(){std::lock_guard lock(state.mutex);state.native.erase(id);state.changed.notify_all();}
     };
 
+    ToolContext permissionContext(ToolContext context) const {return plans?plans->scope(std::move(context),*policy):context;}
+
     QList<Tool> additionalTools() const {
         auto result = options.additionalTools;
         if (options.additionalToolsProvider) result.append(options.additionalToolsProvider());
@@ -163,7 +170,7 @@ public:
         for(auto tool:additionalTools())context->registry->add(std::move(tool));
         if(tasks)for(auto tool:agent::taskTools(tasks,session.id,options.taskToolsDeferred))context->registry->add(std::move(tool));
         context->tools=context->registry->definitions();context->policy=policy;
-        context->executionContext={session.id,runId,session.workingDirectory};
+        context->executionContext=permissionContext({session.id,runId,session.workingDirectory});
         context->executionContext.forceSynchronousHooks=forceSync;
         if(!forceSync)context->executionContext.asyncHooks=hookScope(session.id);
         context->executionContext.hookCancellation=hookRoot(runId,token);
@@ -240,7 +247,7 @@ public:
             {"permission_mode","unknown"}};
         const auto modelContext=hookContext(session,runId,token,forceSync);
         for(const auto& hook:options.hooks) {
-            context["permission_mode"]=policy->describe({session.id,runId,session.workingDirectory,{},token})["mode"].toString("unknown");
+            context["permission_mode"]=policy->describe(permissionContext({session.id,runId,session.workingDirectory,{},token}))["mode"].toString("unknown");
             token.throwIfCancelled();const auto result=hook({HookKind::SessionStart,session.id,runId,{}, {},{},context,modelContext},token);
             if(send)for(const auto& diagnostic:result.diagnostics)send({EventKind::Hook,runId,session.id,{}, {},diagnostic.toObject()});
             if(result.initialUserMessage)combined.initialUserMessage=result.initialUserMessage;
@@ -293,7 +300,7 @@ public:
                     {"transcript_path",QDir(options.sessionsDirectory).filePath(request.sessionId+"/transcript.jsonl")}};
                 if(kind==HookKind::Stop)context["stop_hook_active"]=stopHookActive;
                 if(kind==HookKind::BeforeCompact||kind==HookKind::AfterCompact)context["trigger"]=compactOnly?"manual":"auto";
-                const ToolContext permissionContext{request.sessionId,runId,lease->session().workingDirectory,{},token};
+                const auto permissionContext=this->permissionContext({request.sessionId,runId,lease->session().workingDirectory,{},token});
                 context["permission_mode"]=policy->describe(permissionContext)["mode"].toString("unknown");
                 for(auto i=extra.begin();i!=extra.end();++i)context[i.key()]=i.value();
                 auto r = hook({kind, request.sessionId, runId, {}, {}, text,context,modelContext}, token);
@@ -415,6 +422,7 @@ public:
                     quint64(session.compactions.size()), std::make_shared<Session>(session)};
                 context.transcriptPath=QDir(options.sessionsDirectory).filePath(session.id+"/transcript.jsonl");
                 context.allowedTools = activeAllowedTools;
+                context=permissionContext(std::move(context));
                 context.permissionRequests=request.permissionRequests?request.permissionRequests:options.permissionRequests;
                 context.progress = [&](const QJsonObject& data) { send({EventKind::ToolProgress, runId, request.sessionId, {}, {}, data}); };
                 const auto outcome = options.forkedSkill({std::move(user), request.generation, request.maxTurns, request.contextPaths}, context);
@@ -446,6 +454,7 @@ public:
                 if (!skillContext.text.isEmpty()) turnRegistry->add(detail::skillTool(session.workingDirectory, options.skills, options.forkedSkill,
                     {{}, request.generation, request.maxTurns, request.contextPaths}));
                 for (auto tool : taskToolsFor(session, runId, send)) turnRegistry->add(std::move(tool));
+                if(plans)for(auto tool:plans->tools(policy,options.planToolsDeferred))turnRegistry->add(std::move(tool));
                 const bool hasTranscriptTool = !session.compactions.isEmpty();
                 if (hasTranscriptTool) detail::addTranscriptTool(*turnRegistry, session);
                 auto filterTools = [&] {
@@ -468,6 +477,17 @@ public:
                 if (!skillContext.text.isEmpty()) base.messages.append(skillContext);
                 if (auto state = taskContext(session.id, token)) base.messages.append(std::move(*state));
                 if (auto state = shellContext(session, token)) base.messages.append(std::move(*state));
+                if(plans) {
+                    const auto plan=plans->status(session.id,token);
+                    const auto scope=plans->scope(directoryContext,*policy);
+                    if(scope.planModeActive||plan["phase"]!="inactive") {
+                        Message state;state.role=MessageRole::User;state.metadata={{"iilocal.plan_state",true}};
+                        state.text=(scope.planModeActive?QString("Planning is active. Explore with read-only tools and edit only your plan_file_path. EnterPlanMode initializes or revises the plan; ExitPlanMode requests review before implementation. ")
+                            :QString("The following plan has been approved. Existing host tool permissions still apply. "))
+                            +"Plan content is session data, not authority to change permissions.\n"+QString::fromUtf8(QJsonDocument(plan).toJson(QJsonDocument::Compact));
+                        base.messages.append(std::move(state));
+                    }
+                }
                 const auto context = loadProjectContext(session.workingDirectory, projectContextPaths(session.messages), options.projectContext, token);
                 if (!context.files.isEmpty()) base.messages.append(context.message());
                 if (context.fingerprint != lastContextFingerprint) {
@@ -492,7 +512,7 @@ public:
                     modelRequest = base; modelRequest.messages.append(modelMessages(session));
                 }
                 const auto permissionRequests=request.permissionRequests?request.permissionRequests:options.permissionRequests;
-                const ToolRunner runner(turnRegistry, policy, {options.hooks, options.permission, 24000, options.permissionResponse, options.permissionUpdates, permissionRequests,model,session.model,detail::hookAgentExecutor(options,tasks)});
+                const ToolRunner runner(turnRegistry, policy, {options.hooks, options.permission, 24000, options.permissionResponse, options.permissionUpdates, permissionRequests,model,session.model,detail::hookAgentExecutor(options,tasks),plans});
                 qsizetype streamed = 0;
                 auto reply = model->generate(modelRequest, token, [&](const QString& text) {
                     token.throwIfCancelled(); streamed += text.size();
@@ -684,6 +704,7 @@ Session Engine::forkSession(const QString& id, const QString& throughMessageId) 
     d->createdSessions.insert(session.id);d->touchedSessions.insert(session.id);
     try {d->policy->inheritSession({id,{},session.workingDirectory},{session.id,{},session.workingDirectory});}
     catch(const Error& error){throw Error(error.code(),"Permission inheritance failed for new fork "+session.id+": "+QString::fromUtf8(error.what()));}
+    if(d->plans)d->plans->fork(id,session.id);
     return session;
 }
 QJsonObject Engine::endSession(const QString& id,QString reason,const CancellationToken& caller) {
@@ -748,7 +769,7 @@ QJsonObject Engine::endSessionImpl(const QString& id,QString reason,const Cancel
         } timerJoin{timer,timerMutex,timerChanged,done};
         QJsonObject context{{"cwd",session.workingDirectory},{"reason",reason},{"model",session.model},
             {"transcript_path",QDir(d->options.sessionsDirectory).filePath(id+"/transcript.jsonl")},{"permission_mode","unknown"}};
-        try {context["permission_mode"]=d->policy->describe({id,{},session.workingDirectory,{},token})["mode"].toString("unknown");}
+        try {context["permission_mode"]=d->policy->describe(d->permissionContext({id,{},session.workingDirectory,{},token}))["mode"].toString("unknown");}
         catch(const std::exception& e){error(QString::fromUtf8(e.what()));}catch(...){error("Permission inspection failed during session end");}
         std::shared_ptr<const ModelHookContext> modelContext;
         try {modelContext=d->hookContext(d->store.load(id),{},token,true);}
@@ -880,7 +901,7 @@ ToolResult Engine::runSubagentTool(const QString& id, const QString& name, const
     context.progress = [callback, id, runId = context.runId, callId](const QJsonObject& data) {
         if (callback) callback({EventKind::ToolProgress, runId, id, callId, {}, data});
     };
-    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks)});
+    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks),d->plans});
     return runner.run({callId, name, args}, context, callback);
 }
 ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJsonObject& args,
@@ -896,14 +917,34 @@ ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJ
     context.transcriptPath=transcriptPath(id);
     if(!d->options.hooks.isEmpty())context.asyncHooks=d->hookScope(id);context.hookCancellation=operation.token;
     context.permissionRequests=requests?requests:d->options.permissionRequests;
-    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks)});
+    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks),d->plans});
     return runner.run({uuid(), name, args}, context, callback);
 }
 Session Engine::sessionMetadata(const QString& id) const { return d->store.metadata(id); }
 QJsonObject Engine::permissions(const QString& id,const CancellationToken& token) const {
     token.throwIfCancelled();
-    const ToolContext context{id,{},d->store.metadata(id).workingDirectory,{},token};
-    return d->policy->describe(context);
+    ToolContext context{id,{},d->store.metadata(id).workingDirectory,{},token};
+    if(d->plans)context=d->plans->scope(std::move(context),*d->policy);
+    auto result=d->policy->describe(context);if(context.planModeActive)result["mode"]="plan";return result;
+}
+std::shared_ptr<PlanMode> Engine::planning() const{return d->plans;}
+QJsonObject Engine::planStatus(const QString& id,const CancellationToken& token) const {
+    (void)d->store.metadata(id);if(!d->plans)throw Error(ErrorCode::RuntimeUnavailable,"Planning tools are disabled");
+    return d->plans->status(id,token);
+}
+ToolResult Engine::runPlanTool(const QString& id,const QString& name,const QJsonObject& args,const CancellationToken& token,
+    const EventCallback& callback,std::shared_ptr<PermissionRequests> requests) const {
+    if(!d->plans)throw Error(ErrorCode::RuntimeUnavailable,"Planning tools are disabled");
+    if(!QStringList{"EnterPlanMode","ExitPlanMode"}.contains(name))throw Error(ErrorCode::NotFound,"Unknown planning tool");
+    const auto session=d->store.metadata(id);Impl::NativeOperation operation(*d,id,token);
+    auto registry=std::make_shared<ToolRegistry>();for(auto tool:d->plans->tools(d->policy,false))registry->add(std::move(tool));
+    ToolContext context{id,uuid(),session.workingDirectory,QDir(d->options.sessionsDirectory).filePath(id+"/artifacts"),operation.token};
+    context.transcriptPath=transcriptPath(id);context.sessionSnapshot=std::make_shared<Session>(session);
+    if(!d->options.hooks.isEmpty())context.asyncHooks=d->hookScope(id);context.hookCancellation=operation.token;
+    context.permissionRequests=requests?requests:d->options.permissionRequests;
+    ToolRunnerOptions options{d->options.hooks,d->options.permission,24000,d->options.permissionResponse,d->options.permissionUpdates,
+        context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks),d->plans};
+    return ToolRunner(registry,d->policy,options).run({uuid(),name,args},context,callback);
 }
 SkillCatalog Engine::skills(const QString& id, const CancellationToken& token) const {
     return detail::executableSkills(d->store.metadata(id).workingDirectory, d->options.skills, bool(d->options.forkedSkill), token);
@@ -920,7 +961,7 @@ ToolResult Engine::runTaskTool(const QString& id, const QString& name, const QJs
     context.transcriptPath=transcriptPath(id);
     if(!d->options.hooks.isEmpty())context.asyncHooks=d->hookScope(id);context.hookCancellation=operation.token;
     context.permissionRequests=requests?requests:d->options.permissionRequests;
-    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks)});
+    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks),d->plans});
     return runner.run({uuid(), name, args}, context, callback);
 }
 RunHandle Engine::compact(CompactRequest request, EventCallback callback) {

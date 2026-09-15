@@ -56,10 +56,11 @@ QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.se
     "agent.shell.start", "agent.shell.output", "agent.shell.stop", "agent.shell.list",
     "agent.agents.run", "agent.agents.output", "agent.agents.stop", "agent.agents.list", "agent.agents.profiles",
     "agent.inputs.enqueue", "agent.inputs.list", "agent.inputs.remove", "agent.inputs.run", "agent.sessions.end", "agent.sessions.clear",
-    "agent.permissions.pending", "agent.permissions.respond", "agent.hooks.status", "agent.hooks.cancel"}; }
+    "agent.permissions.pending", "agent.permissions.respond", "agent.hooks.status", "agent.hooks.cancel",
+    "agent.plan.get", "agent.plan.enter", "agent.plan.exit"}; }
 bool hookControl(const QString& method) {return method=="agent.hooks.status"||method=="agent.hooks.cancel";}
 bool inputControl(const QString& method) {
-    return method == "agent.inputs.enqueue" || method == "agent.inputs.list" || method == "agent.inputs.remove";
+    return method == "agent.inputs.enqueue" || method == "agent.inputs.list" || method == "agent.inputs.remove" || method=="agent.plan.get";
 }
 QJsonObject sessionObject(const Session& s, int offset = 0, int limit = 0) {
     require(offset <= s.messages.size(), "Message offset exceeds the session length");
@@ -171,7 +172,7 @@ public:
             return QJsonObject{{"protocol", "iisacc.agent/1"}, {"client_id", client->id}, {"methods", names}, {"max_turns", options.maxTurns},
                 {"working_directory", options.workingDirectory}, {"project_context_enabled", options.engine.projectContext.enabled},
                 {"auto_compact_enabled", options.engine.compaction.automatic}, {"tool_search_enabled", options.engine.toolSearch.enabled},
-                {"task_tools_enabled", client->engine->taskToolsEnabled()}, {"background_tasks_enabled", client->engine->backgroundTasksEnabled()},
+                {"task_tools_enabled", client->engine->taskToolsEnabled()}, {"plan_tools_enabled",bool(client->engine->planning())}, {"background_tasks_enabled", client->engine->backgroundTasksEnabled()},
                 {"input_queue_enabled", true}, {"skills_enabled", options.engine.skills.enabled}, {"subagents_enabled", options.subagentsEnabled},
                 {"hooks_enabled",!options.engine.hooks.isEmpty()},{"async_hook_controls_enabled",true},
                 {"max_async_hook_wake_runs",options.engine.maxAsyncHookWakeRuns},{"permission_requests_enabled",bool(client->permissionRequests)}};
@@ -194,6 +195,19 @@ public:
             require(!timedOut && Clock::now() < job->deadline, "Agent API request deadline exceeded", ErrorCode::Timeout);
             return QJsonObject{{"text", value.text}, {"result", value.data}, {"is_error", value.isError}};
         }
+        if(method=="agent.plan.enter"||method=="agent.plan.exit") {
+            const auto id=text(p,"session_id");auto arguments=p;arguments.remove("session_id");
+            require(client->engine->sessionMetadata(id).workingDirectory==options.workingDirectory,"Session belongs to a different workspace",ErrorCode::NotFound);
+            auto future=std::async(std::launch::async,[client,id,method,arguments,job,callback] {
+                return client->engine->runPlanTool(id,method=="agent.plan.enter"?"EnterPlanMode":"ExitPlanMode",arguments,job->token,
+                    [callback](const Event& event){if(callback)callback(toJson(event));});
+            });
+            bool timedOut=false;while(future.wait_for(10ms)!=std::future_status::ready) {
+                timedOut|=Clock::now()>=job->deadline;if(timedOut)job->token.cancel();
+            }
+            const auto value=future.get();require(!timedOut&&Clock::now()<job->deadline,"Agent API request deadline exceeded",ErrorCode::Timeout);
+            return QJsonObject{{"text",value.text},{"result",value.data},{"is_error",value.isError}};
+        }
         if(hookControl(method)) {
             const auto id=text(p,"session_id");
             require(client->engine->sessionMetadata(id).workingDirectory==options.workingDirectory,"Session belongs to a different workspace",ErrorCode::NotFound);
@@ -209,6 +223,7 @@ public:
             const auto id = text(p, "session_id");
             require(client->engine->sessionMetadata(id).workingDirectory == options.workingDirectory,
                 "Session belongs to a different workspace", ErrorCode::NotFound);
+            if(method=="agent.plan.get") {fields(p,{"session_id"});return client->engine->planStatus(id,job->token);}
             if (method == "agent.inputs.list") {
                 fields(p, {"session_id", "offset", "limit"});
                 return client->engine->queuedInputs(id, integer(p, "offset", 0, 0, 1000000), integer(p, "limit", 32, 1, 100), job->token);
@@ -434,7 +449,7 @@ Api::Api(std::shared_ptr<Model> model, std::shared_ptr<ToolRegistry> registry,
     : d(std::make_shared<Impl>(std::move(model), std::move(registry), std::move(policy), std::move(options))) {}
 Api::~Api() { d->stop(); }
 bool Api::isControlMethod(const QString& method) const {
-    return hookControl(method)||method=="agent.permissions.pending"||method=="agent.permissions.respond"||method=="agent.cancel"||method=="agent.status";
+    return hookControl(method)||method=="agent.plan.get"||method=="agent.permissions.pending"||method=="agent.permissions.respond"||method=="agent.cancel"||method=="agent.status";
 }
 RpcHandle Api::dispatch(QString method, QJsonObject params, QString credential, RpcEventCallback callback) {
     return d->dispatch(std::move(method), std::move(params), std::move(credential), std::move(callback));

@@ -45,7 +45,8 @@ public:
     struct ReadState { QByteArray digest; bool complete; };
     std::mutex mutex;
     QHash<QString, ReadState> reads;
-    bool isPrivate(const QString& path) const {
+    bool isPrivate(const QString& path,const ToolContext& context) const {
+        if(inside(path,context.plansDirectory))return true;
         return std::any_of(privatePaths.cbegin(),privatePaths.cend(),[&](const auto& denied) {
             return inside(path,denied)||inside(path,QFileInfo(denied).canonicalFilePath());
         });
@@ -78,6 +79,13 @@ public:
         }
         const auto artifactRoot=c.artifactsDirectory.isEmpty()?QString():QFileInfo(c.artifactsDirectory).absoluteFilePath();
         const auto canonicalArtifacts=artifactRoot.isEmpty()?QString():QFileInfo(artifactRoot).canonicalFilePath();
+        const bool planArea=inside(path,c.plansDirectory)||inside(canonical,c.plansDirectory);
+        const bool ownPlan=!c.planFilePath.isEmpty()&&path==c.planFilePath&&canonical==c.planFilePath;
+        if(planArea) {
+            require(ownPlan,"Only this session's exact plan file is accessible");
+            require(!write||c.planModeActive,"An approved plan is read-only; enter plan mode to revise it");
+            require(!info.isSymLink(),"Plan file must not be a symlink");return canonical;
+        }
         if(write)require(!inside(path,artifactRoot)&&!inside(canonical,canonicalArtifacts),"Tool artifacts are read-only to workspace tools");
         const auto artifacts = write ? QString() : canonicalArtifacts;
         if (shells && shells->containsStatePath(canonical)) {
@@ -85,7 +93,7 @@ public:
             return canonical;
         }
         const bool ownArtifact=inside(canonical,artifacts);
-        require((!isPrivate(path)&&!isPrivate(canonical))||ownArtifact,"Host-private path is inaccessible to workspace tools");
+        require((!isPrivate(path,c)&&!isPrivate(canonical,c))||ownArtifact,"Host-private path is inaccessible to workspace tools");
         auto covered=[&](const QString& value) {return inside(value,root)||std::any_of(c.workingDirectories.cbegin(),c.workingDirectories.cend(),[&](const auto& directory){return inside(value,directory);});};
         require((covered(path)&&covered(canonical))||ownArtifact, "Path is outside the configured working directories");
         if (write) require(canonical != root&&!c.workingDirectories.contains(canonical), "Cannot replace a working directory root");
@@ -105,6 +113,7 @@ public:
     }
     QString write(const ToolContext& c, const QString& path, const QByteArray& bytes, const std::optional<QByteArray>& before) {
         require(bytes.size() <= maxFileBytes, "Text output exceeds 1 MiB");
+        if(path==c.planFilePath)require(bytes.size()<=c.maxPlanBytes&&!bytes.contains('\0'),"Plan text exceeds its byte limit or contains NUL");
         QString backup;
         if (before && !c.artifactsDirectory.isEmpty()) {
             require(QDir().mkpath(c.artifactsDirectory), "Cannot create backup directory");
@@ -210,7 +219,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         QDirIterator iterator(root, QDir::Files | QDir::NoSymLinks, QDirIterator::Subdirectories);int visited=0;
         while (iterator.hasNext() && paths.size() < 1000 && visited++<10000) {
             c.cancellation.throwIfCancelled(); const auto path = iterator.next(); const auto relative = QDir(root).relativeFilePath(path);
-            if(workspace->isPrivate(path)||(workspace->shells&&workspace->shells->containsStatePath(path)))continue;
+            if(workspace->isPrivate(path,c)||(workspace->shells&&workspace->shells->containsStatePath(path)))continue;
             try { workspace->resolve(path,c); } catch(const Error&) { continue; }
             if (regex.match(relative).hasMatch()) paths.append(relative);
         }
@@ -230,7 +239,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         QStringList matches; QJsonArray values;
         for (const auto& path : files) {
             c.cancellation.throwIfCancelled();
-            if(workspace->isPrivate(path)||(workspace->shells&&workspace->shells->containsStatePath(path)))continue;
+            if(workspace->isPrivate(path,c)||(workspace->shells&&workspace->shells->containsStatePath(path)))continue;
             try { workspace->resolve(path,c); } catch(const Error&) { continue; }
             if (QFileInfo(path).size() > maxFileBytes) continue;
             QString text; try { text = decode(readFile(path)); } catch (const Error&) { continue; }

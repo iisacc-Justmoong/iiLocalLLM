@@ -1,6 +1,6 @@
 # 도구 권한과 스킬 호출 범위
 
-0.18.0에서 C++ `RulePolicy` 인자 규칙과 스킬 `allowed-tools`를, 0.20.0에서 추가 작업 디렉터리의 권한 경계를 추가했다. 현재 0.26.0의 정책 갱신 가상 함수로 ABI가 **0.26**이다. 승인된 규칙·모드·디렉터리의 저장과 세션 수명은 [PermissionUpdates.md](PermissionUpdates.md)를 따른다. 소비자는 헤더와 라이브러리를 함께 갱신한다. 전체 참조 권한 시스템은 아직 partial이다.
+0.18.0에서 C++ `RulePolicy` 인자 규칙과 스킬 `allowed-tools`를, 0.20.0에서 추가 작업 디렉터리의 권한 경계를 추가했다. 0.26.0에서 정책 갱신 가상 함수를 추가했으며 현재 ABI는 **0.34**이다. 승인된 규칙·모드·디렉터리의 저장과 세션 수명은 [PermissionUpdates.md](PermissionUpdates.md)를 따른다. 소비자는 헤더와 라이브러리를 함께 갱신한다. 전체 참조 권한 시스템은 아직 partial이다.
 
 ## 판정 순서
 
@@ -64,14 +64,16 @@ fork 스킬은 권한을 자식에만 더한다. 일반 Agent와 fork 자식은 
 
 `Tool::prepare`는 입력 검증과 `BeforeTool` 인자 변경 후 호출한다. 0.25의 PermissionRequest 응답이 입력·권한을 바꾸면 다시 호출한다. 실행 부작용 없이 파일을 읽어 `PreparedTool`의 구체적인 정의와 실행 콜백을 만든다. 이름·입출력 스키마를 바꿀 수 없다. 도구 실행기는 이 정의로 권한을 판정하고 같은 콜백을 실행한다. 기존 `Tool::execute` 구현은 그대로 동작한다.
 
-native Skill은 파일 경로·SHA-256·인자·allowed_tools를 고정한다. 권한 판정 뒤 파일이 바뀌어도 다시 읽지 않는다. `PermissionRequested` 이벤트의 `permission_preview._meta.skill`과 호스트 콜백의 decision.reason에는 요청한 권한과 출처가 있으며 본문은 포함하지 않는다. 원격 클라이언트가 권한 응답을 보내는 대화형 중개 API는 아직 없다. 데몬/MCP 서버의 `--agent-allow`/`--allow`는 같은 인자 규칙을 받는다.
+native Skill은 파일 경로·SHA-256·인자·allowed_tools를 고정한다. 권한 판정 뒤 파일이 바뀌어도 다시 읽지 않는다. `PermissionRequested` 이벤트의 `permission_preview._meta.skill`과 호스트 콜백의 decision.reason에는 요청한 권한과 출처가 있으며 본문은 포함하지 않는다. 원격 클라이언트의 권한 응답은 0.27의 [PermissionRequests.md](PermissionRequests.md)를 따른다. 데몬/MCP 서버의 `--agent-allow`/`--allow`는 같은 인자 규칙을 받는다.
 
 Read/Write/Edit도 canonical 대상을 준비하고 실행 직전에 원래 경로와 고정된 대상이 같은지 재확인한다. 권한 질문이나 ToolStarted 관찰자 동안 경로가 다른 링크로 교체되면 실패한다. 기존 파일 도구의 경합 검사를 유지하지만 파일 I/O 전체를 openat 디스크립터로 고정한 OS 수준 경합 방어는 아니다. 현재 비-POSIX 실행기의 Bash라는 도구는 cmd.exe를 실행하므로 Bash 인자 규칙으로 자동 허용하지 않으며, 인자 Deny/Ask는 보수적으로 적용한다. 해당 플랫폼의 전체 셸 의미는 별도 구현이 필요하다.
 
-비교 근거는 참조 커밋 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `tools/SkillTool/SkillTool.ts`, `screens/REPL.tsx`, `utils/forkedAgent.ts`, `utils/permissions/permissionSetup.ts`, `permissionRuleParser.ts`, `tools/BashTool/bashPermissions.ts`이다. 참조 TypeScript나 프롬프트를 SDK에 복사하지 않았다. 파일 기반 관리/사용자/프로젝트 권한 설정 계층은 0.19.0의 [PermissionSettings.md](PermissionSettings.md)에 구현 범위를 기록했다. 추가 디렉터리는 [WorkingDirectories.md](WorkingDirectories.md)에 구현 범위를 기록한다. 외부 관리 공급자, 자동 권한 분류, 참조 전체 인자 의미·별칭, 원격 질문 중개와 OS 샌드박스는 구현이 남아 있다.
+비교 근거는 참조 커밋 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `tools/SkillTool/SkillTool.ts`, `screens/REPL.tsx`, `utils/forkedAgent.ts`, `utils/permissions/permissionSetup.ts`, `permissionRuleParser.ts`, `tools/BashTool/bashPermissions.ts`이다. 참조 TypeScript나 프롬프트를 SDK에 복사하지 않았다. 파일 기반 관리/사용자/프로젝트 권한 설정 계층은 0.19.0의 [PermissionSettings.md](PermissionSettings.md)에 구현 범위를 기록했다. 추가 디렉터리는 [WorkingDirectories.md](WorkingDirectories.md)에 구현 범위를 기록한다. 외부 관리 공급자, 자동 권한 분류, 참조 전체 인자 의미·별칭과 OS 샌드박스는 구현이 남아 있다.
 
 0.21.0의 명령 PreToolUse 훅은 입력을 바꾸고 호출 한 번에만 allow/ask/deny를 제공한다. 수정 입력을 다시 검증하며 명시적 호스트 Deny/Ask·Plan·자식 범위·파일 경계가 우선한다. Allow를 다음 호출이나 resume에 저장하지 않는다. 커스텀 정책의 최종 판단도 유지한다. [CommandHooks.md](CommandHooks.md)에 순서와 실패 계약을 기록한다.
 
 0.25.0은 Ask 도구의 PermissionRequest 훅, C++ 구조화 응답과 호스트 권한 갱신 처리를 연결한다. Allow/Deny에는 요청 훅을 호출하지 않으며 수정 입력의 스키마·경계·명시적 Deny를 다시 검사한다. [PermissionRequest.md](PermissionRequest.md)에 API/MCP 연결과 지속 갱신·원격 응답의 남은 범위를 기록한다.
 
 `ToolContext.permissionMode`는 C++ 호스트의 호출 한 번에만 적용하는 모드 선택이다. RulePolicy와 SettingsPermissionPolicy는 기존 명시적 규칙·추가 디렉터리·호스트 거부를 보존하고 이 모드로 기본 동작을 판단한다. 검증 에이전트의 dontAsk가 부모의 acceptEdits/bypass 기본 허용을 상속하지 않도록 사용한다. 원래 저장된 모드는 변경하지 않으며 API·MCP 입력에서 이 필드를 받아들이지 않는다. 커스텀 PermissionPolicy는 같은 호스트 계약을 구현해야 한다.
+
+0.34의 계획 모드는 해당 세션의 계획 파일과 검토·실행 전환을 제공하며 명시적 Deny/Ask를 보존한다. [PlanMode.md](PlanMode.md)에 계약과 남은 범위를 기록한다.

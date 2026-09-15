@@ -1,4 +1,5 @@
 #include "Tools.h"
+#include "PlanMode.h"
 #include "McpResult.h"
 #include "PermissionResponses.h"
 #include "PermissionRequests.h"
@@ -141,10 +142,17 @@ PermissionDecision RulePolicy::decide(const ToolDefinition& tool, const QJsonObj
     const bool taskState = tool.metadata["source"] == "builtin.task"
         && QStringList{"TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TaskClaim", "TodoWrite", "TodoRead"}.contains(tool.name);
     const bool stopOwnShell = tool.name == "TaskStop" && tool.metadata["source"] == "builtin.shell.control";
-    if (mode == PermissionMode::Plan && !tool.readOnly && !taskState && !stopOwnShell) return {PermissionBehavior::Deny, "Plan mode allows read-only tools, internal task state and stopping owned executions"};
+    const bool planControl=tool.metadata["source"]=="builtin.plan"&&QStringList{"EnterPlanMode","ExitPlanMode"}.contains(tool.name);
+    const bool engineControl=(tool.metadata["source"]=="builtin.agent.control"&&QStringList{"iiLocalLLM.agent.run","iiLocalLLM.agent.compact","iiLocalLLM.agent.inputs.run"}.contains(tool.name))
+        ||(tool.metadata["source"]=="builtin.session.control"&&tool.name=="iiLocalLLM.agent.clear")
+        ||(tool.metadata["source"]=="builtin.input.control"&&QStringList{"iiLocalLLM.agent.inputs.enqueue","iiLocalLLM.agent.inputs.remove"}.contains(tool.name));
+    const bool ownPlan=!context.planFilePath.isEmpty()&&context.planModeActive&&tool.metadata["source"]=="builtin.workspace"
+        &&QStringList{"Write","Edit"}.contains(tool.name)&&tool.metadata["canonical_path"]==context.planFilePath;
+    if (mode == PermissionMode::Plan && !tool.readOnly && !taskState && !stopOwnShell && !ownPlan && !planControl && !engineControl)
+        return {PermissionBehavior::Deny, "Plan mode allows read-only tools, the owned plan file, internal task state and stopping owned executions"};
     if (detail::permissionRulesMatch(asks, tool, args, context, false)) matched = PermissionBehavior::Ask;
     else if (detail::permissionRulesMatch(allows, tool, args, context, true)) matched = PermissionBehavior::Allow;
-    auto decision = matched.value_or(mode == PermissionMode::Bypass || tool.readOnly || taskState || stopOwnShell
+    auto decision = matched.value_or(mode == PermissionMode::Bypass || tool.readOnly || taskState || stopOwnShell || ownPlan
         || (mode == PermissionMode::AcceptEdits && tool.editsFiles) ? PermissionBehavior::Allow : PermissionBehavior::Ask);
     if (decision == PermissionBehavior::Ask && mode == PermissionMode::DontAsk) decision = PermissionBehavior::Deny;
     return {decision, matched ? "Tool permission rule (host or current invocation)" : "Session permission mode"};
@@ -183,6 +191,8 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
     bool mcpOutputEligible=false;
     try {
         context.cancellation.throwIfCancelled();
+        if(options_.planning)context=options_.planning->scope(std::move(context),*policy_);
+        if(modelContext){modelContext->executionContext=context;modelContext->executionContext.progress={};modelContext->executionContext.permissionRequests={};}
         const auto entry = registry_->resolve(call.name);
         const auto& tool = entry->tool;
         entry->validateInput(call.arguments);
@@ -216,9 +226,24 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
             return value;
         };
         auto prepared=prepare();
-        auto decision = policy_->decide(prepared.definition, call.arguments, context);
+        auto decide=[&] {
+            if(context.planModeActive) {
+                auto planContext=context;planContext.permissionMode=PermissionMode::Plan;
+                const auto boundary=RulePolicy(PermissionMode::Plan).decide(prepared.definition,call.arguments,planContext);
+                if(boundary.behavior==PermissionBehavior::Deny)return boundary;
+            }
+            auto permissionContext=context;
+            // Native conversation controls delegate their actual tools into
+            // the Engine. Preserve the host's base permission on the wrapper;
+            // its inner model tools still receive the current plan scope.
+            if(context.planModeActive&&QStringList{"builtin.agent.control","builtin.session.control","builtin.input.control"}
+                .contains(prepared.definition.metadata["source"].toString()))permissionContext.permissionMode=suppliedContext.permissionMode;
+            return policy_->decide(prepared.definition,call.arguments,permissionContext);
+        };
+        auto decision = decide();
         if(hookPermission&&(hookPermission->behavior==PermissionBehavior::Deny
             ||(hookPermission->behavior==PermissionBehavior::Ask&&decision.behavior!=PermissionBehavior::Deny)))decision=*hookPermission;
+        if(tool.requiresPermission&&decision.behavior==PermissionBehavior::Allow)decision={PermissionBehavior::Ask,"This tool requires a reviewed host decision"};
         if (tool.prepare) decision.reason += "\n" + prepared.definition.description + "\n"
             + QString::fromUtf8(QJsonDocument(prepared.definition.metadata).toJson(QJsonDocument::Compact));
         bool allowed = decision.behavior == PermissionBehavior::Allow;
@@ -307,12 +332,13 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
                 context.cancellation.cancel();throw Error(ErrorCode::Cancelled,response->message.isEmpty()?QString("Permission denied with interrupt"):response->message);
             }
             if(allowed) {
+                context.approvedToolPreview=prepared.definition.metadata;
                 auto reprepare=[&] {
                     context.workingDirectories=policy_->workingDirectories(context);
                     entry->validateInput(call.arguments);if(tool.validate)tool.validate(call.arguments,context);prepared=prepare();
                 };
                 auto checkDeny=[&] {
-                    const auto current=policy_->decide(prepared.definition,call.arguments,context);
+                    const auto current=decide();
                     if(current.behavior==PermissionBehavior::Deny)throw Error(ErrorCode::InvalidArgument,"Tool permission denied: "+current.reason);
                 };
                 if(response->updatedArguments){call.arguments=*response->updatedArguments;entry->validateInput(call.arguments);}
@@ -328,7 +354,7 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
         if (!allowed) throw Error(ErrorCode::InvalidArgument, "Tool permission denied: " + decision.reason);
         context.cancellation.throwIfCancelled();
         event(callback, EventKind::ToolStarted, context, call, {}, toJson(call));
-        result = prepared.execute();
+        result = options_.planning?options_.planning->execute(context,prepared.definition,prepared.execute):prepared.execute();
         context.cancellation.throwIfCancelled();
         if (!result.isError) entry->validateOutput(result.data);
         mcpOutputEligible=tool.isMcp&&!result.isError;

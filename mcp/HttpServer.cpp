@@ -128,7 +128,9 @@ public:
         }
         // Normal and host-control SSE have separate limits. Four more workers
         // accept cancellation, reverse responses, initialization and DELETE.
-        server.new_task_queue = [o = options] { return new httplib::ThreadPool(4, o.maxStreams + o.maxControlStreams + 4, o.maxQueuedConnections); };
+        // The control reserve must exist before a burst of blocking requests;
+        // dynamic pool growth alone can leave jobs behind the last idle worker.
+        server.new_task_queue = [o = options] { return new httplib::ThreadPool(o.maxStreams + o.maxControlStreams + 4, o.maxStreams + o.maxControlStreams + 4, o.maxQueuedConnections); };
         server.set_socket_options([](auto socket) {
             // httplib defaults to SO_REUSEPORT where available. A stateful
             // local endpoint must not distribute sessions among unrelated

@@ -143,13 +143,17 @@ private slots:
         client.socket.abort(); QTRY_COMPARE(f.model->cancelled.load(), 3);
     }
     void timeoutAndShutdown() {
-        Fixture f(100, 2048);
-        const auto create = post(f, request("agent.sessions.create", {{"model", "fixture"}}));
-        QVERIFY2(create.status == 200, create.body.constData());
-        const auto id = object(create)["result"].toObject().value("session_id");
+        // The model deliberately waits for cancellation. Allow persisted run
+        // admission to finish under disk load before testing its HTTP deadline.
+        Fixture f(3000, 2048);
+        // Session creation writes to disk and is setup, not the operation
+        // whose deliberately short HTTP deadline this test exercises.
+        Native client(f);client.send("create","agent.sessions.create",{{"model","fixture"}});
+        const auto created=client.until("create","result");
+        const auto id=created["result"].toObject().value("session_id");QVERIFY(id.isString());
         const auto timed = post(f, request("agent.run", {{"session_id", id}, {"prompt", "wait"}})); QCOMPARE(timed.status, 504);
         QTRY_COMPARE(f.model->cancelled.load(), 1);
-        Native client(f); client.send("run", "agent.run", {{"session_id", id}, {"prompt", "wait"}});
+        client.send("run", "agent.run", {{"session_id", id}, {"prompt", "wait"}});
         client.until("run", "request_id"); QTRY_COMPARE(f.model->entered.load(), 2);
         f.ipc->close(); f.http->close(); f.api->close(); QCOMPARE(f.model->cancelled.load(), 2);
     }

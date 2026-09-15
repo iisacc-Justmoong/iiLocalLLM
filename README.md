@@ -2,7 +2,7 @@
 
 C++ 에이전트 하네스를 확장 중이다. 현재 실행 계층은 [AgentHarness.md](docs/AgentHarness.md), 전체 요구사항과 남은 구현은 [HarnessParity.md](docs/HarnessParity.md)에 기록한다. MCP/API 및 앱 전체 호환 완료와 기존 대화 기능 완료는 별도 상태로 관리한다.
 
-0.33.0은 비동기 명령 훅과 세션별 완료 전달·제어·제한된 자동 재실행을 제공한다. [비동기 훅](docs/AsyncHooks.md)을 따른다.
+0.34.0은 세션별 계획 작성·검토·실행 전환을 C++로 제공한다. 실제 계획 파일의 검토, 호스트 수정, 변경 충돌 검사와 API·MCP 연동은 [계획 모드](docs/PlanMode.md)를 따른다.
 
 0.32.0은 성공한 MCP 도구의 결과를 명령·HTTP·C++ 훅에서 교체하는 updatedMCPToolOutput을 추가한다. 모델·API·MCP에 변경된 관측을 전달하며 원래 구조화 결과와 일반 도구를 구분한다. 설정, 콘텐츠 형식 및 참조 차이는 [McpOutputHooks.md](docs/McpOutputHooks.md)를 따른다. 전체 하네스는 계속 구현 중이다.
 
@@ -14,7 +14,7 @@ C++ 에이전트 하네스를 확장 중이다. 현재 실행 계층은 [AgentHa
 
 0.24.0은 C++·API·MCP의 대화 초기화와 즉시 SessionStart(clear)를 제공한다. 백그라운드 셸·자식 에이전트·완료 알림은 새 대화로 이어진다. 계약과 오류 복구 한계는 [SessionClear.md](docs/SessionClear.md)에 기록한다.
 
-C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.33.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
+C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.34.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
 
 C++ stdio MCP 클라이언트가 외부 도구·리소스·프롬프트를 인식하고 에이전트 엔진에 연결한다. `iillm-mcp` 서버와 C++ 내장 API로 앱 도구 및 로컬 에이전트 실행을 외부 MCP 클라이언트에 제공한다. 프로토콜·정책·자료 보존 및 현재 지원 경계는 [MCP.md](docs/MCP.md) · [MCP 서버·앱 도구 제공](docs/MCPServer.md)에 설명한다.
 
@@ -300,7 +300,7 @@ GGUF smoke는 chatml을 명시하여 경량 테스트 모델도 사용한다. �
 
 자체 코드·문서는 **AGPL-3.0-only**이며 [LICENSE](LICENSE)를 따른다. 외부 의존성과 가중치는 각각의 라이선스를 유지한다. 도입 검토와 출처는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)에 있다.
 
-0.11.0에서 작업·Todo 영속 저장, 의존 관계와 원자적 선점, C++/에이전트 API/MCP/CLI 연결을 추가했다. [작업 관리](docs/Tasks.md)에 입력·저장·권한·재시작 계약을 기록한다. 현재 ABI는 0.20이며 소비자는 새 헤더와 라이브러리로 함께 다시 빌드한다.
+0.11.0에서 작업·Todo 영속 저장, 의존 관계와 원자적 선점, C++/에이전트 API/MCP/CLI 연결을 추가했다. [작업 관리](docs/Tasks.md)에 입력·저장·권한·재시작 계약을 기록한다. 소비자는 현재 버전의 헤더와 라이브러리로 함께 다시 빌드한다.
 
 0.13.0은 대화별 영속 입력 큐와 now/next/later 전달, 연산 단위 협력 중단·도구 이력 복구를 제공한다. C++·인증된 API·MCP·CLI로 제어하며 유휴 큐는 명시적으로 runQueued를 호출한다. 자동 기동과 셸 완료 알림 생산은 남아 있다. [입력 큐](docs/InputQueue.md), [검증 기록](docs/Verification.md)을 참조한다. CancellationToken 레이아웃과 Engine/API 옵션이 바뀌었으므로 소비자는 0.13 헤더와 라이브러리로 함께 다시 빌드한다.
 
@@ -324,6 +324,8 @@ GGUF smoke는 chatml을 명시하여 경량 테스트 모델도 사용한다. �
 
 0.21.0은 C++ 외부 명령 훅을 도구·모델·종료·압축·작업·자식 생명주기에 연결한다. `--agent-hooks`/`--hooks`의 명시적 호스트 설정, JSON stdin, 입력 변경과 일회 권한, 차단·중단, 병렬 실행·취소·진단을 제공한다. 0.21 당시 ABI는 0.21이며 전체 생명주기 및 HTTP·prompt·agent 훅은 남아 있다. [명령 훅](docs/CommandHooks.md)에 사용법과 참조 차이를 기록한다.
 
-0.22.0은 UserPromptSubmit과 SessionStart를 직접 입력·스킬·큐·세션 재개·압축에 연결한다. 차단 판정을 원본에 보존하고 일반 모델 문맥에서 제외하며, 큐의 준비와 확인을 분리해 재진입·취소·저장 후 복구를 지원한다. 현재 ABI는 0.22이다. [입력·세션 생명주기](docs/InputLifecycle.md)에 설정과 보존·실패 계약을 기록한다. 전체 하네스 및 앱 배포 완료와는 구분한다.
+0.22.0은 UserPromptSubmit과 SessionStart를 직접 입력·스킬·큐·세션 재개·압축에 연결한다. 차단 판정을 원본에 보존하고 일반 모델 문맥에서 제외하며, 큐의 준비와 확인을 분리해 재진입·취소·저장 후 복구를 지원한다. 해당 버전의 ABI는 0.22이다. [입력·세션 생명주기](docs/InputLifecycle.md)에 설정과 보존·실패 계약을 기록한다. 전체 하네스 및 앱 배포 완료와는 구분한다.
 
 0.33.0은 C++ 비동기 명령 훅, 첫 stdout 행의 async 선언, 완료 문맥의 세션 전달과 asyncRewake 유휴 실행을 추가한다. 세션/연결별 수명과 취소, 자동 실행 횟수 제한, API/CLI/MCP 제어를 제공한다. 변경된 공개 구조체 때문에 소비자 재빌드가 필요하다. 자식 실행 후 재기동·환경 캐시 무효화·전체 생명주기 및 설정 병합은 계속 partial이다. [비동기 훅](docs/AsyncHooks.md)을 따른다.
+
+0.34.0은 EnterPlanMode·ExitPlanMode, 세션별 계획 파일과 검토 해시, 호스트 수정, 실행 전환의 동시성 제어를 추가한다. 재시작·분기·초기화와 인증 API/IPC/MCP를 같은 상태에 연결한다. 공개 구조체와 ABI 0.34에 맞춰 소비자를 다시 빌드한다. 팀 리더 검토·인터뷰 UI·자동 권한 분류·전체 앱 검증은 계속 partial이다. [계획 모드](docs/PlanMode.md)를 따른다.

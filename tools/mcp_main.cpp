@@ -27,7 +27,7 @@ void interrupt(int) { interrupted.store(true,std::memory_order_relaxed); }
 }
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.33.0");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.34.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},
@@ -41,6 +41,7 @@ int main(int argc, char** argv) {
         {"mcp-eager", "Publish all configured MCP tools to the agent without ToolSearch."},
         {"apps-dir", "Private registry of running local application MCP endpoints.", "directory"},
         {"no-apps", "Disable discovery of running local applications."},
+        {"no-plan-mode", "Disable session planning and review tools."},
         {"no-tasks", "Disable persistent task and todo tools."},
         {"no-skills", "Disable local skill discovery and invocation in the agent."},
         {"no-subagents", "Disable delegated local agent execution."},
@@ -190,6 +191,7 @@ int main(int argc, char** argv) {
             a::EngineOptions engineOptions;
             engineOptions.hooks=hooks;
             engineOptions.taskToolsEnabled = !parser.isSet("no-tasks");
+            engineOptions.planToolsEnabled = !parser.isSet("no-plan-mode");
             engineOptions.skills.enabled = !parser.isSet("no-skills");
             engineOptions.skills.directories = parser.values("skills-dir");
             engineOptions.sessionsDirectory = !privateState.isEmpty() ? QDir(privateState).filePath("sessions")

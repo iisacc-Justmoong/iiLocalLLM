@@ -21,6 +21,7 @@ struct Tool {
     std::function<QJsonArray(const QString&,const QString&,const CancellationToken&)> transferSession;
     bool completesRun = false; // Host-only successful completion tool; a serial barrier, never parsed from model/MCP metadata.
     bool isMcp = false; // Trusted imported-tool identity; never inferred from its name or wire metadata.
+    bool requiresPermission = false; // Force the existing request channel even under a default Allow/bypass mode.
 };
 class IILOCALLLM_EXPORT ToolRegistry {
 public:
@@ -149,6 +150,7 @@ struct ToolRunnerOptions {
     std::shared_ptr<Model> hookModel;
     QString hookModelName; // Fallback when a standalone ToolContext has no session snapshot.
     AgentHookExecutor hookAgent;
+    std::shared_ptr<class PlanMode> planning;
 };
 class IILOCALLLM_EXPORT ToolRunner {
 public:

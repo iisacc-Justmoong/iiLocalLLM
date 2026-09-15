@@ -148,10 +148,20 @@ public:
         permissions.definition.readOnly=true;permissions.definition.concurrencySafe=true;
         permissions.definition.inputSchema={{"type","object"},{"additionalProperties",false},{"properties",QJsonObject{}}};
         permissions.execute=[self](const QJsonObject&,const ToolContext& context) {
+            if(self->options.engine)return ToolResult{"Host permission settings",self->options.engine->permissions(
+                self->sessionId(self->conversation(context.sessionId),context.cancellation),context.cancellation)};
             return ToolResult{"Host permission settings",self->policy->describe(context)};
         };
         frozen->add(std::move(permissions));
         if (!options.engine) return frozen;
+        if(const auto plans=options.engine->planning()) {
+            for(auto native:plans->tools(policy,false))frozen->add(std::move(native));
+            Tool get;get.definition={"iiLocalLLM.agent.plan.get","Read this connection's owned plan and current approval state.",
+                {{"type","object"},{"additionalProperties",false},{"properties",QJsonObject{}}},{},true,true,false,false,{{"source","builtin.plan.control"}}};
+            get.execute=[self](const QJsonObject&,const ToolContext& c) {
+                return ToolResult{"Session plan",self->options.engine->planStatus(self->sessionId(self->conversation(c.sessionId),c.cancellation),c.cancellation)};
+            };frozen->add(std::move(get));
+        }
         if (options.engine->subagentsEnabled()) for (auto definition : options.engine->subagentToolDefinitions()) {
             const auto nativeName = definition.name;
             const QMap<QString, QString> names{{"Agent", "run"}, {"AgentOutput", "output"}, {"AgentStop", "stop"}, {"AgentList", "list"}, {"AgentProfiles", "profiles"}};
@@ -175,6 +185,7 @@ public:
         }
         Tool run;
         run.definition.name = "iiLocalLLM.agent.run";
+        run.definition.metadata={{"source","builtin.agent.control"}};
         run.definition.description = "Run the configured local agent in this connection's private conversation and workspace. Use new_session to start a new conversation.";
         run.definition.inputSchema = {{"type", "object"}, {"additionalProperties", false},
             {"anyOf", QJsonArray{QJsonObject{{"required", QJsonArray{"prompt"}}}, QJsonObject{{"required", QJsonArray{"skill"}}}}},
@@ -222,6 +233,7 @@ public:
         run.execute = [executeAgent](const auto& args, const auto& context) { return executeAgent(args, context, false); };
         Tool compact;
         compact.definition.name = "iiLocalLLM.agent.compact";
+        compact.definition.metadata={{"source","builtin.agent.control"}};
         compact.definition.description = "Summarize this connection's existing conversation, preserving original records and recent turns.";
         compact.definition.inputSchema = {{"type", "object"}, {"additionalProperties", false}, {"properties", QJsonObject{
             {"instructions", QJsonObject{{"type", "string"}, {"maxLength", 1048576}}}}}};
@@ -309,7 +321,7 @@ public:
             throw;
         }
         auto runnerOptions=options.tools;
-        if(options.engine){runnerOptions.hookModel=options.engine->hookModel();runnerOptions.hookModelName=options.model;runnerOptions.hookAgent=options.engine->hookAgent();}
+        if(options.engine){runnerOptions.hookModel=options.engine->hookModel();runnerOptions.hookModelName=options.model;runnerOptions.hookAgent=options.engine->hookAgent();runnerOptions.planning=options.engine->planning();}
         if(options.permissionRequests)runnerOptions.permissionRequests=conversation(request.sessionId)->permissionRequests;
         ToolRunner runner(frozen, policy, runnerOptions);
         ToolCall call{uuid(), name, params["arguments"].toObject()};
@@ -336,9 +348,10 @@ public:
         if (!options.artifactsDirectory.isEmpty()) context.artifactsDirectory = QDir(options.artifactsDirectory).filePath(context.sessionId + '/' + context.runId);
         const auto source = frozen->get(name).definition.metadata["source"].toString();
         auto bindContext = [&](bool history=false) {
-            const bool native=source=="builtin.workspace"||source=="builtin.shell"||source=="builtin.shell.control";
-            if(options.engine&&(native||!options.tools.hooks.isEmpty())) {
+            const bool native=source=="builtin.workspace"||source=="builtin.shell"||source=="builtin.shell.control"||source=="builtin.plan";
+            if(options.engine&&(native||!options.tools.hooks.isEmpty()||options.engine->planning())) {
                 const auto owner=sessionId(conversation(request.sessionId),context.cancellation);
+                context.planningSessionId=owner;
                 // MCP task/control wrappers still need the connection ID to
                 // resolve their owner. Hooks get that actual owner's snapshot.
                 if(native)context.sessionId=owner;
@@ -361,7 +374,8 @@ public:
             && QStringList{"iiLocalLLM.agent.inputs.enqueue", "iiLocalLLM.agent.inputs.list", "iiLocalLLM.agent.inputs.remove"}.contains(name);
         const bool subagentControl = options.engine && source == "builtin.subagent.control";
         const bool sessionControl=options.engine&&source=="builtin.session.control"&&name=="iiLocalLLM.agent.clear";
-        if (shellControl || inputControl || subagentControl || sessionControl) { bindContext(); return wireResult(runner.run(call, context,observe)); }
+        const bool planControl=options.engine&&(source=="builtin.plan.control"||source=="builtin.plan");
+        if (shellControl || inputControl || subagentControl || sessionControl || planControl) { bindContext(); return wireResult(runner.run(call, context,observe)); }
         std::shared_lock shared(execution, std::defer_lock); std::unique_lock exclusive(execution, std::defer_lock);
         if (runner.concurrencySafe(call)) acquire(shared, context.cancellation); else acquire(exclusive, context.cancellation);
         bindContext(true);
@@ -387,6 +401,14 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
         return result;
     };
     server.handlers["tools/call"] = [state](const auto& params, const auto& request) { return state->call(params, request); };
+    if(state->options.engine&&state->options.engine->planning()) {
+        server.experimentalCapabilities["iisacc/planMode"]=QJsonObject{{"schema","iisacc.plan/1"},
+            {"statusMethod","iisacc/plan/status"},{"enterTool","EnterPlanMode"},{"exitTool","ExitPlanMode"}};
+        server.controlHandlers["iisacc/plan/status"]=[state](const QJsonObject& params,const mcp::ServerRequestContext& request) {
+            for(auto i=params.begin();i!=params.end();++i)if(i.key()!="_meta")throw mcp::RpcError(-32602,"Unknown plan status parameter: "+i.key());
+            return state->options.engine->planStatus(state->sessionId(state->conversation(request.sessionId),request.cancellation),request.cancellation);
+        };
+    }
     if(state->options.engine||!state->options.tools.hooks.isEmpty()) {
         server.experimentalCapabilities["iisacc/asyncHooks"]=QJsonObject{{"schema","iisacc.async-hooks/1"},
             {"statusMethod","iisacc/hooks/status"},{"cancelMethod","iisacc/hooks/cancel"}};

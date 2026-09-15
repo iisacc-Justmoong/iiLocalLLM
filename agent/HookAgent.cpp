@@ -1,6 +1,7 @@
 #include "HookAgent.h"
 #include "ModelHook.h"
 #include "ContextFile.h"
+#include "PlanningFiles.h"
 #include <QtCore/QJsonDocument>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QStringConverter>
@@ -29,6 +30,12 @@ public:
     QJsonObject describe(const ToolContext& context) const override {return parent->describe(bind(context));}
     PermissionDecision decide(const ToolDefinition& tool,const QJsonObject& args,const ToolContext& context) const override {
         auto scoped=bind(context);
+        scoped.plansDirectory=original.plansDirectory;scoped.planFilePath=original.planFilePath;
+        if(original.planModeActive) {
+            auto plan=scoped;plan.permissionMode=PermissionMode::Plan;plan.planModeActive=false;
+            const auto boundary=RulePolicy(PermissionMode::Plan).decide(tool,args,plan);
+            if(boundary.behavior==PermissionBehavior::Deny)return boundary;
+        }
         if(tool.name=="Read"&&!transcript.isEmpty()&&tool.metadata["canonical_path"]==transcript) {
             // The Read adapter below accepts only this exact file. This is not
             // a directory grant and cannot authorize adjacent state or writes.
@@ -103,7 +110,7 @@ AgentHookExecutor hookAgentExecutor(EngineOptions host,std::shared_ptr<TaskStore
     // All parent lifecycle/permission callbacks are excluded from this run.
     host.hooks.clear();host.permission={};host.permissionResponse={};host.permissionUpdates={};host.permissionRequests={};
     host.additionalTools.clear();host.additionalToolsProvider={};host.forkedSkill={};host.taskToolsEnabled=false;
-    host.sessionStartHooks=false;host.projectContext.enabled=false;host.maxConcurrentRuns=1;host.maxQueuedRuns=0;
+    host.planToolsEnabled=false;host.sessionStartHooks=false;host.projectContext.enabled=false;host.maxConcurrentRuns=1;host.maxQueuedRuns=0;
     return [host=std::move(host),tasks=std::move(tasks)](const AgentHookRequest& request,const HookInput& input,const CancellationToken& token) {
         token.throwIfCancelled();require(input.modelContext&&input.modelContext->model&&input.modelContext->registry&&input.modelContext->policy,
             "Agent hook requires host model, registry and policy",ErrorCode::RuntimeUnavailable);
@@ -111,7 +118,8 @@ AgentHookExecutor hookAgentExecutor(EngineOptions host,std::shared_ptr<TaskStore
         const auto owner=context.session?context.session->id:context.executionContext.sessionId.isEmpty()?input.sessionId:context.executionContext.sessionId;
         for(const auto& definition:registry->definitions()) {
             if(QStringList{"StructuredOutput","Skill","ToolSearch","iiLocalLLM.session.read"}.contains(definition.name)){registry->remove(definition.name);continue;}
-            auto tool=registry->get(definition.name);tool.completesRun=false;registry->remove(definition.name);registry->add(std::move(tool));
+            auto tool=registry->get(definition.name);tool.completesRun=false;registry->remove(definition.name);
+            registry->add(protectPlanningFiles(std::move(tool),context.executionContext.plansDirectory,context.executionContext.planFilePath));
         }
         if(tasks)for(auto tool:taskTools(tasks,owner,host.taskToolsDeferred)) {
             try{tool.definition=registry->get(tool.definition.name).definition;registry->remove(tool.definition.name);}catch(const Error& error){if(error.code()!=ErrorCode::NotFound)throw;}

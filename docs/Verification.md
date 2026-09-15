@@ -1,5 +1,43 @@
 # 구현 검증 기록
 
+## 2026-09-15 C++ 세션 계획과 검토 전환 (0.34.0)
+
+`EnterPlanMode`·`ExitPlanMode`와 세션별 계획 파일을 C++로 구현했다. 계획 작성 중에는 읽기 전용 도구와 소유 계획 파일만 허용하며 기존 내부 작업·대화 제어를 유지한다. 호스트 검토의 수정 내용과 승인한 파일을 묶고, 검토 도중 또는 실행 직전에 파일·revision이 바뀌면 전환을 거부한다. 인증 API·IPC·MCP 조회와 검토 응답, 재시작·fork·clear, 현재 상태의 모델 문맥 주입을 포함한다. 기존 Qt Core·C++ 동시성 도구를 재사용했으며 새 생산 의존성은 없다. 계약과 참조 차이는 [PlanMode.md](PlanMode.md)에 기록한다.
+
+| 검증 경계 | 관측 |
+|---|---|
+| Release 전체, inference 라벨 제외 | 72/72, 148.72초 |
+| ASan·UBSan, llama 비활성 Debug | 69/69, 230.62초 |
+| 새 설치 소비자 | 40/40, 71.63초 |
+| 실제 로컬 모델 | 소스·설치본 각각 Qwen3 8B의 Enter → Write → Exit → 호스트 수정 코드 응답 |
+| 실제 전송 | 소스·설치 daemon HTTP, iillm IPC, 인증 MCP HTTP의 소유권·검토 미리보기·호스트 수정·예약 상태 조회 |
+| 실행 전환 | 오래된 검토와 호스트 수정 거부, ToolStarted 이후 변경 감지, 동시 승인 중 단일 전환, 준비된 프로젝트 Write 무효화 |
+| 파일·수명 | 손상된 상태·심볼릭 링크·NUL·바이트 상한, 다른 계획의 Read/Glob/Grep 차단, 승인 뒤 변경 감지, 재시작·분기·초기화 |
+| 권한 | 기본 bypass와 PreToolUse 단순 allow에도 Exit 검토 요구, 명시적 Deny·Ask 유지, 커스텀 Allow 정책에도 계획 제한, allowedPrompts의 비자동 권한화 |
+| MCP Engine | 계획 안에서 내부 작업·대화 계속 실행·clear, 중첩 실행 잠금 분리와 기존 호스트 래퍼 권한 유지 |
+
+기존 구현에 대한 첫 모델 테스트에서 `Unknown tool: EnterPlanMode`를 관측했다. 최초 테스트의 도구 지연 공개 설정 누락, 의도적으로 거부한 심볼릭 링크를 테스트 인자 작성 중 다시 읽은 문제, wire 미리보기의 request 중첩과 MCP initialized 통지 누락은 검사 구성 오류로 수정했다. MCP 대화 래퍼가 계획 진입 뒤 기존 bypass 권한을 잃는 실패도 재현했다. 래퍼는 원래 호스트 권한을 사용하고 내부 Engine 도구에는 계획 경계를 적용하도록 수정했다.
+
+일반 HTTP 용량 1에서 Exit 검토와 제어 조회를 연달아 보냈을 때, cpp-httplib의 마지막 idle 스레드 집계와 동적 증가 사이 경합으로 제어 요청이 검토 뒤에 남았다. 실제 전송에서 재현했고 두 HTTP 서버가 설정된 일반·제어 용량과 여유 4개 스레드를 처음부터 생성하도록 수정했다. 최대 큐·응답·스트림 한도는 유지한다. 새 실제 전송과 기존 예약 제어·느린 응답·취소 회귀를 위 전체 검사에 포함했다. [ControlCapacity.md](ControlCapacity.md)에 상주 스레드 비용과 동작을 기록한다.
+
+첫 ASan·UBSan 전체 실행은 68/69로 기존 공식 Python MCP stdio 초기화가 10초 기한을 넘겼다. 소스·기한 설정을 변경하지 않은 단독 재검사는 0.71초에 통과했고 이후 전체 재검사 결과를 위 표에 기록한다. 간헐적 초기화 시간 초과의 근본 원인은 확인하지 못했으며 해결한 것으로 주장하지 않는다. 최초 로그/XML은 `plan-mode-sanitizer-first.*`, 단독 재검사는 `plan-mode-sanitizer-official-recheck.*`, 이전 검증 보고는 `plan-mode-verification-before-sanitizer-retry.json`에 보존한다.
+
+두 번째 ASan·UBSan 전체 실행은 공식 MCP 검사를 통과했으나 `agent_transport::timeoutAndShutdown`의 세션 생성 준비가 HTTP 100ms 기한을 넘겨 68/69였다. 준비 단계의 디스크 작업을 기존 IPC로 옮기고 실제 검사 대상인 모델 실행의 HTTP 100ms 제한·504·취소·종료 검사를 유지했다. `plan-mode-before-child-privacy-sanitizer-final.*`에 실패 기록을 보존한다.
+
+세 번째 ASan·UBSan 실행에서는 stdio 초기화와 HTTP Python 피어 시작이 각각 10초 제한을 넘어 67/69였다. 독립 Python 피어 측정은 0.38초였으므로 지연의 근본 원인은 단정하지 않는다. 연동 검사에만 외부 Python 시작 예산을 30초로 명시하고 HTTP 시작 실패의 stderr와 성공 시 초기화 시간을 기록하도록 수정했다. 생산 클라이언트의 기본 기한과 `initializationTimeoutDetails`의 200ms 회귀 검사는 그대로이다. 수정 뒤 Release와 ASan의 실제 공식 stdio/HTTP 연동을 각각 2/2 통과했고, 위 표는 이후 전체 재검사이다. `plan-mode-before-oracle-startup-*`, `plan-mode-oracle-startup/`, `plan-mode-oracle-startup-focused.log`에 증거를 보존한다. 마지막 검증에서는 CMake 입력이 그대로인 기존 sanitizer 구성을 재사용하고 전체 빌드·검사를 다시 수행했다.
+
+최종 설치 전 추가한 두 회귀 검사에서, 임베디드 호스트가 상태 디렉터리를 작업 폴더 안에 두면 검증 훅과 하위 에이전트의 Read가 다른 세션의 계획을 반환하는 누락을 확인했다. `plan-mode-child-privacy-red2.log`가 수정 전 증거이다. 자식의 파일 도구 준비·실행과 SubagentStart 검증에 비공개 계획 경계를 전달하고, 자식 재개 시에도 이를 보존한다. 소유 계획에 대한 검증 훅의 Read, 외부 계획·상태 파일의 차단, 전체 폴더 Glob과 외부 계획 디렉터리 Grep의 제한, 부모 승인 이후 자식의 쓰기 제한을 검증한다. 자식 생성 옵션과 독립적인 ToolContext 전달도 검사한다. 최초 자식 테스트의 상태/작업 폴더 중첩, Grep 패턴이 자기 transcript에 기록되는 관측 오염, 재개 테스트의 중복 tool-call ID는 검사 구성 오류로 수정했다. 표의 결과는 이 수정까지 포함한 새 전체 빌드·검증이다.
+
+실제 추론 검사는 `tests/plan_mode_runtime_smoke.cpp`이다. 호스트가 매 단계의 도구와 출력 형식을 제한하지만 호출·인자·최종 답변은 실제 ServiceModel과 llama.cpp가 생성한다. 원래 프롬프트·계획에 없는 임의 코드를 호스트 검토에서 파일에 넣은 뒤, 모델이 해당 코드를 정확히 답하는지 검사한다. 소스는 4턴·생성 130토큰, 설치본은 4턴·생성 135토큰으로 완료했다. 결정적인 Model 대역 검사, 실제 API/MCP 전송 검사와 구분하며 자율 계획 품질을 보장하지 않는다.
+
+Qwen2.5 0.5B 초기 시도는 grammar 활성 상태의 Write 출력 한도 256·512토큰에서 미완성 응답으로 실패했고, grammar 비활성 시에는 required 도구 선택을 지키지 못했다. `plan-mode-native-trial{,2,3}.log`에 남기며 0.5B 성공으로 보고하지 않는다. 최종 Qwen3 모델은 `model://qwen3-8b-q4`, 5,027,783,488바이트, SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`이다. 소스와 설치본의 Service::loadModel이 각각 manifest 파일을 검증했다. context 8192, temperature 0, maxTokens 512, thinking=false, tool_grammar=true로 실행했다.
+
+버전 문자열·공개 구조체를 0.34.0으로 갱신한 뒤 위 전체 검사를 수행했다. 검사 중 소스 해시를 고정하고 완료 후 동일성을 대조했다. 독립 prefix는 `build/plan-mode-stage`, 소비자는 `build/plan-mode-consumer/build`이다. 라이브러리 SHA-256은 `542d3201098e5aa6393207551497733ca443093fc16ff96678840623e89c4ab5`이며 소스·설치 바이트와 Mach-O UUID가 일치한다. CMake 설치 RPATH 변환을 반영한 실행 파일, 세 CLI의 버전, 공개 헤더 43개·문서·카탈로그·라이선스, 경로 환경을 비운 실제 stage 로딩과 얇은 iillm 연결을 확인했다. C++ 소비자는 ABI 0.34 헤더·라이브러리로 함께 다시 빌드해야 한다.
+
+검사 기록은 `build/plan-mode-verification.json`, `plan-mode-tested-source.json`, 각 final.log/XML, `plan-mode-{source,installed}-native.json`, `plan-mode-wire.json`, `plan-mode-installed-wire.json`, `plan-mode-linkage.json`이다. 최종 소스 manifest와 커밋·원격 일치는 `plan-mode-publication.json`에서 별도로 검증한다.
+
+UI 인터뷰·질문 도구·승인 화면, semantic allowedPrompts 자동 권한, auto 모드·팀 리더 승인·원격 계획 복구·계획 실행 검증 훅과 실제 앱 승인 UI는 남아 있다. 이 파일 경계는 OS 샌드박스가 아니며 이미 실행 중인 외부 작업을 멈추지 않는다. 전체 하네스 31개 영역의 21 partial·10 pending을 유지한다. 이번 SDK 검증 단계에서 Society·Dreamscapes를 다시 패키징하지 않았으며 iPhone은 사용자 지시대로 제외한다. 기존 사용자 데몬 PID 14909를 교체하거나 중단하지 않는다.
+
 ## 2026-09-15 비동기 명령 훅과 제한된 유휴 재실행 (0.33.0)
 
 명령 설정의 async/asyncRewake와 첫 stdout 행의 async 선언을 C++로 처리한다. 프로세스와 완료 기록을 세션에 묶고 일반 결과는 영속 notification/next로 전달한다. asyncRewake 종료 코드 2는 별도 runQueued를 기동한다. 명시적 실행당 자동 기동 상한, 일회 권한·요청 콜백 분리, 진행 중/대기 중 자동 실행 취소, 세션·연결 종료 정리와 API/CLI/MCP 제어를 포함한다. [AsyncHooks.md](AsyncHooks.md)에 현재 계약과 참조 차이를 기록한다.

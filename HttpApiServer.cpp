@@ -177,7 +177,10 @@ public:
             QStringLiteral("Invalid HTTP limits"));
         // Admitted work and controls have separate response-lifetime limits.
         // Four more workers can parse/reject excess work and serve /health.
-        server.new_task_queue = [options] { return new httplib::ThreadPool(std::min(4,options.workerThreads),
+        // Start the reserved capacity eagerly. The upstream growing pool only
+        // spawns when idle_count is zero; simultaneous enqueues can observe an
+        // idle worker before it takes a blocking job and strand its control.
+        server.new_task_queue = [options] { return new httplib::ThreadPool(options.workerThreads+options.maxControlRequests+4,
             options.workerThreads+options.maxControlRequests+4, options.maxQueuedConnections); };
         server.set_payload_max_length(options.maxRequestBytes);
         server.set_read_timeout(std::chrono::milliseconds(options.readTimeoutMs));

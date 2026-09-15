@@ -3,6 +3,7 @@
 #include "SkillsInternal.h"
 #include "PermissionRules.h"
 #include "SessionOwners.h"
+#include "PlanningFiles.h"
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -282,13 +283,16 @@ public:
             {std::lock_guard lock(mutex);job->state["status"]="running";original=job->state["profile"].toObject();write(*job);
                 hookContext={{"agent_id",job->state["agentId"]},{"agent_type",definition.name},{"parent_session_id",job->state["parent_session_id"]}};}
             hookContext["transcript_path"]=QDir(options.stateDirectory).filePath("sessions/"+request.sessionId+"/transcript.jsonl");
+            if(job->state["parent_plan_mode"].toBool()){original["permission_mode"]="plan";current["permission_mode"]="plan";}
             auto scopedPolicy=std::make_shared<ScopedPolicy>(policy,original,current);
+            const auto planDirectory=job->state["parent_plans_directory"].toString(
+                parent.planToolsEnabled?QDir(parent.sessionsDirectory).absoluteFilePath("plans"):QString());
             auto scoped=std::make_shared<ToolRegistry>();const auto source=registry->snapshot();
             for(const auto& t:source->definitions()) if(allowed(t,original)&&allowed(t,current)) {
-                scoped->add(source->get(t.name));
+                scoped->add(detail::protectPlanningFiles(source->get(t.name),planDirectory));
             }
             auto eo=parent;eo.sessionsDirectory=QDir(options.stateDirectory).filePath("sessions");eo.maxConcurrentRuns=1;eo.maxQueuedRuns=0;
-            eo.sessionStartHooks=false;eo.maxAsyncHookWakeRuns=0;request.userPrompt=false;
+            eo.sessionStartHooks=false;eo.maxAsyncHookWakeRuns=0;eo.planToolsEnabled=false;request.userPrompt=false;
             eo.hooks.clear();for(const auto& hook:parent.hooks)eo.hooks.append([hook,hookContext](HookInput input,const CancellationToken& token){
                 for(auto i=hookContext.begin();i!=hookContext.end();++i)input.context[i.key()]=i.value();
                 if(input.kind==HookKind::Stop)input.kind=HookKind::SubagentStop;
@@ -308,7 +312,8 @@ public:
                 modelContext->registry=std::make_shared<ToolRegistry>();const auto snapshot=registry->snapshot();
                 for(auto tool:parent.additionalTools)snapshot->add(std::move(tool));
                 if(parent.additionalToolsProvider)for(auto tool:parent.additionalToolsProvider())snapshot->add(std::move(tool));
-                for(const auto& tool:snapshot->definitions())if(allowed(tool,original)&&allowed(tool,current))modelContext->registry->add(snapshot->get(tool.name));
+                for(const auto& tool:snapshot->definitions())if(allowed(tool,original)&&allowed(tool,current))
+                    modelContext->registry->add(detail::protectPlanningFiles(snapshot->get(tool.name),planDirectory));
                 modelContext->tools=modelContext->registry->definitions();modelContext->policy=scopedPolicy;
                 modelContext->executionContext={request.sessionId,{},options.workingDirectory};
                 modelContext->executionContext.asyncHooks=engine.hookScope(request.sessionId);
@@ -480,6 +485,8 @@ ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args
         }
         const auto model=job->state["model"].toString();require(d->modelAllowed(model,parent.model,definition),"Resumed subagent model is no longer authorized");
         Impl::Job accepted;accepted.state=job->state;
+        accepted.state["parent_plan_mode"]=accepted.state["parent_plan_mode"].toBool()||context.planModeActive||context.permissionMode==PermissionMode::Plan;
+        if(!context.plansDirectory.isEmpty())accepted.state["parent_plans_directory"]=context.plansDirectory;
         accepted.state["status"]="queued";accepted.state["prompt"]=request.prompt;accepted.state["description"]=args["description"].toString(job->state["description"].toString());
         accepted.state["background"]=background;accepted.state["tool_uses"]=0;
         accepted.state["notification_refs"]=d->pendingRefs(Impl::notificationRefs(accepted));
