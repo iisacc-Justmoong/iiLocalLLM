@@ -13,6 +13,7 @@
 #include "ProjectMemory.h"
 #include "MemoryRecall.h"
 #include "MemoryExtraction.h"
+#include "SessionHistory.h"
 #include "../Service.h"
 
 namespace iiLocalLLM::agent {
@@ -53,6 +54,8 @@ struct EngineOptions {
     ProjectMemoryOptions projectMemory; // Empty directory uses sessionsDirectory/memory.
     MemoryRecallOptions memoryRecall; // Automatic prefetch and explicit host recall; no external provider is introduced.
     MemoryExtractionOptions memoryExtraction; // Isolated automatic maintenance after a main-agent response.
+    bool sessionHistoryEnabled = false; // Embedded opt-in; daemon and agent MCP enable it by default.
+    SessionHistoryOptions sessionHistory; // Uses this Engine's sessionsDirectory; no external path from a caller.
 };
 class IILOCALLLM_EXPORT Engine {
 public:
@@ -90,6 +93,9 @@ public:
     ToolResult runMemoryTool(const QString& sessionId,const QString& name,const QJsonObject& arguments = {},
         const CancellationToken& = {},const EventCallback& = {},std::shared_ptr<PermissionRequests> = {}) const;
     QStringList sessions() const;
+    std::optional<Tool> sessionSearchTool(bool deferred = false) const;
+    ToolResult runSessionSearch(const QString& ownerSessionId,const QJsonObject& arguments,
+        const CancellationToken& = {},const EventCallback& = {},std::shared_ptr<PermissionRequests> = {}) const;
     Session forkSession(const QString& id, const QString& throughMessageId = {});
     // Cancel/join this session's accepted work, stop its native background jobs,
     // then run non-vetoing SessionEnd hooks. Retains history; a later run resumes.

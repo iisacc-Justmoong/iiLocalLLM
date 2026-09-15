@@ -1,5 +1,26 @@
 # 구현 검증 기록
 
+## 2026-09-16 C++ 저장된 대화 검색 (0.40.0)
+
+C++ SessionHistory/SessionSearch, 원문 위치가 포함된 리터럴 검색, 페이지/읽기 한도, 파일 변경 감지, 소유권과 Engine/API/IPC/MCP/CLI 호출을 구현했다. 기존 Qt Core만 사용하며 새 생산 의존성은 없다. [SessionHistory.md](SessionHistory.md)에 기본 현재 대화 제외, 커서 수명, 공유 MCP 작업공간과 별도 데몬 앱 상태의 차이를 기록한다. 자동 dream 정리와 참조의 모델 기반 의미 검색은 아직 별도 구현 대상이다.
+
+| 검증 | 최종 결과 |
+|---|---|
+| Release, inference 제외 | 86/86 |
+| ASan·UBSan | 83/83, llama OFF·leak detection OFF |
+| 새 설치 소비자 | 51/51 |
+| Qwen3-8B Q4 실제 실행 | source·installed 과거 기록 검색, 임의 표식 답변, 비활성 대조 통과 |
+| 인증 전송 | source·installed HTTP/IPC·MCP HTTP·공식 MCP 1.26 stdio 통과 |
+| 설치 동일성 | 공개 헤더 49개, 네 진입점 버전, dylib 해시·UUID, 실제 로더 경로, thin CLI 통과 |
+
+실제 모델은 thinking OFF, native tool grammar ON이다. ServiceModel 요청/응답을 수정하지 않았다. 1 MiB를 넘는 별도 과거 transcript의 끝부분에 임의 표식을 넣었고, 현재 질문에는 표식을 포함하지 않았다. 모델이 SessionSearch로 조회해 정확한 표식을 답했다. source는 2턴·생성 34토큰·캐시 575토큰, installed는 2턴·생성 31토큰·캐시 575토큰이며 도구 오류는 각각 0/0개이다. 이는 이 실행의 관측값이며 일반적인 의미 검색 정확도나 성능 보장은 아니다.
+
+큰 JSONL의 여러 페이지, 현재 대화가 갱신되어도 과거 검색 이어 읽기, 명시적 현재 대화 선택, 다른 앱/작업공간 거절, 커서의 단일 사용·만료·상한·다른 연결 거절, Unicode/구조화된 필드, 링크·잘못된 줄·미완성 꼬리 보존·취소·명시적 권한 거절을 확인했다. MCP 도구 훅은 호출당 한 번 실행된다. 초기 헤더 누락 컴파일 실패와 현재 검색 요청이 결과에 섞이는 테스트 실패는 build/session-history-red-* 및 integration 로그에 남겼다. 개발 중 스키마 초기화 컴파일 오류도 수정했다. MCP 2025-03 프로토콜의 텍스트 응답을 structuredContent로 판정하던 테스트는 2025-11 협상으로 수정했다.
+
+검증 입력 372개 파일의 SHA-256을 고정하고 검사 후 동일함을 확인했다. 이 문서만 마지막에 갱신하고 설치 문서를 다시 대조한다. prefix는 build/session-history-stage, 소비자는 build/session-history-consumer/build이다. Release와 stage dylib SHA-256은 `1b75b8ee754133e85b62352f9ea1beeea676d14476cde00413da203d0a7cc3de`이다. 구조화된 증거는 build/session-history-verification.json, 읽기용 보고서는 build/session-history-REPORT.md에 보존한다.
+
+검증 플랫폼은 macOS arm64이다. 다른 플랫폼의 소스 분기는 별도 실기 검증으로 간주하지 않는다. Mac Society/Dreamscapes의 기존 프로세스와 0.36 라이브러리, iPad의 앞선 설치 영수증을 현재 상태에서 재확인했다. 홈 SDK와 앱의 0.36 조합을 유지했으며 이 단계에서 앱 재설치·iPad UI 재검사는 하지 않았다. iPhone은 사용자 지시로 제외했고 원래 daemon PID 14909를 보존했다. 0.40 C++ 소비자는 같은 버전의 헤더/라이브러리로 함께 재빌드해야 한다. 전체 하네스는 23 partial·8 pending·0 complete로 유지한다.
+
 ## 2026-09-16 C++ 대화 종료 메모리 추출 (0.39.0)
 
 부모의 실제 모델 문맥·도구 정의·생성 설정과 제출 시점의 읽기 기록을 복사하여 자동 메모리 저장을 수행한다. 작업별 캐시 용량, 최신 요청 병합, 커서·주기·실패 재시도, 메모리 쓰기 제한, 보수적인 Unix 읽기 셸, 취소·종료와 인증 API·MCP·CLI를 연결했다. 새 생산 의존성은 없다. 계약과 한도는 [MemoryExtraction.md](MemoryExtraction.md)를 따른다.

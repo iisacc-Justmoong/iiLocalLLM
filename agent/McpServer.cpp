@@ -157,6 +157,7 @@ public:
         };
         frozen->add(std::move(permissions));
         if (!options.engine) return frozen;
+        if(auto history=options.engine->sessionSearchTool())frozen->add(std::move(*history));
         options.engine->bindProjectMemoryTools(*frozen,false);
         if(options.engine->projectMemoryEnabled()) {
             Tool memory;memory.definition={"iiLocalLLM.agent.memory.get","Inspect this connection owner's project memory index and search topic metadata/content. query is a case-insensitive literal.",
@@ -385,7 +386,7 @@ public:
         if (!options.artifactsDirectory.isEmpty()) context.artifactsDirectory = QDir(options.artifactsDirectory).filePath(context.sessionId + '/' + context.runId);
         const auto source = frozen->get(name).definition.metadata["source"].toString();
         auto bindContext = [&](bool history=false) {
-            const bool native=source=="builtin.workspace"||source=="builtin.shell"||source=="builtin.shell.control"||source=="builtin.plan"||source=="builtin.user-question"||source=="builtin.memory";
+            const bool native=source=="builtin.workspace"||source=="builtin.shell"||source=="builtin.shell.control"||source=="builtin.plan"||source=="builtin.user-question"||source=="builtin.memory"||source=="builtin.session-history";
             if(options.engine&&(native||!options.tools.hooks.isEmpty()||options.engine->planning())) {
                 const auto owner=sessionId(conversation(request.sessionId),context.cancellation);
                 context.planningSessionId=owner;
@@ -442,6 +443,9 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
         return result;
     };
     server.handlers["tools/call"] = [state](const auto& params, const auto& request) { return state->call(params, request); };
+    if(state->options.engine&&state->options.engine->sessionSearchTool())
+        server.experimentalCapabilities["iisacc/sessionHistory"]=QJsonObject{{"schema","iisacc.session-history/1"},{"searchTool","SessionSearch"},
+            {"scope","host-workspace"},{"cursorScope","connection-conversation"},{"pagination","single-use-cursor"},{"matching","case-insensitive-literal"}};
     if(state->options.engine&&state->options.engine->projectMemoryEnabled())
         server.experimentalCapabilities["iisacc/projectMemory"]=QJsonObject{{"schema","iisacc.project-memory/1"},
             {"getTool","iiLocalLLM.agent.memory.get"},{"forgetTool","MemoryForget"},{"scope","host-workspace"},

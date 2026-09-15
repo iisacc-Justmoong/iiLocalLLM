@@ -45,7 +45,7 @@ bool matches(const QString& name,const QJsonArray& patterns) {
     return false;
 }
 bool allowed(const ToolDefinition& t,const QJsonObject& p) {
-    return t.name!="Agent" && t.metadata["source"]!="builtin.subagent" && matches(t.name,p["tools"].toArray())
+    return t.name!="Agent" && t.name!="SessionSearch" && t.metadata["source"]!="builtin.subagent" && matches(t.name,p["tools"].toArray())
         && !matches(t.name,p["disallowed_tools"].toArray()) && (!p["read_only"].toBool() || t.readOnly);
 }
 class ScopedModel final : public Model {
@@ -296,6 +296,7 @@ public:
             auto eo=parent;eo.sessionsDirectory=QDir(options.stateDirectory).filePath("sessions");eo.maxConcurrentRuns=1;eo.maxQueuedRuns=0;
             eo.sessionStartHooks=false;eo.maxAsyncHookWakeRuns=0;eo.planToolsEnabled=false;eo.userQuestionsEnabled=false;request.userPrompt=false;
             eo.memoryExtraction.enabled=false;
+            eo.sessionHistoryEnabled=false;
             eo.hooks.clear();for(const auto& hook:parent.hooks)eo.hooks.append([hook,hookContext](HookInput input,const CancellationToken& token){
                 for(auto i=hookContext.begin();i!=hookContext.end();++i)input.context[i.key()]=i.value();
                 if(input.kind==HookKind::Stop)input.kind=HookKind::SubagentStop;

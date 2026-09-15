@@ -2,7 +2,7 @@
 
 C++ 에이전트 하네스를 확장 중이다. 현재 실행 계층은 [AgentHarness.md](docs/AgentHarness.md), 전체 요구사항과 남은 구현은 [HarnessParity.md](docs/HarnessParity.md)에 기록한다. MCP/API 및 앱 전체 호환 완료와 기존 대화 기능 완료는 별도 상태로 관리한다.
 
-0.39.0은 [대화 종료 메모리 추출](docs/MemoryExtraction.md)을 제공한다. 부모 문맥과 읽기 기록을 복사한 C++ 작업으로 자동 저장하며, 요청 병합·권한 제한·취소·종료 대기와 인증 API·MCP·CLI를 연결한다.
+0.40.0은 [저장된 대화 검색](docs/SessionHistory.md)을 제공한다. C++ `SessionSearch`로 큰 JSONL 기록을 나누어 검색하며 소유 범위·원문 위치·변경 감지·권한을 인증 API·MCP·CLI에 연결한다. [대화 종료 메모리 추출](docs/MemoryExtraction.md)도 유지한다.
 
 0.38.0은 로컬 모델이 관련 주제 메모를 선택하는 [메모리 회상](docs/MemoryRecall.md)을 제공한다. 비동기 선행 실행, 문맥 첨부, 중복·오래된 정보·크기 관리와 인증 API·MCP·CLI를 연결한다. 0.37의 저장·인덱스·파일 도구 계약은 [프로젝트 메모리](docs/ProjectMemory.md), 0.36의 C++ QuestionInbox와 LVRS 질문 화면 계약은 [질문 UI](docs/QuestionUI.md)를 따른다.
 

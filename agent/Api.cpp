@@ -59,7 +59,7 @@ QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.se
     "agent.permissions.pending", "agent.permissions.respond", "agent.hooks.status", "agent.hooks.cancel",
     "agent.plan.get", "agent.plan.enter", "agent.plan.exit", "agent.questions.ask",
     "agent.memory.get", "agent.memory.read", "agent.memory.write", "agent.memory.edit", "agent.memory.glob", "agent.memory.grep", "agent.memory.forget", "agent.memory.recall",
-    "agent.memory.extract", "agent.memory.extraction.status", "agent.memory.extraction.cancel"}; }
+    "agent.memory.extract", "agent.memory.extraction.status", "agent.memory.extraction.cancel", "agent.sessions.search"}; }
 bool extractionControl(const QString& method){return method=="agent.memory.extraction.status"||method=="agent.memory.extraction.cancel";}
 bool hookControl(const QString& method) {return method=="agent.hooks.status"||method=="agent.hooks.cancel";}
 bool inputControl(const QString& method) {
@@ -181,7 +181,18 @@ public:
                 {"hooks_enabled",!options.engine.hooks.isEmpty()},{"async_hook_controls_enabled",true},
                 {"max_async_hook_wake_runs",options.engine.maxAsyncHookWakeRuns},{"permission_requests_enabled",bool(client->permissionRequests)},
                 {"user_questions_enabled",bool(client->engine->userQuestionTool())},{"project_memory_enabled",client->engine->projectMemoryEnabled()},
-                {"memory_recall_enabled",client->engine->memoryRecallEnabled()},{"memory_extraction_enabled",client->engine->memoryExtractionEnabled()}};
+                {"memory_recall_enabled",client->engine->memoryRecallEnabled()},{"memory_extraction_enabled",client->engine->memoryExtractionEnabled()},
+                {"session_history_enabled",bool(client->engine->sessionSearchTool())}};
+        }
+        if(method=="agent.sessions.search") {
+            const auto id=text(p,"session_id");auto arguments=p;arguments.remove("session_id");
+            require(client->engine->sessionMetadata(id).workingDirectory==options.workingDirectory,"Session belongs to a different workspace",ErrorCode::NotFound);
+            auto future=std::async(std::launch::async,[client,id,arguments,job,callback] {
+                return client->engine->runSessionSearch(id,arguments,job->token,[callback](const Event& event){if(callback)callback(toJson(event));});
+            });
+            bool timedOut=false;while(future.wait_for(10ms)!=std::future_status::ready){timedOut|=Clock::now()>=job->deadline;if(timedOut)job->token.cancel();}
+            const auto value=future.get();require(!timedOut&&Clock::now()<job->deadline,"Agent API request deadline exceeded",ErrorCode::Timeout);
+            return QJsonObject{{"text",value.text},{"result",value.data},{"is_error",value.isError}};
         }
         if(method=="agent.memory.extract"||extractionControl(method)) {
             if(method=="agent.memory.extraction.status")fields(p,{"session_id","offset","limit"});else fields(p,{"session_id"});const auto id=text(p,"session_id");

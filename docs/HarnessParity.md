@@ -140,3 +140,5 @@ C++ 프로젝트별 Markdown 저장, MEMORY.md 자동 문맥, 목록·검색, �
 ## 0.39 대화 종료 메모리 추출
 
 부모 모델 문맥과 native 읽기 기록을 복사한 C++ 작업, 세션별 커서·주기·최신 요청 병합, 메모리 쓰기 범위, 보수적인 Unix 읽기 셸 판정, 완료 통계와 인증 API·MCP·CLI를 추가한다. 주 대화에 추출 transcript를 붙이지 않으며 종료·clear·취소 수명을 연결한다. [MemoryExtraction.md](MemoryExtraction.md)에 세부 계약과 남은 셸·dream·세션 검색·전문 에이전트·설정·앱/플랫폼 범위를 명시한다. 전체 대응표 상태는 유지한다.
+
+0.40은 C++ `SessionSearch`로 과거 대화의 리터럴 검색, 줄/바이트 근거, 큰 JSONL의 제한된 읽기와 이어 읽기, 소유권·파일 변경 검증을 구현하고 Engine/API/MCP/CLI에 연결한다. 참조의 의미 검색·태그/제목/브랜치 순위와 자동 dream 정리는 미완료이며 sessions와 전체 목표는 partial을 유지한다. [SessionHistory.md](SessionHistory.md)를 따른다.

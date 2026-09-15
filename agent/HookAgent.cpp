@@ -113,13 +113,14 @@ AgentHookExecutor hookAgentExecutor(EngineOptions host,std::shared_ptr<TaskStore
     host.additionalTools.clear();host.additionalToolsProvider={};host.forkedSkill={};host.taskToolsEnabled=false;
     host.planToolsEnabled=false;host.userQuestionsEnabled=false;host.sessionStartHooks=false;host.projectContext.enabled=false;host.maxConcurrentRuns=1;host.maxQueuedRuns=0;
     host.memoryExtraction.enabled=false;
+    host.sessionHistoryEnabled=false;
     return [host=std::move(host),tasks=std::move(tasks)](const AgentHookRequest& request,const HookInput& input,const CancellationToken& token) {
         token.throwIfCancelled();require(input.modelContext&&input.modelContext->model&&input.modelContext->registry&&input.modelContext->policy,
             "Agent hook requires host model, registry and policy",ErrorCode::RuntimeUnavailable);
         const auto& context=*input.modelContext;auto registry=context.registry->snapshot();
         const auto owner=context.session?context.session->id:context.executionContext.sessionId.isEmpty()?input.sessionId:context.executionContext.sessionId;
         for(const auto& definition:registry->definitions()) {
-            if(QStringList{"StructuredOutput","Skill","ToolSearch","iiLocalLLM.session.read"}.contains(definition.name)){registry->remove(definition.name);continue;}
+            if(QStringList{"StructuredOutput","Skill","ToolSearch","iiLocalLLM.session.read","SessionSearch"}.contains(definition.name)){registry->remove(definition.name);continue;}
             auto tool=registry->get(definition.name);tool.completesRun=false;registry->remove(definition.name);
             registry->add(protectPlanningFiles(std::move(tool),context.executionContext.plansDirectory,context.executionContext.planFilePath));
         }

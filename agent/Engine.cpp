@@ -64,6 +64,7 @@ public:
             || this->options.toolSearch.maxActiveTools > 4096)
             throw Error(ErrorCode::InvalidArgument, "Invalid agent engine configuration");
         pool.setMaxThreadCount(this->options.maxConcurrentRuns);
+        if(this->options.sessionHistoryEnabled)history=std::make_shared<SessionHistory>(this->options.sessionsDirectory,this->options.sessionHistory);
         auto configured = this->registry->snapshot();
         for (const auto& tool : additionalTools()) configured->add(tool);
         if (this->options.skills.enabled) {
@@ -98,6 +99,7 @@ public:
     std::shared_ptr<ProjectMemory> memory;
     std::shared_ptr<MemoryRecall> recall;
     std::shared_ptr<MemoryExtraction> extraction;
+    std::shared_ptr<SessionHistory> history;
     QThreadPool pool;
     std::mutex mutex;
     std::mutex joining;
@@ -174,6 +176,7 @@ public:
 
     QList<Tool> additionalTools() const {
         auto result = options.additionalTools;
+        if(history)result.append(history->tool());
         if (options.additionalToolsProvider) result.append(options.additionalToolsProvider());
         return result;
     }
@@ -765,6 +768,22 @@ QString Engine::transcriptPath(const QString& id) const {
     (void)d->store.metadata(id);return QDir(d->options.sessionsDirectory).filePath(id+"/transcript.jsonl");
 }
 QStringList Engine::sessions() const { return d->store.list(); }
+std::optional<Tool> Engine::sessionSearchTool(bool deferred)const {
+    if(!d->history)return std::nullopt;return d->history->tool(deferred);
+}
+ToolResult Engine::runSessionSearch(const QString& id,const QJsonObject& arguments,const CancellationToken& token,
+    const EventCallback& callback,std::shared_ptr<PermissionRequests> requests)const {
+    if(!d->history)throw Error(ErrorCode::RuntimeUnavailable,"Session history search is disabled");
+    const auto session=d->store.metadata(id);Impl::NativeOperation operation(*d,id,token);
+    auto registry=std::make_shared<ToolRegistry>();registry->add(d->history->tool());
+    ToolContext context{id,uuid(),session.workingDirectory,QDir(d->options.sessionsDirectory).filePath(id+"/artifacts"),operation.token};
+    context.transcriptPath=transcriptPath(id);context.sessionSnapshot=std::make_shared<Session>(session);
+    if(!d->options.hooks.isEmpty())context.asyncHooks=d->hookScope(id);context.hookCancellation=operation.token;
+    context.permissionRequests=requests?requests:d->options.permissionRequests;
+    ToolRunnerOptions options{d->options.hooks,d->options.permission,24000,d->options.permissionResponse,d->options.permissionUpdates,
+        context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks),d->plans};
+    return ToolRunner(registry,d->policy,options).run({uuid(),"SessionSearch",arguments},context,callback);
+}
 Session Engine::forkSession(const QString& id, const QString& throughMessageId) {
     std::lock_guard lock(d->mutex);
     if(d->stopping)throw Error(ErrorCode::ShuttingDown,"Agent engine is shutting down");

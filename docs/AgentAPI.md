@@ -214,3 +214,5 @@ agent.tasks.create/get/list/update/claim 및 agent.todos.write/get을 추가한�
 0.34에서 agent.plan.enter/exit/get을 추가했다. 상태 조회는 예약 제어 경로이고 검토는 기존 permission requests를 사용한다. [PlanMode.md](PlanMode.md)에 계약과 남은 범위를 기록한다.
 
 0.35는 C++ AskUserQuestion과 API·MCP 질문/답변을 추가한다. 호스트 응답, 변경 검증, 미리보기와 남은 앱 화면 범위는 [UserQuestions.md](UserQuestions.md)를 따른다.
+
+0.40의 `agent.sessions.search`는 `session_id`와 `query`/`session_ids` 또는 `cursor`를 받아 과거 대화를 검색한다. `{text,result,is_error}` 응답, 앱별 격리, 현재 대화 제외와 페이지 수명은 [SessionHistory.md](SessionHistory.md)를 따른다.
