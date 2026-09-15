@@ -51,7 +51,7 @@ iillm-mcp ... --permission-requests /private/requests.json
 
 응답 결과는 request_id, session_id, run_id, tool_use_id, status, source, behavior, resolved_at, accepted, replayed를 제공한다. accepted=true는 결정 접수이며 도구·저장 성공 증거가 아니다. 앱은 실행 결과를 별도로 확인해야 한다. 동일 JSON 결정 재전송은 이력이 남아 있는 동안 accepted=true/replayed=true이다. 다른 결정은 AlreadyExists, 훅·취소·기한·종료가 먼저 확정되면 accepted=false이다. 다른 소유자 또는 제거된 이력의 ID는 NotFound이다. 같은 API 자격 증명의 두 창은 같은 소유자이다. MCP는 같은 토큰의 새 연결도 별도 채널이다.
 
-API 제어는 실행/입력 작업 풀이나 Engine 세션 잠금에 진입하지 않는다. MCP는 ServerOptions.controlHandlers의 별도 작업 풀(기본 동시 2, 대기 16)을 사용한다. 도구 큐가 승인을 기다려도 응답을 처리할 수 있다. 이는 dispatcher 작업 풀의 독립성이다. HTTP 연결 작업자와 MCP SSE 총량 한도는 별도이며, 전송 계층까지 포화되면 제어 요청도 지연되거나 거부될 수 있다. 전체 전송 포화에서 제어 용량을 보장하는 것은 남은 작업이다. 제어 메서드는 tools/list와 모델 ToolRegistry에 노출하지 않는다. 이미 허용된 임의 호스트 코드의 자격 증명 접근까지 막는 OS 샌드박스는 아니다.
+API 제어는 실행/입력 작업 풀이나 Engine 세션 잠금에 진입하지 않는다. MCP는 ServerOptions.controlHandlers의 별도 작업 풀(기본 동시 2, 대기 16)을 사용한다. 도구 큐가 승인을 기다려도 응답을 처리할 수 있다. 0.28은 HTTP 응답과 MCP 활성·보관 SSE 스트림에도 별도의 제어 용량을 둔다. 일반 응답이 한도에 도달해도 승인 조회·응답을 처리하며 제어 용량 자체는 제한된다. 연결 큐·읽기/쓰기 기한 등 전체 조건은 [ControlCapacity.md](ControlCapacity.md)를 따른다. 제어 메서드는 tools/list와 모델 ToolRegistry에 노출하지 않는다. 이미 허용된 임의 호스트 코드의 자격 증명 접근까지 막는 OS 샌드박스는 아니다.
 
 agent.info.permission_requests_enabled와 MCP 초기화의 capabilities.experimental["iisacc/permissionRequests"]에서 지원 여부를 확인한다. MCP 값에는 schema/pendingMethod/respondMethod가 있다. iisacc 확장이며 MCP 표준 권한 기능이나 Claude SDK control_request 프로토콜과 동일하다고 주장하지 않는다. 기본 JSON-RPC·메타데이터 규칙은 [MCP 2025-11-25](https://modelcontextprotocol.io/specification/2025-11-25/basic/index)를 따른다.
 

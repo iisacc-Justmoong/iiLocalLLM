@@ -22,6 +22,7 @@ struct HttpServerOptions {
     int writeTimeoutMs = 5000;
     int heartbeatMs = 15000;
     int retryMs = 1000;
+    int maxControlStreams = 4; // Separate global active and per-session retained control-stream limits.
 };
 struct HttpServerNotification {
     QString sessionId;

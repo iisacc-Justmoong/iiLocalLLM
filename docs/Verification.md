@@ -1,5 +1,32 @@
 # 구현 검증 기록
 
+## 2026-09-15 HTTP·MCP 제어 용량 예약 (0.28.0)
+
+일반 HTTP 응답과 제어 응답의 동시 한도를 분리했다. 응답을 처리기에 접수할 때 예약하고 JSON/SSE 전송 종료·실패 때 회수한다. MCP도 일반/제어 활성·보관 스트림을 분리하고 재접속·혼합 배치에서 원래 분류를 유지한다. C++과 CLI 설정은 [ControlCapacity.md](ControlCapacity.md)를 따른다. 기존 cpp-httplib Response.user_data와 원자적 카운터를 재사용했으며 새 생산 의존성은 없다.
+
+| 검증 경계 | 최종 관측 |
+|---|---|
+| Release 전체, inference 라벨 제외 | 59/59, 95.38초 |
+| ASan·UBSan, llama 비활성 Debug | 57/57, 134.46초; 계측 오류 보고 없음 |
+| 별도 설치 소비자 | 31/31, 56.17초; HTTP/MCP HTTP 회귀 검사 포함 |
+| HTTP 응답 수명 | 일반/제어 독립 포화, health, 느린 JSON·SSE 네 조합, 소켓 종료 후 용량 회수 통과 |
+| MCP 활성·보관 용량 | 일반 활성·보관 포화 중 제어, 제어 전역 한도, 연결 종료 뒤 보관 한도, 취소 후 회수 통과 |
+| 독립 MCP HTTP 클라이언트 | 혼합 배치·위조 분류 거부, 일반/제어 재접속 한도 유지, 다른 세션의 cursor 거부, 재실행 없음 통과 |
+| 실제 daemon·MCP HTTP | 일반 용량 1에서 추가 일반 요청 429와 승인 조회·응답 성공을 함께 확인 |
+| 실제 Qwen3 8B, 소스/설치본 | API HTTP 용량 1에서 Write 승인 입력 변경 후 정확한 임의 바이트 생성, HTTP interrupt 후 cancelled 통과 |
+| 공식 Python MCP stdio | MCP SDK 1.26.0의 확장 제어 응답으로 실제 Write 입력 변경·파일 생성 통과 |
+| 설치 산출물 | 공개 헤더 41개·문서·카탈로그·라이선스 일치, 실제 stage 라이브러리 로딩 |
+
+수정 전 HTTP 검사는 일반 요청의 1,800 ms 기한 때문에 제어 조회가 지연되어 실패했다. MCP 검사는 일반 활성·보관 스트림 포화에서 제어 조회가 HTTP 429로 실패했다. control-capacity-red.log와 control-capacity-mcp-red2.log에 보존한다. 초기 신규 MCP 테스트에서 비동기 세션 초기화 전 빈 목록을 접근한 오류, QTRY 조건이 알림을 중복 소비한 오류는 테스트 구성 문제로 구분해 수정했다. 해당 오류를 생산 서버 충돌 수정으로 보고하지 않는다. 첫 전체 검사에서 기존 8개 동시 역방향 요청 테스트가 기본 제어 한도 4개를 초과해 429로 실패했다. 라우팅 검사는 제어 용량 8개를 명시하도록 수정했고 기본 한도 초과의 429 검사는 유지한다. 첫 실행 로그는 control-capacity-release-first.log에 남겼다.
+
+CLI 용량 설정의 잘못된 숫자·범위·HTTP 옵션 조합 16건을 모델 초기화 전에 거부했다. 기존 권한 설정 오류 16건도 통과했다. 기본 용량의 permission_requests_wire와 제한 용량의 control_capacity_wire를 모두 실행했다. API의 native IPC TaskCreate 승인 경로도 유지한다. MCP 실제 파일 도구 결과는 HTTP와 공식 stdio에서 확인했으며 MCP Qwen 모델 실행 결과를 의미하지 않는다.
+
+모델은 model://qwen3-8b-q4, 5027783488바이트, SHA-256 d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785이다. 이번 검증에서 해시를 다시 계산했다. context 8192, temperature 0, 출력 상한 1024, thinking=false/tool_grammar=false이다. 소스와 설치본 각각 같은 HTTP 승인 흐름의 허용·중단 두 경우를 실행했다.
+
+설치 위치는 build/control-capacity-stage, 소비자는 build/control-capacity-consumer/build이다. 라이브러리 SHA-256은 e388d7ce176f2e4bb4b67ed3b977e12d8e0aff5c759454c1439eb83deabed966, Mach-O UUID는 98D0A13D-0090-31FD-BE22-437519AF8F6C이다. 실행 파일 UUID 및 CMake 설치 RPATH 변환 후 해시가 일치한다. iillm은 libiiLocalLLM/llama/ggml에 직접 링크하지 않는다. 경로 환경 변수를 비운 소비자 로딩을 확인했다. 공개 옵션 구조체와 RpcHandler 인터페이스가 바뀌므로 C++ 소비자는 0.28 헤더·라이브러리와 함께 재빌드해야 한다.
+
+증거는 build/control-capacity-verification.json, control-capacity-linkage.json, 각 final.log/XML, source/installed-native.json에 보존한다. 연결 큐·인증 콜백·메시지/이벤트 예산과 제어 용량 자체는 여전히 제한된다. 임의의 비협조 C++ 콜백 중단, 영속 승인 복구, 실제 앱 승인 UI, 전체 하네스는 완료 범위가 아니다. 이번 SDK 단계에서 Society/Dreamscapes를 다시 패키징하지 않았으며 iPhone은 사용자 지시로 제외한다. 기존 stage와 사용자 daemon은 보존했다. 전체 목표는 partial이다.
+
 ## 2026-09-15 앱 권한 요청·응답 중개 (0.27.0)
 
 C++ PermissionRequests와 ToolRunner의 훅/앱 경쟁을 구현했다. 첫 결정만 입력·정책 변경에 적용하고 늦은 응답, 같은 결정 재전송, 취소·기한·종료를 처리한다. API는 인증 클라이언트별, MCP는 연결별 채널을 사용하며 parent/child 실행으로 소유권을 전달한다. API/native IPC와 MCP 확장 제어 경로, 호스트 CLI 설정, 독립 MCP 제어 작업 풀을 제공한다. 응답 메서드는 모델 도구 목록에 없다. 계약과 참조 차이는 [PermissionRequests.md](PermissionRequests.md)에 있다.

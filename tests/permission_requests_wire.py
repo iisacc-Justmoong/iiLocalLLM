@@ -23,13 +23,14 @@ def main():
     parser.add_argument("--catalog", type=Path)
     parser.add_argument("--model", default="model://qwen3-8b-q4")
     parser.add_argument("--official-stdio", action="store_true")
+    parser.add_argument("--control-capacity", action="store_true")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     daemon, cli, mcp = [str(getattr(args, key).resolve()) for key in ("daemon", "cli", "mcp")]
     env = dict(os.environ)
     for key in ("DYLD_LIBRARY_PATH", "DYLD_FRAMEWORK_PATH", "DYLD_FALLBACK_LIBRARY_PATH", "LIBRARY_PATH"):
         env.pop(key, None)
-    report = {"passed": False, "version": "0.27.0", "inference": bool(args.catalog), "binaries": [daemon, cli, mcp]}
+    report = {"passed": False, "version": "0.28.0", "inference": bool(args.catalog), "control_capacity": args.control_capacity, "binaries": [daemon, cli, mcp]}
     # The sanitizer build root is long; keep native AF_UNIX socket paths short.
     with tempfile.TemporaryDirectory(prefix="pr-") as temp:
         root = Path(temp)
@@ -51,6 +52,27 @@ def main():
             "--agent-workspace", str(work), "--agent-state", str(root / "api-state"), "--agent-credentials", credentials,
             "--agent-no-apps", "--agent-no-background", "--agent-no-skills", "--agent-no-subagents", "--no-agent-profiles"]
         mcp_common = [mcp, "--workspace", str(work), "--no-apps", "--no-background", "--no-agent-profiles"]
+        mcp_capacity = []
+        if args.control_capacity:
+            bad_capacity = 0
+            for command, cases in ((common, [("http-workers", "0"), ("http-workers", "65"), ("http-control-requests", "0"),
+                    ("http-control-requests", "17"), ("http-control-requests", "1.5"), ("http-workers", "invalid")]),
+                (mcp_common + ["--http-port", "0", "--model", args.model, "--models", str(root / "models")],
+                    [("max-streams", "0"), ("max-streams", "257"), ("max-control-streams", "0"), ("max-control-streams", "65"),
+                     ("max-streams-per-session", "1"), ("max-streams-per-session", "4097"), ("max-control-streams", "1.5"), ("max-streams", "invalid")])):
+                for option, value in cases:
+                    result = subprocess.run(command + ["--" + option, value], env=env, capture_output=True, timeout=15)
+                    assert result.returncode and not result.stdout, result
+                    assert not (root / "models").exists(), "Invalid HTTP capacity reached model initialization"
+                    bad_capacity += 1
+            for command in ([daemon, "--models-root", str(root / "models"), "--http-workers", "1"],
+                            mcp_common + ["--max-control-streams", "1"]):
+                result = subprocess.run(command, env=env, capture_output=True, timeout=15)
+                assert result.returncode and b"require --http-port" in result.stderr, result
+                bad_capacity += 1
+            report["invalid_capacity_cases"] = bad_capacity
+            common += ["--http-workers", "1", "--http-control-requests", "1"]
+            mcp_capacity = ["--max-streams", "1", "--max-control-streams", "1", "--max-streams-per-session", "2"]
         invalid = 0
         for value in ([], {"timeout_ms": 0}, {"max_pending": 1025}, {"max_request_bytes": 1}, {"max_history": 1.5}, {"mode": "bypassPermissions"}):
             bad = private("invalid", value)
@@ -159,6 +181,8 @@ def main():
                 task = pool.submit(rpc, "agent.tasks.create", {"session_id": owner, "subject": "ORIGINAL", "description": "original"})
                 prompt = wait_prompt(lambda: command("pending", {}), task)
                 assert prompt["request"]["tool_name"] == "TaskCreate" and prompt["session_id"] == owner
+                if args.control_capacity:
+                    rpc("agent.info", expected=429)
                 response = {"request_id": prompt["request_id"], "decision": {"behavior": "allow", "updatedInput": {"subject": "APPROVED", "description": "by app"}}}
                 assert not rpc("agent.permissions.pending", bearer=other)["requests"]
                 rpc("agent.permissions.respond", response, other, 404)
@@ -187,7 +211,12 @@ def main():
                         assert prompt["request"]["tool_name"] == "Write", prompt
                         decision = {"behavior": "deny", "message": "APP_INTERRUPT", "interrupt": True} if interrupt else {
                             "behavior": "allow", "updatedInput": {"path": "native-approved.txt", "content": content}}
-                        assert command("respond", {"request_id": prompt["request_id"], "decision": decision})["accepted"]
+                        if args.control_capacity:
+                            rpc("agent.info", expected=429)
+                            accepted = rpc("agent.permissions.respond", {"request_id": prompt["request_id"], "decision": decision})
+                        else:
+                            accepted = command("respond", {"request_id": prompt["request_id"], "decision": decision})
+                        assert accepted["accepted"]
                         result = task.result(timeout=180)
                         assert result["status"] == ("cancelled" if interrupt else "completed"), result
                         assert not (work / "native-original.txt").exists()
@@ -197,7 +226,7 @@ def main():
                     report["native"] = outcomes
 
         with server("mcp", mcp_common + ["--permission-requests", requests, "--permission-settings", settings,
-                    "--http-port", "0", "--credentials", credentials, "--state", str(root / "mcp-state")], r'\{"endpoint":"([^"\n]+)"\}') as match:
+                    "--http-port", "0", "--credentials", credentials, "--state", str(root / "mcp-state")] + mcp_capacity, r'\{"endpoint":"([^"\n]+)"\}') as match:
             port = urlsplit(match[1]).port
             init = {"jsonrpc": "2.0", "id": "init", "method": "initialize", "params": {"protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "Society", "version": "1"}}}
             _, info, identity = post(port, "/mcp", init)
@@ -206,9 +235,9 @@ def main():
             _, _, other_identity = post(port, "/mcp", init, other)
             post(port, "/mcp", {"jsonrpc": "2.0", "method": "notifications/initialized"}, other, other_identity)
 
-            def mcp_rpc(method, params=None, foreign=False):
+            def mcp_rpc(method, params=None, foreign=False, expected=200):
                 status, data, _ = post(port, "/mcp", {"jsonrpc": "2.0", "id": secrets.token_hex(8), "method": method, "params": params or {}}, other if foreign else token, other_identity if foreign else identity)
-                assert status == 200, (status, data)
+                assert status == expected, (status, data)
                 return data
 
             tools = mcp_rpc("tools/list")["result"]["tools"]
@@ -217,6 +246,8 @@ def main():
                 for denied_target in (False, True):
                     task = pool.submit(mcp_rpc, "tools/call", {"name": "Write", "arguments": {"path": "mcp-original.txt", "content": "ORIGINAL"}})
                     prompt = wait_prompt(lambda: mcp_rpc("iisacc/permissions/pending")["result"], task)
+                    if args.control_capacity:
+                        mcp_rpc("tools/list", expected=429)
                     assert not mcp_rpc("iisacc/permissions/pending", foreign=True)["result"]["requests"]
                     response = {"request_id": prompt["request_id"], "decision": {"behavior": "allow", "updatedInput": {"path": "denied.txt" if denied_target else "mcp-approved.txt", "content": "MCP_APP"}}}
                     assert "error" in mcp_rpc("iisacc/permissions/respond", response, True)

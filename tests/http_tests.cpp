@@ -6,6 +6,7 @@
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QTcpServer>
+#include <QtNetwork/QTcpSocket>
 #include <chrono>
 #include <mutex>
 #include <thread>
@@ -140,6 +141,71 @@ QList<QJsonObject> events(const Reply& reply)
 class HttpTests : public QObject {
     Q_OBJECT
 private slots:
+    void waitingRpcCannotOccupyThePermissionControlCapacity() {
+        class Handler final:public RpcHandler {
+        public:
+            std::promise<QJsonValue> held,heldControl;std::atomic_bool entered=false,controlEntered=false;
+            bool isControlMethod(const QString& method) const override {return method=="agent.permissions.pending"||method=="test/controlWait";}
+            RpcHandle dispatch(QString method,QJsonObject,QString,RpcEventCallback) override {
+                if(method=="test/wait") {entered=true;return {"wait",{},held.get_future().share()};}
+                if(method=="test/controlWait") {controlEntered=true;return {"control-wait",{},heldControl.get_future().share()};}
+                std::promise<QJsonValue> value;auto future=value.get_future().share();value.set_value(QJsonObject{{"requests",QJsonArray{}}});
+                return {"control",{},future};
+            }
+        };
+        Fixture fixture;auto handler=std::make_shared<Handler>();HttpOptions limits;limits.workerThreads=1;limits.maxControlRequests=1;limits.requestTimeoutMs=1800;
+        HttpApiServer server(*fixture.service,limits);server.setRpcHandler(handler);QVERIFY(server.listen());
+        const QList<QPair<QByteArray,QByteArray>> headers{{"Authorization","Bearer fixture-credential"}};
+        auto rpc=[&](const QString& method){return request(server.port(),QJsonDocument(QJsonObject{{"id",method},{"method",method}}).toJson(),"/v1/rpc",false,headers);};
+        auto waiting=std::async(std::launch::async,[&]{return rpc("test/wait");});
+        struct Release {std::shared_ptr<Handler> handler;~Release(){try{handler->held.set_value(QJsonObject{});}catch(...) {}}} release{handler};
+        QTRY_VERIFY(handler->entered.load());QElapsedTimer timer;timer.start();
+        const auto control=rpc("agent.permissions.pending");QCOMPARE(control.status,200);
+        QVERIFY2(timer.elapsed()<700,"Permission control waited behind ordinary HTTP work");
+        QCOMPARE(rpc("test/ordinary").status,429);
+        QCOMPARE(request(server.port(),{},"/v1/models",true).status,429);
+        QCOMPARE(request(server.port(),{},"/health",true).status,200);
+        handler->held.set_value(QJsonObject{});QCOMPARE(waiting.get().status,200);
+        auto controlWaiting=std::async(std::launch::async,[&]{return rpc("test/controlWait");});
+        struct ControlRelease {std::shared_ptr<Handler> handler;~ControlRelease(){try{handler->heldControl.set_value(QJsonObject{});}catch(...) {}}} controlRelease{handler};
+        QTRY_VERIFY(handler->controlEntered.load());
+        QCOMPARE(rpc("agent.permissions.pending").status,429);
+        QCOMPARE(rpc("test/ordinary").status,200);
+        handler->heldControl.set_value(QJsonObject{});QCOMPARE(controlWaiting.get().status,200);
+        QCOMPARE(rpc("agent.permissions.pending").status,200);
+    }
+    void slowResponseKeepsCapacityUntilTheSocketCloses_data() {
+        QTest::addColumn<bool>("streaming");QTest::addColumn<bool>("control");
+        QTest::newRow("json-work")<<false<<false;QTest::newRow("sse-work")<<true<<false;
+        QTest::newRow("json-control")<<false<<true;QTest::newRow("sse-control")<<true<<true;
+    }
+    void slowResponseKeepsCapacityUntilTheSocketCloses() {
+        QFETCH(bool,streaming);QFETCH(bool,control);
+        class Handler final:public RpcHandler {
+        public:
+            bool isControlMethod(const QString& method) const override {return method.startsWith("control/");}
+            RpcHandle dispatch(QString method,QJsonObject,QString,RpcEventCallback) override {
+                std::promise<QJsonValue> value;auto future=value.get_future().share();
+                value.set_value(QJsonObject{{"data",method.endsWith("large")?QString(16*1024*1024,'x'):QString("ok")}});
+                return {"response",{},future};
+            }
+        };
+        Fixture fixture;HttpOptions limits;limits.workerThreads=1;limits.maxControlRequests=1;
+        limits.maxBufferedOutputBytes=24*1024*1024;limits.writeTimeoutMs=10000;
+        HttpApiServer server(*fixture.service,limits);server.setRpcHandler(std::make_shared<Handler>());QVERIFY(server.listen());
+        const auto prefix=control?QString("control/"):QString("work/");
+        QTcpSocket stalled;stalled.setReadBufferSize(1);stalled.connectToHost("127.0.0.1",server.port());QVERIFY(stalled.waitForConnected());
+        stalled.setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption,1024);
+        const auto body=QJsonDocument(QJsonObject{{"id","slow"},{"method",prefix+"large"},{"stream",streaming}}).toJson(QJsonDocument::Compact);
+        const QByteArray headers="POST /v1/rpc HTTP/1.1\r\nHost: 127.0.0.1:"+QByteArray::number(server.port())
+            +"\r\nAuthorization: Bearer fixture\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: "+QByteArray::number(body.size())+"\r\n\r\n";
+        stalled.write(headers+body);QVERIFY(stalled.waitForBytesWritten());QVERIFY(stalled.waitForReadyRead());
+        auto probe=[&](const QString& method){return request(server.port(),QJsonDocument(QJsonObject{{"id","probe"},{"method",method}}).toJson(),
+            "/v1/rpc",false,{{"Authorization","Bearer fixture"}}).status;};
+        QCOMPARE(probe(prefix+"small"),429);
+        QCOMPARE(probe((control?QString("work/"):QString("control/"))+"small"),200);
+        stalled.abort();QTRY_COMPARE(probe(prefix+"small"),200);
+    }
     void structuredToolsRoundTripAndSse()
     {
         Fixture fixture; HttpApiServer http(*fixture.service); QVERIFY(http.listen());

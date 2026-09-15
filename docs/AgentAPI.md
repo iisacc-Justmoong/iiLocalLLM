@@ -136,7 +136,7 @@ http.setRpcHandler(api);
 
 ApiOptions 기본값은 동시 요청 8개, 대기 32개, 앱별 세션 1,024개, 최대 32턴, 요청·결과 JSON 4 MiB, 요청 기한 300초다. 이벤트도 각각 4 MiB 및 요청당 200,000개로 제한한다. 전송의 기본 입력 제한은 1 MiB, 출력 버퍼는 4 MiB이므로 실제 허용치는 양쪽 제한을 따른다. 큰 세션 조회는 limit을 줄여 페이지로 읽는다.
 
-daemon은 HTTP 작업자 8개 중 제어 요청을 처리할 여유를 두기 위해 API 동시 요청 6개·대기 0개를 설정한다. C++ 호스트가 설정을 바꿀 때도 대기 중 HTTP 요청이 모든 작업자를 차지하지 않게 조정해야 한다. API의 cancel/status는 API 실행 대기열 제한을 우회한다. native 연결 자체가 포화되면 같은 앱의 새 연결이나 기존 connection-local cancel을 사용한다.
+daemon의 API 동시 요청 6개·대기 0개와 HTTP 전송 용량은 독립이다. 0.28은 일반 HTTP 응답 기본 8개, 제어 응답 기본 2개를 허용한다. agent.permissions.pending/respond 및 agent.cancel/status는 별도 제어 용량을 사용한다. 일반 요청이 승인을 기다려도 이 네 메서드는 처리할 수 있으며 모든 응답의 용량은 전송이 끝날 때 회수된다. --http-workers/--http-control-requests 및 C++ 한도는 [ControlCapacity.md](ControlCapacity.md)를 따른다. native 연결 자체가 포화되면 같은 앱의 새 연결이나 기존 connection-local cancel을 사용한다.
 
 실행은 호출 연결에 붙어 있다. 연결 해제·출력 버퍼 초과·기한 종료·API 종료는 취소를 전달하며, 수락 슬롯은 작업이 실제로 종료될 때 해제한다. `Api::close()`는 실행을 취소하고 작업자를 join한다. 모델·도구·이벤트 함수는 취소에 협조해야 하고 콜백 안에서 close·파괴 또는 자기 future 대기를 호출하면 안 된다. 메타데이터의 파일 게시나 도구 부작용은 취소로 롤백되지 않는다.
 

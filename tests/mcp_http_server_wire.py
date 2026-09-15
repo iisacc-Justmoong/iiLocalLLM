@@ -118,6 +118,93 @@ class Peer:
 
 
 class HttpServerWireTests(unittest.TestCase):
+    def test_control_capacity_and_legacy_batches_cannot_promote_work(self):
+        with fixture(maxStreams=1, maxControlStreams=1, maxStreamsPerSession=2) as peer:
+            peer.initialize("2025-03-26")
+            second = Peer(peer.url.geturl()).initialize()
+            ordinary, work = peer.open("POST", rpc(2, "test/wait"))
+            self.assertEqual(work.status, 200)
+            event(work)
+            # A mixed batch, a method-name prefix or client metadata cannot claim control capacity.
+            self.assertEqual(peer.status("POST", [rpc(3, "ping"), rpc(4, "test/echo")])[0], 429)
+            self.assertEqual(peer.status("POST", rpc(5, "test/controlUnknown", {"_meta": {"control": True}}))[0], 429)
+            connection, response = peer.open("POST", [rpc(6, "ping"), rpc(7, "ping"), notice("notifications/roots/list_changed")])
+            self.assertEqual(response.status, 200)
+            self.assertEqual({x["id"] for x in messages(response)[0]}, {6, 7})
+            response.close(); connection.close()
+            control, held = peer.open("POST", rpc(8, "test/controlWait"))
+            self.assertEqual(held.status, 200)
+            event(held)
+            self.assertEqual(peer.status("POST", rpc(9, "ping"))[0], 429)
+            self.assertEqual(second.status("POST", rpc(9, "ping"))[0], 429)
+            self.assertEqual(peer.status("POST", rpc(10, "test/echo"))[0], 429)
+            self.assertEqual(peer.status("POST", notice("notifications/cancelled", {"requestId": 2}))[0], 202)
+            self.assertEqual(messages(work), [])
+            work.close(); ordinary.close()
+            self.assertEqual(peer.call("test/echo")["principal"], "alpha")
+            self.assertEqual(peer.status("POST", notice("notifications/cancelled", {"requestId": 8}))[0], 202)
+            self.assertEqual(messages(held), [])
+            held.close(); control.close()
+            for _ in range(3):
+                self.assertEqual(peer.call("ping"), {})
+
+    def test_disconnected_control_keeps_its_retained_quota_until_cancelled(self):
+        with fixture(maxStreams=1, maxControlStreams=1, maxStreamsPerSession=2) as peer:
+            peer.initialize()
+            connection, response = peer.open("POST", rpc(2, "test/controlWait"))
+            self.assertEqual(response.status, 200)
+            event(response)
+            response.close(); connection.close()
+            time.sleep(0.15)  # At least one fixture heartbeat detects the closed socket.
+            self.assertEqual(peer.call("test/echo")["principal"], "alpha")
+            status, _, body = peer.status("POST", rpc(3, "ping"))
+            self.assertEqual(status, 429)
+            self.assertIn(b"retained stream capacity", body)
+            self.assertEqual(peer.status("POST", notice("notifications/cancelled", {"requestId": 2}))[0], 202)
+            deadline = time.monotonic() + 2
+            while True:
+                peer.sequence += 1
+                status, _, body = peer.status("POST", rpc(peer.sequence, "ping"))
+                if status == 200:
+                    break
+                self.assertEqual(status, 429)
+                self.assertLess(time.monotonic(), deadline, body)
+                time.sleep(0.01)
+
+    def test_resumed_control_uses_its_original_capacity_and_owner(self):
+        with fixture(maxStreams=1, maxControlStreams=1, maxStreamsPerSession=3) as peer:
+            peer.initialize()
+            foreign = Peer(peer.url.geturl()).initialize()
+            prior, completed = peer.open("POST", rpc(10, "test/echo"))
+            normal_cursor = event(completed)["id"]
+            self.assertEqual(messages(completed)[0]["id"], 10)
+            completed.close(); prior.close()
+            ordinary, work = peer.open("POST", rpc(2, "test/wait"))
+            self.assertEqual(work.status, 200)
+            event(work)
+            self.assertEqual(peer.status("GET", headers={"Last-Event-ID": normal_cursor})[0], 429)
+            connection, response = peer.open("POST", rpc(3, "test/controlDelay", {"label": "once", "milliseconds": 500}))
+            self.assertEqual(response.status, 200)
+            cursor = event(response)["id"]
+            response.close(); connection.close()
+            self.assertEqual(foreign.status("GET", headers={"Last-Event-ID": cursor})[0], 410)
+            deadline = time.monotonic() + 2
+            while True:
+                connection, response = peer.open("GET", headers={"Last-Event-ID": cursor})
+                if response.status == 200:
+                    break
+                self.assertEqual(response.status, 429)
+                response.read(); response.close(); connection.close()
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(0.01)
+            self.assertEqual(messages(response), [{"jsonrpc": "2.0", "id": 3, "result": {"label": "once"}}])
+            response.close(); connection.close()
+            self.assertEqual(peer.status("POST", rpc(4, "test/echo"))[0], 429)
+            self.assertEqual(peer.status("POST", notice("notifications/cancelled", {"requestId": 2}))[0], 202)
+            self.assertEqual(messages(work), [])
+            work.close(); ordinary.close()
+            self.assertEqual(peer.call("test/stats")["once"], 1)
+
     def test_auth_origin_and_envelope_validation(self):
         with fixture(maxRequestBytes=1024) as peer:
             status, headers, body = peer.status("POST", rpc(1, "ping"), token=False)

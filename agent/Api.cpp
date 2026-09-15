@@ -420,6 +420,9 @@ Api::Api(std::shared_ptr<Model> model, std::shared_ptr<ToolRegistry> registry,
     std::shared_ptr<const PermissionPolicy> policy, ApiOptions options)
     : d(std::make_shared<Impl>(std::move(model), std::move(registry), std::move(policy), std::move(options))) {}
 Api::~Api() { d->stop(); }
+bool Api::isControlMethod(const QString& method) const {
+    return method=="agent.permissions.pending"||method=="agent.permissions.respond"||method=="agent.cancel"||method=="agent.status";
+}
 RpcHandle Api::dispatch(QString method, QJsonObject params, QString credential, RpcEventCallback callback) {
     return d->dispatch(std::move(method), std::move(params), std::move(credential), std::move(callback));
 }

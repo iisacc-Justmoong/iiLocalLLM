@@ -483,6 +483,7 @@ ServerSession::~ServerSession() { d->stop(); }
 QString ServerSession::id() const { return d->sessionId; }
 bool ServerSession::isInitialized() const { std::lock_guard lock(d->mutex); return !d->closed && d->phase == 2; }
 bool ServerSession::isClosed() const { std::lock_guard lock(d->mutex); return d->closed; }
+bool ServerSession::isControlMethod(const QString& method) const {return method=="ping"||d->options.controlHandlers.contains(method);}
 QString ServerSession::protocolVersion() const { std::lock_guard lock(d->mutex); return d->version; }
 QJsonObject ServerSession::clientInfo() const { std::lock_guard lock(d->mutex); return d->info; }
 QJsonObject ServerSession::clientCapabilities() const { std::lock_guard lock(d->mutex); return d->clientCaps; }

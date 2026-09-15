@@ -27,7 +27,7 @@ void interrupt(int) { interrupted.store(true,std::memory_order_relaxed); }
 }
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.27.0");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.28.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},
@@ -54,6 +54,9 @@ int main(int argc, char** argv) {
         {"model-options", "Private JSON model load options outside the workspace; preload --model before serving.", "file"},
         {"sessions", "Agent transcript directory (default: workspace/.iilocal-llm/sessions).", "path"},
         {"http-port", "Serve Streamable HTTP on 127.0.0.1/mcp; 0 selects an available port.", "port"},
+        {"max-streams", "Maximum ordinary HTTP response streams in flight (1..256).", "count", "64"},
+        {"max-control-streams", "Separate active and per-session retained HTTP control stream limit (1..64).", "count", "4"},
+        {"max-streams-per-session", "Retained ordinary HTTP streams per session, including background (2..4096).", "count", "64"},
         {"credentials", "Private JSON client-ID/token file outside the workspace; required with --http-port.", "path"},
         {"state", "Private directory disjoint from the workspace; required for HTTP and subagents.", "path"},
         {"origin", "Additional exact browser origin allowed by HTTP; repeat for more origins.", "origin"},
@@ -102,6 +105,12 @@ int main(int argc, char** argv) {
         const bool http = parser.isSet("http-port");
         const auto statePath = parser.value("state");
         iiLocalLLM::mcp::HttpServerOptions transport;
+        transport.maxStreams = positive("max-streams", 256);
+        transport.maxControlStreams = positive("max-control-streams", 64);
+        transport.maxStreamsPerSession = positive("max-streams-per-session", 4096);
+        if (transport.maxStreamsPerSession < 2) throw std::runtime_error("Invalid --max-streams-per-session");
+        if (!http && (parser.isSet("max-streams") || parser.isSet("max-control-streams") || parser.isSet("max-streams-per-session")))
+            throw std::runtime_error("HTTP stream capacity options require --http-port");
         quint16 port = 0; QString privateState; std::unique_ptr<QLockFile> stateLock;
         if (http) {
             if (!parser.isSet("credentials") || !parser.isSet("state"))

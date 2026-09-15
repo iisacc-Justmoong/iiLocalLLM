@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(iiLocalLLM VERSION 0.27.0 LANGUAGES CXX)
+project(iiLocalLLM VERSION 0.28.0 LANGUAGES CXX)
 
 if(PROJECT_IS_TOP_LEVEL AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     if(DEFINED ENV{HOME})
@@ -387,6 +387,10 @@ if(BUILD_TESTING)
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/permission_requests_wire.py $<TARGET_FILE:iiLocalLLMD> $<TARGET_FILE:iillm> $<TARGET_FILE:iiLocalLLMMcpServer>
                 --report ${CMAKE_CURRENT_BINARY_DIR}/permission-requests-wire.json)
             set_tests_properties(iiLocalLLM.permission_requests_wire PROPERTIES TIMEOUT 180)
+            add_test(NAME iiLocalLLM.control_capacity_wire COMMAND ${Python3_EXECUTABLE} -B
+                ${CMAKE_CURRENT_SOURCE_DIR}/tests/permission_requests_wire.py $<TARGET_FILE:iiLocalLLMD> $<TARGET_FILE:iillm> $<TARGET_FILE:iiLocalLLMMcpServer>
+                --control-capacity --report ${CMAKE_CURRENT_BINARY_DIR}/control-capacity-wire.json)
+            set_tests_properties(iiLocalLLM.control_capacity_wire PROPERTIES TIMEOUT 180)
             add_test(NAME iiLocalLLM.working_directories_wire COMMAND ${Python3_EXECUTABLE} -B
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/permission_settings_wire.py $<TARGET_FILE:iiLocalLLMD> $<TARGET_FILE:iillm> $<TARGET_FILE:iiLocalLLMMcpServer>
                 --additional-directories --report ${CMAKE_CURRENT_BINARY_DIR}/working-directories-wire.json)

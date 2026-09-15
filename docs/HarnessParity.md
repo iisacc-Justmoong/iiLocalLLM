@@ -106,3 +106,7 @@
 ## 0.27 앱 권한 요청
 
 인증 API/native IPC와 MCP 연결별 승인 채널, 독립 제어 처리, 훅·앱 경쟁, 취소·기한·중복 응답을 추가한다. [PermissionRequests.md](PermissionRequests.md)에 활성화·요청·응답 계약과 참조 차이를 기술한다. 전체 하네스와 실제 앱 통합 완료를 의미하지 않는다.
+
+## 0.28 HTTP 제어 용량
+
+일반 HTTP 응답·MCP SSE의 활성/보관 용량과 승인 제어 용량을 분리한다. 느린 JSON/SSE 응답, 연결 종료와 재접속도 원래 분류의 한도에 포함한다. [ControlCapacity.md](ControlCapacity.md)에 C++·CLI 설정, 실제 전송 검사와 자원 한계를 기록한다. 입력 큐 등 임의 메서드에 제어 분류를 부여하지 않으며 영속 승인 복구·제품 승인 UI·나머지 하네스는 계속 partial이다.

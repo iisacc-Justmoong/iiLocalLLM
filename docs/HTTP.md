@@ -112,7 +112,7 @@ SSE에서는 완성·검증된 도구 호출을 `delta.tool_calls` 배열로 보
 
 오류 body는 {"error":{"message":"...","type":"invalid_request_error 또는 server_error","param":null,"code":"서비스 오류 코드"}}이다. 잘못된 입력·컨텍스트 초과는 400, 없는 모델은 404, 충돌은 409, 잘못된 Content-Type은 415, body 상한은 413, 큐/자원 상한은 429, 엔진 오류는 500, 엔진 불가·종료 중은 503, 요청 시간 초과는 504이다. 알려지지 않은 경로·미등록 HTTP 메서드는 404이다. 모든 응답에서 성공 상태 코드만 보고 추론 완료를 판단하지 말고 SSE의 마지막 상태·오류도 확인한다.
 
-HttpOptions 기본값은 전송 worker 8개, 대기 연결 16개, 요청 body 1 MiB, 스트리밍 대기 큐 및 누적 출력 텍스트 각각 4 MiB, socket read/write timeout 각각 5초, 파싱 후 서비스 대기·생성 deadline 300초이다. 전송 큐가 가득 차면 추가 연결을 닫으며 서비스 scheduler 큐가 가득 차면 429를 반환한다. HTTP/1.1 연결당 요청 하나를 처리한다. /v1/models는 상주 모델의 읽기 전용 값 스냅샷을 사용하므로 추론 FIFO가 끝나기를 기다리지 않는다.
+HttpOptions 기본값은 일반 응답 8개·제어 응답 2개, 대기 연결 16개, 요청 body 1 MiB, 스트리밍 대기 큐 및 누적 출력 텍스트 각각 4 MiB, socket read/write timeout 각각 5초, 파싱 후 서비스 대기·생성 deadline 300초이다. 0.28의 workerThreads는 일반 응답 동시 한도이며 내부 worker 상한은 두 응답 한도 합계 + 4이다. JSON/SSE 전송 종료까지 한도를 점유한다. 응답 또는 서비스 scheduler 한도 초과는 429이고, 연결 큐가 가득 차면 추가 연결을 닫는다. HTTP/1.1 연결당 요청 하나를 처리한다. /v1/models는 일반 응답 용량을 사용하며 상주 모델의 읽기 전용 값 스냅샷을 가져와 추론 FIFO가 끝나기를 기다리지 않는다. API 제어 메서드와 CLI 설정은 [ControlCapacity.md](ControlCapacity.md)를 따른다.
 
 127.0.0.1에만 bind하고 Host를 실제 localhost 포트와 대조한다. 다른 Origin이나 Origin:null을 거부하며 교차 출처 CORS를 허용하지 않는다. HTTP에는 OS 사용자 단위 인증이 없으므로 같은 컴퓨터의 프로세스가 접근할 수 있다. 사용자 전용 소켓 권한은 Native IPC에 적용된다. HTTP에 TLS·원격 호스트 바인딩·정적 파일 제공을 추가하지 않는다.
 

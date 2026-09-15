@@ -17,6 +17,9 @@ struct RpcHandle {
 class IILOCALLLM_EXPORT RpcHandler {
 public:
     virtual ~RpcHandler() = default;
+    // Host-owned classification for bounded control operations. Transports may
+    // reserve capacity for these methods; dispatch still authenticates/validates.
+    virtual bool isControlMethod(const QString&) const { return false; }
     virtual RpcHandle dispatch(QString method, QJsonObject parameters, QString credential,
         RpcEventCallback = {}) = 0;
 };

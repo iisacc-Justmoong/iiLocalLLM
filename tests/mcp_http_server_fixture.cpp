@@ -15,6 +15,7 @@ int main(int argc, char** argv) {
         m::HttpServerOptions http;
         auto option = [&](const char* name, int& target) { if (config.contains(name)) target = config[name].toInt(); };
         option("maxSessions", http.maxSessions); option("maxStreams", http.maxStreams);
+        option("maxControlStreams", http.maxControlStreams);
         option("maxHistoryEvents", http.maxHistoryEvents); option("maxHistoryBytes", http.maxHistoryBytes);
         option("maxStreamsPerSession", http.maxStreamsPerSession); option("streamRetentionMs", http.streamRetentionMs);
         option("sessionIdleTimeoutMs", http.sessionIdleTimeoutMs); option("maxRequestBytes", http.maxRequestBytes);
@@ -42,6 +43,8 @@ int main(int argc, char** argv) {
                 while (!c.cancellation.isCancelled()) std::this_thread::sleep_for(1ms);
                 c.cancellation.throwIfCancelled(); return QJsonObject{};
             };
+            o.controlHandlers["test/controlWait"] = o.handlers["test/wait"];
+            o.controlHandlers["test/controlDelay"] = o.handlers["test/delay"];
             o.handlers["test/reverse"] = [](const auto&, const auto& c) { return c.requestClient("ping", {}, 2000); };
             o.handlers["test/notify"] = [&](const auto&, const auto& c) {
                 exposed->notify(c.sessionId, "notifications/tools/list_changed"); return QJsonObject{};

@@ -55,8 +55,9 @@ Host는 실제 포트의 127.0.0.1 또는 localhost만 허용한다. Origin이 �
 
 | 전송 한도 | 기본값 |
 |---|---:|
-| 전체 세션 / 전체 활성 SSE | 32 / 64 |
-| 세션별 보존 스트림 | 64 |
+| 전체 세션 / 일반 활성 SSE | 32 / 64 |
+| 세션별 일반 보존 스트림 | 64 |
+| 제어 활성 SSE / 세션별 제어 보존 스트림 | 4 / 4 |
 | 대기 TCP 연결 | 64 |
 | POST 본문 / 세션별 재개 데이터 | 8 MiB / 16 MiB |
 | 세션별 이벤트 / 호스트 수신 알림 | 1,024 / 128 |
@@ -70,3 +71,7 @@ TLS listener·원격 proxy 배치·OAuth·legacy SSE·2026 규격·tasks·자동
 ## 0.9.0 MCP 연결 관리와 도구 검색
 
 호스트가 지정한 MCP 설정 파일의 연결·복구, 대화별 `ToolSearch`, 인증된 `agent.mcp.status` 및 CLI 옵션을 추가했다. 설정과 실행 권한, 수명 및 미지원 범위는 [ToolDiscovery.md](ToolDiscovery.md)를 참조한다.
+
+## 0.28 제어 스트림 용량
+
+maxStreams/maxStreamsPerSession은 일반 활성·보관 스트림 한도이다. maxControlStreams(기본 4)는 별도 전역 활성·연결별 보관 제어 스트림 한도이며 등록된 controlHandlers와 ping에 적용한다. 일반 용량 포화 중에도 제어 응답을 처리한다. 재접속은 원래 분류를 유지하고 일반 요청이 섞인 2025-03-26 배치는 일반 용량을 사용한다. CLI 설정·검증 및 연결 큐 등 남은 자원 제한은 [ControlCapacity.md](ControlCapacity.md)를 따른다.

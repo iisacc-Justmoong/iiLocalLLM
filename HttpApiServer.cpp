@@ -170,10 +170,14 @@ public:
     Impl(Service& service, HttpOptions options) : service(service), options(options)
     {
         require(options.workerThreads >= 1 && options.workerThreads <= 64 && options.maxQueuedConnections >= 1
+            && options.maxControlRequests >= 1 && options.maxControlRequests <= 16
             && options.maxRequestBytes > 0 && options.maxBufferedOutputBytes > 0
             && options.readTimeoutMs > 0 && options.writeTimeoutMs > 0 && options.requestTimeoutMs > 0,
             QStringLiteral("Invalid HTTP limits"));
-        server.new_task_queue = [options] { return new httplib::ThreadPool(options.workerThreads, options.workerThreads, options.maxQueuedConnections); };
+        // Admitted work and controls have separate response-lifetime limits.
+        // Four more workers can parse/reject excess work and serve /health.
+        server.new_task_queue = [options] { return new httplib::ThreadPool(std::min(4,options.workerThreads),
+            options.workerThreads+options.maxControlRequests+4, options.maxQueuedConnections); };
         server.set_payload_max_length(options.maxRequestBytes);
         server.set_read_timeout(std::chrono::milliseconds(options.readTimeoutMs));
         server.set_write_timeout(std::chrono::milliseconds(options.writeTimeoutMs));
@@ -202,6 +206,7 @@ public:
         server.Get("/health", [](const auto&, auto& response) { respond(response, {{"status", "ok"}}); });
         server.Get("/v1/models", [this](const auto& request, auto& response) {
             guarded(response, [&] {
+                admit(response,false);
                 auto future = this->service.models();
                 await(future, request, Clock::now() + std::chrono::milliseconds(this->options.requestTimeoutMs));
                 QJsonArray models;
@@ -227,6 +232,24 @@ public:
     std::mutex activeMutex;
     std::vector<CancellationToken> active;
     std::shared_ptr<RpcHandler> rpcHandler;
+    std::shared_ptr<std::atomic_int> workResponses=std::make_shared<std::atomic_int>(0);
+    std::shared_ptr<std::atomic_int> controlResponses=std::make_shared<std::atomic_int>(0);
+
+    void admit(httplib::Response& response,bool control) {
+        struct Lease {
+            std::shared_ptr<std::atomic_int> count;bool charged=false;
+            ~Lease(){if(charged)--*count;}
+        };
+        auto lease=std::make_shared<Lease>();lease->count=control?controlResponses:workResponses;
+        const auto limit=control?options.maxControlRequests:options.workerThreads;
+        auto count=lease->count->load();
+        do {if(count>=limit)throw Error(ErrorCode::QueueFull,control?"HTTP control capacity reached":"HTTP work capacity reached");}
+        while(!lease->count->compare_exchange_weak(count,count+1));
+        lease->charged=true;
+        // cpp-httplib destroys Response after writing JSON or finishing SSE,
+        // including failed writes. Copies share this lease and cannot double-release.
+        response.user_data.set("iisacc/admission",std::move(lease));
+    }
 
     template<class F> void guarded(httplib::Response& response, F function)
     {
@@ -264,6 +287,7 @@ public:
         if (request.get_header_value_count("Authorization") != 1 || !auth.starts_with("Bearer ") || auth.size() > 263)
             throw Error(ErrorCode::Unauthorized, "Expected one Bearer credential");
         const bool streaming = boolean(body, "stream"); const auto id = body["id"].toString();
+        admit(response,rpcHandler->isControlMethod(body["method"].toString()));
         const auto deadline = Clock::now() + std::chrono::milliseconds(options.requestTimeoutMs);
         check(request.is_connection_closed, deadline);
         auto state = std::make_shared<RpcStreamState>(); const auto limit = options.maxBufferedOutputBytes;
@@ -340,6 +364,7 @@ public:
             return;
         }
         const auto parsed = parse(request.body);
+        admit(response,false);
         const auto deadline = Clock::now() + std::chrono::milliseconds(options.requestTimeoutMs);
         const auto created = QDateTime::currentSecsSinceEpoch();
         auto state = std::make_shared<StreamState>();

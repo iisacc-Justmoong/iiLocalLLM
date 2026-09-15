@@ -35,6 +35,7 @@ public:
     ~Api() override;
     Api(const Api&) = delete;
     Api& operator=(const Api&) = delete;
+    bool isControlMethod(const QString&) const override;
     RpcHandle dispatch(QString method, QJsonObject parameters, QString credential,
         RpcEventCallback = {}) override;
     void close();

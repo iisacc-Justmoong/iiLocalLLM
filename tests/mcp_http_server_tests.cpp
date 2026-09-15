@@ -42,6 +42,29 @@ m::HttpOptions clientOptions(const m::HttpServer& server, QByteArray credential 
 class McpHttpServerTests : public QObject {
     Q_OBJECT
 private slots:
+    void registeredControlsHaveCapacityWhenNormalStreamsAndRetentionAreFull() {
+        std::atomic_bool entered=false,released=false;
+        auto http=transportOptions();http.maxStreams=2;http.maxStreamsPerSession=2;
+        m::HttpServer server([&](const QString& principal) {
+            auto options=protocolOptions(principal);options.maxConcurrentRequests=1;options.maxQueuedRequests=0;
+            options.handlers["test/wait"]=[&](const auto&,const auto& context) {
+                entered=true;while(!released&&!context.cancellation.isCancelled())std::this_thread::sleep_for(1ms);
+                context.cancellation.throwIfCancelled();return QJsonObject{{"released",true}};
+            };
+            options.controlHandlers["test/status"]=[&](const auto&,const auto&){return QJsonObject{{"entered",entered.load()}};};
+            options.controlHandlers["test/release"]=[&](const auto&,const auto&){released=true;return QJsonObject{};};
+            return options;
+        },http);QVERIFY(server.listen());m::HttpClient client(clientOptions(server));
+        QTRY_VERIFY(!server.sessionIds("alpha").isEmpty());
+        const auto sessionId=server.sessionIds("alpha").value(0);QVERIFY(!sessionId.isEmpty());
+        server.notify(sessionId,"notifications/tools/list_changed");
+        bool notified=false;QTRY_VERIFY((notified|=!client.takeNotifications().isEmpty()));
+        auto waiting=std::async(std::launch::async,[&]{return client.request("test/wait");});
+        struct Release {std::atomic_bool& value;~Release(){value=true;}} cleanup{released};QTRY_VERIFY(entered.load());
+        try {QVERIFY(client.request("test/status")["entered"].toBool());client.request("test/release");}
+        catch(const Error& error){QFAIL(qPrintable(QString("Permission control failed at stream capacity: ")+error.what()));}
+        QVERIFY(waiting.get()["released"].toBool());
+    }
     void authenticatedSessionsAndNotifications() {
         m::HttpServer server(protocolOptions, transportOptions()); QVERIFY(server.listen());
         m::HttpClient first(clientOptions(server)), second(clientOptions(server, "beta-fixture-credential"));
@@ -65,7 +88,10 @@ private slots:
         QCOMPARE(second.request("test/identity")["principal"].toString(), "beta");
     }
     void concurrentReverseRequestsStayOnTheirOriginalStreams() {
-        m::HttpServer server(protocolOptions, transportOptions()); QVERIFY(server.listen());
+        // Eight reverse handlers issue ping concurrently. This routing test
+        // needs eight control slots; overload behavior has separate coverage.
+        auto transport=transportOptions();transport.maxControlStreams=8;
+        m::HttpServer server(protocolOptions, transport); QVERIFY(server.listen());
         m::HttpClient* connected = nullptr;
         m::ClientOptions host; host.capabilities = {{"sampling", QJsonObject{}}};
         host.requestHandlers["sampling/createMessage"] = [&](const QJsonObject& p, const auto&) {

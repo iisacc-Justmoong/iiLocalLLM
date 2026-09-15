@@ -36,7 +36,7 @@ int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("iiLocalLLMD"));
-    app.setApplicationVersion(QStringLiteral("0.27.0"));
+    app.setApplicationVersion(QStringLiteral("0.28.0"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("iiLocalLLM local JSON IPC service"));
     parser.addHelpOption(); parser.addVersionOption();
@@ -52,6 +52,8 @@ int main(int argc, char** argv)
         {QStringLiteral("context-tokens"), QStringLiteral("Default model context capacity"), QStringLiteral("count"), QStringLiteral("2048")},
         {QStringLiteral("keep-alive"), QStringLiteral("Idle model lifetime, e.g. 5m or 0; default is hardware-dependent"), QStringLiteral("duration")},
         {QStringLiteral("http-port"), QStringLiteral("Enable HTTP on 127.0.0.1; 0 selects an available port"), QStringLiteral("port")},
+        {"http-workers", "Maximum ordinary HTTP responses in flight (1..64).", "count", "8"},
+        {"http-control-requests", "Separate HTTP control responses in flight (1..16).", "count", "2"},
         {"agent-workspace", "Enable the agent API for this existing workspace.", "directory"},
         {"agent-state", "Private agent state directory outside the workspace.", "directory"},
         {"agent-credentials", "Private JSON object mapping client IDs to distinct random tokens (32..256 URL-safe characters).", "file"},
@@ -94,6 +96,13 @@ int main(int argc, char** argv)
         options.memoryReserveBytes = integer("memory-reserve-mib", 1048576) * 1024 * 1024;
         options.maxModels = int(integer("max-models", 1024));
         options.defaultContextTokens = int(integer("context-tokens", 1048576));
+        iiLocalLLM::HttpOptions httpOptions;
+        httpOptions.workerThreads = int(integer("http-workers", 64));
+        httpOptions.maxControlRequests = int(integer("http-control-requests", 16));
+        if (!httpOptions.workerThreads || !httpOptions.maxControlRequests)
+            throw std::runtime_error("HTTP capacity must be positive");
+        if (!parser.isSet("http-port") && (parser.isSet("http-workers") || parser.isSet("http-control-requests")))
+            throw std::runtime_error("HTTP capacity options require --http-port");
         if (parser.isSet("keep-alive")) options.keepAliveMs = iiLocalLLM::parseKeepAlive(parser.value("keep-alive"));
         // Validate private credentials before hardware/driver initialization.
         namespace a = iiLocalLLM::agent;
@@ -141,7 +150,7 @@ int main(int argc, char** argv)
             }
             config.engine.projectContext.enabled = !parser.isSet("agent-no-project-context");
             config.engine.projectContext.excludes = parser.values("agent-context-exclude");
-            // Keep HTTP workers available for cancellation and status while runs wait.
+            // Bound agent dispatch separately from HTTP response admission.
             config.maxConcurrentRequests = 6; config.maxQueuedRequests = 0;
             if(parser.isSet("agent-permission-settings")&&parser.value("agent-permission-settings").isEmpty())
                 throw std::runtime_error("--agent-permission-settings requires a file");
@@ -224,7 +233,7 @@ int main(int argc, char** argv)
             if (!server.listen(parser.isSet("socket") ? parser.value("socket") : iiLocalLLMClient::defaultEndpoint())) throw std::runtime_error(server.errorString().toStdString());
             std::cout << "iiLocalLLM listening: " << server.serverName().toStdString() << std::endl;
         }
-        iiLocalLLM::HttpApiServer http(service); http.setRpcHandler(agent);
+        iiLocalLLM::HttpApiServer http(service, httpOptions); http.setRpcHandler(agent);
         if (parser.isSet(QStringLiteral("http-port"))) {
             bool valid = false;
             const auto port = parser.value(QStringLiteral("http-port")).toUInt(&valid);

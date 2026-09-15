@@ -78,7 +78,7 @@ struct Stream {
     QSet<QString> requestIds;
     quint64 nextSequence = 1, delivered = 0, lease = 0;
     int writers = 0;
-    bool background = false, completed = false;
+    bool background = false, completed = false, control = false;
     Clock::time_point completedAt;
 };
 struct Session {
@@ -102,7 +102,7 @@ public:
     httplib::Server server;
     std::thread listener, maintenance;
     std::atomic_bool stopping = true;
-    std::atomic_int writers = 0;
+    std::atomic_int writers = 0, controlWriters = 0;
     mutable std::mutex mutex;
     std::map<QString, std::shared_ptr<Session>> sessions;
     int initializing = 0;
@@ -113,6 +113,7 @@ public:
 
     Impl(HttpServerFactory f, HttpServerOptions o) : factory(std::move(f)), options(std::move(o)) {
         require(factory && options.authenticate && options.maxSessions > 0 && options.maxSessions <= 256
+            && options.maxControlStreams >= 1 && options.maxControlStreams <= 64
             && options.maxStreams > 0 && options.maxStreams <= 256 && options.maxStreamsPerSession >= 2
             && options.maxStreamsPerSession <= 4096 && options.maxQueuedConnections > 0
             && options.maxRequestBytes >= 1024 && options.maxHistoryBytes >= 1024 && options.maxHistoryEvents >= 2
@@ -125,9 +126,9 @@ public:
                 && url.userInfo().isEmpty() && url.path().isEmpty() && !url.hasQuery() && !url.hasFragment(),
                 "MCP allowed origins must be exact HTTP origins", ErrorCode::InvalidArgument);
         }
-        // SSE occupies at most maxStreams workers. Four additional workers can
+        // Normal and host-control SSE have separate limits. Four more workers
         // accept cancellation, reverse responses, initialization and DELETE.
-        server.new_task_queue = [o = options] { return new httplib::ThreadPool(4, o.maxStreams + 4, o.maxQueuedConnections); };
+        server.new_task_queue = [o = options] { return new httplib::ThreadPool(4, o.maxStreams + o.maxControlStreams + 4, o.maxQueuedConnections); };
         server.set_socket_options([](auto socket) {
             // httplib defaults to SO_REUSEPORT where available. A stateful
             // local endpoint must not distribute sessions among unrelated
@@ -227,12 +228,16 @@ public:
         for (const auto& event : found->second->events) { session.historyBytes -= event.frame.size(); --session.historyEvents; }
         session.streams.erase(found);
     }
-    void expireStreams(Session& session, bool capacity = false) {
+    void expireStreams(Session& session, bool capacity = false, bool control = false) {
+        size_t count=0;for(const auto& [id,stream]:session.streams)count+=stream->control==control;
+        const auto limit=size_t(control?options.maxControlStreams:options.maxStreamsPerSession);
         for (auto it = session.streams.begin(); it != session.streams.end();) {
             const auto stream = it->second; ++it;
             if (stream->completed && !stream->writers
                 && (Clock::now() - stream->completedAt >= std::chrono::milliseconds(options.streamRetentionMs)
-                    || (capacity && session.streams.size() >= size_t(options.maxStreamsPerSession)))) eraseStream(session, stream->id);
+                    || (capacity && stream->control==control && count>=limit))) {
+                count-=stream->control==control;eraseStream(session,stream->id);
+            }
         }
     }
     void append(Session& session, Stream& stream, const QByteArray& data) {
@@ -251,10 +256,11 @@ public:
         }
         session.changed.notify_all();
     }
-    std::shared_ptr<Stream> newStream(Session& session, bool background = false) {
-        expireStreams(session, true);
-        check(session.streams.size() < size_t(options.maxStreamsPerSession), 429, "MCP retained stream capacity reached");
-        auto stream = std::make_shared<Stream>(); stream->background = background;
+    std::shared_ptr<Stream> newStream(Session& session, bool background = false, bool control = false) {
+        expireStreams(session, true, control);
+        size_t count=0;for(const auto& [id,stream]:session.streams)count+=stream->control==control;
+        check(count<size_t(control?options.maxControlStreams:options.maxStreamsPerSession),429,"MCP retained stream capacity reached");
+        auto stream = std::make_shared<Stream>(); stream->background = background;stream->control=control;
         session.streams.emplace(stream->id, stream); append(session, *stream, {}); return stream;
     }
     struct Writer {
@@ -268,7 +274,7 @@ public:
         ~Writer() {
             if (attached) { std::lock_guard lock(session->mutex); --stream->writers;
                 if (stream->lease == lease) stream->lease = 0; session->changed.notify_all(); }
-            if (charged) --owner->writers;
+            if (charged) --(stream->control?owner->controlWriters:owner->writers);
         }
         bool send(httplib::DataSink& sink) {
             if (disconnected()) return false;
@@ -297,9 +303,9 @@ public:
     std::shared_ptr<Writer> attach(const httplib::Request& request, const std::shared_ptr<Session>& session,
         const std::shared_ptr<Stream>& stream, quint64 cursor, bool replace = false) {
         auto writer = std::make_shared<Writer>(); writer->owner = this; writer->session = session; writer->stream = stream;
-        int count = writers.load();
-        do { check(count < options.maxStreams, 429, "MCP active stream capacity reached"); }
-        while (!writers.compare_exchange_weak(count, count + 1));
+        auto& charged=stream->control?controlWriters:writers;int count=charged.load();
+        do { check(count<(stream->control?options.maxControlStreams:options.maxStreams),429,"MCP active stream capacity reached"); }
+        while (!charged.compare_exchange_weak(count, count + 1));
         writer->charged = true;
         check(!session->closed, 404, "MCP session expired");
         check(!stream->lease || replace, 409, "MCP stream already has a reader");
@@ -353,9 +359,12 @@ public:
         auto session = lookup(request, principal);
         check(!value.isArray() || session->protocol->protocolVersion() == "2025-03-26", 400, "MCP batches require protocol 2025-03-26");
         const auto messages = value.isArray() ? value.toArray() : QJsonArray{value};
-        bool responds = false; QSet<QString> ids;
+        bool responds = false, control = true; QSet<QString> ids;
         for (const auto& item : messages) {
             const auto message = item.toObject(); responds |= !validControl(item);
+            // A mixed legacy batch never promotes ordinary requests into the
+            // reserved class. Notifications/reverse replies need no SSE slot.
+            if(!validControl(item))control&=session->protocol->isControlMethod(message["method"].toString());
             check(message["method"] != "initialize", 400, "MCP session is already initialized");
             if (message.contains("method") && message.contains("id")) {
                 try { ids.insert(detail::key(message["id"])); } catch (...) { check(value.isArray(), 400, "Invalid MCP request ID"); }
@@ -369,8 +378,8 @@ public:
         std::shared_ptr<Stream> stream; std::shared_ptr<Writer> writer;
         if (responds) {
             std::lock_guard lock(session->mutex);
-            check(writers < options.maxStreams, 429, "MCP active stream capacity reached");
-            stream = newStream(*session); stream->requestIds = ids;
+            check((control?controlWriters:writers)<(control?options.maxControlStreams:options.maxStreams),429,"MCP active stream capacity reached");
+            stream = newStream(*session,false,control); stream->requestIds = ids;
             try { writer = attach(request, session, stream, 0); }
             catch (...) { eraseStream(*session, stream->id); throw; }
         }

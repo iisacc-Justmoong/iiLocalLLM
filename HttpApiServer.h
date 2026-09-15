@@ -11,6 +11,7 @@ struct HttpOptions {
     int readTimeoutMs = 5000;
     int writeTimeoutMs = 5000;
     int requestTimeoutMs = 300000;
+    int maxControlRequests = 2; // Separate from workerThreads ordinary response leases.
 };
 // HTTP/1.1 on 127.0.0.1 only. Owns transport threads; Service must outlive this server.
 // Call listen/close/port/errorString serially, outside stream callbacks.
