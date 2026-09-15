@@ -163,6 +163,17 @@ public:
     }
     Tool wrap(Tool original) {
         const auto self=shared_from_this();Tool wrapped=original;
+        if(original.definition.name=="Read"&&original.captureReadState) {
+            wrapped.captureReadState=[self,original](const ToolContext& parent) {
+                const auto e=self->entry(parent.workingDirectory,parent.cancellation,false);
+                const auto native=original.captureReadState(parent),memory=e->tools->get("Read").captureReadState(parent);
+                return [native,memory](const ToolContext& child){native(child);memory(child);};
+            };
+            wrapped.clearReadState=[self,original](const ToolContext& context) {
+                const auto e=self->entry(context.workingDirectory,context.cancellation,false);
+                if(original.clearReadState)original.clearReadState(context);e->tools->get("Read").clearReadState(context);
+            };
+        }
         // Preserve the registered schema/identity; only preparation routes the
         // exact host memory path. The model cannot submit a different scope.
         wrapped.prepare=[self,original](const QJsonObject& args,const ToolContext& context) {
@@ -178,6 +189,11 @@ public:
             if(args.contains("content"))require(args["content"].toString().toUtf8().size()<=self->options.maxFileBytes,"Memory file exceeds byte limit",ErrorCode::ResourceLimit);
             if(QFileInfo(path).isFile())require(QFileInfo(path).size()<=self->options.maxFileBytes,"Memory file exceeds byte limit",ErrorCode::ResourceLimit);
             auto scope=context;scope.workingDirectory=e->directory;scope.workingDirectories={e->directory};
+            // Routing already narrows access to this exact owned directory.
+            // Private ancestors protect ordinary tools; protected descendants
+            // inside the memory directory still remain excluded.
+            scope.protectedPaths.removeIf([&](const QString& root){const auto clean=QDir::cleanPath(root),canonical=QFileInfo(root).canonicalFilePath();
+                return clean!=e->directory&&canonical!=e->directory&&(inside(e->directory,clean)||inside(e->directory,canonical));});
             auto native=e->tools->get(original.definition.name);auto prepared=native.prepare(args,scope);
             auto preview=original.definition;preview.metadata=prepared.definition.metadata;preview.metadata["memory_directory"]=e->directory;
             return PreparedTool{preview,[self,e,path,writes,args,name=original.definition.name,execute=std::move(prepared.execute),scope] {

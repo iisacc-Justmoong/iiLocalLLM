@@ -1,5 +1,26 @@
 # 구현 검증 기록
 
+## 2026-09-16 C++ 대화 종료 메모리 추출 (0.39.0)
+
+부모의 실제 모델 문맥·도구 정의·생성 설정과 제출 시점의 읽기 기록을 복사하여 자동 메모리 저장을 수행한다. 작업별 캐시 용량, 최신 요청 병합, 커서·주기·실패 재시도, 메모리 쓰기 제한, 보수적인 Unix 읽기 셸, 취소·종료와 인증 API·MCP·CLI를 연결했다. 새 생산 의존성은 없다. 계약과 한도는 [MemoryExtraction.md](MemoryExtraction.md)를 따른다.
+
+| 검증 | 최종 결과 |
+|---|---|
+| Release | 84/84 |
+| ASan·UBSan | 81/81, llama OFF·leak detection OFF |
+| 새 설치 소비자 | 49/49 |
+| Qwen3-8B Q4 실제 실행 | source·installed 자동 저장, 새 세션 검색, 비활성 대조군 통과 |
+| 인증 전송 | source·installed HTTP/IPC·MCP HTTP·공식 MCP 1.26 stdio 통과 |
+| 설치 동일성 | 공개 헤더 48개, 네 진입점 버전, dylib 해시·UUID, 실제 로더 경로, thin CLI 통과 |
+
+실제 모델은 thinking OFF, native tool grammar ON이다. ServiceModel 요청/응답을 가공하지 않았다. source 추출은 4턴·생성 507토큰·캐시 8097토큰, installed는 3턴·생성 375토큰·캐시 5492토큰이며 도구 오류는 각각 0/0개이다. 추출 통계는 주 답변 사용량과 분리했다. 두 실행 모두 성공한 주제 파일과 인덱스 쓰기를 확인했다.
+
+취소·close/clear, Stop 훅 전 제출, 실패 커서·압축 후 범위, 최신 요청 병합, 직접 저장 시도 생략, MCP 콜백 실행 전 거절, 명시적 deny/ask 및 훅 입력 변경, 부분/전체 읽기와 해시, 자식의 256개 읽기가 부모 캐시를 비우지 않는 회귀 검사를 포함한다. 초기 컴파일 실패와 보완 전 기록은 `build/memory-extraction-red-*`, `build/memory-extraction-before-cache-isolation/`, `build/memory-extraction-isolation*`에 남겼다. 스트레스 검사 fixture의 프로젝트 메모리 디렉터리 초기화 누락을 수정한 뒤 전체를 재검사했다.
+
+검증 입력 366개 파일의 SHA-256을 고정하고 이후 변경이 없음을 확인했다. 이 검증 문서만 마지막에 갱신하고 설치 문서를 다시 대조한다. prefix는 `build/memory-extraction-stage`, 소비자는 `build/memory-extraction-consumer/build`이다. Release와 stage의 dylib SHA-256은 `327627c7f82e312e0397c1a88def6560f3520dd404d447cb425c51bfe2074e64`이다. 결과는 `build/memory-extraction-verification.json`과 `build/memory-extraction-REPORT.md`에 보존한다.
+
+기존 Mac 앱 실행과 iPad 설치 영수증을 현재 조회로 확인했고 홈 SDK·앱 번들은 0.36 조합을 유지했다. 이 단계에서 앱 재설치와 iPad UI 재검사는 수행하지 않았다. iPhone은 사용자 지시로 제외했으며 원래 daemon PID 14909를 보존했다. 0.39 C++ 소비자는 0.39 헤더·라이브러리로 함께 다시 빌드해야 한다. 전체 하네스 및 memory 영역은 partial 상태를 유지한다.
+
 ## 2026-09-16 C++ 모델 기반 메모리 회상 (0.38.0)
 
 프로젝트 주제 메모의 메타데이터를 로컬 모델에 보내 관련 파일을 선택하고, 준비된 결과를 대화에 첨부하는 C++ MemoryRecall을 구현했다. 새 입력별 비동기 선행 실행, 중복 제거, 오래된 정보 안내, SHA-256 재검사, 문맥 크기와 읽기 완료 상태, 압축·긴급 입력·취소 수명을 Engine에 연결했다. 명시적 C++·인증 API·IPC·MCP·CLI 호출과 별도 사용량 이벤트도 제공한다. 새 생산 의존성은 없으며 계약과 한도는 [MemoryRecall.md](MemoryRecall.md)에 기록한다.

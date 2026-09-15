@@ -58,7 +58,9 @@ QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.se
     "agent.inputs.enqueue", "agent.inputs.list", "agent.inputs.remove", "agent.inputs.run", "agent.sessions.end", "agent.sessions.clear",
     "agent.permissions.pending", "agent.permissions.respond", "agent.hooks.status", "agent.hooks.cancel",
     "agent.plan.get", "agent.plan.enter", "agent.plan.exit", "agent.questions.ask",
-    "agent.memory.get", "agent.memory.read", "agent.memory.write", "agent.memory.edit", "agent.memory.glob", "agent.memory.grep", "agent.memory.forget", "agent.memory.recall"}; }
+    "agent.memory.get", "agent.memory.read", "agent.memory.write", "agent.memory.edit", "agent.memory.glob", "agent.memory.grep", "agent.memory.forget", "agent.memory.recall",
+    "agent.memory.extract", "agent.memory.extraction.status", "agent.memory.extraction.cancel"}; }
+bool extractionControl(const QString& method){return method=="agent.memory.extraction.status"||method=="agent.memory.extraction.cancel";}
 bool hookControl(const QString& method) {return method=="agent.hooks.status"||method=="agent.hooks.cancel";}
 bool inputControl(const QString& method) {
     return method == "agent.inputs.enqueue" || method == "agent.inputs.list" || method == "agent.inputs.remove" || method=="agent.plan.get";
@@ -179,7 +181,15 @@ public:
                 {"hooks_enabled",!options.engine.hooks.isEmpty()},{"async_hook_controls_enabled",true},
                 {"max_async_hook_wake_runs",options.engine.maxAsyncHookWakeRuns},{"permission_requests_enabled",bool(client->permissionRequests)},
                 {"user_questions_enabled",bool(client->engine->userQuestionTool())},{"project_memory_enabled",client->engine->projectMemoryEnabled()},
-                {"memory_recall_enabled",client->engine->memoryRecallEnabled()}};
+                {"memory_recall_enabled",client->engine->memoryRecallEnabled()},{"memory_extraction_enabled",client->engine->memoryExtractionEnabled()}};
+        }
+        if(method=="agent.memory.extract"||extractionControl(method)) {
+            if(method=="agent.memory.extraction.status")fields(p,{"session_id","offset","limit"});else fields(p,{"session_id"});const auto id=text(p,"session_id");
+            require(client->engine->sessionMetadata(id).workingDirectory==options.workingDirectory,"Session belongs to a different workspace",ErrorCode::NotFound);
+            job->token.throwIfCancelled();
+            if(method=="agent.memory.extract")return client->engine->extractMemory(id,job->token);
+            if(method=="agent.memory.extraction.cancel")return client->engine->cancelMemoryExtraction(id);
+            return client->engine->memoryExtractionStatus(id,integer(p,"offset",0,0,4096),integer(p,"limit",32,1,32));
         }
         if(method=="agent.memory.recall") {
             fields(p,{"session_id","query"});const auto id=text(p,"session_id"),query=text(p,"query");
@@ -454,7 +464,7 @@ public:
                 {"state", job->running ? "running" : "queued"}, {"cancel_requested", job->token.isCancelled()}});
             return handle;
         }
-        const bool control = hookControl(method) || inputControl(method) || method == "agent.sessions.end" || method == "agent.sessions.clear" || method == "agent.agents.output" || method == "agent.agents.stop" || method == "agent.agents.list";
+        const bool control = extractionControl(method) || hookControl(method) || inputControl(method) || method == "agent.sessions.end" || method == "agent.sessions.clear" || method == "agent.agents.output" || method == "agent.agents.stop" || method == "agent.agents.list";
         const auto used = std::count_if(active.begin(), active.end(), [control](const auto& item) { return item.second->inputControl == control; });
         const auto capacity = control ? options.maxConcurrentInputControls + options.maxQueuedInputControls
             : options.maxConcurrentRequests + options.maxQueuedRequests;
@@ -484,7 +494,7 @@ Api::Api(std::shared_ptr<Model> model, std::shared_ptr<ToolRegistry> registry,
     : d(std::make_shared<Impl>(std::move(model), std::move(registry), std::move(policy), std::move(options))) {}
 Api::~Api() { d->stop(); }
 bool Api::isControlMethod(const QString& method) const {
-    return hookControl(method)||method=="agent.plan.get"||method=="agent.permissions.pending"||method=="agent.permissions.respond"||method=="agent.cancel"||method=="agent.status";
+    return extractionControl(method)||hookControl(method)||method=="agent.plan.get"||method=="agent.permissions.pending"||method=="agent.permissions.respond"||method=="agent.cancel"||method=="agent.status";
 }
 RpcHandle Api::dispatch(QString method, QJsonObject params, QString credential, RpcEventCallback callback) {
     return d->dispatch(std::move(method), std::move(params), std::move(credential), std::move(callback));

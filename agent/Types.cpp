@@ -36,7 +36,8 @@ QString enumName(EventKind v) {
         case EventKind::CompactionStarted: return "compaction_started"; case EventKind::CompactionProgress: return "compaction_progress";
         case EventKind::Compacted: return "compacted"; case EventKind::InputDelivered: return "input_delivered";
         case EventKind::Interrupted: return "interrupted"; case EventKind::PermissionResolved: return "permission_resolved";
-        case EventKind::MemoryRecall: return "memory_recall"; }
+        case EventKind::MemoryRecall: return "memory_recall";
+        case EventKind::MemoryExtraction: return "memory_extraction"; }
     return "unknown";
 }
 QJsonObject toJson(const ToolCall& c) { return {{"id", c.id}, {"name", c.name}, {"arguments", c.arguments}}; }

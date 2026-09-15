@@ -166,6 +166,20 @@ public:
                 const auto owner=self->sessionId(self->conversation(context.sessionId),context.cancellation);
                 return ToolResult{"Project memory",self->options.engine->memory(owner,args["query"].toString(),context.cancellation)};
             };frozen->add(std::move(memory));
+            if(options.engine->memoryExtractionEnabled())for(const auto& action:QStringList{"extract","extraction.status","extraction.cancel"}) {
+                Tool tool;tool.definition={"iiLocalLLM.agent.memory."+action,
+                    action=="extract"?"Queue memory extraction from this connection's latest completed parent conversation; returns a job receipt.":
+                    action=="extraction.status"?"Inspect this connection's bounded extraction status, saved paths and usage.":"Cancel this connection's active and pending memory extraction.",
+                    {{"type","object"},{"additionalProperties",false},{"properties",QJsonObject{}}},{},action=="extraction.status",true,false,false,{{"source","builtin.memory.control"}}};
+                if(action=="extraction.status")tool.definition.inputSchema["properties"]=QJsonObject{
+                    {"offset",QJsonObject{{"type","integer"},{"minimum",0},{"maximum",4096}}},
+                    {"limit",QJsonObject{{"type","integer"},{"minimum",1},{"maximum",32}}}};
+                tool.execute=[self,action](const QJsonObject& args,const ToolContext& context) {
+                    const auto owner=self->sessionId(self->conversation(context.sessionId),context.cancellation);
+                    return ToolResult{"Memory extraction",action=="extract"?self->options.engine->extractMemory(owner,context.cancellation):
+                        action=="extraction.status"?self->options.engine->memoryExtractionStatus(owner,args["offset"].toInt(),args["limit"].toInt(32)):self->options.engine->cancelMemoryExtraction(owner)};
+                };frozen->add(std::move(tool));
+            }
             if(options.engine->memoryRecallEnabled()) {
                 Tool recall;recall.definition={"iiLocalLLM.agent.memory.recall","Select relevant project notes with the host's local model. Returns bounded historical context without running an app action.",
                     {{"type","object"},{"additionalProperties",false},{"properties",QJsonObject{{"query",QJsonObject{{"type","string"},{"minLength",1},{"maxLength",8192}}}}},{"required",QJsonArray{"query"}}},
@@ -432,7 +446,26 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
         server.experimentalCapabilities["iisacc/projectMemory"]=QJsonObject{{"schema","iisacc.project-memory/1"},
             {"getTool","iiLocalLLM.agent.memory.get"},{"forgetTool","MemoryForget"},{"scope","host-workspace"},
             {"fileTools",QJsonArray{"Read","Write","Edit","Glob","Grep"}},
-            {"recallTool",state->options.engine->memoryRecallEnabled()?QJsonValue("iiLocalLLM.agent.memory.recall"):QJsonValue(QJsonValue::Null)}};
+            {"recallTool",state->options.engine->memoryRecallEnabled()?QJsonValue("iiLocalLLM.agent.memory.recall"):QJsonValue(QJsonValue::Null)},
+            {"extractionTools",state->options.engine->memoryExtractionEnabled()?QJsonArray{"iiLocalLLM.agent.memory.extract","iiLocalLLM.agent.memory.extraction.status","iiLocalLLM.agent.memory.extraction.cancel"}:QJsonArray{}}};
+    if(state->options.engine&&state->options.engine->memoryExtractionEnabled()) {
+        auto capability=server.experimentalCapabilities["iisacc/projectMemory"].toObject();
+        capability["extractionStatusMethod"]="iisacc/memory/extraction/status";capability["extractionCancelMethod"]="iisacc/memory/extraction/cancel";
+        server.experimentalCapabilities["iisacc/projectMemory"]=capability;
+        for(const auto& method:QStringList{"iisacc/memory/extraction/status","iisacc/memory/extraction/cancel"})
+            server.controlHandlers[method]=[state,method](const QJsonObject& params,const mcp::ServerRequestContext& request) {
+                request.cancellation.throwIfCancelled();const bool cancel=method.endsWith("/cancel");
+                const QStringList keys=cancel?QStringList{"_meta"}:QStringList{"offset","limit","_meta"};
+                for(auto it=params.begin();it!=params.end();++it)if(!keys.contains(it.key()))throw mcp::RpcError(-32602,"Unknown memory extraction control parameter");
+                auto integer=[&](const QString& key,int fallback,int maximum) {
+                    const auto value=params.value(key);const auto number=value.toDouble(fallback);
+                    if(!value.isUndefined()&&(!value.isDouble()||number<(key=="limit"?1:0)||number>maximum||std::floor(number)!=number))
+                        throw mcp::RpcError(-32602,"Invalid memory extraction status page");return int(number);
+                };
+                const auto owner=state->sessionId(state->conversation(request.sessionId),request.cancellation);
+                return cancel?state->options.engine->cancelMemoryExtraction(owner):state->options.engine->memoryExtractionStatus(owner,integer("offset",0,4096),integer("limit",32,32));
+            };
+    }
     if(state->options.engine&&state->options.engine->userQuestionTool()) {
         const auto definition=state->options.engine->userQuestionTool()->definition;
         server.experimentalCapabilities["iisacc/userQuestions"]=QJsonObject{{"schema","iisacc.user-question/1"},

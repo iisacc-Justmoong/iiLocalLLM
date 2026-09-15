@@ -1,6 +1,7 @@
 #include "Tools.h"
 #include "ShellTasks.h"
 #include "ShellProcess.h"
+#include "PermissionRulesInternal.h"
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
 #include <QtCore/QDirIterator>
@@ -45,6 +46,13 @@ public:
     struct ReadState { QByteArray digest; bool complete; };
     std::mutex mutex;
     QHash<QString, ReadState> reads;
+    QHash<QString,QHash<QString,ReadState>> forkReads;
+    QHash<QString,ReadState>& observations(const ToolContext& c) {
+        auto it=forkReads.find(c.sessionId);return it==forkReads.end()?reads:it.value();
+    }
+    const QHash<QString,ReadState>& observations(const ToolContext& c)const {
+        auto it=forkReads.constFind(c.sessionId);return it==forkReads.cend()?reads:it.value();
+    }
     bool isPrivate(const QString& path,const ToolContext& context) const {
         if(inside(path,context.plansDirectory))return true;
         for(const auto& denied:context.protectedPaths)
@@ -102,11 +110,13 @@ public:
         return canonical;
     }
     void remember(const ToolContext& c, const QString& path, const QByteArray& bytes, bool complete = true) {
+        auto& reads=observations(c);
         const auto id = key(c, path);
         if (reads.size() >= 256 && !reads.contains(id)) reads.erase(reads.begin());
         reads.insert(id, {QCryptographicHash::hash(bytes, QCryptographicHash::Sha256), complete});
     }
     QByteArray writable(const ToolContext& c, const QString& path) const {
+        const auto& reads=observations(c);
         const auto found = reads.constFind(key(c, path));
         require(found != reads.cend() && found->complete, "Read the complete file before changing it");
         const auto bytes = readFile(path);
@@ -193,7 +203,30 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         workspace->remember(c, path, bytes, complete);
         return ToolResult{QString::fromUtf8(excerpt), {{"path", path}, {"offset", offset}, {"lines", byteTruncated?(excerpt.isEmpty()?0:excerpt.count('\n')+1):output.size()}, {"complete", complete},
             {"sha256",sha},{"truncated",!complete},{"bytes",excerpt.size()}}, false, {}, workspace->contextPaths(path)};
-    }; read.definition.metadata = {{"source", "builtin.workspace"}}; preparePath(read, workspace, false); registry.add(std::move(read));
+    }; read.definition.metadata = {{"source", "builtin.workspace"}}; preparePath(read, workspace, false);
+    read.captureReadState=[workspace](const ToolContext& parent) {
+        QHash<QString,Workspace::ReadState> observations;const auto prefix=workspace->key(parent,{});
+        {std::lock_guard lock(workspace->mutex);const auto& source=workspace->observations(parent);for(auto it=source.cbegin();it!=source.cend();++it)
+            if(it.key().startsWith(prefix))observations.insert(it.key().mid(prefix.size()),it.value());}
+        return [workspace,observations](const ToolContext& child) {
+            std::lock_guard lock(workspace->mutex);
+            // Rebinding the same memory router may reach this native owner
+            // twice. Install its first frozen copy once for this unique job ID.
+            if(workspace->forkReads.contains(child.sessionId))return;
+            require(workspace->forkReads.size()<64,"Native read-state fork capacity exhausted");
+            auto& reads=workspace->forkReads[child.sessionId];
+            for(auto it=observations.cbegin();it!=observations.cend();++it) {
+                const auto id=workspace->key(child,it.key());
+                reads.insert(id,it.value());
+            }
+        };
+    };
+    read.clearReadState=[workspace](const ToolContext& context) {
+        std::lock_guard lock(workspace->mutex);const auto prefix=context.sessionId+QChar(0);
+        workspace->forkReads.remove(context.sessionId);
+        for(auto it=workspace->reads.begin();it!=workspace->reads.end();)if(it.key().startsWith(prefix))it=workspace->reads.erase(it);else ++it;
+    };
+    registry.add(std::move(read));
     Tool write;
     write.definition = {"Write", "Write a UTF-8 file. Existing files must have been read completely and remain unchanged.",
         inputSchema({{"path", stringSchema()}, {"content", stringSchema()}}, {"path", "content"}), {}, false, false, true};
@@ -280,6 +313,12 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
     }
     shell.execute = [workspace](const QJsonObject& a, const ToolContext& c) {
         workspace->resolve(".", c);
+        QProcessEnvironment environment;
+        if(c.readOnlyShell) {
+            auto scope=c;scope.protectedPaths.append(workspace->privatePaths);
+            require(detail::readOnlyShell(a,scope),"Shell command is outside the host's read-only scope");
+            environment.insert("PATH","/usr/bin:/bin");environment.insert("LANG","C");environment.insert("LC_ALL","C");
+        }
         if (a["run_in_background"].toBool()) {
             require(bool(workspace->shells), "Background shell execution is disabled");
             auto data = workspace->shells->start(c, a["command"].toString(), a["description"].toString(), a["timeout_ms"].toInt(3600000));
@@ -290,7 +329,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         const auto value = detail::shellProcess(workspace->root, a["command"].toString(), timeout, c.cancellation, {}, [&](const QByteArray& bytes, bool error) {
             if (output.size() + errors.size() + bytes.size() > maxFileBytes) throw Error(ErrorCode::ResourceLimit, "Shell output exceeds 1 MiB");
             (error ? errors : output).append(bytes);
-        });
+        },{},c.readOnlyShell?&environment:nullptr);
         const auto text = QString::fromUtf8(output) + (errors.isEmpty() ? QString() : "\n[stderr]\n" + QString::fromUtf8(errors));
         return ToolResult{text, {{"exit_code", value.code}, {"crashed", value.crashed}}, value.code != 0 || value.crashed};
     }; registry.add(std::move(shell));

@@ -112,6 +112,7 @@ AgentHookExecutor hookAgentExecutor(EngineOptions host,std::shared_ptr<TaskStore
     host.hooks.clear();host.permission={};host.permissionResponse={};host.permissionUpdates={};host.permissionRequests={};
     host.additionalTools.clear();host.additionalToolsProvider={};host.forkedSkill={};host.taskToolsEnabled=false;
     host.planToolsEnabled=false;host.userQuestionsEnabled=false;host.sessionStartHooks=false;host.projectContext.enabled=false;host.maxConcurrentRuns=1;host.maxQueuedRuns=0;
+    host.memoryExtraction.enabled=false;
     return [host=std::move(host),tasks=std::move(tasks)](const AgentHookRequest& request,const HookInput& input,const CancellationToken& token) {
         token.throwIfCancelled();require(input.modelContext&&input.modelContext->model&&input.modelContext->registry&&input.modelContext->policy,
             "Agent hook requires host model, registry and policy",ErrorCode::RuntimeUnavailable);

@@ -142,17 +142,19 @@ PermissionDecision RulePolicy::decide(const ToolDefinition& tool, const QJsonObj
     const bool taskState = tool.metadata["source"] == "builtin.task"
         && QStringList{"TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TaskClaim", "TodoWrite", "TodoRead"}.contains(tool.name);
     const bool stopOwnShell = tool.name == "TaskStop" && tool.metadata["source"] == "builtin.shell.control";
+    const bool memoryControl=tool.metadata["source"]=="builtin.memory.control"&&QStringList{
+        "iiLocalLLM.agent.memory.extract","iiLocalLLM.agent.memory.extraction.status","iiLocalLLM.agent.memory.extraction.cancel"}.contains(tool.name);
     const bool planControl=tool.metadata["source"]=="builtin.plan"&&QStringList{"EnterPlanMode","ExitPlanMode"}.contains(tool.name);
     const bool engineControl=(tool.metadata["source"]=="builtin.agent.control"&&QStringList{"iiLocalLLM.agent.run","iiLocalLLM.agent.compact","iiLocalLLM.agent.inputs.run"}.contains(tool.name))
         ||(tool.metadata["source"]=="builtin.session.control"&&tool.name=="iiLocalLLM.agent.clear")
         ||(tool.metadata["source"]=="builtin.input.control"&&QStringList{"iiLocalLLM.agent.inputs.enqueue","iiLocalLLM.agent.inputs.remove"}.contains(tool.name));
     const bool ownPlan=!context.planFilePath.isEmpty()&&context.planModeActive&&tool.metadata["source"]=="builtin.workspace"
         &&QStringList{"Write","Edit"}.contains(tool.name)&&tool.metadata["canonical_path"]==context.planFilePath;
-    if (mode == PermissionMode::Plan && !tool.readOnly && !taskState && !stopOwnShell && !ownPlan && !planControl && !engineControl)
+    if (mode == PermissionMode::Plan && !tool.readOnly && !taskState && !stopOwnShell && !ownPlan && !planControl && !engineControl && !memoryControl)
         return {PermissionBehavior::Deny, "Plan mode allows read-only tools, the owned plan file, internal task state and stopping owned executions"};
     if (detail::permissionRulesMatch(asks, tool, args, context, false)) matched = PermissionBehavior::Ask;
     else if (detail::permissionRulesMatch(allows, tool, args, context, true)) matched = PermissionBehavior::Allow;
-    auto decision = matched.value_or(mode == PermissionMode::Bypass || tool.readOnly || taskState || stopOwnShell || ownPlan
+    auto decision = matched.value_or(mode == PermissionMode::Bypass || tool.readOnly || taskState || stopOwnShell || ownPlan || memoryControl
         || (mode == PermissionMode::AcceptEdits && tool.editsFiles) ? PermissionBehavior::Allow : PermissionBehavior::Ask);
     if (decision == PermissionBehavior::Ask && mode == PermissionMode::DontAsk) decision = PermissionBehavior::Deny;
     return {decision, matched ? "Tool permission rule (host or current invocation)" : "Session permission mode"};

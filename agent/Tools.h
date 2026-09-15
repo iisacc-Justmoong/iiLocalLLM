@@ -22,6 +22,10 @@ struct Tool {
     bool completesRun = false; // Host-only successful completion tool; a serial barrier, never parsed from model/MCP metadata.
     bool isMcp = false; // Trusted imported-tool identity; never inferred from its name or wire metadata.
     bool requiresPermission = false; // Force the existing request channel even under a default Allow/bypass mode.
+    // Native Read captures observations without file contents. The returned
+    // host-only closure installs an isolated complete/partial read-state copy.
+    std::function<std::function<void(const ToolContext&)>(const ToolContext&)> captureReadState;
+    std::function<void(const ToolContext&)> clearReadState;
 };
 class IILOCALLLM_EXPORT ToolRegistry {
 public:

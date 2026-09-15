@@ -12,7 +12,7 @@ enum class MessageRole { User, Assistant, Tool };
 enum class RunStatus { Completed, Cancelled, TurnLimit, Failed };
 enum class EventKind { Started, ModelDelta, Message, ToolStarted, ToolProgress, ToolFinished,
     PermissionRequested, Hook, Finished, InstructionsLoaded, CompactionStarted, CompactionProgress, Compacted,
-    InputDelivered, Interrupted, PermissionResolved, MemoryRecall };
+    InputDelivered, Interrupted, PermissionResolved, MemoryRecall, MemoryExtraction };
 struct ToolCall {
     QString id;
     QString name;
@@ -76,6 +76,7 @@ struct ToolContext {
     QStringList protectedPaths; // Host-only file/search exclusions; never accepted from model or wire metadata.
     int maxReadBytes = 1024 * 1024; // Host excerpt budget; partial reads never authorize an edit.
     QString expectedReadSha256; // Optional host snapshot check, applied before recording a read.
+    bool readOnlyShell = false; // Host-only native classifier + fixed environment; never accepted from model/wire input.
 };
 struct ModelRequest {
     QString model;

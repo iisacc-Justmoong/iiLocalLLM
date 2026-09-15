@@ -2,6 +2,8 @@
 
 C++ 에이전트 하네스를 확장 중이다. 현재 실행 계층은 [AgentHarness.md](docs/AgentHarness.md), 전체 요구사항과 남은 구현은 [HarnessParity.md](docs/HarnessParity.md)에 기록한다. MCP/API 및 앱 전체 호환 완료와 기존 대화 기능 완료는 별도 상태로 관리한다.
 
+0.39.0은 [대화 종료 메모리 추출](docs/MemoryExtraction.md)을 제공한다. 부모 문맥과 읽기 기록을 복사한 C++ 작업으로 자동 저장하며, 요청 병합·권한 제한·취소·종료 대기와 인증 API·MCP·CLI를 연결한다.
+
 0.38.0은 로컬 모델이 관련 주제 메모를 선택하는 [메모리 회상](docs/MemoryRecall.md)을 제공한다. 비동기 선행 실행, 문맥 첨부, 중복·오래된 정보·크기 관리와 인증 API·MCP·CLI를 연결한다. 0.37의 저장·인덱스·파일 도구 계약은 [프로젝트 메모리](docs/ProjectMemory.md), 0.36의 C++ QuestionInbox와 LVRS 질문 화면 계약은 [질문 UI](docs/QuestionUI.md)를 따른다.
 
 0.35.0은 C++ AskUserQuestion으로 선택지·자유 입력·부분 응답·미리보기·주석을 호스트 응답과 연결한다. API·IPC·MCP 및 입력 제한은 [사용자 질문](docs/UserQuestions.md)을 따른다.
@@ -18,7 +20,7 @@ C++ 에이전트 하네스를 확장 중이다. 현재 실행 계층은 [AgentHa
 
 0.24.0은 C++·API·MCP의 대화 초기화와 즉시 SessionStart(clear)를 제공한다. 백그라운드 셸·자식 에이전트·완료 알림은 새 대화로 이어진다. 계약과 오류 복구 한계는 [SessionClear.md](docs/SessionClear.md)에 기록한다.
 
-C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.38.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
+C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.39.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
 
 C++ stdio MCP 클라이언트가 외부 도구·리소스·프롬프트를 인식하고 에이전트 엔진에 연결한다. `iillm-mcp` 서버와 C++ 내장 API로 앱 도구 및 로컬 에이전트 실행을 외부 MCP 클라이언트에 제공한다. 프로토콜·정책·자료 보존 및 현재 지원 경계는 [MCP.md](docs/MCP.md) · [MCP 서버·앱 도구 제공](docs/MCPServer.md)에 설명한다.
 

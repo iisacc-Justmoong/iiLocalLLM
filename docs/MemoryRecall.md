@@ -33,3 +33,5 @@ CLI는 `iillm --auth-file TOKEN_FILE agent memory recall SESSION PARAMS_JSON_FIL
 ## 범위
 
 이 기능은 모델 기반 주제 회상과 자동 문맥 전달이다. 세션 기록 검색, 턴 종료 추출, dream 정리, Git worktree 공유, 전문 에이전트별 메모리와 원격 동기화는 별도 미완료 요구사항이다. macOS 외 플랫폼과 모든 앱의 회상 표시·설정 화면은 별도 검증이 필요하다. 실제 검증과 설치 증거는 Verification.md에 기록한다.
+
+턴 종료 시의 별도 저장 작업은 0.39 [MemoryExtraction.md](MemoryExtraction.md)에 구현 계약과 남은 범위를 기록한다.

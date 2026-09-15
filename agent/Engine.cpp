@@ -82,6 +82,8 @@ public:
             if(this->options.projectMemory.directory.isEmpty())this->options.projectMemory.directory=QDir(this->options.sessionsDirectory).absoluteFilePath("memory");
             memory=std::make_shared<ProjectMemory>(this->options.projectMemory);
             recall=std::make_shared<MemoryRecall>(memory,this->model,this->options.memoryRecall);
+            if(this->options.memoryExtraction.enabled)
+                extraction=std::make_shared<MemoryExtraction>(memory,this->model,this->policy,this->options.memoryExtraction,this->options.hooks,detail::hookAgentExecutor(this->options,tasks));
             configured->add(memory->forgetTool());
         }
     }
@@ -95,6 +97,7 @@ public:
     std::shared_ptr<PlanMode> plans;
     std::shared_ptr<ProjectMemory> memory;
     std::shared_ptr<MemoryRecall> recall;
+    std::shared_ptr<MemoryExtraction> extraction;
     QThreadPool pool;
     std::mutex mutex;
     std::mutex joining;
@@ -586,6 +589,19 @@ public:
                 }
                 append({{}, MessageRole::Assistant, reply.text, reply.toolCalls});
                 if (reply.toolCalls.isEmpty()) {
+                    // The reference offers the completed parent turn before Stop hooks.
+                    // A maintenance failure never replaces the user's successful answer.
+                    if(extraction) {
+                        QJsonObject receipt;
+                        try {
+                            auto fork=modelRequest;fork.messages.append(session.messages.last());
+                            ToolContext extractionContext;extractionContext.contextRevision=session.compactions.size();
+                            extractionContext.protectedPaths={options.sessionsDirectory};
+                            extractionContext.plansDirectory=QDir(options.sessionsDirectory).filePath("plans");
+                            receipt=extraction->offer({session.id,session.workingDirectory,std::move(fork),modelMessages(session),turnRegistry,extractionContext});
+                        }catch(const std::exception& error){receipt={{"status","failed"},{"error",QString::fromUtf8(error.what()).left(2048)}};}
+                        send({EventKind::MemoryExtraction,runId,session.id,{}, {},receipt});
+                    }
                     auto stop = hooks(HookKind::Stop, reply.text);
                     if (stop.block) {
                         stopHookActive=true;
@@ -792,6 +808,7 @@ QJsonObject Engine::endSessionImpl(const QString& id,QString reason,const Cancel
     // Completion callbacks may acquire the engine mutex. Join them outside it,
     // before running SessionEnd or transferring any other background owner.
     if(scope)scope->close();
+    if(d->extraction)d->extraction->forget(id);
     QJsonArray diagnostics;
     auto error=[&](const QString& text,const QString& code=QString()) {
         diagnostics.append(QJsonObject{{"hook_event_name","SessionEnd"},{"outcome","non_blocking_error"},{"error",text},{"error_code",code}});
@@ -890,6 +907,7 @@ QJsonArray Engine::close(QString reason) {
         d->changed.wait(lock,[&]{return d->native.empty()&&d->endingSessions.isEmpty();});
     }
     d->pool.waitForDone();
+    if(d->extraction)d->extraction->close();
     {std::lock_guard lock(d->mutex);sessions=d->touchedSessions.values();}
     sessions.sort();QJsonArray result;
     for(const auto& id:sessions) {
@@ -982,6 +1000,21 @@ QJsonObject Engine::permissions(const QString& id,const CancellationToken& token
 }
 std::shared_ptr<PlanMode> Engine::planning() const{return d->plans;}
 bool Engine::projectMemoryEnabled() const {return bool(d->memory);}
+bool Engine::memoryExtractionEnabled()const{return d->extraction&&d->extraction->enabled();}
+QJsonObject Engine::extractMemory(const QString& id,const CancellationToken& token)const {
+    (void)d->store.metadata(id);Impl::NativeOperation operation(*d,id,token);
+    if(!memoryExtractionEnabled())return {{"enabled",false},{"session_id",id},{"status","disabled"}};
+    operation.token.throwIfCancelled();return d->extraction->request(id);
+}
+QJsonObject Engine::memoryExtractionStatus(const QString& id,int offset,int limit)const {
+    (void)d->store.metadata(id);return d->extraction?d->extraction->status(id,offset,limit):QJsonObject{{"enabled",false},{"session_id",id},{"records",QJsonArray{}}};
+}
+QJsonObject Engine::cancelMemoryExtraction(const QString& id)const {
+    (void)d->store.metadata(id);return d->extraction?d->extraction->cancel(id):QJsonObject{{"enabled",false},{"session_id",id},{"records",QJsonArray{}}};
+}
+bool Engine::drainMemoryExtractions(int timeout,const QString& id,const CancellationToken& token)const {
+    if(!id.isEmpty())(void)d->store.metadata(id);token.throwIfCancelled();return !d->extraction||d->extraction->drain(timeout,id,token);
+}
 bool Engine::memoryRecallEnabled() const {return d->recall&&d->recall->enabled();}
 QJsonObject Engine::recallMemory(const QString& id,const QString& query,const CancellationToken& token) const {
     const auto session=d->store.metadata(id);Impl::NativeOperation operation(*d,id,token);

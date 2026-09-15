@@ -309,6 +309,68 @@ bool commandMatch(const QString& pattern, const QString& value) {
     return QRegularExpression("\\A" + expression + "\\z", QRegularExpression::DotMatchesEverythingOption).match(value).hasMatch();
 }
 }
+bool detail::readOnlyShell(const QJsonObject& args,const ToolContext& context) {
+#ifndef Q_OS_UNIX
+    Q_UNUSED(args);Q_UNUSED(context);return false; // cmd.exe has different parsing and command semantics.
+#else
+    if(args["run_in_background"].toBool())return false;
+    const auto shell=inspectShell(args["command"].toString(),context);
+    if(!shell.safe||shell.opaque||shell.unknownRedirect||shell.changesDirectory)return false;
+    auto pathAllowed=[&](const QString& value,bool directoryAllowed=false) {
+        if(value.isEmpty()||value=="-")return false;
+        const auto lexical=QDir::cleanPath(QDir::isAbsolutePath(value)?value:QDir(context.workingDirectory).filePath(value));
+        const QFileInfo info(lexical);const auto canonical=info.canonicalFilePath();
+        if(!info.exists()||info.isSymLink()||(!info.isFile()&&!(directoryAllowed&&info.isDir()))
+            ||!inWorkingDirectories(lexical,context)||!inWorkingDirectories(canonical,context))return false;
+        auto denied=context.protectedPaths;if(!context.plansDirectory.isEmpty())denied.append(context.plansDirectory);
+        for(const auto& path:denied)for(const auto& root:{QDir::cleanPath(path),QFileInfo(path).canonicalFilePath()})
+            if(!root.isEmpty()&&(inside(lexical,root)||inside(canonical,root)||(info.isDir()&&(inside(root,lexical)||inside(root,canonical)))))return false;
+        return true;
+    };
+    for(const auto& redirect:shell.redirects)if(redirect.write||!pathAllowed(redirect.path))return false;
+    for(const auto& command:shell.commands) {
+        auto words=command.words;auto executable=words.takeFirst();auto name=executable;
+        if(executable.contains('/')) {
+            name=QFileInfo(executable).fileName();
+            if(executable!="/bin/"+name&&executable!="/usr/bin/"+name)return false;
+        }
+        if(QStringList{"true","false"}.contains(name)){if(!words.isEmpty())return false;continue;}
+        if(name=="pwd"){if(!words.isEmpty()&&words!=QStringList{"-P"}&&words!=QStringList{"-L"})return false;continue;}
+        if(name=="echo")continue;
+        if(name=="printf") {
+            // Bash printf can assign variables through -v and %n, including PATH.
+            auto literal=words;if(literal.value(0)=="--")literal.removeFirst();
+            if(literal.isEmpty()||literal.first().startsWith('-'))return false;
+            const auto format=literal.first();
+            for(qsizetype i=0;i<format.size();++i)if(format[i]=='%') {
+                if(i+1<format.size()&&format[i+1]=='%'){++i;continue;}
+                const auto match=QRegularExpression("\\A%[-+ #0]*[0-9]*(?:\\.[0-9]+)?[diouxXeEfFgGaAcsbq]").match(format.mid(i));
+                if(!match.hasMatch())return false;i+=match.capturedLength()-1;
+            }
+            continue;
+        }
+        const QMap<QString,QString> flags{{"cat","benstuvET"},{"wc","clmwL"},{"head",""},{"tail",""},{"ls","1aAbBcCdFgGhHiklmnopqQrRsStuUwx"}};
+        if(!flags.contains(name))return false;
+        bool options=true;int paths=0;
+        for(qsizetype i=0;i<words.size();++i) {
+            const auto word=words[i];if(options&&word=="--"){options=false;continue;}
+            if(options&&word.startsWith('-')) {
+                if((name=="head"||name=="tail")&&(word=="-n"||word=="-c")) {
+                    if(++i>=words.size()||!QRegularExpression("\\A[0-9]{1,7}\\z").match(words[i]).hasMatch())return false;continue;
+                }
+                if((name=="head"||name=="tail")&&QRegularExpression("\\A-[nc]?[0-9]{1,7}\\z").match(word).hasMatch())continue;
+                if(word.size()<2||word.startsWith("--"))return false;
+                for(const auto flag:word.mid(1))if(!flags[name].contains(flag))return false;
+                // Recursive listing and symlink-following flags would require a separate tree scope check.
+                if(name=="ls"&&(word.contains('R')||word.contains('H')))return false;
+            }else{++paths;if(!pathAllowed(word,name=="ls"))return false;}
+        }
+        if(name=="ls"&&paths==0&&!pathAllowed(".",true))return false;
+        // A pathless filter reads only pipe/stdin, which the host closes at EOF.
+    }
+    return true;
+#endif
+}
 QStringList parsePermissionRules(const QStringList& input) {
     QStringList result; qsizetype bytes = 0;
     for (const auto& value : input) {

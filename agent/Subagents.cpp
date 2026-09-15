@@ -295,6 +295,7 @@ public:
             }
             auto eo=parent;eo.sessionsDirectory=QDir(options.stateDirectory).filePath("sessions");eo.maxConcurrentRuns=1;eo.maxQueuedRuns=0;
             eo.sessionStartHooks=false;eo.maxAsyncHookWakeRuns=0;eo.planToolsEnabled=false;eo.userQuestionsEnabled=false;request.userPrompt=false;
+            eo.memoryExtraction.enabled=false;
             eo.hooks.clear();for(const auto& hook:parent.hooks)eo.hooks.append([hook,hookContext](HookInput input,const CancellationToken& token){
                 for(auto i=hookContext.begin();i!=hookContext.end();++i)input.context[i.key()]=i.value();
                 if(input.kind==HookKind::Stop)input.kind=HookKind::SubagentStop;

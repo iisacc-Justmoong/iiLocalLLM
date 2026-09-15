@@ -24,7 +24,7 @@ MemoryForget은 현재 SHA-256과 일치하는 메모만 삭제한다. 삭제 �
 
 ## 남은 범위
 
-0.38의 모델 기반 관련도 선택과 비동기 문맥 전달은 [MemoryRecall.md](MemoryRecall.md)를 따른다. Git worktree 사이의 공통 저장소 식별, 사용자/관리/원격 메모리 설정 계층, 전문 에이전트·팀의 별도 메모리, 세션 기록 검색, 턴 종료 자동 추출, 예약 dream 정리와 원격 동기화는 별도 미완료 범위이다. 기본 저장 기능을 통과해도 전체 memory 영역은 부분 구현 상태를 유지한다.
+0.38의 모델 기반 관련도 선택과 비동기 문맥 전달은 [MemoryRecall.md](MemoryRecall.md)를 따른다. Git worktree 사이의 공통 저장소 식별, 사용자/관리/원격 메모리 설정 계층, 전문 에이전트·팀의 별도 메모리, 세션 기록 검색, 예약 dream 정리와 원격 동기화는 별도 미완료 범위이다. 기본 저장 기능을 통과해도 전체 memory 영역은 부분 구현 상태를 유지한다.
 
 검증 기록은 기능 구현과 설치 소비자·API·MCP·실제 모델 실행을 구분해 `Verification.md`에 추가한다.
 
@@ -37,3 +37,5 @@ MemoryForget은 현재 SHA-256과 일치하는 메모만 삭제한다. 삭제 �
 MCP는 `iiLocalLLM.agent.memory.get`과 `MemoryForget`을 내보내며 기존 Read·Write·Edit·Glob·Grep을 연결 소유자의 프로젝트 영역에 연결한다. MCP 입력으로 session_id나 메모리 root를 지정할 수 없다. 같은 호스트 엔진·workspace에 인증된 MCP 연결은 프로젝트 메모리를 공유한다. 이는 client ID별로 구분하는 API 저장 영역과 다른 계약이다.
 
 daemon의 에이전트 API와 모델이 활성화된 iillm-mcp는 기본 활성화한다. 각각 `--agent-no-memory`, `--no-memory`로 끌 수 있다. 끄면 자동 문맥과 파일 접근 확장·삭제 도구도 사라지며 기존 메모리 파일은 보존한다. CLI는 `iillm --auth-file TOKEN_FILE agent memory get SESSION` 또는 `agent memory read/write/edit/glob/grep/forget SESSION PARAMS_JSON_FILE`을 사용한다. RPC·HTTP와 같은 인증 경로를 따른다.
+
+0.39의 턴 종료 자동 추출과 저장 수명은 [MemoryExtraction.md](MemoryExtraction.md)를 따른다.

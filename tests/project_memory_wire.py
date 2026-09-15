@@ -105,8 +105,20 @@ def main():
 
                 assert rpc('agent.info')['project_memory_enabled']
                 assert rpc('agent.info')['memory_recall_enabled']
+                assert rpc('agent.info')['memory_extraction_enabled']
                 owner = rpc('agent.sessions.create', {'model': 'model://fixture'})['session_id']
                 second = rpc('agent.sessions.create', {'model': 'model://fixture'}, other)['session_id']
+                assert rpc('agent.memory.extract', {'session_id': owner})['status'] == 'no_context'
+                assert rpc('agent.memory.extraction.status', {'session_id': owner, 'offset': 0, 'limit': 1})['records'] == []
+                assert not rpc('agent.memory.extraction.cancel', {'session_id': owner})['active']
+                for method in ('agent.memory.extract', 'agent.memory.extraction.status', 'agent.memory.extraction.cancel'):
+                    rpc(method, {'session_id': owner}, other, 404)
+                for action in ('extract', 'extraction.status', 'extraction.cancel'):
+                    called = subprocess.run([cli, '--socket', str(root / 's'), '--auth-file', auth,
+                        'agent', 'memory', action, owner], text=True, capture_output=True, timeout=20, env=env)
+                    assert called.returncode == 0, called.stderr
+                    assert json.loads(called.stdout)['enabled']
+
                 first_memory = rpc('agent.memory.get', {'session_id': owner})
                 second_memory = rpc('agent.memory.get', {'session_id': second}, other)
                 assert first_memory['directory'] != second_memory['directory']
@@ -135,13 +147,16 @@ def main():
                 assert not gone['is_error'] and not Path(index).exists()
                 assert Path(gone['result']['backup_path']).read_text() == note
                 report['http_ipc'] = {'passed': True, 'tenant_isolation': True, 'cli_write': True, 'stale_delete_denied': True, 'backup_verified': True,
-                    'recall_empty_catalog': True, 'cli_recall': True, 'recall_foreign_session_denied': True}
+                    'recall_empty_catalog': True, 'cli_recall': True, 'recall_foreign_session_denied': True, 'extraction_controls': True, 'extraction_cli': True, 'extraction_tenant_isolation': True}
 
-            with server('api-disabled-recall', daemon_command + ['--agent-no-memory-recall'], r'iiLocalLLM HTTP: http://127\.0\.0\.1:(\d+)') as port:
+            with server('api-disabled-recall', daemon_command + ['--agent-no-memory-recall', '--agent-no-memory-extraction'], r'iiLocalLLM HTTP: http://127\.0\.0\.1:(\d+)') as port:
                 assert not rpc('agent.info')['memory_recall_enabled']
                 assert rpc('agent.info')['project_memory_enabled']
                 assert rpc('agent.memory.recall', {'session_id': owner, 'query': 'Recall project context'})['status'] == 'disabled'
                 report['http_ipc']['disabled_recall'] = True
+                assert not rpc('agent.info')['memory_extraction_enabled']
+                assert rpc('agent.memory.extract', {'session_id': owner})['status'] == 'disabled'
+                report['http_ipc']['disabled_extraction'] = True
 
             command = [mcp, '--workspace', str(work), '--model', 'model://fixture', '--models', str(root / 'models'),
                 '--state', str(root / 'mcp'), '--http-port', '0', '--credentials', credentials, '--allow', 'Write', '--allow', 'MemoryForget',
@@ -160,6 +175,11 @@ def main():
 
                 state = tool('iiLocalLLM.agent.memory.get')['structuredContent']
                 assert tool('iiLocalLLM.agent.memory.recall', {'query': 'Recall project context'})['structuredContent']['status'] == 'no_candidates'
+                assert tool('iiLocalLLM.agent.memory.extract')['structuredContent']['status'] == 'no_context'
+                assert tool('iiLocalLLM.agent.memory.extraction.status', {'offset': 0, 'limit': 1})['structuredContent']['records'] == []
+                assert not tool('iiLocalLLM.agent.memory.extraction.cancel')['structuredContent']['active']
+                assert post(port, '/mcp', 'iisacc/memory/extraction/status', {'limit': 1}, session=session)[1]['result']['enabled']
+                assert post(port, '/mcp', 'iisacc/memory/extraction/cancel', {}, session=session)[1]['result']['enabled']
                 index = state['index_path']
                 assert not tool('Write', {'path': index, 'content': 'MCP_MEMORY_617'})['isError']
                 read = tool('Read', {'path': index})
@@ -167,12 +187,13 @@ def main():
                 assert tool('iiLocalLLM.agent.memory.get')['structuredContent']['index'] == 'MCP_MEMORY_617'
                 assert not tool('MemoryForget', {'path': index, 'sha256': read['structuredContent']['sha256']})['isError']
                 assert not Path(index).exists()
-                report['mcp_http'] = {'passed': True, 'index': True, 'native_tools': True, 'recall_empty_catalog': True}
+                report['mcp_http'] = {'passed': True, 'index': True, 'native_tools': True, 'recall_empty_catalog': True, 'extraction_controls': True}
 
-            with server('mcp-disabled-recall', command + ['--no-memory-recall'], r'http://127\.0\.0\.1:(\d+)/mcp') as port:
+            with server('mcp-disabled-recall', command + ['--no-memory-recall', '--no-memory-extraction'], r'http://127\.0\.0\.1:(\d+)/mcp') as port:
                 status, initialized, session = post(port, '/mcp', 'initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
                     'clientInfo': {'name': 'memory-wire-disabled', 'version': '1'}})
                 assert status == 200 and initialized['result']['capabilities']['experimental']['iisacc/projectMemory']['recallTool'] is None
+                assert initialized['result']['capabilities']['experimental']['iisacc/projectMemory']['extractionTools'] == []
                 assert post(port, '/mcp', 'notifications/initialized', {}, session=session)[0] == 202
                 status, listed, _ = post(port, '/mcp', 'tools/list', {}, session=session)
                 assert status == 200 and 'iiLocalLLM.agent.memory.recall' not in [item['name'] for item in listed['result']['tools']]
@@ -193,13 +214,16 @@ def main():
                             assert not state.isError
                             recalled = await client.call_tool('iiLocalLLM.agent.memory.recall', {'query': 'Recall project context'})
                             assert not recalled.isError and recalled.structuredContent['status'] == 'no_candidates'
+                            for name in ('extract', 'extraction.status', 'extraction.cancel'):
+                                extracted = await client.call_tool('iiLocalLLM.agent.memory.' + name, {})
+                                assert not extracted.isError and extracted.structuredContent['enabled']
                             index = state.structuredContent['index_path']
                             result = await client.call_tool('Write', {'path': index, 'content': 'OFFICIAL_STDIO_MEMORY'})
                             assert not result.isError
                             result = await client.call_tool('Read', {'path': index})
                             assert not result.isError and 'OFFICIAL_STDIO_MEMORY' in str(result.content)
                 asyncio.run(official())
-                report['official_stdio'] = {'passed': True, 'recall_empty_catalog': True}
+                report['official_stdio'] = {'passed': True, 'recall_empty_catalog': True, 'extraction_controls': True}
             report['passed'] = True
         finally:
             args.report.write_text(json.dumps(report, indent=2) + '\n')
