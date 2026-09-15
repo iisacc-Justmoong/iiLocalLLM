@@ -22,6 +22,9 @@ public:
     QString directory(const QString& workspace, const CancellationToken& = {}) const;
     Message message(const QString& workspace, const CancellationToken& = {}) const;
     QJsonObject snapshot(const QString& workspace, const QString& query = {}, const CancellationToken& = {}) const;
+    // Uses the same read-before-edit cache as the routed native file tools.
+    // The hash must match before any read observation is recorded.
+    ToolResult readForContext(const QString& path,const QString& sha256,const ToolContext&,int maxLines,int maxBytes) const;
     void bindWorkspaceTools(ToolRegistry&) const;
     Tool forgetTool(bool deferred = true) const;
 private:

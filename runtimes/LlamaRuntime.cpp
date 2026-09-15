@@ -63,6 +63,7 @@ int optionInt(const ModelSpec& spec, const char* key, int fallback, int low, int
 struct LlamaConversationState final : RuntimePromptState {
     common_chat_params chat;
     common_chat_parser_params parser;
+    bool thinkingEnabled = true;
 };
 class LlamaContext final : public RuntimeContext {
 public:
@@ -280,6 +281,7 @@ public:
         input.enable_thinking = request.enableThinking.value_or(spec_.options.value("enable_thinking").toBool(true));
         if(!request.responseSchema.isEmpty())input.json_schema=QJsonDocument(request.responseSchema).toJson(QJsonDocument::Compact).toStdString();
         auto state = std::make_shared<LlamaConversationState>();
+        state->thinkingEnabled = input.enable_thinking;
         state->chat = common_chat_templates_apply(templates_.get(), input);
         if (!spec_.options.value("tool_grammar").toBool(true)&&request.responseSchema.isEmpty()) {
             // Upstream object grammars constrain optional property order. Hosts
@@ -303,7 +305,21 @@ public:
     {
         const auto* state = dynamic_cast<const LlamaConversationState*>(prompt.state.get());
         if (!state) throw Error(ErrorCode::InvalidArgument, "Missing llama.cpp conversation parser state");
-        const auto parsed = common_chat_parse(text.toStdString(), false, state->parser);
+        const auto parsed = [&] {
+            const auto prefix = QString::fromStdString(state->parser.generation_prompt);
+            if (!state->thinkingEnabled && state->chat.supports_thinking && state->chat.thinking_start_tag == "<think>"
+                && prefix.contains("<think>") && prefix.trimmed().endsWith("</think>")
+                && text.trimmed().startsWith("</think>")) {
+                // Some Qwen-style models repeat the closing delimiter already
+                // supplied by the disabled-thinking prefill. Let the upstream
+                // parser consume that generated delimiter as the same boundary.
+                // The raw answer and tags elsewhere in its content are untouched.
+                auto parser = state->parser;
+                parser.generation_prompt.resize(parser.generation_prompt.rfind("</think>"));
+                return common_chat_parse(text.toStdString(), false, parser);
+            }
+            return common_chat_parse(text.toStdString(), false, state->parser);
+        }();
         RuntimeConversationReply result{QString::fromStdString(parsed.content), QString::fromStdString(parsed.reasoning_content), {}};
         for (const auto& call : parsed.tool_calls)
             result.toolCalls.append(QJsonObject{{"id", QString::fromStdString(call.id)}, {"type", "function"},

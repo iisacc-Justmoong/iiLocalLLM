@@ -199,6 +199,16 @@ ProjectMemory::ProjectMemory(ProjectMemoryOptions options):d(std::make_shared<Im
 ProjectMemory::~ProjectMemory()=default;
 QString ProjectMemory::directory(const QString& workspace,const CancellationToken& token) const {return d->entry(workspace,token)->directory;}
 QJsonObject ProjectMemory::snapshot(const QString& workspace,const QString& query,const CancellationToken& token) const {return d->snapshot(workspace,query,token);}
+ToolResult ProjectMemory::readForContext(const QString& path,const QString& sha256,const ToolContext& context,int maxLines,int maxBytes) const {
+    require(sha256.size()==64&&maxLines>=1&&maxLines<=20000&&maxBytes>=1&&maxBytes<=1024*1024,"Invalid memory excerpt limits");
+    const auto entry=d->entry(context.workingDirectory,context.cancellation);Lock lock(entry->lockPath,d->options.lockTimeoutMs,context.cancellation);
+    d->file(*entry,path,false);const auto original=d->read(*entry,path,context.cancellation);
+    require(hash(original)==sha256,"Memory changed since selection");decode(original);
+    auto scope=context;scope.workingDirectory=entry->directory;scope.workingDirectories={entry->directory};
+    scope.expectedReadSha256=sha256;scope.maxReadBytes=maxBytes;
+    auto result=entry->tools->get("Read").execute({{"path",path},{"offset",1},{"limit",maxLines}},scope);
+    result.metadata.remove("iilocal.context_paths");return result;
+}
 Message ProjectMemory::message(const QString& workspace,const CancellationToken& token) const {
     const auto e=d->entry(workspace,token);Lock lock(e->lockPath,d->options.lockTimeoutMs,token);const auto state=d->index(*e,token);
     Message result;result.role=MessageRole::User;

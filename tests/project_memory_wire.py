@@ -104,11 +104,19 @@ def main():
                     return result.get('result', result)
 
                 assert rpc('agent.info')['project_memory_enabled']
+                assert rpc('agent.info')['memory_recall_enabled']
                 owner = rpc('agent.sessions.create', {'model': 'model://fixture'})['session_id']
                 second = rpc('agent.sessions.create', {'model': 'model://fixture'}, other)['session_id']
                 first_memory = rpc('agent.memory.get', {'session_id': owner})
                 second_memory = rpc('agent.memory.get', {'session_id': second}, other)
                 assert first_memory['directory'] != second_memory['directory']
+                recall = rpc('agent.memory.recall', {'session_id': owner, 'query': 'Recall useful project context'})
+                assert recall['status'] == 'no_candidates' and recall['notes'] == []
+                recall_params = private('recall.json', {'query': 'Recall useful project context'})
+                recalled = subprocess.run([cli, '--socket', str(root / 's'), '--auth-file', auth, 'agent', 'memory', 'recall', owner, recall_params],
+                    text=True, capture_output=True, timeout=20, env=env)
+                assert recalled.returncode == 0 and json.loads(recalled.stdout)['status'] == 'no_candidates', recalled.stderr
+                rpc('agent.memory.recall', {'session_id': owner, 'query': 'Recall project context'}, other, 404)
                 index = first_memory['index_path']
                 note = 'Persistent API / IPC note: MEMORY_WIRE_853'
                 params = private('write.json', {'path': index, 'content': note})
@@ -126,7 +134,14 @@ def main():
                 gone = rpc('agent.memory.forget', {'session_id': owner, 'path': index, 'sha256': read['result']['sha256']})
                 assert not gone['is_error'] and not Path(index).exists()
                 assert Path(gone['result']['backup_path']).read_text() == note
-                report['http_ipc'] = {'passed': True, 'tenant_isolation': True, 'cli_write': True, 'stale_delete_denied': True, 'backup_verified': True}
+                report['http_ipc'] = {'passed': True, 'tenant_isolation': True, 'cli_write': True, 'stale_delete_denied': True, 'backup_verified': True,
+                    'recall_empty_catalog': True, 'cli_recall': True, 'recall_foreign_session_denied': True}
+
+            with server('api-disabled-recall', daemon_command + ['--agent-no-memory-recall'], r'iiLocalLLM HTTP: http://127\.0\.0\.1:(\d+)') as port:
+                assert not rpc('agent.info')['memory_recall_enabled']
+                assert rpc('agent.info')['project_memory_enabled']
+                assert rpc('agent.memory.recall', {'session_id': owner, 'query': 'Recall project context'})['status'] == 'disabled'
+                report['http_ipc']['disabled_recall'] = True
 
             command = [mcp, '--workspace', str(work), '--model', 'model://fixture', '--models', str(root / 'models'),
                 '--state', str(root / 'mcp'), '--http-port', '0', '--credentials', credentials, '--allow', 'Write', '--allow', 'MemoryForget',
@@ -135,6 +150,7 @@ def main():
                 status, initialized, session = post(port, '/mcp', 'initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
                     'clientInfo': {'name': 'memory-wire', 'version': '1'}})
                 assert status == 200 and session and 'result' in initialized
+                assert initialized['result']['capabilities']['experimental']['iisacc/projectMemory']['recallTool'] == 'iiLocalLLM.agent.memory.recall'
                 assert post(port, '/mcp', 'notifications/initialized', {}, session=session)[0] == 202
 
                 def tool(name, arguments=None):
@@ -143,6 +159,7 @@ def main():
                     return value['result']
 
                 state = tool('iiLocalLLM.agent.memory.get')['structuredContent']
+                assert tool('iiLocalLLM.agent.memory.recall', {'query': 'Recall project context'})['structuredContent']['status'] == 'no_candidates'
                 index = state['index_path']
                 assert not tool('Write', {'path': index, 'content': 'MCP_MEMORY_617'})['isError']
                 read = tool('Read', {'path': index})
@@ -150,7 +167,16 @@ def main():
                 assert tool('iiLocalLLM.agent.memory.get')['structuredContent']['index'] == 'MCP_MEMORY_617'
                 assert not tool('MemoryForget', {'path': index, 'sha256': read['structuredContent']['sha256']})['isError']
                 assert not Path(index).exists()
-                report['mcp_http'] = {'passed': True, 'index': True, 'native_tools': True}
+                report['mcp_http'] = {'passed': True, 'index': True, 'native_tools': True, 'recall_empty_catalog': True}
+
+            with server('mcp-disabled-recall', command + ['--no-memory-recall'], r'http://127\.0\.0\.1:(\d+)/mcp') as port:
+                status, initialized, session = post(port, '/mcp', 'initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
+                    'clientInfo': {'name': 'memory-wire-disabled', 'version': '1'}})
+                assert status == 200 and initialized['result']['capabilities']['experimental']['iisacc/projectMemory']['recallTool'] is None
+                assert post(port, '/mcp', 'notifications/initialized', {}, session=session)[0] == 202
+                status, listed, _ = post(port, '/mcp', 'tools/list', {}, session=session)
+                assert status == 200 and 'iiLocalLLM.agent.memory.recall' not in [item['name'] for item in listed['result']['tools']]
+                report['mcp_http']['disabled_recall'] = True
 
             if args.official_stdio:
                 from mcp import ClientSession, StdioServerParameters
@@ -165,13 +191,15 @@ def main():
                             await client.initialize()
                             state = await client.call_tool('iiLocalLLM.agent.memory.get', {})
                             assert not state.isError
+                            recalled = await client.call_tool('iiLocalLLM.agent.memory.recall', {'query': 'Recall project context'})
+                            assert not recalled.isError and recalled.structuredContent['status'] == 'no_candidates'
                             index = state.structuredContent['index_path']
                             result = await client.call_tool('Write', {'path': index, 'content': 'OFFICIAL_STDIO_MEMORY'})
                             assert not result.isError
                             result = await client.call_tool('Read', {'path': index})
                             assert not result.isError and 'OFFICIAL_STDIO_MEMORY' in str(result.content)
                 asyncio.run(official())
-                report['official_stdio'] = {'passed': True}
+                report['official_stdio'] = {'passed': True, 'recall_empty_catalog': True}
             report['passed'] = True
         finally:
             args.report.write_text(json.dumps(report, indent=2) + '\n')

@@ -44,6 +44,8 @@ int main(int argc, char** argv) {
         {"no-plan-mode", "Disable session planning and review tools."},
         {"no-user-questions", "Disable AskUserQuestion."},
         {"no-memory", "Disable persistent project memory context and file access."},
+        {"no-memory-recall", "Disable model-ranked project memory recall."},
+        {"memory-recall-model", "Local selector model (default: conversation model).", "model"},
         {"question-preview", "User question preview format (markdown or html).", "format", "markdown"},
         {"no-tasks", "Disable persistent task and todo tools."},
         {"no-skills", "Disable local skill discovery and invocation in the agent."},
@@ -197,6 +199,8 @@ int main(int argc, char** argv) {
             engineOptions.planToolsEnabled = !parser.isSet("no-plan-mode");
             engineOptions.userQuestionsEnabled = !parser.isSet("no-user-questions");
             engineOptions.projectMemoryEnabled = !parser.isSet("no-memory");
+            engineOptions.memoryRecall.enabled = !parser.isSet("no-memory-recall");
+            engineOptions.memoryRecall.model = parser.value("memory-recall-model");
             engineOptions.userQuestions.previewFormat = parser.value("question-preview");
             engineOptions.skills.enabled = !parser.isSet("no-skills");
             engineOptions.skills.directories = parser.values("skills-dir");

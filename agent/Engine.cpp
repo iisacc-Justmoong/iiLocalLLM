@@ -30,6 +30,17 @@ void validateExitReason(const QString& reason) {
     if(!QStringList{"clear","resume","logout","prompt_input_exit","other","bypass_permissions_disabled"}.contains(reason))
         throw Error(ErrorCode::InvalidArgument,"Invalid session exit reason");
 }
+struct MemoryPrefetch {
+    CancellationToken token;
+    std::future<QJsonObject> future;
+    MemoryPrefetch(std::shared_ptr<MemoryRecall> recall,const Session& session,QString query,const CancellationToken& root)
+        :token(CancellationToken::linkedTo(root)),future(std::async(std::launch::async,
+            [recall,workspace=session.workingDirectory,model=session.model,query=std::move(query),visible=modelMessages(session),token=token] {
+                return recall->select(workspace,model,query,visible,token);
+            })) {}
+    ~MemoryPrefetch(){token.cancel();if(future.valid())future.wait();}
+    bool ready() const{return future.wait_for(std::chrono::milliseconds(0))==std::future_status::ready;}
+};
 }
 class Engine::Impl : public std::enable_shared_from_this<Engine::Impl> {
 public:
@@ -70,6 +81,7 @@ public:
         if(this->options.projectMemoryEnabled) {
             if(this->options.projectMemory.directory.isEmpty())this->options.projectMemory.directory=QDir(this->options.sessionsDirectory).absoluteFilePath("memory");
             memory=std::make_shared<ProjectMemory>(this->options.projectMemory);
+            recall=std::make_shared<MemoryRecall>(memory,this->model,this->options.memoryRecall);
             configured->add(memory->forgetTool());
         }
     }
@@ -82,6 +94,7 @@ public:
     std::shared_ptr<TaskStore> tasks;
     std::shared_ptr<PlanMode> plans;
     std::shared_ptr<ProjectMemory> memory;
+    std::shared_ptr<MemoryRecall> recall;
     QThreadPool pool;
     std::mutex mutex;
     std::mutex joining;
@@ -290,6 +303,18 @@ public:
             lease->append(std::move(message));
             send({EventKind::Message, runId, request.sessionId, {}, {}, toJson(lease->session().messages.back())});
         };
+        std::unique_ptr<MemoryPrefetch> memoryPrefetch;
+        QString memoryQuery,memoryQueryId,startedMemoryQuery;
+        auto accountRecall=[&](const QJsonObject& data) {
+            const auto usage=data["usage"].toObject();result.usage.memoryRecallPromptTokens+=usage["prompt_tokens"].toInteger();
+            result.usage.memoryRecallGeneratedTokens+=usage["generated_tokens"].toInteger();
+            result.usage.memoryRecallCachedTokens+=usage["cached_tokens"].toInteger();
+        };
+        auto discardRecall=[&] {
+            if(!memoryPrefetch)return;
+            memoryPrefetch->token.cancel();auto data=memoryPrefetch->future.get();memoryPrefetch.reset();accountRecall(data);
+            data["discarded"]=true;send({EventKind::MemoryRecall,runId,request.sessionId,{}, {},data});
+        };
         auto repair = [&] {
             if (!lease) return;
             for (const auto& call : pendingToolCalls(lease->session().messages))
@@ -383,6 +408,7 @@ public:
                     send({EventKind::InputDelivered,runId,request.sessionId,{}, {},message.metadata["iilocal.input"].toObject()});
                 }
                 enforcePrompt(message);
+                if(message.metadata["iilocal.input"].toObject()["kind"]=="prompt") {memoryQuery=message.text;memoryQueryId=message.id;}
             }
             return count;
         };
@@ -438,7 +464,8 @@ public:
                 response.metadata = {{"iilocal.skill_fork", outcome.execution}};
                 if (response.isError && response.text.isEmpty()) response.text = result.errorMessage.isEmpty() ? enumName(result.status) : result.errorMessage;
                 append(std::move(response));
-            } else if (!compactOnly && !queuedOnly) {append(user);enforcePrompt(user);}
+            } else if (!compactOnly && !queuedOnly) {append(user);enforcePrompt(user);
+                if(request.userPrompt){memoryQuery=user.text;memoryQueryId=lease->session().messages.last().id;}}
             else if (compactOnly && modelMessages(lease->session()).isEmpty()) throw Error(ErrorCode::InvalidArgument, "Cannot compact an empty session");
             QString lastContextFingerprint;
             bool allowLater = queuedOnly;
@@ -450,6 +477,20 @@ public:
                     if (queuedOnly && turn == 1 && !delivered) throw Error(ErrorCode::NotFound, "No queued input is available");
                 }
                 token.throwIfCancelled();
+                if(!compactOnly&&recall&&recall->enabled()) {
+                    if(memoryQueryId!=startedMemoryQuery) {
+                        discardRecall();startedMemoryQuery=memoryQueryId;
+                        const auto trimmed=memoryQuery.trimmed();
+                        if(!memoryQueryId.isEmpty()&&std::any_of(trimmed.cbegin(),trimmed.cend(),[](QChar c){return c.isSpace();}))
+                            memoryPrefetch=std::make_unique<MemoryPrefetch>(recall,lease->session(),memoryQuery,runToken);
+                    }
+                    if(memoryPrefetch&&memoryPrefetch->ready()) {
+                        auto data=memoryPrefetch->future.get();memoryPrefetch.reset();accountRecall(data);
+                        const auto& session=lease->session();ToolContext context{session.id,runId,session.workingDirectory,lease->artifactsDirectory(),token,{},quint64(session.compactions.size())};
+                        for(auto note:recall->attach(data,context,modelMessages(session)))append(std::move(note));
+                        send({EventKind::MemoryRecall,runId,session.id,{}, {},data});
+                    }
+                }
                 auto before = compactOnly ? HookResult{} : hooks(HookKind::BeforeModel, request.prompt);
                 if (before.block) throw Error(ErrorCode::InvalidArgument, "Before-model hook blocked execution: " + before.feedback);
                 if (!before.feedback.isEmpty()) append({{}, MessageRole::User, before.feedback});
@@ -626,6 +667,7 @@ public:
                 for (auto message : detail::pendingSkillMessages(lease->session().messages)) append(std::move(message));
                 } catch (const Error& error) {
                     if (error.code() != ErrorCode::Cancelled || runToken.isCancelled() || !wasInterrupted(runId) || compactOnly) throw;
+                    discardRecall();
                     repair();
                     send({EventKind::Interrupted, runId, request.sessionId, {}, "Superseded by urgent queued input", {}});
                 }
@@ -634,7 +676,7 @@ public:
         } catch (const Error& error) { failure(result, error); }
         catch (const std::exception& error) { failure(result, Error(ErrorCode::RuntimeFailure, QString::fromUtf8(error.what()))); }
         catch (...) { failure(result, Error(ErrorCode::RuntimeFailure, "Unknown agent failure")); }
-        try { repair(); }
+        try { discardRecall();repair(); }
         catch (const std::exception& error) { failure(result, Error(ErrorCode::StorageFailure, "Transcript recovery failed: " + QString::fromUtf8(error.what()))); }
         lease.reset();
         {
@@ -940,6 +982,14 @@ QJsonObject Engine::permissions(const QString& id,const CancellationToken& token
 }
 std::shared_ptr<PlanMode> Engine::planning() const{return d->plans;}
 bool Engine::projectMemoryEnabled() const {return bool(d->memory);}
+bool Engine::memoryRecallEnabled() const {return d->recall&&d->recall->enabled();}
+QJsonObject Engine::recallMemory(const QString& id,const QString& query,const CancellationToken& token) const {
+    const auto session=d->store.metadata(id);Impl::NativeOperation operation(*d,id,token);
+    if(!d->recall)return {{"enabled",false},{"status","disabled"},{"notes",QJsonArray{}}};
+    auto result=d->recall->select(session.workingDirectory,session.model,query,{},operation.token);operation.token.throwIfCancelled();
+    ToolContext context{id,uuid(),session.workingDirectory,QDir(d->options.sessionsDirectory).filePath(id+"/artifacts"),operation.token};
+    QJsonArray notes;for(const auto& message:d->recall->attach(result,context))notes.append(toJson(message));result["notes"]=notes;return result;
+}
 QJsonObject Engine::memory(const QString& id,const QString& query,const CancellationToken& token) const {
     const auto session=d->store.metadata(id);token.throwIfCancelled();
     if(!d->memory)return {{"enabled",false}};

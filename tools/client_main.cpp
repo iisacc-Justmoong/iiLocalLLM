@@ -137,7 +137,7 @@ int main(int argc, char** argv)
                 const auto allowed = args[1] == "tasks" ? QStringList{"create", "get", "list", "update", "claim"}
                     : args[1] == "skills" ? QStringList{"list", "run"}
                     : args[1] == "permissions" ? QStringList{"get"}
-                    : args[1] == "memory" ? QStringList{"get","read","write","edit","glob","grep","forget"}
+                    : args[1] == "memory" ? QStringList{"get","read","write","edit","glob","grep","forget","recall"}
                     : args[1] == "agents" ? QStringList{"run", "output", "stop", "list", "profiles"}
                     : args[1] == "inputs" ? QStringList{"enqueue", "list", "remove", "run"}
                     : args[1] == "shell" ? QStringList{"start", "output", "stop", "list"} : QStringList{"get", "write"};

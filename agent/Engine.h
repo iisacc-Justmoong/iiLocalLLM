@@ -11,6 +11,7 @@
 #include "PlanMode.h"
 #include "UserQuestions.h"
 #include "ProjectMemory.h"
+#include "MemoryRecall.h"
 #include "../Service.h"
 
 namespace iiLocalLLM::agent {
@@ -49,6 +50,7 @@ struct EngineOptions {
     UserQuestionOptions userQuestions;
     bool projectMemoryEnabled = false; // Embedded hosts opt in; daemon and agent MCP enable by default.
     ProjectMemoryOptions projectMemory; // Empty directory uses sessionsDirectory/memory.
+    MemoryRecallOptions memoryRecall; // Automatic prefetch and explicit host recall; no external provider is introduced.
 };
 class IILOCALLLM_EXPORT Engine {
 public:
@@ -73,6 +75,9 @@ public:
     QJsonObject permissions(const QString& sessionId, const CancellationToken& = {}) const;
     bool projectMemoryEnabled() const;
     QJsonObject memory(const QString& sessionId,const QString& query = {},const CancellationToken& = {}) const;
+    bool memoryRecallEnabled() const;
+    // Explicit recall returns notes without appending them to the conversation.
+    QJsonObject recallMemory(const QString& sessionId,const QString& query,const CancellationToken& = {}) const;
     // Host registry composition; preserves the original workspace tool schemas.
     void bindProjectMemoryTools(ToolRegistry&,bool deferredForget = true) const;
     ToolResult runMemoryTool(const QString& sessionId,const QString& name,const QJsonObject& arguments = {},

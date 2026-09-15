@@ -178,13 +178,21 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         std::lock_guard lock(workspace->mutex);
         const auto path = workspace->resolve(a["path"].toString(), c);
         const auto bytes = readFile(path); const auto text = decode(bytes); const auto lines = text.split('\n');
+        const auto sha=QString::fromLatin1(QCryptographicHash::hash(bytes,QCryptographicHash::Sha256).toHex());
+        require(c.expectedReadSha256.isEmpty()||c.expectedReadSha256==sha,"File changed before it could be read");
+        require(c.maxReadBytes>=1&&c.maxReadBytes<=maxFileBytes,"Invalid host read byte limit");
         const int offset = a["offset"].toInt(1), limit = a["limit"].toInt(2000);
         QStringList output;
         for (qsizetype n = offset - 1; n < lines.size() && n < qsizetype(offset - 1) + limit; ++n) output.append(lines[n]);
-        const bool complete = offset == 1 && limit >= lines.size();
+        auto excerpt=output.join('\n').toUtf8();const bool byteTruncated=excerpt.size()>c.maxReadBytes;
+        if(byteTruncated) {
+            excerpt.truncate(c.maxReadBytes);
+            for(;;) {QStringDecoder decoder(QStringDecoder::Utf8,QStringConverter::Flag::Stateless);const QString decoded=decoder(excerpt);if(!decoder.hasError())break;excerpt.chop(1);}
+        }
+        const bool complete = offset == 1 && limit >= lines.size()&&!byteTruncated;
         workspace->remember(c, path, bytes, complete);
-        return ToolResult{output.join('\n'), {{"path", path}, {"offset", offset}, {"lines", output.size()}, {"complete", complete},
-            {"sha256",QString::fromLatin1(QCryptographicHash::hash(bytes,QCryptographicHash::Sha256).toHex())}}, false, {}, workspace->contextPaths(path)};
+        return ToolResult{QString::fromUtf8(excerpt), {{"path", path}, {"offset", offset}, {"lines", byteTruncated?(excerpt.isEmpty()?0:excerpt.count('\n')+1):output.size()}, {"complete", complete},
+            {"sha256",sha},{"truncated",!complete},{"bytes",excerpt.size()}}, false, {}, workspace->contextPaths(path)};
     }; read.definition.metadata = {{"source", "builtin.workspace"}}; preparePath(read, workspace, false); registry.add(std::move(read));
     Tool write;
     write.definition = {"Write", "Write a UTF-8 file. Existing files must have been read completely and remain unchanged.",

@@ -8,7 +8,8 @@ inline QJsonObject promptState(const Message& message) {
 }
 inline bool rejectedPrompt(const Message& message) {return promptState(message)["disposition"]=="blocked";}
 inline bool conversationInput(const Message& message) {
-    return message.role==MessageRole::User&&!rejectedPrompt(message)&&!message.metadata.contains("iilocal.session_start");
+    return message.role==MessageRole::User&&!rejectedPrompt(message)&&!message.metadata.contains("iilocal.session_start")
+        &&!message.metadata.contains("iilocal.memory_recall");
 }
 inline Message promptForModel(Message message) {
     const auto state=promptState(message);

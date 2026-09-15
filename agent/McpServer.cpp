@@ -166,6 +166,15 @@ public:
                 const auto owner=self->sessionId(self->conversation(context.sessionId),context.cancellation);
                 return ToolResult{"Project memory",self->options.engine->memory(owner,args["query"].toString(),context.cancellation)};
             };frozen->add(std::move(memory));
+            if(options.engine->memoryRecallEnabled()) {
+                Tool recall;recall.definition={"iiLocalLLM.agent.memory.recall","Select relevant project notes with the host's local model. Returns bounded historical context without running an app action.",
+                    {{"type","object"},{"additionalProperties",false},{"properties",QJsonObject{{"query",QJsonObject{{"type","string"},{"minLength",1},{"maxLength",8192}}}}},{"required",QJsonArray{"query"}}},
+                    {},true,true,false,false,{{"source","builtin.memory.control"}}};
+                recall.execute=[self](const QJsonObject& args,const ToolContext& context) {
+                    const auto owner=self->sessionId(self->conversation(context.sessionId),context.cancellation);
+                    return ToolResult{"Recalled project memory",self->options.engine->recallMemory(owner,args["query"].toString(),context.cancellation)};
+                };frozen->add(std::move(recall));
+            }
         }
         if(auto questions=options.engine->userQuestionTool())frozen->add(std::move(*questions));
         if(const auto plans=options.engine->planning()) {
@@ -422,7 +431,8 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
     if(state->options.engine&&state->options.engine->projectMemoryEnabled())
         server.experimentalCapabilities["iisacc/projectMemory"]=QJsonObject{{"schema","iisacc.project-memory/1"},
             {"getTool","iiLocalLLM.agent.memory.get"},{"forgetTool","MemoryForget"},{"scope","host-workspace"},
-            {"fileTools",QJsonArray{"Read","Write","Edit","Glob","Grep"}}};
+            {"fileTools",QJsonArray{"Read","Write","Edit","Glob","Grep"}},
+            {"recallTool",state->options.engine->memoryRecallEnabled()?QJsonValue("iiLocalLLM.agent.memory.recall"):QJsonValue(QJsonValue::Null)}};
     if(state->options.engine&&state->options.engine->userQuestionTool()) {
         const auto definition=state->options.engine->userQuestionTool()->definition;
         server.experimentalCapabilities["iisacc/userQuestions"]=QJsonObject{{"schema","iisacc.user-question/1"},

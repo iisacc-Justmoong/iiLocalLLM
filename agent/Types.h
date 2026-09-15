@@ -12,7 +12,7 @@ enum class MessageRole { User, Assistant, Tool };
 enum class RunStatus { Completed, Cancelled, TurnLimit, Failed };
 enum class EventKind { Started, ModelDelta, Message, ToolStarted, ToolProgress, ToolFinished,
     PermissionRequested, Hook, Finished, InstructionsLoaded, CompactionStarted, CompactionProgress, Compacted,
-    InputDelivered, Interrupted, PermissionResolved };
+    InputDelivered, Interrupted, PermissionResolved, MemoryRecall };
 struct ToolCall {
     QString id;
     QString name;
@@ -74,6 +74,8 @@ struct ToolContext {
     QJsonObject approvedToolPreview; // Original prepared metadata, populated only after a trusted Allow response.
     QString planningState; // Admission snapshot used by the planning execution barrier.
     QStringList protectedPaths; // Host-only file/search exclusions; never accepted from model or wire metadata.
+    int maxReadBytes = 1024 * 1024; // Host excerpt budget; partial reads never authorize an edit.
+    QString expectedReadSha256; // Optional host snapshot check, applied before recording a read.
 };
 struct ModelRequest {
     QString model;
@@ -144,6 +146,9 @@ struct RunUsage {
     qint64 summaryPromptTokens = 0;
     qint64 summaryGeneratedTokens = 0;
     int compactions = 0;
+    qint64 memoryRecallPromptTokens = 0;
+    qint64 memoryRecallGeneratedTokens = 0;
+    qint64 memoryRecallCachedTokens = 0;
 };
 struct CompactRequest {
     QString sessionId;

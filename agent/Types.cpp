@@ -35,7 +35,8 @@ QString enumName(EventKind v) {
         case EventKind::Finished: return "finished"; case EventKind::InstructionsLoaded: return "instructions_loaded";
         case EventKind::CompactionStarted: return "compaction_started"; case EventKind::CompactionProgress: return "compaction_progress";
         case EventKind::Compacted: return "compacted"; case EventKind::InputDelivered: return "input_delivered";
-        case EventKind::Interrupted: return "interrupted"; case EventKind::PermissionResolved: return "permission_resolved"; }
+        case EventKind::Interrupted: return "interrupted"; case EventKind::PermissionResolved: return "permission_resolved";
+        case EventKind::MemoryRecall: return "memory_recall"; }
     return "unknown";
 }
 QJsonObject toJson(const ToolCall& c) { return {{"id", c.id}, {"name", c.name}, {"arguments", c.arguments}}; }
@@ -58,7 +59,9 @@ QJsonObject toJson(const RunResult& r) {
     return {{"run_id", r.runId}, {"session_id", r.sessionId}, {"text", r.text}, {"status", enumName(r.status)},
         {"turns", r.turns}, {"usage", QJsonObject{{"prompt_tokens", r.usage.promptTokens}, {"generated_tokens", r.usage.generatedTokens},
             {"cached_tokens", r.usage.cachedTokens}, {"dropped_messages", r.usage.droppedMessages}, {"summary_prompt_tokens", r.usage.summaryPromptTokens},
-            {"summary_generated_tokens", r.usage.summaryGeneratedTokens}, {"compactions", r.usage.compactions}}},
+            {"summary_generated_tokens", r.usage.summaryGeneratedTokens}, {"compactions", r.usage.compactions},
+            {"memory_recall_prompt_tokens",r.usage.memoryRecallPromptTokens},{"memory_recall_generated_tokens",r.usage.memoryRecallGeneratedTokens},
+            {"memory_recall_cached_tokens",r.usage.memoryRecallCachedTokens}}},
         {"error_code", iiLocalLLM::enumName(r.errorCode)}, {"error_message", r.errorMessage}};
 }
 QJsonObject toJson(const Event& e) {
