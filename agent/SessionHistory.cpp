@@ -239,4 +239,13 @@ Tool SessionHistory::tool(bool deferred)const {
         return ToolResult{"Session history search",state->search(context.sessionId,context.workingDirectory,args,context.cancellation)};
     };return tool;
 }
+QJsonArray SessionHistory::recent(const QString& owner,const QString& workspace,qint64 since,const CancellationToken& token)const {
+    require(since>=0&&since<=9007199254740991LL,"Invalid session history timestamp");qint64 read=0;
+    const auto canonical=QFileInfo(workspace).canonicalFilePath();require(!canonical.isEmpty(),"History workspace is unavailable");
+    require(d->header(owner,read,token).workspace==canonical,"Session owner belongs to a different workspace",ErrorCode::NotFound);
+    QJsonArray result;for(const auto& entry:d->enumerate(canonical,{},read,token)) {
+        token.throwIfCancelled();if(entry.id!=owner&&entry.modified>since)
+            result.append(QJsonObject{{"session_id",entry.id},{"modified_ms",entry.modified},{"size_bytes",entry.bytes}});
+    }return result;
+}
 }

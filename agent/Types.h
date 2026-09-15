@@ -12,7 +12,7 @@ enum class MessageRole { User, Assistant, Tool };
 enum class RunStatus { Completed, Cancelled, TurnLimit, Failed };
 enum class EventKind { Started, ModelDelta, Message, ToolStarted, ToolProgress, ToolFinished,
     PermissionRequested, Hook, Finished, InstructionsLoaded, CompactionStarted, CompactionProgress, Compacted,
-    InputDelivered, Interrupted, PermissionResolved, MemoryRecall, MemoryExtraction };
+    InputDelivered, Interrupted, PermissionResolved, MemoryRecall, MemoryExtraction, MemoryDream };
 struct ToolCall {
     QString id;
     QString name;

@@ -20,6 +20,8 @@ public:
     explicit ProjectMemory(ProjectMemoryOptions);
     ~ProjectMemory();
     QString directory(const QString& workspace, const CancellationToken& = {}) const;
+    // Bounded index state only, without scanning topic files.
+    QJsonObject index(const QString& workspace, const CancellationToken& = {}) const;
     Message message(const QString& workspace, const CancellationToken& = {}) const;
     QJsonObject snapshot(const QString& workspace, const QString& query = {}, const CancellationToken& = {}) const;
     // Uses the same read-before-edit cache as the routed native file tools.

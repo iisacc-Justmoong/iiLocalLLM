@@ -59,6 +59,6 @@ MCP 도구는 같은 이름 앞에 `iiLocalLLM.`을 붙인다. MCP 연결의 대
 
 단위 검사는 접두부 동일성, native 쓰기·읽기 복사, 경계와 훅 재검사, 중복 대체·커서·재시도·주기·한도·취소·종료를 검증한다. Engine/API/MCP 검사는 주 답변/기록 분리, Stop 훅 순서, clear/close, 앱 소유권과 제어 기능을 검증한다. 실제 모델 검사는 가공하지 않은 ServiceModel 요청으로 부모 대화→자동 저장→새 세션 조회와 비활성 대조군을 실행한다. 구체적인 실행 결과는 Verification.md를 따른다.
 
-자동 dream 정리, 세션 이력 검색, 전문 에이전트/팀 메모리, Git worktree 공유, 사용자/관리/원격 설정 우선순위, 원격 동기화, 전체 앱 UI 및 플랫폼 실행 검증은 계속 미완료이다. 이 변경으로 전체 하네스나 memory 영역을 완료 처리하지 않는다.
+전문 에이전트/팀 메모리, Git worktree 공유, 사용자/관리/원격 설정 우선순위, 원격 동기화, 전체 앱 UI 및 플랫폼 실행 검증은 계속 미완료이다. 이 변경으로 전체 하네스나 memory 영역을 완료 처리하지 않는다.
 
-0.40의 과거 대화 검색은 [SessionHistory.md](SessionHistory.md)를 따른다. 추출 작업의 도구 허용 범위에는 추가하지 않았으며, 자동 dream 정리는 아직 별도 구현 대상이다.
+0.40의 과거 대화 검색은 [SessionHistory.md](SessionHistory.md), 0.41의 정리는 [MemoryDream.md](MemoryDream.md)를 따른다. 추출과 정리는 내부 MemoryWorker에서 모델 문맥·도구 권한·읽기 캐시·취소 코드를 공유한다. 추출 작업에는 SessionSearch를 허용하지 않으며 정리 작업에만 허용한다.

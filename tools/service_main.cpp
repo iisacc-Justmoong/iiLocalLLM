@@ -73,6 +73,7 @@ int main(int argc, char** argv)
         {"agent-no-memory-recall", "Disable model-ranked project memory recall."},
         {"agent-no-memory-extraction", "Disable automatic project memory extraction after main-agent responses."},
         {"agent-no-session-history", "Disable owned session transcript search."},
+        {"agent-auto-dream", "Enable automatic project memory consolidation after eligible main-agent responses."},
         {"agent-memory-recall-model", "Local selector model (default: conversation model).", "model"},
         {"agent-question-preview", "User question preview format (markdown or html).", "format", "markdown"},
         {"agent-no-tasks", "Disable persistent task and todo tools for the agent API."},
@@ -118,7 +119,7 @@ int main(int argc, char** argv)
         std::shared_ptr<const a::PermissionPolicy> agentPolicy;
         if (parser.isSet("agent-workspace") || parser.isSet("agent-state") || parser.isSet("agent-credentials") || parser.isSet("agent-allow")
             || parser.isSet("agent-no-auto-compact") || parser.isSet("agent-no-project-context") || parser.isSet("agent-context-exclude") || parser.isSet("agent-no-memory")
-            || parser.isSet("agent-no-memory-recall") || parser.isSet("agent-memory-recall-model") || parser.isSet("agent-no-memory-extraction") || parser.isSet("agent-no-session-history")
+            || parser.isSet("agent-no-memory-recall") || parser.isSet("agent-memory-recall-model") || parser.isSet("agent-no-memory-extraction") || parser.isSet("agent-no-session-history") || parser.isSet("agent-auto-dream")
             || parser.isSet("agent-mcp-config") || parser.isSet("agent-mcp-project") || parser.isSet("agent-mcp-eager")
             || parser.isSet("agent-apps-dir") || parser.isSet("agent-no-apps") || parser.isSet("agent-no-plan-mode") || parser.isSet("agent-no-user-questions") || parser.isSet("agent-question-preview") || parser.isSet("agent-no-tasks") || parser.isSet("agent-no-background")
             || parser.isSet("agent-no-skills") || parser.isSet("agent-skills-dir") || parser.isSet("agent-no-subagents") || parser.isSet("agent-subagent-options")
@@ -151,6 +152,7 @@ int main(int argc, char** argv)
             config.engine.memoryRecall.enabled = !parser.isSet("agent-no-memory-recall");
             config.engine.memoryExtraction.enabled = !parser.isSet("agent-no-memory-extraction");
             config.engine.sessionHistoryEnabled = !parser.isSet("agent-no-session-history");
+            config.engine.memoryDream.automatic = parser.isSet("agent-auto-dream");
             config.engine.memoryRecall.model = parser.value("agent-memory-recall-model");
             config.engine.userQuestions.previewFormat = parser.value("agent-question-preview");
             config.engine.skills.enabled = !parser.isSet("agent-no-skills");

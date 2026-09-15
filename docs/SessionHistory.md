@@ -44,6 +44,6 @@ iillm --socket SOCKET --auth-file TOKEN_FILE agent sessions search SESSION_ID PA
 
 ## 참조와 남은 범위
 
-참조 커밋 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `source/src/services/autoDream/consolidationPrompt.ts`는 큰 과거 JSONL 기록을 좁게 검색하도록 요구한다. 이 모듈은 호스트 비공개 transcript를 일반 파일 도구에 개방하지 않고 그 기능에 필요한 검색 경로를 제공한다. 참조 `source/src/utils/agenticSessionSearch.ts`의 모델 기반 의미 검색·태그/제목/브랜치 우선순위 기능은 별도이며 아직 구현하지 않았다. 자동 dream의 시간/세션 조건, 프로세스 간 잠금, 메모리 병합·정리 및 UI 작업은 이번 구현 범위에 포함하지 않는다.
+참조 커밋 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `source/src/services/autoDream/consolidationPrompt.ts`는 큰 과거 JSONL 기록을 좁게 검색하도록 요구한다. 이 모듈은 호스트 비공개 transcript를 일반 파일 도구에 개방하지 않고 그 기능에 필요한 검색 경로를 제공한다. 참조 `source/src/utils/agenticSessionSearch.ts`의 모델 기반 의미 검색·태그/제목/브랜치 우선순위 기능은 별도이며 아직 구현하지 않았다. 0.41의 시간/세션 조건·프로세스 잠금·메모리 정리는 [MemoryDream.md](MemoryDream.md)를 따른다. 호스트 전용 recent(owner,workspace,sinceMs)는 같은 목록·헤더 한도와 소유권 검사를 적용해 현재 대화를 제외한 수정 시각 > sinceMs인 세션 ID·시각·크기를 반환한다. 원문을 읽지 않으며 모델/원격 입력에 파일 경로를 노출하는 별도 목록 API는 추가하지 않는다.
 
 `session_history_tests.cpp`는 큰 기록·페이지·소유권·취소·링크·미완성/오염된 줄을, `session_history_engine_tests.cpp`는 모델 호출·활성 세션·권한·API·MCP 연결을 검증한다. 실제 모델과 설치 소비자 결과는 [Verification.md](Verification.md)에 구분해서 기록한다. 기존 앱 설치와 홈 SDK의 0.36 조합은 별도이며, 새 stage 설치를 제품 갱신으로 보고하지 않는다.

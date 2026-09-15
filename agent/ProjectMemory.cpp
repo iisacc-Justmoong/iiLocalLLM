@@ -214,6 +214,9 @@ public:
 ProjectMemory::ProjectMemory(ProjectMemoryOptions options):d(std::make_shared<Impl>(std::move(options))) {}
 ProjectMemory::~ProjectMemory()=default;
 QString ProjectMemory::directory(const QString& workspace,const CancellationToken& token) const {return d->entry(workspace,token)->directory;}
+QJsonObject ProjectMemory::index(const QString& workspace,const CancellationToken& token) const {
+    const auto e=d->entry(workspace,token);Lock lock(e->lockPath,d->options.lockTimeoutMs,token);d->check(*e);return d->index(*e,token);
+}
 QJsonObject ProjectMemory::snapshot(const QString& workspace,const QString& query,const CancellationToken& token) const {return d->snapshot(workspace,query,token);}
 ToolResult ProjectMemory::readForContext(const QString& path,const QString& sha256,const ToolContext& context,int maxLines,int maxBytes) const {
     require(sha256.size()==64&&maxLines>=1&&maxLines<=20000&&maxBytes>=1&&maxBytes<=1024*1024,"Invalid memory excerpt limits");

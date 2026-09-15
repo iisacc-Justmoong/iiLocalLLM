@@ -106,6 +106,7 @@ def main():
                 assert rpc('agent.info')['project_memory_enabled']
                 assert rpc('agent.info')['memory_recall_enabled']
                 assert rpc('agent.info')['memory_extraction_enabled']
+                assert rpc('agent.info')['memory_dream_available'] and not rpc('agent.info')['auto_dream_enabled']
                 owner = rpc('agent.sessions.create', {'model': 'model://fixture'})['session_id']
                 second = rpc('agent.sessions.create', {'model': 'model://fixture'}, other)['session_id']
                 assert rpc('agent.info')['session_history_enabled']
@@ -123,6 +124,16 @@ def main():
                 assert rpc('agent.memory.extract', {'session_id': owner})['status'] == 'no_context'
                 assert rpc('agent.memory.extraction.status', {'session_id': owner, 'offset': 0, 'limit': 1})['records'] == []
                 assert not rpc('agent.memory.extraction.cancel', {'session_id': owner})['active']
+                assert rpc('agent.memory.dream', {'session_id': owner})['status'] == 'no_context'
+                assert rpc('agent.memory.dream.status', {'session_id': owner, 'limit': 1})['records'] == []
+                assert not rpc('agent.memory.dream.cancel', {'session_id': owner})['active']
+                for method in ('agent.memory.dream', 'agent.memory.dream.status', 'agent.memory.dream.cancel'):
+                    rpc(method, {'session_id': owner}, other, 404)
+                for action in ('dream', 'dream.status', 'dream.cancel'):
+                    called = subprocess.run([cli, '--socket', str(root / 's'), '--auth-file', auth,
+                        'agent', 'memory', action, owner], text=True, capture_output=True, timeout=20, env=env)
+                    assert called.returncode == 0 and json.loads(called.stdout)['available'], called.stderr
+                report['memory_dream_api_ipc'] = {'passed': True, 'default_automatic_off': True, 'cli': True, 'tenant_isolation': True, 'no_context': True}
                 for method in ('agent.memory.extract', 'agent.memory.extraction.status', 'agent.memory.extraction.cancel'):
                     rpc(method, {'session_id': owner}, other, 404)
                 for action in ('extract', 'extraction.status', 'extraction.cancel'):
@@ -162,6 +173,9 @@ def main():
                     'recall_empty_catalog': True, 'cli_recall': True, 'recall_foreign_session_denied': True, 'extraction_controls': True, 'extraction_cli': True, 'extraction_tenant_isolation': True}
 
             with server('api-disabled-recall', daemon_command + ['--agent-no-memory-recall', '--agent-no-memory-extraction', '--agent-no-session-history'], r'iiLocalLLM HTTP: http://127\.0\.0\.1:(\d+)') as port:
+                assert not rpc('agent.info')['memory_dream_available']
+                assert rpc('agent.memory.dream', {'session_id': owner})['status'] == 'unavailable'
+                report['memory_dream_api_ipc']['disabled_history'] = True
                 assert not rpc('agent.info')['session_history_enabled']
                 assert not rpc('agent.info')['memory_recall_enabled']
                 assert rpc('agent.info')['project_memory_enabled']
@@ -171,6 +185,15 @@ def main():
                 assert rpc('agent.memory.extract', {'session_id': owner})['status'] == 'disabled'
                 report['http_ipc']['disabled_extraction'] = True
 
+            with server('api-auto-dream', daemon_command + ['--agent-auto-dream'], r'iiLocalLLM HTTP: http://127\.0\.0\.1:(\d+)') as port:
+                assert rpc('agent.info')['auto_dream_enabled']
+                report['memory_dream_api_ipc']['automatic_flag'] = True
+
+            rejected = subprocess.run(daemon_command + ['--agent-auto-dream', '--agent-no-session-history'],
+                text=True, capture_output=True, timeout=20, env=env)
+            assert rejected.returncode != 0 and 'requires project memory and session history' in rejected.stderr, rejected.stderr
+            report['memory_dream_api_ipc']['invalid_dependency_rejected'] = True
+
             command = [mcp, '--workspace', str(work), '--model', 'model://fixture', '--models', str(root / 'models'),
                 '--state', str(root / 'mcp'), '--http-port', '0', '--credentials', credentials, '--allow', 'Write', '--allow', 'MemoryForget',
                 '--no-apps', '--no-background', '--no-skills', '--no-subagents', '--no-agent-profiles']
@@ -179,6 +202,8 @@ def main():
                     'clientInfo': {'name': 'memory-wire', 'version': '1'}})
                 assert status == 200 and session and 'result' in initialized
                 assert initialized['result']['capabilities']['experimental']['iisacc/projectMemory']['recallTool'] == 'iiLocalLLM.agent.memory.recall'
+                dream_capability = initialized['result']['capabilities']['experimental']['iisacc/memoryDream']
+                assert not dream_capability['automatic'] and dream_capability['schema'] == 'iisacc.memory-dream/1'
                 assert post(port, '/mcp', 'notifications/initialized', {}, session=session)[0] == 202
 
                 def tool(name, arguments=None):
@@ -213,6 +238,13 @@ def main():
                 assert not tool('iiLocalLLM.agent.memory.extraction.cancel')['structuredContent']['active']
                 assert post(port, '/mcp', 'iisacc/memory/extraction/status', {'limit': 1}, session=session)[1]['result']['enabled']
                 assert post(port, '/mcp', 'iisacc/memory/extraction/cancel', {}, session=session)[1]['result']['enabled']
+                assert tool('iiLocalLLM.agent.memory.dream')['structuredContent']['status'] == 'no_context'
+                assert tool('iiLocalLLM.agent.memory.dream.status', {'limit': 1})['structuredContent']['records'] == []
+                assert not tool('iiLocalLLM.agent.memory.dream.cancel')['structuredContent']['active']
+                assert post(port, '/mcp', dream_capability['statusMethod'], {'limit': 1}, session=session)[1]['result']['available']
+                assert post(port, '/mcp', dream_capability['cancelMethod'], {}, session=session)[1]['result']['available']
+                assert 'error' in post(port, '/mcp', dream_capability['statusMethod'], {'session_id': history_owner}, session=session)[1]
+                report['memory_dream_mcp_http'] = {'passed': True, 'default_automatic_off': True, 'tools': True, 'reserved_controls': True, 'owner_bound': True}
                 index = state['index_path']
                 assert not tool('Write', {'path': index, 'content': 'MCP_MEMORY_617'})['isError']
                 read = tool('Read', {'path': index})
@@ -228,11 +260,19 @@ def main():
                 assert status == 200 and initialized['result']['capabilities']['experimental']['iisacc/projectMemory']['recallTool'] is None
                 assert initialized['result']['capabilities']['experimental']['iisacc/projectMemory']['extractionTools'] == []
                 assert 'iisacc/sessionHistory' not in initialized['result']['capabilities']['experimental']
+                assert 'iisacc/memoryDream' not in initialized['result']['capabilities']['experimental']
                 assert post(port, '/mcp', 'notifications/initialized', {}, session=session)[0] == 202
                 status, listed, _ = post(port, '/mcp', 'tools/list', {}, session=session)
                 assert status == 200 and 'iiLocalLLM.agent.memory.recall' not in [item['name'] for item in listed['result']['tools']]
                 assert 'SessionSearch' not in [item['name'] for item in listed['result']['tools']]
+                assert 'iiLocalLLM.agent.memory.dream' not in [item['name'] for item in listed['result']['tools']]
+                report['memory_dream_mcp_http']['disabled_history'] = True
                 report['mcp_http']['disabled_recall'] = True
+
+            rejected = subprocess.run([mcp, '--workspace', str(work), '--auto-dream', '--no-apps', '--no-background'],
+                text=True, capture_output=True, timeout=20, env=env)
+            assert rejected.returncode != 0 and '--auto-dream requires --model' in rejected.stderr, rejected.stderr
+            report['memory_dream_mcp_http']['missing_model_rejected'] = True
 
             if args.official_stdio:
                 from mcp import ClientSession, StdioServerParameters
@@ -241,10 +281,11 @@ def main():
                 async def official():
                     params = StdioServerParameters(command=mcp, args=['--workspace', str(work), '--model', 'model://fixture',
                         '--models', str(root / 'models'), '--state', str(root / 'stdio'), '--allow', 'Write', '--no-apps',
-                        '--no-background', '--no-skills', '--no-subagents', '--no-agent-profiles'], env=env)
+                        '--no-background', '--no-skills', '--no-subagents', '--no-agent-profiles', '--auto-dream'], env=env)
                     async with stdio_client(params) as (read_stream, write_stream):
                         async with ClientSession(read_stream, write_stream) as client:
-                            await client.initialize()
+                            initialized = await client.initialize()
+                            assert initialized.capabilities.experimental['iisacc/memoryDream']['automatic']
                             history_run = await client.call_tool('iiLocalLLM.agent.run', {'prompt': 'STDIO_HISTORY_819'})
                             assert history_run.isError
                             history_owner = history_run.structuredContent['session_id']
@@ -258,6 +299,10 @@ def main():
                             for name in ('extract', 'extraction.status', 'extraction.cancel'):
                                 extracted = await client.call_tool('iiLocalLLM.agent.memory.' + name, {})
                                 assert not extracted.isError and extracted.structuredContent['enabled']
+                            for name in ('dream', 'dream.status', 'dream.cancel'):
+                                dreamed = await client.call_tool('iiLocalLLM.agent.memory.' + name, {})
+                                assert not dreamed.isError and dreamed.structuredContent['available']
+                            report['memory_dream_official_stdio'] = {'passed': True, 'tools': True, 'automatic_flag': True}
                             index = state.structuredContent['index_path']
                             result = await client.call_tool('Write', {'path': index, 'content': 'OFFICIAL_STDIO_MEMORY'})
                             assert not result.isError

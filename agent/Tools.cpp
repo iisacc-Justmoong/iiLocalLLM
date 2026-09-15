@@ -143,7 +143,8 @@ PermissionDecision RulePolicy::decide(const ToolDefinition& tool, const QJsonObj
         && QStringList{"TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TaskClaim", "TodoWrite", "TodoRead"}.contains(tool.name);
     const bool stopOwnShell = tool.name == "TaskStop" && tool.metadata["source"] == "builtin.shell.control";
     const bool memoryControl=tool.metadata["source"]=="builtin.memory.control"&&QStringList{
-        "iiLocalLLM.agent.memory.extract","iiLocalLLM.agent.memory.extraction.status","iiLocalLLM.agent.memory.extraction.cancel"}.contains(tool.name);
+        "iiLocalLLM.agent.memory.extract","iiLocalLLM.agent.memory.extraction.status","iiLocalLLM.agent.memory.extraction.cancel",
+        "iiLocalLLM.agent.memory.dream","iiLocalLLM.agent.memory.dream.status","iiLocalLLM.agent.memory.dream.cancel"}.contains(tool.name);
     const bool planControl=tool.metadata["source"]=="builtin.plan"&&QStringList{"EnterPlanMode","ExitPlanMode"}.contains(tool.name);
     const bool engineControl=(tool.metadata["source"]=="builtin.agent.control"&&QStringList{"iiLocalLLM.agent.run","iiLocalLLM.agent.compact","iiLocalLLM.agent.inputs.run"}.contains(tool.name))
         ||(tool.metadata["source"]=="builtin.session.control"&&tool.name=="iiLocalLLM.agent.clear")

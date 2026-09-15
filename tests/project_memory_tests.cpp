@@ -55,6 +55,8 @@ private slots:
         const auto message=memory.message(f.workspace);QCOMPARE(message.role,a::MessageRole::User);
         QVERIFY(message.text.contains("untrusted"));QVERIFY(message.text.contains("truncated"));
         QVERIFY(message.metadata.contains("iilocal.project_memory"));
+        const auto index=memory.index(f.workspace);QCOMPARE(index["index"],state["index"]);QCOMPARE(index["index_sha256"],state["index_sha256"]);
+        QVERIFY(index["index_truncated"].toBool());QVERIFY(!index.contains("files"));
     }
     void topicDiscoverySearchAndInvalidFilesHaveExplicitBoundaries() {
         Fixture f;
@@ -67,6 +69,20 @@ private slots:
         QCOMPARE(result["diagnostics"].toArray().size(),1);
         QVERIFY(f.run("Glob",{{"path",f.memory->directory(f.workspace)},{"pattern","**/*.md"}}).text.contains("testing.md"));
         QVERIFY(f.run("Grep",{{"path",f.memory->directory(f.workspace)},{"pattern","Build and run"}}).text.contains("testing.md"));
+    }
+    void recursiveGlobFindsRootAndDeeperTopics() {
+        Fixture f;
+        for(const auto& name:QStringList{"preferences.md","build/testing.md","build/deep/note.md","한글.md","upper.MD"})put(f.path(name),"topic");
+        auto matches=[&](const QString& pattern){return f.run("Glob",{{"path",f.memory->directory(f.workspace)},{"pattern",pattern}}).data["paths"].toArray();};
+        QCOMPARE(matches("**/*.md"),(QJsonArray{"build/deep/note.md","build/testing.md","preferences.md","한글.md"}));
+        QCOMPARE(matches("*.md"),(QJsonArray{"preferences.md","한글.md"}));
+        QCOMPARE(matches("build/**/*.md"),(QJsonArray{"build/deep/note.md","build/testing.md"}));
+        QCOMPARE(matches("**/preferences.md"),QJsonArray{"preferences.md"});
+        QCOMPARE(matches("**/한?.md"),QJsonArray{"한글.md"});
+        QCOMPARE(matches("**/[np]*.md"),(QJsonArray{"build/deep/note.md","preferences.md"}));
+        QCOMPARE(matches("**/*.MD"),QJsonArray{"upper.MD"});
+        put(f.root.filePath("workspace/preferences.md"),"ordinary");put(f.root.filePath("workspace/deep/note.md"),"ordinary");
+        QCOMPARE(f.run("Glob",{{"pattern","**/*.md"}}).data["paths"].toArray(),(QJsonArray{"deep/note.md","preferences.md"}));
     }
     void changedNotesNeedFreshReadsAndForgetNeedsCurrentHash() {
         Fixture f;const auto path=f.path("feedback.md");put(path,"before");

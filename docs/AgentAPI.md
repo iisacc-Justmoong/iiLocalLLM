@@ -216,3 +216,5 @@ agent.tasks.create/get/list/update/claim 및 agent.todos.write/get을 추가한�
 0.35는 C++ AskUserQuestion과 API·MCP 질문/답변을 추가한다. 호스트 응답, 변경 검증, 미리보기와 남은 앱 화면 범위는 [UserQuestions.md](UserQuestions.md)를 따른다.
 
 0.40의 `agent.sessions.search`는 `session_id`와 `query`/`session_ids` 또는 `cursor`를 받아 과거 대화를 검색한다. `{text,result,is_error}` 응답, 앱별 격리, 현재 대화 제외와 페이지 수명은 [SessionHistory.md](SessionHistory.md)를 따른다.
+
+0.41은 `agent.memory.dream`, `agent.memory.dream.status`, `agent.memory.dream.cancel`을 추가한다. `session_id`는 인증 앱 소유자에 한정하며 상태 페이지는 최대 8개 기록이다. 상태/취소는 예약 제어 용량을 사용한다. `agent.info.memory_dream_available`은 의존성 충족 여부, `auto_dream_enabled`는 자동 실행 설정이다. `--agent-auto-dream`으로 자동 실행하며 기본은 OFF이다. [MemoryDream.md](MemoryDream.md)에 C++·MCP·CLI와 수명 계약을 기록한다.

@@ -59,7 +59,9 @@ QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.se
     "agent.permissions.pending", "agent.permissions.respond", "agent.hooks.status", "agent.hooks.cancel",
     "agent.plan.get", "agent.plan.enter", "agent.plan.exit", "agent.questions.ask",
     "agent.memory.get", "agent.memory.read", "agent.memory.write", "agent.memory.edit", "agent.memory.glob", "agent.memory.grep", "agent.memory.forget", "agent.memory.recall",
-    "agent.memory.extract", "agent.memory.extraction.status", "agent.memory.extraction.cancel", "agent.sessions.search"}; }
+    "agent.memory.extract", "agent.memory.extraction.status", "agent.memory.extraction.cancel", "agent.sessions.search",
+    "agent.memory.dream", "agent.memory.dream.status", "agent.memory.dream.cancel"}; }
+bool dreamControl(const QString& method){return method=="agent.memory.dream.status"||method=="agent.memory.dream.cancel";}
 bool extractionControl(const QString& method){return method=="agent.memory.extraction.status"||method=="agent.memory.extraction.cancel";}
 bool hookControl(const QString& method) {return method=="agent.hooks.status"||method=="agent.hooks.cancel";}
 bool inputControl(const QString& method) {
@@ -109,6 +111,8 @@ public:
             && options.maxQueuedInputControls >= 0 && options.maxQueuedInputControls <= 10000, "Invalid agent API configuration");
         require(!options.engine.permissionRequests,"Agent API assigns private permission channels; configure ApiOptions.permissionRequests");
         require(options.engine.projectMemory.directory.isEmpty(),"Agent API assigns private project memory per client");
+        require(!options.engine.memoryDream.automatic||(options.engine.projectMemoryEnabled&&options.engine.sessionHistoryEnabled),
+            "Automatic memory consolidation requires project memory and session history");
         if(options.permissionRequests) {
             PermissionRequests validate(*options.permissionRequests);
             require(options.permissionRequests->maxRequestBytes<=options.maxResultBytes-256,"Permission requests must fit the API result limit");
@@ -182,7 +186,8 @@ public:
                 {"max_async_hook_wake_runs",options.engine.maxAsyncHookWakeRuns},{"permission_requests_enabled",bool(client->permissionRequests)},
                 {"user_questions_enabled",bool(client->engine->userQuestionTool())},{"project_memory_enabled",client->engine->projectMemoryEnabled()},
                 {"memory_recall_enabled",client->engine->memoryRecallEnabled()},{"memory_extraction_enabled",client->engine->memoryExtractionEnabled()},
-                {"session_history_enabled",bool(client->engine->sessionSearchTool())}};
+                {"session_history_enabled",bool(client->engine->sessionSearchTool())},{"memory_dream_available",client->engine->memoryDreamAvailable()},
+                {"auto_dream_enabled",client->engine->automaticMemoryDream()}};
         }
         if(method=="agent.sessions.search") {
             const auto id=text(p,"session_id");auto arguments=p;arguments.remove("session_id");
@@ -193,6 +198,13 @@ public:
             bool timedOut=false;while(future.wait_for(10ms)!=std::future_status::ready){timedOut|=Clock::now()>=job->deadline;if(timedOut)job->token.cancel();}
             const auto value=future.get();require(!timedOut&&Clock::now()<job->deadline,"Agent API request deadline exceeded",ErrorCode::Timeout);
             return QJsonObject{{"text",value.text},{"result",value.data},{"is_error",value.isError}};
+        }
+        if(method=="agent.memory.dream"||dreamControl(method)) {
+            if(method=="agent.memory.dream.status")fields(p,{"session_id","offset","limit"});else fields(p,{"session_id"});const auto id=text(p,"session_id");
+            require(client->engine->sessionMetadata(id).workingDirectory==options.workingDirectory,"Session belongs to a different workspace",ErrorCode::NotFound);job->token.throwIfCancelled();
+            if(method=="agent.memory.dream")return client->engine->consolidateMemory(id,job->token);
+            if(method=="agent.memory.dream.cancel")return client->engine->cancelMemoryDream(id);
+            return client->engine->memoryDreamStatus(id,integer(p,"offset",0,0,4096),integer(p,"limit",8,1,8));
         }
         if(method=="agent.memory.extract"||extractionControl(method)) {
             if(method=="agent.memory.extraction.status")fields(p,{"session_id","offset","limit"});else fields(p,{"session_id"});const auto id=text(p,"session_id");
@@ -475,7 +487,7 @@ public:
                 {"state", job->running ? "running" : "queued"}, {"cancel_requested", job->token.isCancelled()}});
             return handle;
         }
-        const bool control = extractionControl(method) || hookControl(method) || inputControl(method) || method == "agent.sessions.end" || method == "agent.sessions.clear" || method == "agent.agents.output" || method == "agent.agents.stop" || method == "agent.agents.list";
+        const bool control = dreamControl(method) || extractionControl(method) || hookControl(method) || inputControl(method) || method == "agent.sessions.end" || method == "agent.sessions.clear" || method == "agent.agents.output" || method == "agent.agents.stop" || method == "agent.agents.list";
         const auto used = std::count_if(active.begin(), active.end(), [control](const auto& item) { return item.second->inputControl == control; });
         const auto capacity = control ? options.maxConcurrentInputControls + options.maxQueuedInputControls
             : options.maxConcurrentRequests + options.maxQueuedRequests;
@@ -505,7 +517,7 @@ Api::Api(std::shared_ptr<Model> model, std::shared_ptr<ToolRegistry> registry,
     : d(std::make_shared<Impl>(std::move(model), std::move(registry), std::move(policy), std::move(options))) {}
 Api::~Api() { d->stop(); }
 bool Api::isControlMethod(const QString& method) const {
-    return extractionControl(method)||hookControl(method)||method=="agent.plan.get"||method=="agent.permissions.pending"||method=="agent.permissions.respond"||method=="agent.cancel"||method=="agent.status";
+    return dreamControl(method)||extractionControl(method)||hookControl(method)||method=="agent.plan.get"||method=="agent.permissions.pending"||method=="agent.permissions.respond"||method=="agent.cancel"||method=="agent.status";
 }
 RpcHandle Api::dispatch(QString method, QJsonObject params, QString credential, RpcEventCallback callback) {
     return d->dispatch(std::move(method), std::move(params), std::move(credential), std::move(callback));

@@ -24,6 +24,19 @@ QJsonObject integerSchema(int minimum, int maximum) { return {{"type", "integer"
 QJsonObject inputSchema(QJsonObject properties, QJsonArray required) {
     return {{"type", "object"}, {"properties", properties}, {"required", required}, {"additionalProperties", false}};
 }
+QRegularExpression globExpression(const QString& pattern) {
+    require(pattern.size()<=4096&&!pattern.contains(QChar::Null),"Invalid glob pattern");
+    const auto parts=pattern.split('/');QString expression;
+    for(qsizetype i=0;i<parts.size();++i) {
+        const bool last=i+1==parts.size();
+        if(parts[i]=="**")expression+=last?"[\\s\\S]*":"(?:[^/]+/)*";
+        else {
+            expression+=QRegularExpression::wildcardToRegularExpression(parts[i],QRegularExpression::UnanchoredWildcardConversion);
+            if(!last)expression+='/';
+        }
+    }
+    return QRegularExpression(QRegularExpression::anchoredPattern(expression));
+}
 QByteArray readFile(const QString& path) {
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly)) throw Error(ErrorCode::StorageFailure, "Cannot read file: " + path);
@@ -256,11 +269,11 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
             {"sha256",QString::fromLatin1(QCryptographicHash::hash(text.toUtf8(),QCryptographicHash::Sha256).toHex())}}, false, {}, workspace->contextPaths(path)};
     }; edit.definition.metadata = {{"source", "builtin.workspace"}}; preparePath(edit, workspace, true); registry.add(std::move(edit));
     Tool glob;
-    glob.definition = {"Glob", "List matching file paths relative to path (default: workspace). path must be an authorized working directory. Up to 1000 results and 10000 scanned files.",
+    glob.definition = {"Glob", "List matching file paths relative to path (default: workspace). A ** path component matches zero or more directory levels; * and ? stay within one component. path must be an authorized working directory. Up to 1000 results and 10000 scanned files.",
         inputSchema({{"pattern", stringSchema()},{"path",stringSchema()}}, {"pattern"}), {}, true, true};
     glob.execute = [workspace](const QJsonObject& a, const ToolContext& c) {
         const auto root=workspace->resolve(a["path"].toString("."),c);require(QFileInfo(root).isDir(),"Glob path must be a directory");
-        const auto regex = QRegularExpression(QRegularExpression::wildcardToRegularExpression(a["pattern"].toString()));
+        const auto regex = globExpression(a["pattern"].toString());
         require(regex.isValid(), "Invalid glob pattern"); QStringList paths;
         QDirIterator iterator(root, QDir::Files | QDir::NoSymLinks, QDirIterator::Subdirectories);int visited=0;
         while (iterator.hasNext() && paths.size() < 1000 && visited++<10000) {

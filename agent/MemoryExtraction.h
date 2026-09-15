@@ -1,5 +1,6 @@
 #pragma once
 #include "ProjectMemory.h"
+#include "MemoryContext.h"
 
 namespace iiLocalLLM::agent {
 struct MemoryExtractionOptions {
@@ -18,13 +19,7 @@ struct MemoryExtractionOptions {
     // do not close/destroy/drain this owner from its callback. No transcript text.
     std::function<void(const QJsonObject&)> completed;
 };
-struct MemoryExtractionSnapshot {
-    QString sessionId, workspace;
-    ModelRequest request; // Exact parent request plus the completed assistant response.
-    QList<Message> messages; // Model-visible conversation, excluding the host prompt prefix.
-    std::shared_ptr<ToolRegistry> registry; // Stable native/MCP identity; definitions alone cannot grant execution.
-    ToolContext context; // Only host paths/revision are retained; callbacks and cancellation are not inherited.
-};
+using MemoryExtractionSnapshot = MemoryContext;
 // One bounded worker with a latest pending snapshot per session. Extraction
 // uses the parent's model/prompt/tools/generation and an isolated tool context.
 // It never appends its transcript or tool results to the main conversation.

@@ -20,6 +20,10 @@ public:
     QJsonObject search(const QString& ownerSessionId,const QString& workspace,
         const QJsonObject& arguments,const CancellationToken& = {}) const;
     Tool tool(bool deferred = false) const;
+    // Host-only scheduling metadata. Excludes the current owner and returns
+    // same-workspace transcripts modified strictly after sinceMs. No content.
+    QJsonArray recent(const QString& ownerSessionId,const QString& workspace,qint64 sinceMs,
+        const CancellationToken& = {}) const;
 private:
     class Impl;
     std::shared_ptr<Impl> d;

@@ -1,5 +1,29 @@
 # 구현 검증 기록
 
+## 2026-09-16 C++ 프로젝트 메모리 정리 (0.41.0)
+
+C++ MemoryDream, 기본 OFF인 자동 실행, 24시간·5개 다른 대화·10분 목록 검사 조건, 프로세스 잠금과 성공 시각 저장, 수동 요청·진행/취소와 인증 API·MCP·CLI를 구현했다. 추출과 공통 메모리 작업 코드를 사용하고 부모 문맥·도구·생성 설정과 읽기 캐시를 유지한다. 새 생산 의존성은 없으며 [MemoryDream.md](MemoryDream.md)에 참조와 다른 잠금/시각 계약 및 남은 범위를 기록한다.
+
+| 검증 | 최종 결과 |
+|---|---|
+| Release, inference 제외 | 88/88 |
+| ASan·UBSan | 85/85, llama OFF·leak detection OFF |
+| 새 설치 소비자 | 53/53 |
+| Qwen3-8B Q4 실제 정리 | source·installed 오래된 선호 교체, 임의 표식 저장, 중복 인덱스 제거, 새 대화 조회 통과 |
+| 실제 추출 회귀 | source·installed 자동 추출과 비활성 대조 통과 |
+| 인증 전송 | source·installed HTTP/IPC·MCP HTTP·공식 MCP 1.26 stdio 통과 |
+| 설치 동일성 | 공개 헤더 51개, 네 진입점 버전, dylib 해시·UUID, 실제 로더 경로와 thin CLI 통과 |
+
+실제 모델은 thinking OFF, native tool grammar ON이며 ServiceModel 요청/응답을 치환하지 않았다. 정리 fixture의 주 대화는 ACK만 응답하고 별도 정리 지시에서는 허용 도구를 사용하는 명시적 호스트 설정이다. source 정리는 13턴·생성 1422토큰·캐시 50590토큰, installed는 9턴·생성 944토큰·캐시 31173토큰이며 도구 오류는 각각 0/0개이다. 주 대화는 두 메시지를 유지하고 정리 작업의 토큰과 파일 쓰기는 별도로 기록한다. 이는 해당 시나리오의 관측값이며 모든 모델·문맥의 정리 정확도를 보장하지 않는다.
+
+다른 프로세스의 살아 있는 잠금, 강제 종료된 잠금 보유자 회수, 잘못된 상태 파일·링크 거절, 시간/대화 수/목록 주기와 수동 우회, 재시작 후 성공 시각, 취소·기한·턴 제한·재시도, 최신 요청 대체·문맥 상한·진행 Unicode/크기, Stop 전 제출·clear/close, API 소유권·MCP 연결 제어를 확인했다. 전송 fixture의 누락 모델은 no_context·기능 정보·인증 제어 검증이며 실제 추론 검사는 별도로 실행했다.
+
+개발 중 공통 작업 추출의 디렉터리 초기화 순서 회귀를 복구했다. MCP 검사 설정의 실행 권한 누락과 이전 CLI 바이너리 사용도 수정했다. 실제 모델의 첫 무변경 결과를 보존하고 도구 기록을 조사했다. 기존 Glob의 **/*.md가 루트와 두 단계 이상 파일을 놓치는 실패를 단위 검사로 재현한 뒤 Qt 구성요소 변환을 재사용해 수정했다. 파일을 찾은 뒤에도 모델이 현재 사용자 정정을 과거 기록에서 재확인하려던 실패가 남아, 호스트 정리 권한과 현재 명시적 정정의 우선순위·빈 이력 검색의 의미·중복 링크 제거를 생산 지시에 명확히 했다. 이후에도 중복 인덱스가 남는 실제 실패를 확인해, 인덱스 크기와 표준 상대 링크의 중복을 호스트가 검증하고 같은 턴/시간 예산 안에서 수정을 요구하도록 구현했다. 성공 조건이나 모델 답변을 치환하지 않았다. 실패 로그는 build/memory-dream-preflight, before-glob, before-prompt, before-validation 및 glob-red/validation-red 로그에 보존한다.
+
+검증 입력 381개 파일의 SHA-256을 고정하고 검사 후 동일함을 확인했다. 이 문서만 마지막에 갱신하고 설치 문서를 다시 대조한다. prefix는 build/memory-dream-stage, 소비자는 build/memory-dream-consumer/build이다. Release와 stage dylib SHA-256은 `c78c3184d84e2289f5edec5d15b18c9a98f981188f59f5742a8aca00f30f811e`이다. 구조화된 증거는 build/memory-dream-verification.json, 읽기용 보고서는 build/memory-dream-REPORT.md이다.
+
+검증 플랫폼은 macOS arm64이다. Mac Society/Dreamscapes 실행과 기존 0.36 번들, iPad 설치 영수증을 현재 상태에서 재확인했다. 홈 SDK와 앱의 0.36 조합을 유지했으며 이 단계의 0.41 stage를 제품 재설치로 보고하지 않는다. iPad UI·다른 플랫폼은 이번 검증에 포함하지 않는다. iPhone은 사용자 지시로 제외했다. 원래 daemon에 종료·재시작 명령을 보내지 않았으나 최종 조회에서 PID 14909는 보이지 않았으며 종료 원인은 확정하지 않았다. 0.41 C++ 소비자는 같은 버전의 헤더/라이브러리로 함께 재빌드해야 한다. 전체 하네스는 23 partial·8 pending·0 complete이다.
+
 ## 2026-09-16 C++ 저장된 대화 검색 (0.40.0)
 
 C++ SessionHistory/SessionSearch, 원문 위치가 포함된 리터럴 검색, 페이지/읽기 한도, 파일 변경 감지, 소유권과 Engine/API/IPC/MCP/CLI 호출을 구현했다. 기존 Qt Core만 사용하며 새 생산 의존성은 없다. [SessionHistory.md](SessionHistory.md)에 기본 현재 대화 제외, 커서 수명, 공유 MCP 작업공간과 별도 데몬 앱 상태의 차이를 기록한다. 자동 dream 정리와 참조의 모델 기반 의미 검색은 아직 별도 구현 대상이다.

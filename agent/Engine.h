@@ -14,6 +14,7 @@
 #include "MemoryRecall.h"
 #include "MemoryExtraction.h"
 #include "SessionHistory.h"
+#include "MemoryDream.h"
 #include "../Service.h"
 
 namespace iiLocalLLM::agent {
@@ -56,6 +57,7 @@ struct EngineOptions {
     MemoryExtractionOptions memoryExtraction; // Isolated automatic maintenance after a main-agent response.
     bool sessionHistoryEnabled = false; // Embedded opt-in; daemon and agent MCP enable it by default.
     SessionHistoryOptions sessionHistory; // Uses this Engine's sessionsDirectory; no external path from a caller.
+    MemoryDreamOptions memoryDream; // Available with memory + history; automatic scheduling is opt-in.
 };
 class IILOCALLLM_EXPORT Engine {
 public:
@@ -88,6 +90,12 @@ public:
     QJsonObject memoryExtractionStatus(const QString& sessionId,int offset = 0,int limit = 32) const;
     QJsonObject cancelMemoryExtraction(const QString& sessionId) const;
     bool drainMemoryExtractions(int timeoutMs,const QString& sessionId = {},const CancellationToken& = {}) const;
+    bool memoryDreamAvailable() const;
+    bool automaticMemoryDream() const;
+    QJsonObject consolidateMemory(const QString& sessionId,const CancellationToken& = {}) const;
+    QJsonObject memoryDreamStatus(const QString& sessionId,int offset=0,int limit=8) const;
+    QJsonObject cancelMemoryDream(const QString& sessionId) const;
+    bool drainMemoryDreams(int timeoutMs,const QString& sessionId={},const CancellationToken& = {}) const;
     // Host registry composition; preserves the original workspace tool schemas.
     void bindProjectMemoryTools(ToolRegistry&,bool deferredForget = true) const;
     ToolResult runMemoryTool(const QString& sessionId,const QString& name,const QJsonObject& arguments = {},

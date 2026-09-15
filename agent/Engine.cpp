@@ -87,6 +87,9 @@ public:
                 extraction=std::make_shared<MemoryExtraction>(memory,this->model,this->policy,this->options.memoryExtraction,this->options.hooks,detail::hookAgentExecutor(this->options,tasks));
             configured->add(memory->forgetTool());
         }
+        if(this->options.memoryDream.automatic&&(!memory||!history))
+            throw Error(ErrorCode::InvalidArgument,"Automatic memory consolidation requires project memory and session history");
+        if(memory&&history)dream=std::make_shared<MemoryDream>(memory,history,this->model,this->policy,this->options.memoryDream,this->options.hooks,detail::hookAgentExecutor(this->options,tasks));
     }
     std::shared_ptr<Model> model;
     std::shared_ptr<ToolRegistry> registry;
@@ -100,6 +103,7 @@ public:
     std::shared_ptr<MemoryRecall> recall;
     std::shared_ptr<MemoryExtraction> extraction;
     std::shared_ptr<SessionHistory> history;
+    std::shared_ptr<MemoryDream> dream;
     QThreadPool pool;
     std::mutex mutex;
     std::mutex joining;
@@ -594,17 +598,19 @@ public:
                 if (reply.toolCalls.isEmpty()) {
                     // The reference offers the completed parent turn before Stop hooks.
                     // A maintenance failure never replaces the user's successful answer.
-                    if(extraction) {
+                    auto offerMemory=[&](auto& maintenance,EventKind kind) {
                         QJsonObject receipt;
                         try {
                             auto fork=modelRequest;fork.messages.append(session.messages.last());
                             ToolContext extractionContext;extractionContext.contextRevision=session.compactions.size();
                             extractionContext.protectedPaths={options.sessionsDirectory};
                             extractionContext.plansDirectory=QDir(options.sessionsDirectory).filePath("plans");
-                            receipt=extraction->offer({session.id,session.workingDirectory,std::move(fork),modelMessages(session),turnRegistry,extractionContext});
+                            receipt=maintenance->offer({session.id,session.workingDirectory,std::move(fork),modelMessages(session),turnRegistry,extractionContext});
                         }catch(const std::exception& error){receipt={{"status","failed"},{"error",QString::fromUtf8(error.what()).left(2048)}};}
-                        send({EventKind::MemoryExtraction,runId,session.id,{}, {},receipt});
-                    }
+                        send({kind,runId,session.id,{}, {},receipt});
+                    };
+                    if(extraction)offerMemory(extraction,EventKind::MemoryExtraction);
+                    if(dream)offerMemory(dream,EventKind::MemoryDream);
                     auto stop = hooks(HookKind::Stop, reply.text);
                     if (stop.block) {
                         stopHookActive=true;
@@ -828,6 +834,7 @@ QJsonObject Engine::endSessionImpl(const QString& id,QString reason,const Cancel
     // before running SessionEnd or transferring any other background owner.
     if(scope)scope->close();
     if(d->extraction)d->extraction->forget(id);
+    if(d->dream)d->dream->forget(id);
     QJsonArray diagnostics;
     auto error=[&](const QString& text,const QString& code=QString()) {
         diagnostics.append(QJsonObject{{"hook_event_name","SessionEnd"},{"outcome","non_blocking_error"},{"error",text},{"error_code",code}});
@@ -927,6 +934,7 @@ QJsonArray Engine::close(QString reason) {
     }
     d->pool.waitForDone();
     if(d->extraction)d->extraction->close();
+    if(d->dream)d->dream->close();
     {std::lock_guard lock(d->mutex);sessions=d->touchedSessions.values();}
     sessions.sort();QJsonArray result;
     for(const auto& id:sessions) {
@@ -1020,6 +1028,21 @@ QJsonObject Engine::permissions(const QString& id,const CancellationToken& token
 std::shared_ptr<PlanMode> Engine::planning() const{return d->plans;}
 bool Engine::projectMemoryEnabled() const {return bool(d->memory);}
 bool Engine::memoryExtractionEnabled()const{return d->extraction&&d->extraction->enabled();}
+bool Engine::memoryDreamAvailable()const{return bool(d->dream);}
+bool Engine::automaticMemoryDream()const{return d->dream&&d->dream->automatic();}
+QJsonObject Engine::consolidateMemory(const QString& id,const CancellationToken& token)const {
+    (void)d->store.metadata(id);Impl::NativeOperation operation(*d,id,token);operation.token.throwIfCancelled();
+    return d->dream?d->dream->request(id):QJsonObject{{"available",false},{"session_id",id},{"status","unavailable"}};
+}
+QJsonObject Engine::memoryDreamStatus(const QString& id,int offset,int limit)const {
+    (void)d->store.metadata(id);return d->dream?d->dream->status(id,offset,limit):QJsonObject{{"available",false},{"session_id",id},{"records",QJsonArray{}}};
+}
+QJsonObject Engine::cancelMemoryDream(const QString& id)const {
+    (void)d->store.metadata(id);return d->dream?d->dream->cancel(id):QJsonObject{{"available",false},{"session_id",id},{"records",QJsonArray{}}};
+}
+bool Engine::drainMemoryDreams(int timeout,const QString& id,const CancellationToken& token)const {
+    if(!id.isEmpty())(void)d->store.metadata(id);token.throwIfCancelled();return !d->dream||d->dream->drain(timeout,id,token);
+}
 QJsonObject Engine::extractMemory(const QString& id,const CancellationToken& token)const {
     (void)d->store.metadata(id);Impl::NativeOperation operation(*d,id,token);
     if(!memoryExtractionEnabled())return {{"enabled",false},{"session_id",id},{"status","disabled"}};

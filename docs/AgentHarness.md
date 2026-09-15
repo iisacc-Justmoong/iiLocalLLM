@@ -126,3 +126,7 @@ EngineOptions.taskToolsEnabled로 작업 도구를 활성화한다. TaskStore는
 C++ 호스트가 등록한 `Tool.completesRun` 도구는 성공할 때 추가 모델 턴 없이 실행을 완료한다. 항상 직렬 경계이며 같은 응답에서 뒤따르는 도구는 실행하지 않고 이력에 `not_executed`로 기록한다. 실패한 호출은 완료로 취급하지 않는다. 이 속성은 모델/MCP 결과나 metadata에서 읽지 않는다.
 
 0.40은 네이티브 `SessionSearch`와 Engine 직접 호출, 인증 API·MCP·CLI를 추가한다. 메모리 정리에 필요한 큰 JSONL 기록 검색을 제공하며, 의미 검색과 자동 dream 정리는 별도 미완료 항목이다. [SessionHistory.md](SessionHistory.md)에 소유 범위와 읽기 한도를 기록한다.
+
+## 0.41 프로젝트 메모리 정리
+
+C++ MemoryDream은 기본 OFF인 자동 실행, 24시간·5개 대화·10분 목록 주기, QLockFile의 프로세스 간 배제와 성공 시각 저장을 추가한다. 부모 문맥·도구 정의·읽기 캐시를 유지하고 추출과 공통 실행 코드를 사용하며, 주 transcript와 분리된 진행/완료 상태를 API·MCP·CLI로 제공한다. 수동 요청도 동일 권한·잠금·한도를 적용한다. [MemoryDream.md](MemoryDream.md)에 참조의 낙관적 타임스탬프/기능 플래그와의 차이, 부분 쓰기와 협력적 취소, 남은 앱 UI·worktree·팀·원격·플랫폼 범위를 명시한다. 대응표는 23 partial·8 pending·0 complete를 유지한다.
