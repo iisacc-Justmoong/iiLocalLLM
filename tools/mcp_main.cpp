@@ -27,7 +27,7 @@ void interrupt(int) { interrupted.store(true,std::memory_order_relaxed); }
 }
 
 int main(int argc, char** argv) {
-    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.30.0");
+    QCoreApplication app(argc, argv); app.setApplicationName("iillm-mcp"); app.setApplicationVersion("0.31.0");
     QCommandLineParser parser; parser.setApplicationDescription("iiLocalLLM C++ MCP stdio or authenticated local HTTP server");
     parser.addHelpOption(); parser.addVersionOption();
     parser.addOptions({{{"w", "workspace"}, "Existing workspace to expose.", "path"},
@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
         {"permission-settings", "Private host configuration outside the workspace for layered permission settings.", "file"},
         {"permission-requests", "Private host JSON outside the workspace enabling app permission requests.", "file"},
         {"add-dir", "Additional file working directory; repeat. Does not enable disk settings without --permission-settings.", "directory"},
-        {"hooks", "Private command/HTTP/prompt hook JSON configuration outside the workspace.", "file"},
+        {"hooks", "Private command/HTTP/prompt/agent hook JSON configuration outside the workspace.", "file"},
         {"mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
         {"mcp-project", "Load workspace/.mcp.json after explicit MCP configuration files."},
         {"mcp-eager", "Publish all configured MCP tools to the agent without ToolSearch."},

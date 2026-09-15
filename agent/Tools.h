@@ -19,6 +19,7 @@ struct Tool {
     // Optional trusted host lifecycle operation; never exported in tool schemas
     // or dispatchable by a model/MCP caller. Install on one control per owner.
     std::function<QJsonArray(const QString&,const QString&,const CancellationToken&)> transferSession;
+    bool completesRun = false; // Host-only successful completion tool; a serial barrier, never parsed from model/MCP metadata.
 };
 class IILOCALLLM_EXPORT ToolRegistry {
 public:
@@ -45,7 +46,6 @@ private:
     std::unique_ptr<Impl> d;
 };
 
-enum class PermissionMode { Default, AcceptEdits, DontAsk, Bypass, Plan };
 enum class PermissionBehavior { Allow, Deny, Ask };
 struct PermissionDecision {
     PermissionBehavior behavior = PermissionBehavior::Ask;
@@ -89,11 +89,28 @@ struct PermissionResponse {
     QJsonArray updatedPermissions; // Allow only; requires a trusted host update handler.
     bool interrupt = false; // Deny only; cancels the owning run as well as rejecting this tool.
 };
+struct AgentHookRequest {
+    QString prompt, model, workingDirectory;
+    int maxTokens=1024, maxInputBytes=1024*1024, maxOutputBytes=1024*1024;
+};
+struct AgentHookReply {
+    QJsonObject decision; // Empty when the bounded verifier did not produce a result.
+    Usage usage;
+    QString agentId;
+    int assistantMessages=0, toolCalls=0;
+    QStringList toolsUsed; // Distinct actually started tool names, without arguments or observations.
+};
+struct HookInput;
+using AgentHookExecutor=std::function<AgentHookReply(const AgentHookRequest&,const HookInput&,const CancellationToken&)>;
 struct ModelHookContext {
     std::shared_ptr<Model> model;
     QString modelName;
     std::shared_ptr<const Session> session; // Host snapshot; never loaded by re-entering a leased Engine session.
     QList<ToolDefinition> tools;
+    std::shared_ptr<ToolRegistry> registry;
+    std::shared_ptr<const PermissionPolicy> policy;
+    ToolContext executionContext;
+    AgentHookExecutor agentExecutor;
 };
 struct HookInput {
     HookKind kind;
@@ -129,6 +146,7 @@ struct ToolRunnerOptions {
     std::shared_ptr<PermissionRequests> permissionRequests; // Optional remote channel, racing local request handlers.
     std::shared_ptr<Model> hookModel;
     QString hookModelName; // Fallback when a standalone ToolContext has no session snapshot.
+    AgentHookExecutor hookAgent;
 };
 class IILOCALLLM_EXPORT ToolRunner {
 public:

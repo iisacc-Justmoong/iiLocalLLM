@@ -117,8 +117,9 @@ RulePolicy::RulePolicy(PermissionMode mode, QList<PermissionRule> rules) : mode_
 }
 QJsonObject RulePolicy::describe(const ToolContext& context) const {
     context.cancellation.throwIfCancelled();
-    const QString mode=mode_==PermissionMode::AcceptEdits?"acceptEdits":mode_==PermissionMode::DontAsk?"dontAsk"
-        :mode_==PermissionMode::Bypass?"bypassPermissions":mode_==PermissionMode::Plan?"plan":"default";
+    const auto effective=context.permissionMode.value_or(mode_);
+    const QString mode=effective==PermissionMode::AcceptEdits?"acceptEdits":effective==PermissionMode::DontAsk?"dontAsk"
+        :effective==PermissionMode::Bypass?"bypassPermissions":effective==PermissionMode::Plan?"plan":"default";
     QJsonArray rules;
     for(const auto& rule:rules_)rules.append(QJsonObject{{"rule",rule.toolPattern},{"behavior",rule.behavior==PermissionBehavior::Allow?"allow":rule.behavior==PermissionBehavior::Deny?"deny":"ask"},
         {"source",rule.source.isEmpty()?QString("host"):rule.source},{"root_directory",rule.rootDirectory},{"settings_syntax",rule.settingsSyntax}});
@@ -126,6 +127,7 @@ QJsonObject RulePolicy::describe(const ToolContext& context) const {
         {"working_directories",QJsonArray::fromStringList(workingDirectories(context))}};
 }
 PermissionDecision RulePolicy::decide(const ToolDefinition& tool, const QJsonObject& args, const ToolContext& context) const {
+    const auto mode=context.permissionMode.value_or(mode_);
     std::optional<PermissionBehavior> matched;
     QList<PermissionRule> denies, asks, allows;
     for(const auto& rule:parsePermissionRules(context.allowedTools)) allows.append({rule,PermissionBehavior::Allow});
@@ -138,12 +140,12 @@ PermissionDecision RulePolicy::decide(const ToolDefinition& tool, const QJsonObj
     const bool taskState = tool.metadata["source"] == "builtin.task"
         && QStringList{"TaskCreate", "TaskGet", "TaskList", "TaskUpdate", "TaskClaim", "TodoWrite", "TodoRead"}.contains(tool.name);
     const bool stopOwnShell = tool.name == "TaskStop" && tool.metadata["source"] == "builtin.shell.control";
-    if (mode_ == PermissionMode::Plan && !tool.readOnly && !taskState && !stopOwnShell) return {PermissionBehavior::Deny, "Plan mode allows read-only tools, internal task state and stopping owned executions"};
+    if (mode == PermissionMode::Plan && !tool.readOnly && !taskState && !stopOwnShell) return {PermissionBehavior::Deny, "Plan mode allows read-only tools, internal task state and stopping owned executions"};
     if (detail::permissionRulesMatch(asks, tool, args, context, false)) matched = PermissionBehavior::Ask;
     else if (detail::permissionRulesMatch(allows, tool, args, context, true)) matched = PermissionBehavior::Allow;
-    auto decision = matched.value_or(mode_ == PermissionMode::Bypass || tool.readOnly || taskState || stopOwnShell
-        || (mode_ == PermissionMode::AcceptEdits && tool.editsFiles) ? PermissionBehavior::Allow : PermissionBehavior::Ask);
-    if (decision == PermissionBehavior::Ask && mode_ == PermissionMode::DontAsk) decision = PermissionBehavior::Deny;
+    auto decision = matched.value_or(mode == PermissionMode::Bypass || tool.readOnly || taskState || stopOwnShell
+        || (mode == PermissionMode::AcceptEdits && tool.editsFiles) ? PermissionBehavior::Allow : PermissionBehavior::Ask);
+    if (decision == PermissionBehavior::Ask && mode == PermissionMode::DontAsk) decision = PermissionBehavior::Deny;
     return {decision, matched ? "Tool permission rule (host or current invocation)" : "Session permission mode"};
 }
 ToolRunner::ToolRunner(std::shared_ptr<ToolRegistry> registry, std::shared_ptr<const PermissionPolicy> policy, ToolRunnerOptions options)
@@ -156,7 +158,7 @@ void PermissionPolicy::applyUpdates(const QJsonArray&,const ToolContext&) const 
 bool ToolRunner::concurrencySafe(const ToolCall& call) const {
     try { const auto entry = registry_->resolve(call.name); entry->validateInput(call.arguments); const auto& tool = entry->tool;
         // Input-changing hooks can change the scheduling classification. Serialize those runs.
-        return options_.hooks.isEmpty() && !options_.permissionResponse && !options_.permissionRequests
+        return !tool.completesRun && options_.hooks.isEmpty() && !options_.permissionResponse && !options_.permissionRequests
             && (tool.canRunConcurrently ? tool.canRunConcurrently(call.arguments) : tool.definition.concurrencySafe);
     } catch (...) { return false; }
 }
@@ -168,7 +170,9 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
     if(!options_.hooks.isEmpty()) {
         modelContext=std::make_shared<ModelHookContext>();modelContext->model=options_.hookModel;
         modelContext->modelName=options_.hookModelName;modelContext->session=context.sessionSnapshot;
-        modelContext->tools=registry_->definitions();
+        modelContext->registry=registry_->snapshot();modelContext->tools=modelContext->registry->definitions();modelContext->policy=policy_;
+        modelContext->executionContext=context;modelContext->executionContext.progress={};modelContext->executionContext.permissionRequests={};
+        modelContext->agentExecutor=options_.hookAgent;
     }
     auto hookEvents=[&](const HookResult& value) {
         for(const auto& diagnostic:value.diagnostics)event(callback,EventKind::Hook,context,call,{},diagnostic.toObject());

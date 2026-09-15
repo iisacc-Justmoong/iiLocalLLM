@@ -122,3 +122,5 @@ EngineOptions.taskToolsEnabled로 작업 도구를 활성화한다. TaskStore는
 ## 0.27 앱 권한 요청
 
 인증 API/native IPC와 MCP 연결별 승인 채널, 독립 제어 처리, 훅·앱 경쟁, 취소·기한·중복 응답을 추가한다. [PermissionRequests.md](PermissionRequests.md)에 활성화·요청·응답 계약과 참조 차이를 기술한다. 전체 하네스와 실제 앱 통합 완료를 의미하지 않는다.
+
+C++ 호스트가 등록한 `Tool.completesRun` 도구는 성공할 때 추가 모델 턴 없이 실행을 완료한다. 항상 직렬 경계이며 같은 응답에서 뒤따르는 도구는 실행하지 않고 이력에 `not_executed`로 기록한다. 실패한 호출은 완료로 취급하지 않는다. 이 속성은 모델/MCP 결과나 metadata에서 읽지 않는다.

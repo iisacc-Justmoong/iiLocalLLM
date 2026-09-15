@@ -333,7 +333,8 @@ QStringList SettingsPermissionPolicy::workingDirectories(const ToolContext& cont
 }
 QJsonObject SettingsPermissionPolicy::describe(const ToolContext& context) const {
     require(QFileInfo(context.workingDirectory).canonicalFilePath() == options_.workingDirectory, "Permission settings workspace mismatch");
-    return sessionSnapshot(context).toJson();
+    auto current=sessionSnapshot(context);if(context.permissionMode)current.mode=*context.permissionMode;
+    return current.toJson();
 }
 namespace {
 QString normalizedRule(QString value) {

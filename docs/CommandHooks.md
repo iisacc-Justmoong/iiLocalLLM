@@ -101,3 +101,5 @@ once:true는 동일 프로세스의 공유 실행기에서 세션·설정 항목
 macOS에서 검증한 데스크톱 POSIX 명령 실행기이다. Windows·iOS·Android·WASM은 명령 설정을 거부하며 Linux 실기기 검증은 별도다. HTTP 훅은 0.29에 추가했다. prompt 훅은 0.30에 추가했다([PromptHooks.md](PromptHooks.md)). agent 훅, 명령 async/asyncRewake, powershell, 명령 중복 제거, PermissionDenied·Notification·Setup·ConfigChange·Worktree·파일 감시·팀/elicitation 이벤트와 스킬·에이전트·플러그인 hooks 병합은 남아 있다. 지원하지 않는 설정은 명시적으로 거부한다.
 
 분석 기준은 고정 미러 `c8cd253554319f32ff64ff7000636199f720c9bc`의 schemas/hooks.ts, types/hooks.ts, entrypoints/sdk/coreSchemas.ts, utils/hooks.ts, services/tools/toolHooks.ts이다. 설정·stdin·JSON/종료 코드 순서·매처·권한 우선순위를 관찰해 C++로 구현했다. 미러 출처 주장의 독립 인증이나 전체 Claude Code 호환 인증은 아니다. 실행 증거는 [Verification.md](Verification.md), 남은 전체 목표는 [HarnessParity.md](HarnessParity.md)에 구분한다.
+
+0.31.0부터 같은 호스트 설정에 `type: "agent"`를 사용할 수 있다. 실제 도구 실행·StructuredOutput·dontAsk·기한과 정리 계약은 [AgentHooks.md](AgentHooks.md)를 따른다.

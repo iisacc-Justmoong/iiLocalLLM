@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(iiLocalLLM VERSION 0.30.0 LANGUAGES CXX)
+project(iiLocalLLM VERSION 0.31.0 LANGUAGES CXX)
 
 if(PROJECT_IS_TOP_LEVEL AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     if(DEFINED ENV{HOME})
@@ -67,6 +67,7 @@ target_sources(iiLocalLLM PRIVATE agent/PermissionSettings.cpp agent/PermissionS
 target_sources(iiLocalLLM PRIVATE agent/PermissionRequests.cpp agent/PermissionRequests.h)
 target_sources(iiLocalLLM PRIVATE agent/CommandHooks.cpp agent/CommandHooks.h agent/HttpHook.cpp agent/HttpHook.h)
 target_sources(iiLocalLLM PRIVATE agent/ModelHook.cpp agent/ModelHook.h agent/PromptArguments.h)
+target_sources(iiLocalLLM PRIVATE agent/HookAgent.cpp agent/HookAgent.h)
 add_library(iiLocalLLM::iiLocalLLM ALIAS iiLocalLLM)
 target_compile_features(iiLocalLLM PUBLIC cxx_std_20)
 target_compile_definitions(iiLocalLLM PRIVATE IILOCALLLM_BUILDING_LIBRARY)
@@ -138,6 +139,11 @@ if(BUILD_TESTING)
     set_target_properties(iiLocalLLMHelloWorld PROPERTIES CXX_EXTENSIONS OFF)
     add_test(NAME iiLocalLLM.hello_world COMMAND iiLocalLLMHelloWorld)
     find_package(Qt6 6.8.3 EXACT REQUIRED COMPONENTS Test)
+    add_executable(iiLocalLLMAgentHooksTests tests/agent_hooks_tests.cpp)
+    target_link_libraries(iiLocalLLMAgentHooksTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
+    set_target_properties(iiLocalLLMAgentHooksTests PROPERTIES AUTOMOC ON)
+    add_test(NAME iiLocalLLM.agent_hooks COMMAND iiLocalLLMAgentHooksTests)
+    set_tests_properties(iiLocalLLM.agent_hooks PROPERTIES TIMEOUT 90)
     add_executable(iiLocalLLMModelHooksTests tests/model_hooks_tests.cpp)
     target_link_libraries(iiLocalLLMModelHooksTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
     set_target_properties(iiLocalLLMModelHooksTests PROPERTIES AUTOMOC ON)
@@ -402,6 +408,10 @@ if(BUILD_TESTING)
                     ${CMAKE_CURRENT_SOURCE_DIR}/tests/model_hooks_wire.py $<TARGET_FILE:iiLocalLLMD> $<TARGET_FILE:iillm> $<TARGET_FILE:iiLocalLLMMcpServer>
                     --report ${CMAKE_CURRENT_BINARY_DIR}/model-hooks-cli.json)
                 set_tests_properties(iiLocalLLM.model_hooks_cli PROPERTIES TIMEOUT 90)
+                add_test(NAME iiLocalLLM.agent_hooks_cli COMMAND ${Python3_EXECUTABLE} -B
+                    ${CMAKE_CURRENT_SOURCE_DIR}/tests/model_hooks_wire.py $<TARGET_FILE:iiLocalLLMD> $<TARGET_FILE:iillm> $<TARGET_FILE:iiLocalLLMMcpServer>
+                    --agent-hooks --report ${CMAKE_CURRENT_BINARY_DIR}/agent-hooks-cli.json)
+                set_tests_properties(iiLocalLLM.agent_hooks_cli PROPERTIES TIMEOUT 90)
             endif()
             add_test(NAME iiLocalLLM.permission_settings_wire COMMAND ${Python3_EXECUTABLE} -B
                 ${CMAKE_CURRENT_SOURCE_DIR}/tests/permission_settings_wire.py $<TARGET_FILE:iiLocalLLMD> $<TARGET_FILE:iillm> $<TARGET_FILE:iiLocalLLMMcpServer>

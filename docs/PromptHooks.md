@@ -1,6 +1,6 @@
 # C++ 프롬프트 훅 (0.30.0)
 
-`agent::CommandHooks`의 `type: "prompt"`는 호스트의 조건을 로컬 모델에 한 번 질의하고 JSON 판단을 검증한다. 기존 명령·HTTP 훅과 같은 matcher, `if`, `once`, 진단·동시 실행 상한을 사용한다. 생산 실행 경로는 C++이며 Python은 전송 교차 검증에만 사용한다. 도구를 여러 번 실행하는 `type: "agent"` 검증 루프는 별도 미구현 항목이다.
+`agent::CommandHooks`의 `type: "prompt"`는 호스트의 조건을 로컬 모델에 한 번 질의하고 JSON 판단을 검증한다. 기존 명령·HTTP 훅과 같은 matcher, `if`, `once`, 진단·동시 실행 상한을 사용한다. 생산 실행 경로는 C++이며 Python은 전송 교차 검증에만 사용한다. 0.31.0의 실제 도구 검증 루프는 [AgentHooks.md](AgentHooks.md)의 `type: "agent"`이다.
 
 ```json
 {
@@ -30,7 +30,7 @@ daemon에는 `--agent-hooks FILE`, MCP에는 `--hooks FILE`을 지정한다. 파
 | `once` | 프로세스 내 세션·설정 엔트리별 한 번. 모델 실행 시작 후 실패해도 소비됨 |
 | `statusMessage` | 진단에 포함하는 호스트 표시 문자열 |
 
-지원 이벤트는 [CommandHooks.md](CommandHooks.md)의 16개 이벤트이다. 같은 이벤트에서 매칭된 `prompt + if`가 같으면 마지막 설정의 모델·기한·once·표시 문자열을 사용한다. 서로 다른 조건은 별도로 실행한다. 기본 `maxConcurrentProcesses=4`는 명령·HTTP·프롬프트에 공유되는 슬롯이며, 모델 훅만 별도 무제한 풀을 만들지 않는다. 호스트의 `Model` 구현은 기존 Engine 계약처럼 동시 호출과 협력 취소를 지원해야 한다.
+지원 이벤트는 [CommandHooks.md](CommandHooks.md)의 16개 이벤트이다. 같은 이벤트에서 매칭된 `prompt + if`가 같으면 마지막 설정의 모델·기한·once·표시 문자열을 사용한다. 서로 다른 조건은 별도로 실행한다. 기본 `maxConcurrentProcesses=4`는 명령·HTTP·프롬프트·에이전트에 공유되는 슬롯이며, 모델 훅만 별도 무제한 풀을 만들지 않는다. 호스트의 `Model` 구현은 기존 Engine 계약처럼 동시 호출과 협력 취소를 지원해야 한다.
 
 ## 입력과 대화 경계
 
@@ -40,9 +40,9 @@ daemon에는 `--agent-hooks FILE`, MCP에는 `--hooks FILE`을 지정한다. 파
 
 도구 호출 후 결과가 아직 저장되지 않은 경계에서는 미실행임을 명시한 임시 Tool 결과를 짝지어 네이티브 대화 템플릿에 전달한다. `PostToolUse`·실패 훅에서는 해당 호출의 실제 결과를 사용한다. 이 결과는 모델용 복사본에만 존재하며 도구를 실제로 실행하거나 원래 이력을 변경하지 않는다. UserPromptSubmit은 현재 입력을 저장하기 전 이력과 이벤트 입력을 받는다. Stop은 방금 저장한 답변까지 받는다.
 
-일반 Engine 도구 훅은 해당 턴의 도구 목록과 실행 직전 세션 스냅샷을 받는다. 그 외 Engine 생명주기 훅은 호스트 기본 registry의 정의를 받는다. Task 훅은 도구 목록을 구성한 시점의 스냅샷을 사용하며, 독립 `runTaskTool`·셸 제어는 모델 식별자와 이벤트 데이터만으로 판단한다. SubagentStart는 자식의 초기 이력과 범위 제한된 모델·도구를 받는다. 이후 자식 훅은 자식 Engine의 스냅샷을 사용한다.
+일반 Engine 도구 훅은 해당 턴의 도구 목록과 실행 직전 세션 스냅샷을 받는다. 0.31.0부터 그 외 Engine 생명주기 훅도 호스트 기본 registry·추가 도구·작업 도구의 정의를 받는다. Task 훅은 도구 목록을 구성한 시점의 스냅샷을 사용하며, 독립 `runTaskTool`·셸 제어는 모델 식별자와 이벤트 데이터만으로 판단한다. SubagentStart는 자식의 초기 이력과 범위 제한된 모델·도구를 받는다. 이후 자식 훅은 자식 Engine의 스냅샷을 사용한다.
 
-MCP 직접 파일/셸 호출은 기본 모델을 공유한다. 일반 호출에서는 해당 MCP 대화가 유휴 상태이면 이력을 읽으며, 활성 세션이나 즉시 제어 요청에서는 이력 없이 이벤트 데이터와 모델 식별자를 사용한다. 다른 API가 동시에 점유한 세션을 강제로 읽지 않는다. MCP `agent.run` 내부에서는 일반 Engine 경로가 동일하게 적용된다. 독립 C++ ToolRunner에는 `ToolRunnerOptions.hookModel`·`hookModelName`과 필요시 `ToolContext.sessionSnapshot`을 호스트가 제공한다.
+MCP 직접 호출은 기본 모델을 공유한다. 일반 호출에서는 해당 MCP 대화가 유휴 상태이면 이력을 읽으며, 활성 세션이나 즉시 제어 요청에서는 이력 없이 이벤트 데이터와 실제 소유 대화의 메타데이터를 사용한다. 다른 API가 동시에 점유한 세션을 강제로 읽지 않는다. MCP `agent.run` 내부에서는 일반 Engine 경로가 동일하게 적용된다. 독립 C++ ToolRunner에는 `ToolRunnerOptions.hookModel`·`hookModelName`과 필요시 `ToolContext.sessionSnapshot`을 호스트가 제공한다.
 
 ## 판단·권한·실패
 
@@ -64,6 +64,6 @@ MCP 직접 파일/셸 호출은 기본 모델을 공유한다. 일반 호출에�
 
 분석 기준은 고정 미러 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `utils/hooks/execPromptHook.ts`, `utils/argumentSubstitution.ts`, `schemas/hooks.ts`, `utils/hooks.ts`이다. 원본의 기본 소형 Haiku 선택을 로컬 대화 모델 선택으로 바꾸며 온라인 모델을 자동 호출하지 않는다. 원본은 도구 정의를 전달하지만 별도 실행 루프가 없고, 이 구현은 `toolChoice=none`을 명시한다. 원본 인자 분리기의 shell-quote 연산자 처리·파싱 실패 fallback·순차 재치환을 그대로 복제하지 않는다. 알 수 없는 응답 키를 무시하지 않고 거부한다. 기존 명령/HTTP와 공유한 세션·스케줄링 정책은 원본 전체 훅 설정 계층과 동일하다는 뜻이 아니다.
 
-기존 Qt와 고정 llama.cpp를 재사용한다. 새 라이브러리·온라인 의존성·Python 생산 실행기를 추가하지 않는다. 원본 `execAgentHook.ts`의 StructuredOutput 도구, 최대 50개 assistant 메시지 루프, 제한된 도구 실행과 dontAsk 권한 문맥, Stop 강제 검증은 아직 별도 구현이 필요하다. 전체 생명주기·플러그인/스킬별 훅 병합과 앱·플랫폼 검증도 [HarnessParity.md](HarnessParity.md)의 partial 상태를 유지한다.
+기존 Qt와 고정 llama.cpp를 재사용한다. 새 라이브러리·온라인 의존성·Python 생산 실행기를 추가하지 않는다. 원본 `execAgentHook.ts`에 대응하는 별도 도구 검증은 0.31.0의 [AgentHooks.md](AgentHooks.md)에 기록한다. 전체 생명주기·플러그인/스킬별 훅 병합과 앱·플랫폼 검증도 [HarnessParity.md](HarnessParity.md)의 partial 상태를 유지한다.
 
 `tests/native_schema_smoke.cpp`는 실제 llama.cpp 모델에 JSON을 출력하지 말라는 입력을 보내고, `tool_grammar=false`에서도 고정 `ok:true` 스키마의 JSON이 생성되는지 별도로 검사한다. 훅 판단 중 발생한 작업 취소가 연결된 SSE 클라이언트에 온전한 오류/종료 프레임으로 전달되는지도 `tests/http_tests.cpp`에서 검증한다. `tests/model_hooks_wire.py`는 MCP의 재개 커서용 빈 SSE 시작 이벤트를 JSON 판단과 구분하며, 비어 있지 않은 잘못된 JSON은 검증 실패로 처리한다.

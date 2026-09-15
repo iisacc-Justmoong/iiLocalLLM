@@ -1,5 +1,32 @@
 # 구현 검증 기록
 
+## 2026-09-15 C++ 에이전트 훅 (0.31.0)
+
+실제 도구를 실행하는 별도 검증 대화를 C++ Engine·ToolRunner·API·MCP에 연결했다. dontAsk 권한, 예약 StructuredOutput, 50번째 assistant 메시지 실행 전 중단, 부모 transcript의 정확한 Read, 취소·임시 상태 및 background Bash 정리를 구현했다. Task 게시 전 콜백은 잠금 밖에서 실행하고 원래 보드와 비교해 충돌을 거부한다. MCP 검증기의 TaskStore·세션 권한은 외부 연결 ID가 아닌 실제 Engine 대화에 연결한다. 계약과 참조 차이는 [AgentHooks.md](AgentHooks.md)에 기록한다.
+
+| 검증 경계 | 관측 |
+|---|---|
+| Release 전체, inference 라벨 제외 | 67/67, 149.66초 |
+| ASan·UBSan, llama 비활성 Debug | 64/64, 153.52초 |
+| 새 설치 소비자, 공식 MCP 교차 검사 포함 | 37/37, 40.91초 |
+| 종료 경계 | 결과 도구 뒤의 호출 미실행·결과 짝 보존, 잘못된 결과 수정, 49번째 수락/50번째 실행 전 중단 |
+| 권한·파일 | bypass/acceptEdits 암묵적 쓰기 차단, 명시적 허용/거부/Ask, 세션 허용 유지, 정확한 transcript Read와 인접 상태/링크/쓰기 거부 |
+| 실행 통합 | MCP 소유 대화의 TaskList, 게시 전 보드 읽기와 동시 변경 충돌, 스킬·지연 도구 검색·Plan 프로필과 추가 호스트 도구 |
+| 정리 | 부모 취소·자체 기한·입출력 한도 뒤 임시 대화 제거, 검증기가 시작한 background Bash 종료 |
+| Qwen3 8B API | 소스·설치 각각 파일 허용, 파일 차단 후 대화 지속, Stop 차단 후 FIXED 응답, UserPromptSubmit 차단 |
+| Qwen3 8B CLI·Task | 양쪽에서 IPC 입력 차단과 Task 생성 허용/게시 전 거부 |
+| Qwen3 8B MCP | 양쪽에서 HTTP Write 3건(허용·훅 거부·호스트 거부), 공식 Python SDK stdio Write 2건 |
+
+모델은 model://qwen3-8b-q4, 5,027,783,488바이트, SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`이다. 파일을 다시 해시했다. 진단을 수집한 실제 훅은 소스 15개, 설치본 15개이다. 모든 수집된 훅에서 실제 Read 또는 TaskList와 StructuredOutput, 두 번 이상의 assistant 응답, 생성 토큰, 새 agent ID와 부모 이력 0개를 확인했다. CLI·stdio 호출은 별도 검사했으며 이 진단 개수에는 포함하지 않는다.
+
+최종 라이브러리 SHA-256은 `14dbfaae191b1d1add2cdaa186fb45edc91955ba12c69b0c47065873a669ae40`, Mach-O UUID는 `171A67DA-AD30-3AB3-A85E-4AEE8A04A079`이다. 소스·설치 라이브러리 바이트, 세 실행 파일의 UUID와 CMake RPATH 변환 후 바이트, 공개 헤더 41개·문서·카탈로그·라이선스를 비교한다. 실제 설치 소비자가 `build/agent-hooks-stage`의 라이브러리를 로드하며 iillm은 모델 런타임에 직접 링크하지 않는다. 0.31 C++ 공개 구조체 변경으로 consumer 재빌드가 필요하다.
+
+첫 메모리 검사 전체는 64/64로 통과했다. 최종 native fixture 변경 후 재검사에서는 기존 셸 권한 분석 테스트가 149 ms 시점에 안전 거부로 돌아와 63/64였다. 당시 실제 모델 검사도 실행 중이었으며 이를 원인으로 확정하지 않는다. 해당 실패는 agent-hooks-sanitizer-parser-timeout.*에 보존했다. 추론 작업 종료 후 단독 검사와 순차 전체 64/64를 통과했으며, 간헐적인 시간 초과의 원인이 해결되었다고 주장하지 않는다.
+
+게시 전 Task 검증의 잠금 재진입과 변경 덮어쓰기, MCP 검증기의 잘못된 작업 목록 소유권을 먼저 실패하는 테스트로 확인했다. 첫 실제 Qwen3 검사에서는 복합적인 gate 조건에서 차단 대상 경로를 잘못 허용했다. 두 번째에서는 중첩된 원래 사용자 요청을 검증 작업으로 해석했고 실제 쓰기는 dontAsk가 막았다. 검증 표를 파일 basename별 명시적 boolean으로 바꾸고, 시스템 지시에 중첩된 입력과 수행할 조건의 경계를 명시했다. 두 실패는 `agent-hooks-source-native-initial.*`, `agent-hooks-source-native-second.*`에 보존하며 성공한 후속 검증으로 덮어쓰지 않는다. 두 번째 JSON은 첫 성공 시도까지의 이전 체크포인트이므로 두 번째 실패 자체는 해당 로그를 근거로 삼는다. 세 번째 검사에서 API·CLI는 통과했으나 Task 훅이 지연된 TaskList 조회를 생략했다. 조건을 이미 게시된 보드에 의존하도록 바꾸고 ToolSearch로 TaskList를 선택하도록 명시했다. 해당 실패는 agent-hooks-source-native-third.*에 보존한다. 이후 검증기는 실패 응답도 last_attempt에 즉시 기록한다. 네 번째 검사에서는 stdio의 차단 경로를 모델이 잘못 허용했다(agent-hooks-source-native-fourth.*). 최종 도구 훅 검증은 호출마다 파일에 기록한 JSON 판단을 읽는 조건으로 바꿔 실행 계층을 분리해 검증한다. 의미 기반 정책 판단의 정확성을 통과했다고 주장하지 않으며 호스트 정책은 계속 별도로 검사한다.
+
+증거는 `build/agent-hooks-verification.json`, `agent-hooks-linkage.json`, `agent-hooks-tested-source.json`, 소스/설치 native 보고서, 전체 로그/XML, `agent-hooks-publication.json`이다. 커밋과 실제 원격 HEAD 일치는 게시 기록에서 따로 확인한다. 전체 훅 설정·플러그인/스킬별 병합·남은 생명주기·OS 샌드박스·다른 하네스 영역·제품 앱과 다른 플랫폼 검증은 미완료이다. 이번 설치본은 SDK 검증용이며 Society·Dreamscapes를 다시 패키징하지 않는다. iPhone은 사용자 지시로 제외한다. 전체 목표는 계속 진행 중이다.
+
 ## 2026-09-15 C++ 프롬프트 훅 (0.30.0)
 
 단일 모델 판단 훅을 C++ Engine·ToolRunner와 인증 API·native IPC CLI·MCP HTTP/stdio에 연결했다. 대화 스냅샷, 미완결 도구 호출의 임시 짝, 입력/출력 상한, 별도 취소 기한, JSON 스키마·요청별 추론 모드와 모델 사용량 진단을 추가했다. 원본 대화에서 도구를 재실행하지 않는다. 실제 검증 중 발견한 HTTP SSE의 작업 취소 후 잘림도 수정했다. 계약과 원본 차이는 [PromptHooks.md](PromptHooks.md)에 기록한다.

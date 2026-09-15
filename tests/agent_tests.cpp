@@ -39,6 +39,38 @@ public:
     }
 };
 #include "agent_tests.h"
+void AgentTests::completionToolStopsBeforeLaterTools() {
+    QTemporaryDir root;auto model=std::make_shared<ScriptModel>();auto registry=std::make_shared<a::ToolRegistry>();
+    QList<int> executed;auto regular=echoTool();regular.execute=[&](const QJsonObject& args,const auto&) {
+        executed.append(args["value"].toInt());return a::ToolResult{QString::number(args["value"].toInt()),args,false,{},{{"completes_run",true}}};
+    };registry->add(regular);
+    auto terminal=echoTool("StructuredOutput");terminal.completesRun=true;registry->add(terminal);
+    a::ToolRunner runner(registry,std::make_shared<a::RulePolicy>());
+    QVERIFY(!runner.concurrencySafe({"done","StructuredOutput",{{"value",2}}}));
+    model->replies={{{},{{"before","echo",{{"value",1}}},{"done","StructuredOutput",{{"value",2}}},{"after","echo",{{"value",3}}}}}};
+    a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");options.skills.enabled=false;options.projectContext.enabled=false;
+    a::Engine engine(model,registry,std::make_shared<a::RulePolicy>(),options);auto session=engine.createSession("model://test",root.path());
+    const auto result=engine.run({session.id,"Return the verified result"}).result.get();
+    QCOMPARE(result.status,a::RunStatus::Completed);QCOMPARE(result.text,"2");QCOMPARE(model->requests.size(),1);QCOMPARE(executed,QList<int>{1});
+    QVERIFY(a::pendingToolCalls(engine.session(session.id).messages).isEmpty());
+    terminal.execute=[](const QJsonObject&,const auto&){return a::ToolResult{"INVALID",{},true};};registry->remove("StructuredOutput");registry->add(terminal);
+    model->replies={{{},{{"invalid","StructuredOutput",{{"value",2}}},{"regular","echo",{{"value",4}}}}},{"NEXT_TURN",{}}};
+    session=engine.createSession("model://test",root.path());
+    QCOMPARE(engine.run({session.id,"Retry an invalid result"}).result.get().text,"NEXT_TURN");QCOMPARE(executed,QList<int>({1,4}));
+}
+void AgentTests::verifierPermissionModeDoesNotInheritBypass() {
+    auto tool=echoTool();tool.definition.readOnly=false;tool.definition.editsFiles=true;
+    a::ToolContext verifier;verifier.permissionMode=a::PermissionMode::DontAsk;
+    for(const auto mode:{a::PermissionMode::AcceptEdits,a::PermissionMode::Bypass}) {
+        a::RulePolicy policy(mode);QCOMPARE(policy.decide(tool.definition,{},{}).behavior,a::PermissionBehavior::Allow);
+        QCOMPARE(policy.decide(tool.definition,{},verifier).behavior,a::PermissionBehavior::Deny);
+        QCOMPARE(policy.describe(verifier)["mode"],"dontAsk");QVERIFY(policy.describe({})["mode"]!="dontAsk");
+        a::RulePolicy granted(mode,{{"echo",a::PermissionBehavior::Allow}});
+        QCOMPARE(granted.decide(tool.definition,{},verifier).behavior,a::PermissionBehavior::Allow);
+        a::RulePolicy denied(mode,{{"echo",a::PermissionBehavior::Allow},{"echo",a::PermissionBehavior::Deny}});
+        QCOMPARE(denied.decide(tool.definition,{},verifier).behavior,a::PermissionBehavior::Deny);
+    }
+}
 void AgentTests::registrySnapshotDuringExecution() {
     auto registry = std::make_shared<a::ToolRegistry>(); registry->add(echoTool());
     a::ToolRunnerOptions runnerOptions;

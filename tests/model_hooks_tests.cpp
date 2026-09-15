@@ -45,7 +45,7 @@ private slots:
         a::CommandHooks hooks(settings("Stop",object),options);
         QCOMPARE(hooks.describe()["provider"],"prompt");QCOMPARE(hooks.describe()["hooks"].toArray().first().toObject()["timeout_ms"],30000);
         QVERIFY(!QJsonDocument(hooks.describe()).toJson().contains("Check $ARGUMENTS"));
-        for(const auto& value:QList<QJsonObject>{{{"type","agent"},{"prompt","x"}},{{"type","prompt"},{"prompt",""}},
+        for(const auto& value:QList<QJsonObject>{{{"type","unknown"},{"prompt","x"}},{{"type","prompt"},{"prompt",""}},
             {{"type","prompt"},{"prompt",4}},{{"type","prompt"},{"prompt","x"},{"model",false}},
             {{"type","prompt"},{"prompt","x"},{"timeout",0}},{{"type","prompt"},{"prompt","x"},{"async",true}}})
             QVERIFY_THROWS_EXCEPTION(Error,a::CommandHooks(settings("Stop",value),options));

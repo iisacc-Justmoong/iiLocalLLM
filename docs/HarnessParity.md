@@ -116,3 +116,5 @@
 C++ HTTP/HTTPS POST·JSON 응답을 공통 생명주기와 권한 경로에 연결한다. URL/환경 허용 목록, 중복 URL/조건 처리, 직접 연결 DNS 주소 고정·TLS 검증, 프록시, 취소·기한·응답 한도를 제공한다. [HTTPHooks.md](HTTPHooks.md)에 참조와의 차이 및 미검증 플랫폼/프록시 조합을 기술한다. 비동기 응답 접수 확인은 로컬 비동기 실행기 완료를 뜻하지 않는다. 전체 생명주기·prompt/agent/async 훅, 설정/스킬/플러그인 병합과 실제 앱 전체 검증은 남아 있으며 hooks 상태는 partial이다.
 
 0.30.0은 C++ 프롬프트 훅의 단일 모델 판단, 스키마·기한·사용량 진단과 호스트 스냅샷 전달을 Engine·ToolRunner·API·MCP에 연결한다. 네이티브 JSON 출력 문법과 요청별 추론 모드 제어도 추가한다. 도구를 실행하는 agent 훅·전체 설정 병합·남은 생명주기와 앱 검증은 미완료이며 hooks/providers 상태는 partial이다. [PromptHooks.md](PromptHooks.md)에 입력 경계와 참조 차이를 기록한다.
+
+0.31.0은 실제 도구를 사용하는 C++ agent 훅을 추가한다. 새 대화·dontAsk·정확한 transcript 읽기·StructuredOutput·50번째 메시지 경계·취소 정리를 구현하고 Task 게시 전 검증 잠금과 MCP 소유 대화 연결을 보완한다. 스킬·지연 도구 검색·서브에이전트 프로필을 기존 Engine에서 재사용한다. 전체 설정 병합·남은 생명주기·앱/플랫폼 검증은 미완료이며 전체 상태는 partial이다. 계약과 참조 차이는 [AgentHooks.md](AgentHooks.md)에 기록한다.

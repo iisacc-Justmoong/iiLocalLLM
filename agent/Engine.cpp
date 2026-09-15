@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "HookAgent.h"
 #include "PermissionRules.h"
 #include "SkillsInternal.h"
 #include "PromptState.h"
@@ -126,7 +127,13 @@ public:
     std::shared_ptr<const ModelHookContext> hookContext(const Session& session) const {
         if(options.hooks.isEmpty())return {};
         auto context=std::make_shared<ModelHookContext>();context->model=model;context->modelName=session.model;
-        context->session=std::make_shared<Session>(session);context->tools=registry->definitions();return context;
+        context->session=std::make_shared<Session>(session);context->registry=registry->snapshot();
+        for(auto tool:additionalTools())context->registry->add(std::move(tool));
+        if(tasks)for(auto tool:agent::taskTools(tasks,session.id,options.taskToolsDeferred))context->registry->add(std::move(tool));
+        context->tools=context->registry->definitions();context->policy=policy;
+        context->executionContext={session.id,{},session.workingDirectory};
+        context->executionContext.transcriptPath=QDir(options.sessionsDirectory).filePath(session.id+"/transcript.jsonl");
+        context->agentExecutor=detail::hookAgentExecutor(options,tasks);return context;
     }
     QList<Tool> taskToolsFor(const Session& session, const QString& runId, EventCallback send = {}) const {
         if (!tasks) return {};
@@ -448,7 +455,7 @@ public:
                     modelRequest = base; modelRequest.messages.append(modelMessages(session));
                 }
                 const auto permissionRequests=request.permissionRequests?request.permissionRequests:options.permissionRequests;
-                const ToolRunner runner(turnRegistry, policy, {options.hooks, options.permission, 24000, options.permissionResponse, options.permissionUpdates, permissionRequests,model,session.model});
+                const ToolRunner runner(turnRegistry, policy, {options.hooks, options.permission, 24000, options.permissionResponse, options.permissionUpdates, permissionRequests,model,session.model,detail::hookAgentExecutor(options,tasks)});
                 qsizetype streamed = 0;
                 auto reply = model->generate(modelRequest, token, [&](const QString& text) {
                     token.throwIfCancelled(); streamed += text.size();
@@ -499,6 +506,8 @@ public:
                     return output;
                 };
                 auto commitTool = [&](const ToolCall& call, ToolResult output) {
+                    const bool completed=!output.isError&&turnRegistry->get(call.name).completesRun;
+                    const auto completedText=output.text;
                     auto grants = activeAllowedTools;
                     bool activate = false;
                     if (call.name == "Skill" && !skillContext.text.isEmpty() && !output.isError) {
@@ -511,6 +520,7 @@ public:
                     append({{}, MessageRole::Tool, output.text, {}, call.id, output.isError, output.data, output.content, output.metadata});
                     // Native Skill is a serial barrier. Parallel readers never race a scope write.
                     if (activate) activeAllowedTools = std::move(grants);
+                    if(completed){result.status=RunStatus::Completed;result.text=completedText;}
                 };
                 for (qsizetype i = 0; i < reply.toolCalls.size();) {
                     token.throwIfCancelled();
@@ -536,7 +546,13 @@ public:
                             throw;
                         }
                     }
+                    if(result.status==RunStatus::Completed)break;
                     i = end;
+                }
+                if(result.status==RunStatus::Completed) {
+                    for(const auto& pending:pendingToolCalls(lease->session().messages))
+                        append({{},MessageRole::Tool,"Not executed: a successful completion tool ended this run.",{},pending.id,true,{{"not_executed",true}}});
+                    break;
                 }
                 for (auto message : detail::pendingSkillMessages(lease->session().messages)) append(std::move(message));
                 } catch (const Error& error) {
@@ -575,6 +591,7 @@ Session Engine::createSession(QString model, QString workspace, QString systemPr
 }
 Session Engine::session(const QString& id) const { return d->store.load(id); }
 std::shared_ptr<Model> Engine::hookModel() const {return d->model;}
+AgentHookExecutor Engine::hookAgent() const {return detail::hookAgentExecutor(d->options,d->tasks);}
 QString Engine::transcriptPath(const QString& id) const {
     (void)d->store.metadata(id);return QDir(d->options.sessionsDirectory).filePath(id+"/transcript.jsonl");
 }
@@ -774,7 +791,7 @@ ToolResult Engine::runSubagentTool(const QString& id, const QString& name, const
     context.progress = [callback, id, runId = context.runId, callId](const QJsonObject& data) {
         if (callback) callback({EventKind::ToolProgress, runId, id, callId, {}, data});
     };
-    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests,d->model,session.model});
+    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks)});
     return runner.run({callId, name, args}, context, callback);
 }
 ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJsonObject& args,
@@ -789,7 +806,7 @@ ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJ
     ToolContext context{id, uuid(), session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), operation.token};
     context.transcriptPath=transcriptPath(id);
     context.permissionRequests=requests?requests:d->options.permissionRequests;
-    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests,d->model,session.model});
+    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks)});
     return runner.run({uuid(), name, args}, context, callback);
 }
 Session Engine::sessionMetadata(const QString& id) const { return d->store.metadata(id); }
@@ -812,7 +829,7 @@ ToolResult Engine::runTaskTool(const QString& id, const QString& name, const QJs
     ToolContext context{id, runId, session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), operation.token};
     context.transcriptPath=transcriptPath(id);
     context.permissionRequests=requests?requests:d->options.permissionRequests;
-    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests,d->model,session.model});
+    const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks)});
     return runner.run({uuid(), name, args}, context, callback);
 }
 RunHandle Engine::compact(CompactRequest request, EventCallback callback) {

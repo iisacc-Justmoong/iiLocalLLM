@@ -73,3 +73,5 @@ Read/Write/Edit도 canonical 대상을 준비하고 실행 직전에 원래 경�
 0.21.0의 명령 PreToolUse 훅은 입력을 바꾸고 호출 한 번에만 allow/ask/deny를 제공한다. 수정 입력을 다시 검증하며 명시적 호스트 Deny/Ask·Plan·자식 범위·파일 경계가 우선한다. Allow를 다음 호출이나 resume에 저장하지 않는다. 커스텀 정책의 최종 판단도 유지한다. [CommandHooks.md](CommandHooks.md)에 순서와 실패 계약을 기록한다.
 
 0.25.0은 Ask 도구의 PermissionRequest 훅, C++ 구조화 응답과 호스트 권한 갱신 처리를 연결한다. Allow/Deny에는 요청 훅을 호출하지 않으며 수정 입력의 스키마·경계·명시적 Deny를 다시 검사한다. [PermissionRequest.md](PermissionRequest.md)에 API/MCP 연결과 지속 갱신·원격 응답의 남은 범위를 기록한다.
+
+`ToolContext.permissionMode`는 C++ 호스트의 호출 한 번에만 적용하는 모드 선택이다. RulePolicy와 SettingsPermissionPolicy는 기존 명시적 규칙·추가 디렉터리·호스트 거부를 보존하고 이 모드로 기본 동작을 판단한다. 검증 에이전트의 dontAsk가 부모의 acceptEdits/bypass 기본 허용을 상속하지 않도록 사용한다. 원래 저장된 모드는 변경하지 않으며 API·MCP 입력에서 이 필드를 받아들이지 않는다. 커스텀 PermissionPolicy는 같은 호스트 계약을 구현해야 한다.

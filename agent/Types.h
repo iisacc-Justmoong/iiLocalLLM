@@ -6,6 +6,7 @@
 namespace iiLocalLLM::agent {
 struct Session;
 class PermissionRequests;
+enum class PermissionMode { Default, AcceptEdits, DontAsk, Bypass, Plan };
 
 enum class MessageRole { User, Assistant, Tool };
 enum class RunStatus { Completed, Cancelled, TurnLimit, Failed };
@@ -61,6 +62,8 @@ struct ToolContext {
     QStringList workingDirectories; // Host policy snapshot, replaced by ToolRunner before preparation; never accepted from wire input.
     QString transcriptPath; // Host-owned transcript location for hooks; empty for standalone tool calls.
     std::shared_ptr<PermissionRequests> permissionRequests; // Trusted channel override; never accepted from wire input.
+    std::optional<PermissionMode> permissionMode; // Trusted invocation override, used by isolated verification agents.
+    bool verificationAgent = false; // Host-only scope for the verifier's reserved result tool.
 };
 struct ModelRequest {
     QString model;
@@ -74,6 +77,7 @@ struct ModelRequest {
     std::optional<bool> enableThinking;
     bool systemPromptOnly = false; // Use exactly the host's task instruction without the normal agent preamble.
     QString toolChoice = "auto";
+    bool verificationAgent = false; // Host provenance; never accepted from wire/model data.
 };
 struct ModelReply {
     QString text;

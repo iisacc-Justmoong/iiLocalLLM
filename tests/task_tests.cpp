@@ -33,6 +33,30 @@ public:
 class TaskTests : public QObject {
     Q_OBJECT
 private slots:
+    void verificationCanReadTheBoardBeforePublication() {
+        QTemporaryDir root; a::TaskStoreOptions options; options.lockTimeoutMs=150;
+        a::TaskStore store(root.filePath("tasks"),options);create(store,"s","EXISTING");
+        bool inspected=false;
+        try {
+            const auto output=store.execute("s","TaskCreate",{{"subject","PENDING"},{"description","verify before commit"}}, {},
+                [&](const a::TaskChange&,const CancellationToken& token) {
+                    const auto list=store.execute("s","TaskList",{},token).data;
+                    inspected=list["total"]==1&&list["tasks"].toArray().first().toObject()["subject"]=="EXISTING";
+                });
+            QCOMPARE(output.data["revision"].toInt(),2);
+        } catch(const Error& error) {QFAIL(error.what());}
+        QVERIFY(inspected);QCOMPARE(store.snapshot("s")["tasks"].toArray().size(),2);
+    }
+    void verificationSideEffectsCannotBeOverwrittenByAStaleCommit() {
+        QTemporaryDir root;a::TaskStoreOptions options;options.lockTimeoutMs=150;
+        a::TaskStore store(root.filePath("tasks"),options);create(store,"s","EXISTING");int calls=0;
+        fails([&] {store.execute("s","TaskCreate",{{"subject","STALE"},{"description","must not overwrite"}}, {},
+            [&](const a::TaskChange&,const CancellationToken& token) {
+                ++calls;store.execute("s","TaskUpdate",{{"taskId","1"},{"subject","VERIFIED_UPDATE"}},token);
+            });},ErrorCode::AlreadyExists);
+        QCOMPARE(calls,1);const auto board=store.snapshot("s");QCOMPARE(board["revision"].toInt(),2);
+        QCOMPARE(board["tasks"].toArray().size(),1);QCOMPARE(board["tasks"].toArray().first().toObject()["subject"],"VERIFIED_UPDATE");
+    }
     void persistentLifecycleAndDependencies() {
         QTemporaryDir root; a::TaskStore store(root.filePath("tasks"));
         const auto one = create(store, "session"); QCOMPARE(one["task"].toObject()["id"], "1");

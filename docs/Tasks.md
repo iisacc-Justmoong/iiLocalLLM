@@ -53,7 +53,7 @@ options.taskToolsEnabled = true;
 
 임베디드 Engine에서는 명시적으로 켠다. 활성화하면 대화마다 별도의 작업 목록을 사용하고 기존 ToolSearch·JSON Schema·정책·훅·ToolRunner를 거친다. `runTaskTool(sessionId, name, arguments)`는 모델 없이 동일 경로를 호출한다. 실행 중 transcript 잠금과 독립적이므로 진행 상태를 조회·수정할 수 있다. RulePolicy는 `builtin.task`로 식별된 내부 계획 상태 수정을 Plan 모드에서도 허용하지만 명시적 deny/ask 규칙이 우선한다. MCP의 임의 annotation은 이 권한을 부여하지 않는다.
 
-`HookKind::TaskCreated`, `TaskCompleted`는 작업 생성 및 완료 전환의 게시 직전에 호출한다. `HookInput.text`/`result.data`에 게시 예정 작업이 제공된다. block/예외/취소면 전체 트랜잭션을 저장하지 않는다. 이름의 Created/Completed는 생명주기 종류이며 저장 후 알림이라는 뜻이 아니다. 원시 TaskStore 사용자는 `TaskCommitCallback`으로 같은 게시 전 검사를 제공할 수 있다. 이 콜백은 목록 잠금을 가진 상태이므로 같은 저장소로 재진입하지 않아야 한다. 콜백이 외부에 낸 효과는 저장 트랜잭션으로 되돌릴 수 없다.
+`HookKind::TaskCreated`, `TaskCompleted`는 작업 생성 및 완료 전환의 게시 직전에 호출한다. `HookInput.text`/`result.data`에 게시 예정 작업이 제공된다. block/예외/취소면 제안한 변경을 저장하지 않는다. 이름의 Created/Completed는 생명주기 종류이며 저장 후 알림이라는 뜻이 아니다. 원시 TaskStore 사용자는 `TaskCommitCallback`으로 같은 게시 전 검사를 제공할 수 있다. 콜백 전에 목록 잠금을 풀어 검증 도구가 게시된 Task 상태를 조회할 수 있다. 콜백 뒤 잠금을 다시 잡고 전체 저장 상태가 이전 스냅샷과 같은 경우에만 게시한다. 그 사이 다른 작업이나 콜백이 상태를 변경했으면 `already_exists` 충돌을 반환하며 콜백을 자동 재실행하지 않는다. 콜백의 별도 변경·외부 효과는 되돌리지 않는다. 콜백이 없는 변경과 담당자 선점은 기존 단일 잠금 트랜잭션을 유지한다.
 
 각 모델 턴에 최신 revision, 작업/Todo 수, 최대 각 32개 항목의 짧은 상태를 컨텍스트로 제공한다. 이 상태는 원본 대화의 메시지로 위조하지 않으며 입력 예산 측정에 포함한다. 재시작·resume·compaction 후에도 저장소에서 다시 읽는다. fork는 새 대화에 빈 작업 목록을 만든다. 빈 목록도 현재 컨텍스트에 명시하여 복사된 부모의 과거 도구 결과와 혼동하지 않게 한다. 부모의 진행 중 작업을 완료·재배정하거나 공유하지 않는다. 호스트가 명시적으로 공유 작업 목록을 원하면 독립 TaskStore와 `taskTools(store, listId)`를 등록한다.
 

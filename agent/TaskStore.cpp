@@ -340,8 +340,17 @@ ToolResult TaskStore::execute(const QString& listId, const QString& operation, c
         require(b.revision < maxInteger, "Task revision capacity reached", ErrorCode::ResourceLimit);
         ++b.revision;
         require(QJsonDocument(b.json()).toJson(QJsonDocument::Compact).size() + 1 <= options_.maxBytes, "Task state exceeds byte limit", ErrorCode::ResourceLimit);
-        token.throwIfCancelled(); if (beforeCommit) beforeCommit(change, token);
-        locked.write(b, options_, token); data["revision"] = double(b.revision);
+        token.throwIfCancelled();
+        if(beforeCommit) {
+            // Verification may inspect or change this board. Never hold its
+            // lock across host/model/tool callbacks or overwrite their changes.
+            locked.lock.unlock();beforeCommit(change,token);token.throwIfCancelled();
+            LockedBoard current(directory_,listId,options_,token);
+            require(current.read(listId,options_).json()==original,
+                "Task list changed during verification; read the current state before retrying",ErrorCode::AlreadyExists);
+            current.write(b,options_,token);
+        } else locked.write(b,options_,token);
+        data["revision"] = double(b.revision);
     }
     return result(data);
 }

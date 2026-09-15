@@ -3,6 +3,8 @@
 class AgentTests : public QObject {
     Q_OBJECT
 private slots:
+    void completionToolStopsBeforeLaterTools();
+    void verifierPermissionModeDoesNotInheritBypass();
     void schemaAndRegistry();
     void permissionsAndHookRevalidation();
     void transcriptInvariantsAndRecovery();

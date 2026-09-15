@@ -1,4 +1,5 @@
 #include "Subagents.h"
+#include "HookAgent.h"
 #include "SkillsInternal.h"
 #include "PermissionRules.h"
 #include "SessionOwners.h"
@@ -48,7 +49,10 @@ bool allowed(const ToolDefinition& t,const QJsonObject& p) {
 }
 class ScopedModel final : public Model {
     std::shared_ptr<Model> model; QJsonObject original,current;
-    ModelRequest filtered(ModelRequest r) const { r.tools.removeIf([&](const auto& t){return !allowed(t,original)||!allowed(t,current);});return r; }
+    ModelRequest filtered(ModelRequest r) const {
+        r.tools.removeIf([&](const auto& t){return !(r.verificationAgent&&t.name=="StructuredOutput"&&t.metadata["source"]=="builtin.hook.output")
+            &&(!allowed(t,original)||!allowed(t,current));});return r;
+    }
 public:
     ScopedModel(std::shared_ptr<Model> m,QJsonObject o,QJsonObject c):model(std::move(m)),original(std::move(o)),current(std::move(c)){}
     ModelReply generate(const ModelRequest& r,const CancellationToken& t,const TextCallback& cb) override {return model->generate(filtered(r),t,cb);}
@@ -71,11 +75,13 @@ public:
     void inheritSession(const ToolContext& from,const ToolContext& to) const override {parent->inheritSession(from,to);}
     void forgetSession(const ToolContext& c) const override {parent->forgetSession(c);}
     PermissionDecision decide(const ToolDefinition& t,const QJsonObject& a,const ToolContext& c) const override {
-        if(!allowed(t,original)||!allowed(t,current)) return {PermissionBehavior::Deny,"Tool is outside this subagent's scope"};
+        if(!(c.verificationAgent&&t.name=="StructuredOutput"&&t.metadata["source"]=="builtin.hook.output")
+            &&(!allowed(t,original)||!allowed(t,current))) return {PermissionBehavior::Deny,"Tool is outside this subagent's scope"};
         auto decision=parent->decide(t,a,c);
         for(const auto& p:{original,current}) {
             const auto mode=p["permission_mode"].toString();
-            if(mode=="plan" && RulePolicy(PermissionMode::Plan).decide(t,a,c).behavior==PermissionBehavior::Deny)
+            auto planContext=c;planContext.permissionMode=PermissionMode::Plan;
+            if(mode=="plan" && RulePolicy(PermissionMode::Plan).decide(t,a,planContext).behavior==PermissionBehavior::Deny)
                 return {PermissionBehavior::Deny,"Subagent plan mode forbids this tool"};
             if(mode=="dontAsk" && decision.behavior==PermissionBehavior::Ask)
                 return {PermissionBehavior::Deny,"Subagent dontAsk mode cannot request permission"};
@@ -282,7 +288,16 @@ public:
             if(!parent.hooks.isEmpty()) {
                 modelContext=std::make_shared<ModelHookContext>();modelContext->model=std::make_shared<ScopedModel>(model,original,current);
                 modelContext->session=std::make_shared<Session>(children.load(request.sessionId));modelContext->modelName=modelContext->session->model;
-                for(const auto& tool:registry->definitions())if(allowed(tool,original)&&allowed(tool,current))modelContext->tools.append(tool);
+                modelContext->registry=std::make_shared<ToolRegistry>();const auto snapshot=registry->snapshot();
+                for(auto tool:parent.additionalTools)snapshot->add(std::move(tool));
+                if(parent.additionalToolsProvider)for(auto tool:parent.additionalToolsProvider())snapshot->add(std::move(tool));
+                for(const auto& tool:snapshot->definitions())if(allowed(tool,original)&&allowed(tool,current))modelContext->registry->add(snapshot->get(tool.name));
+                modelContext->tools=modelContext->registry->definitions();modelContext->policy=scopedPolicy;
+                modelContext->executionContext={request.sessionId,{},options.workingDirectory};
+                auto verifierOptions=parent;verifierOptions.sessionsDirectory=QDir(options.stateDirectory).filePath("sessions");
+                verifierOptions.toolFilter=[original,current,filter=parent.toolFilter](const ToolDefinition& tool){return allowed(tool,original)&&allowed(tool,current)&&(!filter||filter(tool));};
+                modelContext->agentExecutor=detail::hookAgentExecutor(verifierOptions,parent.taskToolsEnabled
+                    ?std::make_shared<TaskStore>(QDir(verifierOptions.sessionsDirectory).filePath("tasks")):nullptr);
             }
             for(const auto& hook:parent.hooks) {
                 job->token.throwIfCancelled();

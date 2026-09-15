@@ -153,7 +153,7 @@ public:
                     require(entries.size()<options.maxHooks,"Too many command hooks",ErrorCode::ResourceLimit);
                     require(h.isObject(),"Command hook must be an object");const auto object=h.toObject();
                     const bool http=object["type"]=="http";
-                    const bool prompt=object["type"]=="prompt";
+                    const bool prompt=object["type"]=="prompt"||object["type"]=="agent";
                     require(http||prompt||object["type"]=="command","Unsupported hook type",ErrorCode::RuntimeUnavailable);
                     keys(object,prompt?QStringList{"type","prompt","model","if","timeout","statusMessage","once"}
                         :http?QStringList{"type","url","if","timeout","headers","allowedEnvVars","statusMessage","once"}
@@ -166,12 +166,12 @@ public:
 #endif
                     Entry entry;entry.event=i.key();entry.matcher=matcher;entry.literal=literal;entry.regex=regex;
                     if(prompt) {
-                        entry.prompt=detail::PromptHook{string(object["prompt"]),{}};
+                        entry.prompt=detail::PromptHook{string(object["prompt"]),{},object["type"]=="agent"};
                         require(!entry.prompt->prompt.trimmed().isEmpty(),"Empty model hook prompt");
                         if(object.contains("model")){entry.prompt->model=string(object["model"],256);require(!entry.prompt->model.trimmed().isEmpty(),"Empty hook model");}
                     } else if(http)entry.http=detail::parseHttpHook(object,settings);
                     else {entry.command=string(object["command"]);require(!entry.command.trimmed().isEmpty(),"Empty hook command");}
-                    entry.timeout=prompt?30000:options.timeoutMs;entry.once=object["once"].toBool();entry.index=entries.size();
+                    entry.timeout=prompt?(entry.prompt->agent?60000:30000):options.timeoutMs;entry.once=object["once"].toBool();entry.index=entries.size();
                     if(object.contains("timeout")) {const auto seconds=object["timeout"].toDouble(-1);require(seconds>0&&seconds<=3600,"Invalid hook timeout");entry.timeout=qMax(1,int(seconds*1000));}
                     if(object.contains("statusMessage"))entry.status=string(object["statusMessage"],1024);
                     if(object.contains("if")) {entry.condition=string(object["if"],4096);require(parsePermissionRules({entry.condition}).size()==1,"Hook if requires one permission rule");}
@@ -201,7 +201,7 @@ public:
     HookResult execute(const Entry& entry,const HookInput& input,const QString& event,const QByteArray& payload,const CancellationToken& token) {
         bool acquired=false,reserved=false,started=false;const auto key=input.sessionId+QChar::Null+QString::number(entry.index);
         const auto begin=std::chrono::steady_clock::now();QByteArray stdoutBytes,stderrBytes;HookResult result;
-        QJsonObject diagnostic{{"hook_event_name",event},{"hook_index",entry.index},{"hook_type",entry.prompt?"prompt":entry.http?"http":"command"},
+        QJsonObject diagnostic{{"hook_event_name",event},{"hook_index",entry.index},{"hook_type",entry.prompt?(entry.prompt->agent?"agent":"prompt"):entry.http?"http":"command"},
             {entry.prompt?"prompt_sha256":entry.http?"url_sha256":"command_sha256",entry.sha},{"status_message",entry.status}};
         auto release=[&] {if(acquired)permits.release();if(reserved&&!started) {std::lock_guard lock(mutex);once.remove(key);}};
         try {
@@ -214,9 +214,10 @@ public:
             if(entry.prompt) {
                 const auto outcome=detail::evaluatePromptHook(*entry.prompt,input,payload,options,entry.timeout,token,[&]{started=true;});
                 result=outcome.result;diagnostic["model"]=outcome.model;
-                diagnostic["history_messages"]=input.modelContext->session?modelMessages(*input.modelContext->session).size():0;
+                diagnostic["history_messages"]=!entry.prompt->agent&&input.modelContext->session?modelMessages(*input.modelContext->session).size():0;
                 diagnostic["usage"]=QJsonObject{{"prompt_tokens",outcome.usage.promptTokens},{"generated_tokens",outcome.usage.generatedTokens},{"cached_tokens",outcome.usage.cachedTokens}};
-                diagnostic["outcome"]=result.block?"blocked":"success";
+                for(auto it=outcome.details.begin();it!=outcome.details.end();++it)diagnostic[it.key()]=it.value();
+                diagnostic["outcome"]=outcome.cancelled?"cancelled":result.block?"blocked":"success";
                 if(event=="SessionStart"||event=="SessionEnd"){result.block=false;result.stop=false;result.feedback.clear();result.stopReason.clear();}
             } else if(entry.http) {
                 const auto outcome=detail::postHttpHook(*entry.http,payload,options,entry.timeout,token,[&]{started=true;});
@@ -262,7 +263,7 @@ public:
         QList<Entry> matching;QHash<QString,qsizetype> httpPositions;
         for(const auto& entry:entries)if(matches(entry,input,event)) {
             if(entry.http||entry.prompt) {
-                const auto key=(entry.prompt?QString("prompt")+QChar::Null+entry.prompt->prompt:QString("http")+QChar::Null+entry.http->url)+QChar::Null+entry.condition;
+                const auto key=(entry.prompt?(entry.prompt->agent?QString("agent"):QString("prompt"))+QChar::Null+entry.prompt->prompt:QString("http")+QChar::Null+entry.http->url)+QChar::Null+entry.condition;
                 const auto found=httpPositions.constFind(key);
                 if(found!=httpPositions.cend()){matching[*found]=entry;continue;}
                 httpPositions.insert(key,matching.size());
@@ -306,10 +307,10 @@ public:
 CommandHooks::CommandHooks(QJsonObject settings,CommandHookOptions options):d(std::make_shared<Impl>(std::move(settings),std::move(options))) {}
 Hook CommandHooks::callback() const {return [impl=d](const HookInput& input,const CancellationToken& token){return impl->invoke(input,token);};}
 QJsonObject CommandHooks::describe() const {
-    bool http=false,command=false,prompt=false;for(const auto& e:d->entries){http|=e.http.has_value();prompt|=e.prompt.has_value();command|=!e.http&&!e.prompt;}
+    bool http=false,command=false,prompt=false,agent=false;for(const auto& e:d->entries){http|=e.http.has_value();prompt|=e.prompt.has_value()&&!e.prompt->agent;agent|=e.prompt.has_value()&&e.prompt->agent;command|=!e.http&&!e.prompt;}
     QJsonArray entries;for(const auto& e:d->entries)entries.append(QJsonObject{{"event",e.event},{"matcher",e.matcher},{"condition",e.condition},{"once",e.once},
-        {"timeout_ms",e.timeout},{"hook_type",e.prompt?"prompt":e.http?"http":"command"},{e.prompt?"prompt_sha256":e.http?"url_sha256":"command_sha256",e.sha},{"status_message",e.status}});
-    return {{"provider",int(http)+int(command)+int(prompt)>1?"configured":prompt?"prompt":http?"http":"command"},{"hooks",entries},
+        {"timeout_ms",e.timeout},{"hook_type",e.prompt?(e.prompt->agent?"agent":"prompt"):e.http?"http":"command"},{e.prompt?"prompt_sha256":e.http?"url_sha256":"command_sha256",e.sha},{"status_message",e.status}});
+    return {{"provider",int(http)+int(command)+int(prompt)+int(agent)>1?"configured":agent?"agent":prompt?"prompt":http?"http":"command"},{"hooks",entries},
         {"max_concurrent_hooks",d->options.maxConcurrentProcesses},{"max_concurrent_processes",d->options.maxConcurrentProcesses}};
 }
 }

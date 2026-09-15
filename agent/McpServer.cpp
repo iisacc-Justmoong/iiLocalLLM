@@ -307,7 +307,7 @@ public:
             throw;
         }
         auto runnerOptions=options.tools;
-        if(options.engine){runnerOptions.hookModel=options.engine->hookModel();runnerOptions.hookModelName=options.model;}
+        if(options.engine){runnerOptions.hookModel=options.engine->hookModel();runnerOptions.hookModelName=options.model;runnerOptions.hookAgent=options.engine->hookAgent();}
         if(options.permissionRequests)runnerOptions.permissionRequests=conversation(request.sessionId)->permissionRequests;
         ToolRunner runner(frozen, policy, runnerOptions);
         ToolCall call{uuid(), name, params["arguments"].toObject()};
@@ -331,11 +331,18 @@ public:
         if (!options.artifactsDirectory.isEmpty()) context.artifactsDirectory = QDir(options.artifactsDirectory).filePath(context.sessionId + '/' + context.runId);
         const auto source = frozen->get(name).definition.metadata["source"].toString();
         auto bindContext = [&](bool history=false) {
-            if (options.engine && (source == "builtin.workspace" || source == "builtin.shell" || source == "builtin.shell.control")) {
-                context.sessionId = sessionId(conversation(request.sessionId), context.cancellation);
-                context.transcriptPath=options.engine->transcriptPath(context.sessionId);
-                if(history&&!options.tools.hooks.isEmpty())try {context.sessionSnapshot=std::make_shared<Session>(options.engine->session(context.sessionId));}
-                    catch(const Error& error){if(error.code()!=ErrorCode::ModelInUse)throw;}
+            const bool native=source=="builtin.workspace"||source=="builtin.shell"||source=="builtin.shell.control";
+            if(options.engine&&(native||!options.tools.hooks.isEmpty())) {
+                const auto owner=sessionId(conversation(request.sessionId),context.cancellation);
+                // MCP task/control wrappers still need the connection ID to
+                // resolve their owner. Hooks get that actual owner's snapshot.
+                if(native)context.sessionId=owner;
+                context.transcriptPath=options.engine->transcriptPath(owner);
+                if(!options.tools.hooks.isEmpty()) {
+                    if(history)try {context.sessionSnapshot=std::make_shared<Session>(options.engine->session(owner));}
+                        catch(const Error& error){if(error.code()!=ErrorCode::ModelInUse)throw;}
+                    if(!context.sessionSnapshot)context.sessionSnapshot=std::make_shared<Session>(options.engine->sessionMetadata(owner));
+                }
             }
         };
         int hookProgress=0;
