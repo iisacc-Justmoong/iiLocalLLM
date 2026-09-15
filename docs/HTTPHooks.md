@@ -77,3 +77,5 @@ maxInputBytes/maxOutputBytes는 기본 각각 1 MiB이다. HTTP 출력 한도는
 참조는 고정 미러 c8cd253554319f32ff64ff7000636199f720c9bc의 schemas/hooks.ts, utils/hooks/execHttpHook.ts, utils/hooks/ssrfGuard.ts, utils/proxy.ts, utils/hooks.ts와 SDK 출력 스키마이다. 미러의 진위나 Claude Code 전체 동작의 독립 인증은 아니다. 프롬프트 훅은 0.30의 [PromptHooks.md](PromptHooks.md)에 별도 기록한다. 전체 생명주기, agent 훅, 비동기 실행기, 설정/스킬/플러그인 병합과 앱 전체 검증은 [HarnessParity.md](HarnessParity.md)의 partial 상태를 유지한다. 실행 증거는 [Verification.md](Verification.md)에 기록한다.
 
 0.31.0부터 같은 호스트 설정에 `type: "agent"`를 사용할 수 있다. 실제 도구 실행·StructuredOutput·dontAsk·기한과 정리 계약은 [AgentHooks.md](AgentHooks.md)를 따른다.
+
+0.32.0부터 성공한 MCP 호출의 PostToolUse 응답에 updatedMCPToolOutput을 사용할 수 있다. 명령 훅과 동일하게 문자열·MCP 콘텐츠 배열을 검증한 뒤 관측을 교체하며, 실패한 HTTP 응답이나 비동기 접수 응답은 교체하지 않는다. [McpOutputHooks.md](McpOutputHooks.md)를 따른다.

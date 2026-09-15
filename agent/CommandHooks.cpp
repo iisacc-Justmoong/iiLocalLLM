@@ -1,4 +1,5 @@
 #include "CommandHooks.h"
+#include "McpResult.h"
 #include "HttpHook.h"
 #include "ModelHook.h"
 #include "PermissionRules.h"
@@ -68,6 +69,7 @@ void merge(HookResult& target,const HookResult& value,bool request) {
     if(!value.feedback.isEmpty()) {if(!target.feedback.isEmpty())target.feedback+='\n';target.feedback+=value.feedback;}
     if(value.updatedArguments)target.updatedArguments=value.updatedArguments;
     if(value.initialUserMessage)target.initialUserMessage=value.initialUserMessage;
+    if(value.updatedMCPToolOutput)target.updatedMCPToolOutput=value.updatedMCPToolOutput;
     if(value.permission) {
         auto priority=[](PermissionBehavior b){return b==PermissionBehavior::Deny?3:b==PermissionBehavior::Ask?2:1;};
         if(!target.permission||priority(value.permission->behavior)>=priority(target.permission->behavior))target.permission=value.permission;
@@ -99,6 +101,7 @@ HookResult response(const QJsonObject& object,const QString& event,bool& suppres
         auto known=pre?QStringList{"hookEventName","permissionDecision","permissionDecisionReason","updatedInput","additionalContext"}
                       :QStringList{"hookEventName","additionalContext"};
         if(event=="SessionStart")known.append("initialUserMessage");
+        if(event=="PostToolUse")known.append("updatedMCPToolOutput");
         if(event=="PermissionRequest")known={"hookEventName","decision"};keys(specific,known);
         if(event=="PermissionRequest") {
             require(specific["decision"].isObject(),"PermissionRequest requires a decision object");const auto decision=specific["decision"].toObject();
@@ -115,6 +118,8 @@ HookResult response(const QJsonObject& object,const QString& event,bool& suppres
         if(specific.contains("updatedInput")) {require(specific["updatedInput"].isObject(),"Hook updatedInput must be an object");if(!result.block)result.updatedArguments=specific["updatedInput"].toObject();}
         if(specific.contains("additionalContext")) {const auto value=string(specific["additionalContext"]);if(!result.feedback.isEmpty())result.feedback+='\n';result.feedback+=value;}
         if(specific.contains("initialUserMessage"))result.initialUserMessage=string(specific["initialUserMessage"]);
+        if(specific.contains("updatedMCPToolOutput")&&detail::mcpOutputContent(specific["updatedMCPToolOutput"]))
+            result.updatedMCPToolOutput=specific["updatedMCPToolOutput"];
     }
     if(object.contains("systemMessage"))result.diagnostics.append(QJsonObject{{"system_message",object["systemMessage"]}});
     return result;
@@ -248,6 +253,7 @@ public:
             else if(document.isObject()&&error.error==QJsonParseError::NoError&&(event!="PermissionRequest"||outcome.code==0))result=response(document.object(),event,suppress);
             else if(outcome.code==2&&event!="SessionStart"&&event!="SessionEnd") {result.block=true;result.feedback=stderrText.isEmpty()?QString("Blocked by command hook"):stderrText;}
             else if(outcome.code==0&&QStringList{"BeforeModel","PreCompact","UserPromptSubmit","SessionStart"}.contains(event))result.feedback=stdoutText.trimmed();
+            if(outcome.code!=0||outcome.crashed)result.updatedMCPToolOutput.reset();
             diagnostic["outcome"]=result.block||(result.permissionResponse&&result.permissionResponse->behavior==PermissionBehavior::Deny)?"blocked":outcome.code==0?"success":"non_blocking_error";
             if(!suppress)diagnostic["stdout"]=stdoutText.left(4096);diagnostic["stderr"]=stderrText.left(4096);
             }

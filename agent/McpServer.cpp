@@ -370,8 +370,12 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
     mcp::ServerOptions server;
     server.lists["tools/list"] = [state](const auto&) {
         QJsonArray result;
-        for (const auto& tool : state->snapshot()->definitions()) {
+        const auto snapshot=state->snapshot();
+        for (const auto& tool : snapshot->definitions()) {
             auto definition=wireDefinition(tool,state->options.appId);auto metadata=definition["_meta"].toObject();
+            // Imported observations can be rewritten after their original schema
+            // check. Do not promise that server's structured result on re-export.
+            if(!state->options.tools.hooks.isEmpty()&&snapshot->get(tool.name).isMcp)definition.remove("outputSchema");
             metadata["iisacc/hooksEnabled"]=!state->options.tools.hooks.isEmpty();definition["_meta"]=metadata;result.append(definition);
         }
         return result;

@@ -20,6 +20,7 @@ struct Tool {
     // or dispatchable by a model/MCP caller. Install on one control per owner.
     std::function<QJsonArray(const QString&,const QString&,const CancellationToken&)> transferSession;
     bool completesRun = false; // Host-only successful completion tool; a serial barrier, never parsed from model/MCP metadata.
+    bool isMcp = false; // Trusted imported-tool identity; never inferred from its name or wire metadata.
 };
 class IILOCALLLM_EXPORT ToolRegistry {
 public:
@@ -132,6 +133,7 @@ struct HookResult {
     QJsonArray diagnostics;
     std::optional<QString> initialUserMessage; // SessionStart schedules this through the normal prompt input queue.
     std::optional<PermissionResponse> permissionResponse; // PermissionRequest only; decision and payload stay together.
+    std::optional<QJsonValue> updatedMCPToolOutput; // Successful imported MCP PostToolUse: string or validated MCP content array.
 };
 using Hook = std::function<HookResult(const HookInput&, const CancellationToken&)>;
 using PermissionCallback = std::function<bool(const ToolCall&, const PermissionDecision&, const ToolContext&)>;

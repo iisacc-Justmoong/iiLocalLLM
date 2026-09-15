@@ -14,19 +14,6 @@ QString toolName(const QString& server, const QString& remote) {
         name = name.left(110) + "__" + QString::fromLatin1(QCryptographicHash::hash(original.toUtf8(), QCryptographicHash::Sha256).toHex().left(16));
     return name;
 }
-QString textContent(const QJsonArray& content) {
-    QStringList parts;
-    for (const auto& value : content) {
-        const auto block = value.toObject(); const auto type = block["type"].toString();
-        if (type == "text") parts.append(block["text"].toString());
-        else if (type == "resource_link") parts.append("Resource: " + block["name"].toString() + " (" + block["uri"].toString() + ")");
-        else if (type == "resource" && block["resource"].toObject()["text"].isString()) {
-            const auto resource = block["resource"].toObject();
-            parts.append(resource["uri"].toString() + "\n" + resource["text"].toString());
-        }
-    }
-    return parts.join('\n');
-}
 }
 QList<Tool> mcpTools(std::shared_ptr<mcp::Client> client, const McpToolOptions& options, CancellationToken token) {
     if (!client || options.serverName.trimmed().isEmpty()) throw Error(ErrorCode::InvalidArgument, "MCP client and server name are required");
@@ -39,7 +26,7 @@ QList<Tool> mcpTools(std::shared_ptr<mcp::Client> client, const McpToolOptions& 
     ToolRegistry validation;
     for (const auto& value : definitions) {
         const auto remote = value.toObject(); const auto remoteName = remote["name"].toString();
-        Tool tool; tool.definition.name = toolName(options.serverName, remoteName);
+        Tool tool; tool.isMcp = true; tool.definition.name = toolName(options.serverName, remoteName);
         if (names.contains(tool.definition.name)) throw Error(ErrorCode::AlreadyExists, "MCP tool name collision");
         names.insert(tool.definition.name);
         tool.definition.description = remote["description"].toString();
@@ -57,7 +44,7 @@ QList<Tool> mcpTools(std::shared_ptr<mcp::Client> client, const McpToolOptions& 
             ToolResult result; result.content = wire["content"].toArray();
             result.data = wire["structuredContent"].toObject(); result.metadata = wire["_meta"].toObject();
             result.isError = wire["isError"].toBool();
-            result.text = textContent(detail::withStructuredText(result.content, result.data));
+            result.text = detail::mcpTextContent(detail::withStructuredText(result.content, result.data));
             return result;
         };
         validation.add(tool); tools.append(std::move(tool));

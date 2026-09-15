@@ -1,6 +1,7 @@
 #include "agent/Engine.h"
 #include "agent/McpTools.h"
 #include "agent/McpConnections.h"
+#include "agent/CommandHooks.h"
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -18,7 +19,8 @@ int main(int argc, char** argv) {
         && QString::fromLocal8Bit(argv[6]) == "--thinking-control";
     if (!catalog && argc != 2 && argc != 4 && argc != 5) return 2;
     const bool remote = argc >= 4;
-    const bool configured = catalog || argc == 5;
+    const bool outputHook = argc == 5 && QString::fromLocal8Bit(argv[4]) == "--mcp-output-hook";
+    const bool configured = catalog || (argc == 5 && !outputHook);
     const bool discovery = catalog || (argc == 5 && QString::fromLocal8Bit(argv[4]) == "--discovery");
     if (configured && !discovery && QString::fromLocal8Bit(argv[4]) != "--configured-eager") return 2;
     try {
@@ -85,10 +87,33 @@ int main(int argc, char** argv) {
             for (const auto& tool : registry->definitions()) if (tool.name != toolName) registry->remove(tool.name);
         }
         a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
+        QString expectedOriginal;
+        int replacedObservations=0;
+        if(outputHook) {
+            a::CommandHookOptions hooks;hooks.workingDirectory=workspace;
+            a::CommandHooks commands({{"hooks",QJsonObject{{"PostToolUse",QJsonArray{QJsonObject{{"matcher",toolName},
+                {"hooks",QJsonArray{QJsonObject{{"type","command"},{"command","cat post-output.json"}}}}}}}}}},hooks);
+            options.hooks.append([&,callback=commands.callback()](const a::HookInput& input,const CancellationToken& token) {
+                if(input.kind==a::HookKind::AfterTool&&!input.result.isError) {
+                    if(input.result.data["value"]!=expectedOriginal)throw std::runtime_error("MCP original result was not observed by hook");
+                    ++replacedObservations;
+                }
+                return callback(input,token);
+            });
+        }
         a::Engine engine(std::make_shared<a::ServiceModel>(service), registry, std::make_shared<a::RulePolicy>(
             a::PermissionMode::DontAsk, QList<a::PermissionRule>{{toolName, a::PermissionBehavior::Allow}}), options);
         for (const auto& secret : secrets) {
-            if (!input.open(QIODevice::WriteOnly | QIODevice::Truncate) || input.write(secret.toUtf8()) < 1)
+            expectedOriginal=outputHook?"UNMODIFIED_"+QUuid::createUuid().toString(QUuid::WithoutBraces):secret;
+            if(outputHook) {
+                const QJsonValue value=replacedObservations?QJsonValue(QJsonArray{QJsonObject{{"type","text"},{"text",secret}}}):QJsonValue(secret);
+                QFile response(QDir(workspace).filePath("post-output.json"));
+                if(!response.open(QIODevice::WriteOnly|QIODevice::Truncate)
+                    ||response.write(QJsonDocument(QJsonObject{{"suppressOutput",true},{"hookSpecificOutput",QJsonObject{
+                        {"hookEventName","PostToolUse"},{"updatedMCPToolOutput",value}}}}).toJson())<1)
+                    throw std::runtime_error("Cannot write output hook fixture");
+            }
+            if (!input.open(QIODevice::WriteOnly | QIODevice::Truncate) || input.write(expectedOriginal.toUtf8()) < 1)
                 throw std::runtime_error("Cannot write secret");
             input.close();
             auto session = engine.createSession(uri, workspace);
@@ -114,6 +139,19 @@ int main(int argc, char** argv) {
             if (!a::pendingToolCalls(engine.session(session.id).messages).isEmpty()) throw std::runtime_error("Unpaired tool calls");
             if (result.usage.generatedTokens < 1 || result.turns < 2) throw std::runtime_error("Missing inference evidence");
             if (remote && progress < 2) throw std::runtime_error("Missing MCP progress evidence");
+            if(outputHook) {
+                bool observed=false;
+                for(const auto& message:engine.session(session.id).messages)if(message.role==a::MessageRole::Tool) {
+                    observed=true;
+                    if(message.isError||message.text!=secret||!message.data.isEmpty()
+                        ||message.content!=QJsonArray{QJsonObject{{"type","text"},{"text",secret}}})
+                        throw std::runtime_error("Original observation remained in the model transcript");
+                }
+                if(!observed||result.text.contains(expectedOriginal))throw std::runtime_error("Model returned the original MCP value");
+                std::cout<<QJsonDocument(QJsonObject{{"mcp_output_hook",true},{"format",replacedObservations==1?"string":"array"},
+                    {"original",expectedOriginal},{"replacement",secret},{"answer",result.text},{"turns",result.turns},
+                    {"generated_tokens",result.usage.generatedTokens},{"mcp_progress",progress}}).toJson(QJsonDocument::Compact).constData()<<'\n';
+            }
             if (discovery) {
                 const auto messages = engine.session(session.id).messages;
                 bool selected = false;
@@ -121,7 +159,8 @@ int main(int argc, char** argv) {
                     && !message.metadata["iilocal.tool_search"].toObject()["entries"].toArray().isEmpty()) selected = true;
                 if (!selected || result.turns < 3) throw std::runtime_error("Missing successful native ToolSearch evidence");
             }
-            std::cout << "Native local model selected " << toolName.toStdString() << ", consumed the actual file value, and completed the agent turn.\n";
+            std::cout << "Native local model selected " << toolName.toStdString()
+                << (outputHook?", consumed the replaced MCP observation":", consumed the actual file value") << ", and completed the agent turn.\n";
         }
         return 0;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }

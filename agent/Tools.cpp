@@ -1,4 +1,5 @@
 #include "Tools.h"
+#include "McpResult.h"
 #include "PermissionResponses.h"
 #include "PermissionRequests.h"
 #include "PermissionRulesInternal.h"
@@ -179,6 +180,7 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
         if(value.stop)throw Error(ErrorCode::Cancelled,value.stopReason.isEmpty()?QString("Stopped by hook"):value.stopReason);
     };
     QString beforeFeedback;
+    bool mcpOutputEligible=false;
     try {
         context.cancellation.throwIfCancelled();
         const auto entry = registry_->resolve(call.name);
@@ -329,17 +331,34 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
         result = prepared.execute();
         context.cancellation.throwIfCancelled();
         if (!result.isError) entry->validateOutput(result.data);
+        mcpOutputEligible=tool.isMcp&&!result.isError;
     } catch (const Error& e) {
         if (e.code() == ErrorCode::Cancelled || e.code() == ErrorCode::ConsumerFailure) throw;
         result = {QString::fromUtf8(e.what()), {{"error_code", iiLocalLLM::enumName(e.code())}}, true};
     } catch (const std::exception& e) { result = {QString::fromUtf8(e.what()), {}, true}; }
     catch (...) { result = {"Tool failed with an unknown exception", {}, true}; }
     if(!beforeFeedback.isEmpty())result.text+='\n'+beforeFeedback;
+    auto accumulatedFeedback=beforeFeedback;
     for (const auto& hook : options_.hooks) {
         context.cancellation.throwIfCancelled();
         auto r = hook({HookKind::AfterTool, context.sessionId, context.runId, call, result, {},hookContext,modelContext}, context.cancellation);
         hookEvents(r);
-        if (!r.feedback.isEmpty()) result.text += "\n" + r.feedback;
+        if(mcpOutputEligible&&!result.isError&&r.updatedMCPToolOutput) {
+            try {
+                if(const auto content=detail::mcpOutputContent(*r.updatedMCPToolOutput)) {
+                    auto text=detail::mcpTextContent(*content);
+                    if(!accumulatedFeedback.isEmpty())text+='\n'+accumulatedFeedback;
+                    result.text=std::move(text);result.content=*content;result.data={};
+                }
+            } catch(const Error& error) {
+                event(callback,EventKind::Hook,context,call,{},{{"hook_event_name","PostToolUse"},{"outcome","non_blocking_error"},
+                    {"error_code",enumName(error.code())},{"error",QString::fromUtf8(error.what())}});
+            }
+        }
+        if (!r.feedback.isEmpty()) {
+            result.text += "\n" + r.feedback;
+            if(!accumulatedFeedback.isEmpty())accumulatedFeedback+='\n';accumulatedFeedback+=r.feedback;
+        }
         if (r.block) result.isError = true;
     }
     if (result.text.size() > options_.maxResultCharacters && !context.artifactsDirectory.isEmpty()) {

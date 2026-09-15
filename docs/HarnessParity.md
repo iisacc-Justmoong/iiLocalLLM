@@ -118,3 +118,5 @@ C++ HTTP/HTTPS POST·JSON 응답을 공통 생명주기와 권한 경로에 연�
 0.30.0은 C++ 프롬프트 훅의 단일 모델 판단, 스키마·기한·사용량 진단과 호스트 스냅샷 전달을 Engine·ToolRunner·API·MCP에 연결한다. 네이티브 JSON 출력 문법과 요청별 추론 모드 제어도 추가한다. 도구를 실행하는 agent 훅·전체 설정 병합·남은 생명주기와 앱 검증은 미완료이며 hooks/providers 상태는 partial이다. [PromptHooks.md](PromptHooks.md)에 입력 경계와 참조 차이를 기록한다.
 
 0.31.0은 실제 도구를 사용하는 C++ agent 훅을 추가한다. 새 대화·dontAsk·정확한 transcript 읽기·StructuredOutput·50번째 메시지 경계·취소 정리를 구현하고 Task 게시 전 검증 잠금과 MCP 소유 대화 연결을 보완한다. 스킬·지연 도구 검색·서브에이전트 프로필을 기존 Engine에서 재사용한다. 전체 설정 병합·남은 생명주기·앱/플랫폼 검증은 미완료이며 전체 상태는 partial이다. 계약과 참조 차이는 [AgentHooks.md](AgentHooks.md)에 기록한다.
+
+0.32.0은 PostToolUse의 updatedMCPToolOutput을 C++ 도구 경로에 연결한다. 실제 가져오기 MCP 도구만 문자열·MCP 콘텐츠 배열로 관측을 교체하고, 원격 출력 스키마를 먼저 검사한 뒤 모델·transcript·API·MCP로 전달한다. 훅이 설정된 가져오기 도구를 MCP로 재전달할 때는 원격 outputSchema를 공개하지 않는다. 새 런타임 의존성은 없다. 전체 설정 병합·남은 생명주기·실제 앱/플랫폼 검증은 계속 partial이다. [McpOutputHooks.md](McpOutputHooks.md)에 참조 unknown/공급자 콘텐츠와의 차이를 기록한다.

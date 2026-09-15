@@ -1,5 +1,28 @@
 # 구현 검증 기록
 
+## 2026-09-15 MCP 도구 결과 변경 훅 (0.32.0)
+
+PostToolUse의 updatedMCPToolOutput을 C++ 실행기에 연결했다. 명령·HTTP·C++ 훅이 성공한 가져오기 MCP 도구의 관측을 문자열 또는 MCP 콘텐츠 배열로 교체한다. 원래 출력 스키마를 먼저 검증하고, 교체 뒤 원래 구조화 데이터가 모델·transcript·API·MCP 재전달에 남지 않도록 처리한다. 이름·공개 metadata로 일반 도구를 MCP 도구로 가장할 수 없으며, 원래 _meta와 이미 수행된 외부 효과는 보존한다. [McpOutputHooks.md](McpOutputHooks.md)에 참조 대조와 형식 제한을 기록한다.
+
+| 검증 경계 | 관측 |
+|---|---|
+| Release 전체, inference 라벨 제외 | 68/68, 139.59초 |
+| ASan·UBSan, llama 비활성 Debug | 65/65, 170.08초 |
+| 새 설치 소비자, 공식 MCP 교차 검사 포함 | 38/38, 50.92초 |
+| 원본 보존·실패 경계 | 일반 도구 metadata 위장, 원격 출력 스키마 오류, 오류 응답, 권한 거부에 교체 미적용 |
+| 출력 형식·병합 | 문자열·한글·미디어/리소스 블록·빈 배열, false 값 무시, 잘못된 후속 응답 뒤 유효한 이전 결과 유지, 완료 순서와 피드백 보존 |
+| 중단 | 잘못된 이벤트·명령 종료 코드 1/2의 교체 미적용, continue:false와 실제 실행 중 취소 전파, 이미 수행된 MCP 호출 유지 |
+| 모델·API·MCP | 실제 HTTP MCP 생산자와 HTTP 훅, 교체된 Model 입력·영구 transcript·API 결과·ToolFinished, 재전달 outputSchema 계약 |
+| 실제 로컬 추론 | 소스 2건·설치 2건, 공식 Python MCP 1.26.0 stdio 서버와 Qwen2.5 0.5B, 문자열·배열 관측 교체 |
+
+실제 추론 검사는 tests/agent_runtime_smoke.cpp의 --mcp-output-hook 모드이다. 원래 서버 값과 교체 값은 다르며, 두 번째 교체 값은 실행 때 새로 만든다. 두 형식 모두 모델이 실제 MCP 도구를 호출하고 변경된 값을 최종 답변에 포함했다. 각 호출은 2회 이상의 모델 턴, 생성 토큰과 MCP 진행 알림을 남기며 Tool 메시지의 text/content와 빈 data를 검사한다. API 회귀의 Model은 결정적인 검사 대역이며 실제 모델 검사는 별도 C++ Engine 경로이다. 전체 모델의 도구 선택·판단 정확도를 보장하지 않는다.
+
+모델은 491,400,032바이트, SHA-256 `74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db`이다. 라이브러리 SHA-256은 `0e80cc126ce11ba52bd918418437da00ab505770360a422f6a6cc65c8e0659b3`이다. 설치 경로는 build/mcp-output-hooks-stage, 소비자는 build/mcp-output-hooks-consumer/build이다. 실제 설치 소비자의 로더·공개 헤더·문서·카탈로그·CLI 버전과 얇은 클라이언트 링크, 소스/설치 라이브러리와 실행 파일의 CMake RPATH 변환 후 동일성은 mcp-output-hooks-linkage.json에 기록한다. 공개 Tool/HookResult 구조체가 변경되어 0.32 헤더와 라이브러리로 소비자를 다시 빌드해야 한다.
+
+TDD의 기존 구현에서 결과 교체 실패 5건을 먼저 관찰했다(mcp-output-hooks-red.log). 첫 구현 뒤 명령 인자에 넣은 한글이 분해형으로 전달되는 별도 현상 때문에 3건이 실패했다(mcp-output-hooks-green.log). 명령 테스트는 ASCII JSON Unicode escape로 정확한 stdout 디코딩을 검사하도록 수정했고, HTTP/C++ 검사는 원래 한글 문자열을 직접 비교한다. QProcess 인자 인코딩을 수정한 것으로 보고하지 않는다. 최종 통과 기록은 mcp-output-hooks-verification.json, 소스/설치 실제 추론은 mcp-output-hooks-{source,installed}-native.json, 검사한 입력 해시는 mcp-output-hooks-tested-source.json이다.
+
+참조의 임의 unknown 값·공급자 전용 콘텐츠 블록까지 동일하게 수락하는 구현은 아니다. 전체 생명주기·설정/스킬/플러그인 병합·전체 하네스 및 실제 앱/플랫폼 검증은 계속 partial이다. Society와 Dreamscapes를 이번 SDK 변경으로 다시 패키징하지 않았으며, iPhone은 사용자 요청대로 제외한다. 기존 사용자 데몬 PID 14909는 중단하거나 교체하지 않는다.
+
 ## 2026-09-15 C++ 에이전트 훅 (0.31.0)
 
 실제 도구를 실행하는 별도 검증 대화를 C++ Engine·ToolRunner·API·MCP에 연결했다. dontAsk 권한, 예약 StructuredOutput, 50번째 assistant 메시지 실행 전 중단, 부모 transcript의 정확한 Read, 취소·임시 상태 및 background Bash 정리를 구현했다. Task 게시 전 콜백은 잠금 밖에서 실행하고 원래 보드와 비교해 충돌을 거부한다. MCP 검증기의 TaskStore·세션 권한은 외부 연결 ID가 아닌 실제 Engine 대화에 연결한다. 계약과 참조 차이는 [AgentHooks.md](AgentHooks.md)에 기록한다.

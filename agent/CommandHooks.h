@@ -21,8 +21,8 @@ struct CommandHookOptions {
     int maxModelTokens = 1024;
 };
 // Explicit host configuration, frozen at construction. Supports command, HTTP
-// and prompt hooks. Commands receive JSON on stdin, HTTP endpoints a POST,
-// prompt hooks make a bounded host Model call with an isolated decision schema.
+// and prompt/agent hooks. Commands receive JSON on stdin, HTTP endpoints a POST;
+// model hooks use bounded host inference with an isolated decision schema.
 // Model data is never substituted into commands, URLs or header templates.
 class IILOCALLLM_EXPORT CommandHooks {
 public:

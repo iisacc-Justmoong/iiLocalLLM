@@ -51,7 +51,7 @@ stdin은 UTF-8 JSON 객체 한 개와 마지막 줄바꿈이며 채널을 닫아
 | SessionEnd | 0.23: reason 매처, 실제 세션 종료의 비차단 정리. [SessionEnd.md](SessionEnd.md) |
 | SessionStart | 0.22: source(startup/resume/compact/clear), model. 활성화/압축 문맥과 initialUserMessage |
 
-SubagentStart는 접수 뒤 Engine.run 전에 호출하므로 run_id가 비어 있다. 자식 Stop은 SubagentStop으로 전달한다. Task 콜백은 저장소 잠금을 가진 상태이므로 같은 목록 API로 재진입하면 잠금 대기가 발생한다. 훅이 외부에 낸 효과는 작업 저장 취소로 되돌리지 않는다.
+SubagentStart는 접수 뒤 Engine.run 전에 호출하므로 run_id가 비어 있다. 자식 Stop은 SubagentStop으로 전달한다. 0.31.0부터 Task 게시 전 콜백은 저장소 잠금 밖에서 실행하며, 다시 잠근 뒤 원래 보드와 비교하여 동시 변경을 거부한다. 같은 보드 읽기가 가능하며 콜백에서 발생한 변경을 덮어쓰지 않는다. 훅이 외부에 낸 효과는 작업 저장 취소로 되돌리지 않는다.
 
 매처는 빈 문자열 또는 `*`이면 전부 일치한다. ASCII 영문·숫자·밑줄·`|`만 있으면 정확한 이름 또는 이름 목록이고 나머지는 Qt QRegularExpression이다. 도구 이름, 자식 agent_type, 압축 trigger, SessionStart source, SessionEnd reason을 검사하며 그 외 이벤트는 매처를 생략한다. JavaScript 정규식의 모든 문법이나 도구 별칭을 지원하지 않는다. 명령의 선택 `if`는 `Write(allowed.txt)`와 같은 SDK 네이티브 권한 규칙 한 개다. 도구 호출이 있는 이벤트에서만 일치하며 계층형 설정의 출처별 파일 패턴과 다르다. [Permissions.md](Permissions.md)를 참조한다.
 
@@ -74,7 +74,7 @@ stdout 앞뒤 공백을 제거한 첫 문자가 `{`이면 JSON 파싱을 시도�
 
 PreToolUse의 permissionDecision은 allow/ask/deny/passthrough이다. allow는 현재 호출의 도구 허용 후보에만 추가한다. 명시적 Deny/Ask, Plan, 자식 읽기 전용 범위, workspace와 비공개 경로 검사는 유지한다. Ask는 0.25의 PermissionRequest 훅과 C++ 구조화 응답, 기존 permission callback 순으로 처리하며 결정이 없으면 실행하지 않는다. 다음 호출·resume에 허용을 저장하지 않는다. 변경된 입력은 원래 스키마와 도메인 검사를 다시 통과해야 한다. 커스텀 PermissionPolicy는 허용 후보를 해석하지 않을 수 있으며 최종 판단은 해당 정책을 따른다.
 
-PermissionRequest 이외의 지원 이벤트의 hookSpecificOutput은 이름 일치와 additionalContext를 받는다. PermissionRequest는 allow/deny decision 객체를 받으며 세부 계약은 [PermissionRequest.md](PermissionRequest.md)를 따른다. PreToolUse는 permissionDecision·permissionDecisionReason·updatedInput, SessionStart는 initialUserMessage를 추가 지원한다. 참조에 정의되지 않은 이벤트의 additionalContext는 SDK 콜백 확장이며 모든 출력 스키마와 동일하지 않다. updatedMCPToolOutput, watchPaths, 설정 갱신, 권한 재시도 출력은 미지원이다.
+PermissionRequest 이외의 지원 이벤트의 hookSpecificOutput은 이름 일치와 additionalContext를 받는다. PermissionRequest는 allow/deny decision 객체를 받으며 세부 계약은 [PermissionRequest.md](PermissionRequest.md)를 따른다. PreToolUse는 permissionDecision·permissionDecisionReason·updatedInput, SessionStart는 initialUserMessage를 추가 지원한다. 참조에 정의되지 않은 이벤트의 additionalContext는 SDK 콜백 확장이며 모든 출력 스키마와 동일하지 않다. PostToolUse는 0.32.0부터 updatedMCPToolOutput을 추가 지원한다. watchPaths, 설정 갱신, 권한 재시도 출력은 미지원이다.
 
 0.22의 UserPromptSubmit은 허용된 stdout/추가 문맥을 입력에 연결한다. SessionStart의 성공한 stdout도 문맥에 추가하지만 종료 2·차단 reason·continue:false를 거부권으로 적용하지 않는다. 초기 입력 게시, 원문 보존, 차단 입력 제외와 재개·압축 계약은 [InputLifecycle.md](InputLifecycle.md)를 따른다.
 
@@ -103,3 +103,7 @@ macOS에서 검증한 데스크톱 POSIX 명령 실행기이다. Windows·iOS·A
 분석 기준은 고정 미러 `c8cd253554319f32ff64ff7000636199f720c9bc`의 schemas/hooks.ts, types/hooks.ts, entrypoints/sdk/coreSchemas.ts, utils/hooks.ts, services/tools/toolHooks.ts이다. 설정·stdin·JSON/종료 코드 순서·매처·권한 우선순위를 관찰해 C++로 구현했다. 미러 출처 주장의 독립 인증이나 전체 Claude Code 호환 인증은 아니다. 실행 증거는 [Verification.md](Verification.md), 남은 전체 목표는 [HarnessParity.md](HarnessParity.md)에 구분한다.
 
 0.31.0부터 같은 호스트 설정에 `type: "agent"`를 사용할 수 있다. 실제 도구 실행·StructuredOutput·dontAsk·기한과 정리 계약은 [AgentHooks.md](AgentHooks.md)를 따른다.
+
+0.32.0부터 성공한 MCP 호출의 PostToolUse는 `hookSpecificOutput.updatedMCPToolOutput`을 지원한다. 문자열·MCP 콘텐츠 배열, 원본 구조화 결과 제거, 병합·오류·MCP 재전달 스키마의 계약은 [McpOutputHooks.md](McpOutputHooks.md)를 따른다. 명령 종료 코드가 0이 아니거나 비정상 종료하면 결과 변경을 적용하지 않는다.
+
+macOS 회귀 검사에서는 QProcess 명령 인자에 직접 넣은 한글이 분해형 유니코드로 전달되는 현상을 관찰했다. 이 변경에서 명령 실행기의 인자 인코딩은 수정하지 않았다. 정확한 stdout 코드 포인트를 비교하는 테스트는 JSON Unicode escape를 출력하며, HTTP와 C++ 콜백은 원래 한글 문자열을 직접 검증한다. 고정 스크립트·UTF-8 파일 출력과 명령 인자 문자열은 서로 다른 경로이다.
