@@ -48,6 +48,7 @@ public:
         std::timed_mutex mutex,identity;QString id;bool resetting=false;
         std::map<QString,CancellationToken> active;std::condition_variable_any changed;
         std::shared_ptr<PermissionRequests> permissionRequests;
+        std::shared_ptr<AsyncHookScope> hooks=std::make_shared<AsyncHookScope>();
     };
     struct Invocation {
         std::shared_ptr<Conversation> conversation;QString id;CancellationToken token;
@@ -113,6 +114,7 @@ public:
         { std::lock_guard guard(mutex); const auto found = conversations.find(connection);
             if (found != conversations.end()) { current = found->second; conversations.erase(found); } }
         if(current&&current->permissionRequests)current->permissionRequests->close();
+        if(current)current->hooks->close();
         if (options.engine) {
             if (!current) return;
             owner = sessionId(current, {}, false); if (owner.isEmpty()) return;
@@ -313,6 +315,9 @@ public:
         ToolCall call{uuid(), name, params["arguments"].toObject()};
         ToolContext context{request.sessionId, uuid(), options.workingDirectory, {}, request.cancellation, request.progress};
         context.permissionRequests=runnerOptions.permissionRequests;
+        if(!options.engine&&!options.tools.hooks.isEmpty()) {
+            context.asyncHooks=conversation(request.sessionId)->hooks;context.hookCancellation=request.cancellation;
+        }
         // Hooks, nested runs and tool progress all share one MCP request token.
         // Serialize their notifications with a monotonic bridge step counter.
         if(request.progress) {
@@ -339,6 +344,7 @@ public:
                 if(native)context.sessionId=owner;
                 context.transcriptPath=options.engine->transcriptPath(owner);
                 if(!options.tools.hooks.isEmpty()) {
+                    context.asyncHooks=options.engine->hookScope(owner);context.hookCancellation=context.cancellation;
                     if(history)try {context.sessionSnapshot=std::make_shared<Session>(options.engine->session(owner));}
                         catch(const Error& error){if(error.code()!=ErrorCode::ModelInUse)throw;}
                     if(!context.sessionSnapshot)context.sessionSnapshot=std::make_shared<Session>(options.engine->sessionMetadata(owner));
@@ -381,6 +387,35 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
         return result;
     };
     server.handlers["tools/call"] = [state](const auto& params, const auto& request) { return state->call(params, request); };
+    if(state->options.engine||!state->options.tools.hooks.isEmpty()) {
+        server.experimentalCapabilities["iisacc/asyncHooks"]=QJsonObject{{"schema","iisacc.async-hooks/1"},
+            {"statusMethod","iisacc/hooks/status"},{"cancelMethod","iisacc/hooks/cancel"}};
+        for(const auto& method:QStringList{"iisacc/hooks/status","iisacc/hooks/cancel"})
+            server.controlHandlers[method]=[state,method](const QJsonObject& params,const mcp::ServerRequestContext& request) {
+                request.cancellation.throwIfCancelled();const bool cancel=method.endsWith("/cancel");
+                const QStringList keys=cancel?QStringList{"hook_id","_meta"}:QStringList{"offset","limit","_meta"};
+                for(auto i=params.begin();i!=params.end();++i)if(!keys.contains(i.key()))throw mcp::RpcError(-32602,"Unknown hook control parameter: "+i.key());
+                if(cancel&&params.contains("hook_id")&&(!params["hook_id"].isString()||params["hook_id"].toString().isEmpty()||params["hook_id"].toString().size()>128))
+                    throw mcp::RpcError(-32602,"Invalid hook_id");
+                auto integer=[&](const QString& key,int fallback,int minimum,int maximum) {
+                    const auto value=params.value(key);const auto number=value.toDouble(fallback);
+                    if(!value.isUndefined()&&(!value.isDouble()||number<minimum||number>maximum||std::floor(number)!=number))throw mcp::RpcError(-32602,"Invalid hook page");
+                    return int(number);
+                };
+                const auto offset=integer("offset",0,0,1000000),limit=integer("limit",32,1,128);
+                if(!state->options.engine) {
+                    const auto scope=state->conversation(request.sessionId)->hooks;
+                    if(cancel)return QJsonObject{{"session_id",request.sessionId},{"cancelled_hooks",scope->cancel(params["hook_id"].toString())},{"wake_run_cancel_requested",false}};
+                    const auto records=scope->status();QJsonArray page;
+                    for(qsizetype i=offset;i<records.size()&&i<qsizetype(offset)+limit;++i)page.append(records[i]);
+                    QJsonObject result{{"session_id",request.sessionId},{"hooks",page},{"count",records.size()},{"max_wake_runs",0},{"wake_disabled",true}};
+                    if(qsizetype(offset)+limit<records.size())result["next_offset"]=offset+limit;
+                    return result;
+                }
+                const auto owner=state->sessionId(state->conversation(request.sessionId),request.cancellation);
+                return cancel?state->options.engine->cancelHooks(owner,params["hook_id"].toString()):state->options.engine->hookStatus(owner,offset,limit);
+            };
+    }
     if(state->options.permissionRequests) {
         server.experimentalCapabilities["iisacc/permissionRequests"]=QJsonObject{{"schema","iisacc.permission-request/1"},
             {"pendingMethod","iisacc/permissions/pending"},{"respondMethod","iisacc/permissions/respond"}};

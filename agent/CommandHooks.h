@@ -1,5 +1,6 @@
 #pragma once
 #include "Tools.h"
+#include "AsyncHooks.h"
 #include <QtCore/QProcessEnvironment>
 #include <QtNetwork/QNetworkProxy>
 #include <QtNetwork/QSslConfiguration>
@@ -19,6 +20,7 @@ struct CommandHookOptions {
     // NoProxy disables proxies; a host proxy delegates destination DNS/policy.
     std::optional<QNetworkProxy> httpProxy;
     int maxModelTokens = 1024;
+    int maxAsyncRecords = 128;
 };
 // Explicit host configuration, frozen at construction. Supports command, HTTP
 // and prompt/agent hooks. Commands receive JSON on stdin, HTTP endpoints a POST;
@@ -29,6 +31,8 @@ public:
     CommandHooks(QJsonObject settings, CommandHookOptions);
     Hook callback() const;
     QJsonObject describe() const; // Event/matcher metadata; no commands, prompts or environment values.
+    QJsonArray asyncResults(const QString& sessionId = {}, bool consume = false) const;
+    void close(); // Stop/join this configuration's command workers; affects all copies/callbacks.
 private:
     class Impl;
     std::shared_ptr<Impl> d;

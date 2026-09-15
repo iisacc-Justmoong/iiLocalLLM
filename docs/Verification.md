@@ -1,5 +1,32 @@
 # 구현 검증 기록
 
+## 2026-09-15 비동기 명령 훅과 제한된 유휴 재실행 (0.33.0)
+
+명령 설정의 async/asyncRewake와 첫 stdout 행의 async 선언을 C++로 처리한다. 프로세스와 완료 기록을 세션에 묶고 일반 결과는 영속 notification/next로 전달한다. asyncRewake 종료 코드 2는 별도 runQueued를 기동한다. 명시적 실행당 자동 기동 상한, 일회 권한·요청 콜백 분리, 진행 중/대기 중 자동 실행 취소, 세션·연결 종료 정리와 API/CLI/MCP 제어를 포함한다. [AsyncHooks.md](AsyncHooks.md)에 현재 계약과 참조 차이를 기록한다.
+
+| 검증 경계 | 관측 |
+| --- | --- |
+| Release 전체, inference 라벨 제외 | 70/70, 155.80초 |
+| ASan·UBSan, llama 비활성 Debug | 67/67, 181.46초 |
+| 새 설치 소비자 | 39/39, 56.45초 |
+| 실제 로컬 모델 | 소스 2건·설치 2건, 일반 문맥 전달과 유휴 asyncRewake |
+| 실제 전송 | 소스·설치 daemon HTTP, iillm IPC, 인증 MCP HTTP의 선언·수명·소유권·조회·취소 |
+| 수명·권한 | 종료 시 정리, now 연산 중단과 강제 취소 분리, 일회 Write 권한 미상속, 다른 실행을 기다리지 않는 대기 기동 취소 |
+| 완료 계약 | 지연된 stop/block/MCP 변경 무시, 종료 코드 2만 wake, asyncTimeout 메타데이터와 실제 명령 기한 분리, once·용량 상한 |
+| 소유자 | C++ 독립 scope, API 앱별 세션, Engine 유무별 MCP 연결, SubagentStart의 자식 scope |
+
+최초 두 테스트에서 기존 구현의 async 설정 거부와 첫 행 선언의 전경 대기를 확인했다(async-hooks-red.log). Engine 전달·유휴 기동·종료 정리 세 테스트도 실패를 먼저 확인했다(async-hooks-engine-red.log). 추가 테스트의 호스트 설정 오류와 기존 async 거부 기대값을 수정했다. 실제 HTTP 전송에서 정상 응답 정리의 무조건 취소가 백그라운드 훅까지 중단하는 문제를 발견했다. HttpApiServer는 완료된 RPC를 ID로 추적 해제하고 미완료 요청만 취소하도록 수정했다. 해당 실제 전송과 기존 연결 중단·기한·별도 제어 용량 회귀를 함께 통과했다.
+
+최종 버전 검사에서 세 실행 파일의 표시 문자열이 0.32.0으로 남아 있어 해당 리터럴만 0.33.0으로 수정했다. 위 전체 검사와 실제 추론에서 사용한 Release/ASan 라이브러리 바이트는 그대로이며, 수정 후 CLI·daemon API·명령/HTTP/비동기 훅 전송 검사를 Release 5/5, ASan·UBSan 5/5로 통과했고, 설치 전송 재검사와 세 실행 파일의 0.33.0 표시도 확인했다. 수정 전 소스/검증 기록과 변경된 세 파일의 전후 해시는 async-hooks-before-version-labels-*.json 및 async-hooks-verification.json의 version_label_correction에 보존한다.
+
+실제 모델 검사는 tests/async_hook_runtime_smoke.cpp이다. Qwen2.5 0.5B가 처음 READY를 응답한 뒤, 프롬프트에 넣지 않은 새 검증 코드가 명령 결과로 도착한다. 일반 async는 다음 명시적 실행에서, asyncRewake는 원래 호출 종료 후 자동 실행에서 그 코드를 답한다. 생성 토큰·완료 상태·원본/후속 실행 ID와 영속 User 문맥을 검사한다. 각 환경에서 두 경로 모두 통과했다. API/MCP의 결정적 Model 대역 검사 및 실제 전송 검사를 실제 모델 추론과 구분한다.
+
+모델은 491,400,032바이트, SHA-256 `74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db`이다. 검사한 라이브러리 SHA-256은 `ad48f996c616672ebc9a08fb263280eabdd8692521e27a5ccb7ce3b3426a8a6b`이다. 독립 설치는 build/async-hooks-stage, 소비자는 build/async-hooks-consumer/build이며 0.33 공개 구조체에 맞춰 새로 빌드한다. async-hooks-linkage.json에서 소스/설치 라이브러리, CMake RPATH 변환을 반영한 실행 파일, 공개 헤더·문서·카탈로그, 로더 경로와 얇은 CLI를 대조한다.
+
+검사 묶음은 async-hooks-verification.json, 입력 소스 해시는 async-hooks-tested-source.json, 실제 추론은 async-hooks-{source,installed}-native.json, 전송 기록은 async-hooks-wire.json 및 async-hooks-installed-wire.json이다. 커밋/원격 일치와 최종 소스 manifest는 async-hooks-publication.json에 별도로 기록한다.
+
+참조와 동일한 전역 UI 레지스트리, 환경 캐시 무효화, 자식 실행 종료 뒤 재기동이나 durable wake scheduler를 구현한 것은 아니다. 전체 생명주기·설정/스킬/플러그인 병합·앱/플랫폼 적합성은 남아 있다. 전체 대응표의 31개 영역(21 partial, 10 pending)을 완료로 변경하지 않는다. 이번 SDK 단계에서 Society/Dreamscapes를 다시 패키징하지 않았고 iPhone은 사용자 요청대로 제외한다. 기존 사용자 데몬 PID 14909를 중단하거나 교체하지 않는다.
+
 ## 2026-09-15 MCP 도구 결과 변경 훅 (0.32.0)
 
 PostToolUse의 updatedMCPToolOutput을 C++ 실행기에 연결했다. 명령·HTTP·C++ 훅이 성공한 가져오기 MCP 도구의 관측을 문자열 또는 MCP 콘텐츠 배열로 교체한다. 원래 출력 스키마를 먼저 검증하고, 교체 뒤 원래 구조화 데이터가 모델·transcript·API·MCP 재전달에 남지 않도록 처리한다. 이름·공개 metadata로 일반 도구를 MCP 도구로 가장할 수 없으며, 원래 _meta와 이미 수행된 외부 효과는 보존한다. [McpOutputHooks.md](McpOutputHooks.md)에 참조 대조와 형식 제한을 기록한다.

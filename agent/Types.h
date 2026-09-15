@@ -64,6 +64,9 @@ struct ToolContext {
     std::shared_ptr<PermissionRequests> permissionRequests; // Trusted channel override; never accepted from wire input.
     std::optional<PermissionMode> permissionMode; // Trusted invocation override, used by isolated verification agents.
     bool verificationAgent = false; // Host-only scope for the verifier's reserved result tool.
+    std::shared_ptr<class AsyncHookScope> asyncHooks; // Host lifetime/delivery; never a model or wire field.
+    std::optional<CancellationToken> hookCancellation; // Hard run cancellation; foreground input interrupts stay separate.
+    bool forceSynchronousHooks = false;
 };
 struct ModelRequest {
     QString model;

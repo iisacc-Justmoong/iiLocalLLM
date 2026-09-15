@@ -57,3 +57,5 @@ ended는 활성화가 종료되었는지, timed_out은 훅의 공통 예산 소�
 고정 참조 c8cd253554319f32ff64ff7000636199f720c9bc의 utils/hooks.ts(executeSessionEndHooks, executeHooksOutsideREPL, getSessionEndHookTimeoutMs), utils/gracefulShutdown.ts, commands/clear/conversation.ts, entrypoints/sdk/coreSchemas.ts의 실제 호출·출력·사유를 읽었다. 참조의 기본 1.5초 종료 예산과 비차단 정리 의미를 사용한다. JS 실행기나 새 생산 의존성을 도입하지 않고 기존 Qt JSON·QThreadPool·명령 프로세스 실행기와 표준 C++ 스레드를 재사용한다.
 
 tests/session_end_tests.cpp는 활성화별 중복 방지·기록 보존·재개·직접/대기 실행 취소·네이티브 도구 취소·API 소유권·접수 대기 요청 취소·예외·실제 명령의 공통 예산을 검사한다. tests/mcp_server_tests.cpp는 교체/연결별 정리와 중복 종료를 검사한다. tests/command_hooks_wire.py는 인증 HTTP·native IPC CLI·MCP HTTP DELETE·공식 SDK stdio 종료·SIGINT/SIGTERM 및 선택적 실제 Qwen 추론을 검사한다. 실행 결과는 [Verification.md](Verification.md)에 기록한다. 전체 훅 및 하네스 호환은 여전히 [HarnessParity.md](HarnessParity.md)의 partial이다.
+
+0.33.0의 비동기 명령 훅은 세션/연결별로 완료 결과를 보관하고 문맥을 notification/next로 전달한다. asyncRewake 종료 코드 2는 횟수를 제한한 유휴 실행을 요청한다. 세션 종료·clear는 훅을 취소·정리하며, 자식 Engine은 실행이 끝난 뒤 자동 기동하지 않는다. 상태/취소 메서드와 기존 요청별 권한·콜백을 재사용하지 않는 경계는 [AsyncHooks.md](AsyncHooks.md)를 따른다.

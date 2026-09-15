@@ -17,7 +17,7 @@ inline ShellExit shellProcess(const QString& workspace, const QString& command, 
     const CancellationToken& token, const std::function<void()>& started,
     const std::function<void(const QByteArray&, bool)>& output,
     const QByteArray& input = {}, const QProcessEnvironment* environment = nullptr,
-    const QString& program = {}, const QStringList& arguments = {}) {
+    const QString& program = {}, const QStringList& arguments = {}, const std::function<void()>& inputClosed = {}) {
     token.throwIfCancelled(); QProcess process; process.setWorkingDirectory(workspace);
     if(environment)process.setProcessEnvironment(*environment);
 #ifdef Q_OS_UNIX
@@ -62,7 +62,7 @@ inline ShellExit shellProcess(const QString& workspace, const QString& command, 
     try {
         if(started)started();
         if(!input.isEmpty()&&process.write(input)!=input.size())throw Error(ErrorCode::RuntimeFailure,"Could not write process input");
-        process.closeWriteChannel(); token.throwIfCancelled();
+        process.closeWriteChannel(); token.throwIfCancelled();if(inputClosed)inputClosed();
         for (;;) {
             process.waitForReadyRead(20); drain(true);
             token.throwIfCancelled();

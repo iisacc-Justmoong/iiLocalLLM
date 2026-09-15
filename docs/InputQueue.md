@@ -39,3 +39,5 @@ Engine을 설정한 MCP 서버는 같은 네 동작을 `iiLocalLLM.agent.inputs.
 `tests/input_queue_tests.cpp`는 우선순위와 종류 분리, 스레드·프로세스 간 게시, transcript 게시 후 확인 실패 복구, 중복 ID 충돌, 실행 중 next/now, later 경계, 명시적 취소·턴 한도 뒤 보존, 이벤트 콜백 재입력과 손상·symlink 저장 거절을 검사한다. API·MCP 단위 검사는 실행 중 별도 요청의 긴급 입력과 앱·연결 격리를 확인한다. `tests/input_queue_runtime_smoke.cpp`는 고정 Qwen3 8B에서 실제 Read 후 next 입력, 실행 중인 셸의 PID·준비 파일 확인 뒤 now 입력, 셸 종료와 후속 Read의 미리 알 수 없는 파일 값을 검사한다. 공식 MCP Python SDK는 전송 검사에만 사용한다. 전체·단독·설치본 결과는 [Verification.md](Verification.md)에서 구분한다.
 
 0.22의 prepare/persist 오버로드는 외부 준비 콜백을 queue.lock 밖에서 실행하고 별도 delivery.lock으로 소비자를 직렬화한다. 기존 persist 오버로드도 같은 소비자 잠금을 사용한다. 철회된 입력은 준비 뒤 저장하지 않으며 persist=false는 현재 항목의 확인 후 배치를 끝낸다. 새로 게시한 입력은 다음 배치에서 선택한다. 훅의 외부 효과와 원본/큐 저장은 단일 트랜잭션이 아니다. 입력 판정이 이미 transcript에 저장되어 있으면 재시도에서 훅을 다시 실행하지 않는다.
+
+0.33.0의 비동기 명령 훅은 세션/연결별로 완료 결과를 보관하고 문맥을 notification/next로 전달한다. asyncRewake 종료 코드 2는 횟수를 제한한 유휴 실행을 요청한다. 세션 종료·clear는 훅을 취소·정리하며, 자식 Engine은 실행이 끝난 뒤 자동 기동하지 않는다. 상태/취소 메서드와 기존 요청별 권한·콜백을 재사용하지 않는 경계는 [AsyncHooks.md](AsyncHooks.md)를 따른다.

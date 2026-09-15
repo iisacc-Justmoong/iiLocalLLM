@@ -31,7 +31,7 @@ void validateExitReason(const QString& reason) {
         throw Error(ErrorCode::InvalidArgument,"Invalid session exit reason");
 }
 }
-class Engine::Impl {
+class Engine::Impl : public std::enable_shared_from_this<Engine::Impl> {
 public:
     Impl(std::shared_ptr<Model> model, std::shared_ptr<ToolRegistry> registry,
         std::shared_ptr<const PermissionPolicy> policy, EngineOptions options)
@@ -41,6 +41,8 @@ public:
             || this->options.maxQueuedRuns < 0 || this->options.maxConcurrentTools < 1 || this->options.maxConcurrentTools > 64
             || this->options.maxToolCallsPerTurn < 1 || this->options.maxToolCallsPerTurn > 64 || this->options.maxInputCharacters < 1
             || this->options.sessionEndTimeoutMs < 1 || this->options.sessionEndTimeoutMs > 600000
+            || this->options.maxAsyncHookRecords < 1 || this->options.maxAsyncHookRecords > 4096
+            || this->options.maxAsyncHookWakeRuns < 0 || this->options.maxAsyncHookWakeRuns > 128
             || !std::isfinite(this->options.compaction.triggerFraction) || this->options.compaction.triggerFraction < 0.1
             || this->options.compaction.triggerFraction >= 1 || this->options.compaction.keepRecentGroups < 1
             || this->options.compaction.keepRecentGroups > 128 || this->options.compaction.summaryMaxTokens < 16
@@ -82,6 +84,36 @@ public:
     QSet<QString> createdSessions,startedSessions;
     QSet<QString> clearedSessions;
     QSet<QString> touchedSessions,endingSessions;
+    struct HookState {
+        std::shared_ptr<AsyncHookScope> scope;
+        RunRequest resume;
+        QSet<QString> wakeInputs;
+        std::optional<RunHandle> lastWake;
+        QString wakeError;
+        int wakeCount=0;
+        bool disabled=false;
+    };
+    std::map<QString,HookState> hookStates;
+    RunHandle submit(RunRequest,EventCallback,bool,QString={},bool=false,bool automaticWake=false);
+    void tryWakes();
+    void completedHook(const QString&,const QJsonObject&);
+    std::shared_ptr<AsyncHookScope> hookScope(const QString& id) {
+        std::lock_guard lock(mutex);
+        if(stopping)throw Error(ErrorCode::ShuttingDown,"Agent engine is shutting down");
+        if(endingSessions.contains(id))throw Error(ErrorCode::ModelInUse,"Agent session is ending");
+        auto& state=hookStates[id];
+        if(!state.scope) {
+            state.resume.sessionId=id;
+            state.scope=std::make_shared<AsyncHookScope>([weak=weak_from_this(),id](const QJsonObject& result) {
+                if(const auto owner=weak.lock())owner->completedHook(id,result);
+            },options.maxAsyncHookRecords);
+        }
+        touchedSessions.insert(id);return state.scope;
+    }
+    CancellationToken hookRoot(const QString& runId,const CancellationToken& fallback) {
+        std::lock_guard lock(mutex);const auto found=active.find(runId);
+        return found==active.end()?fallback:found->second.root;
+    }
     // Called under mutex. executing is set before a worker accesses the run,
     // so a non-executing task cannot have been deleted/reused by QThreadPool.
     QList<std::function<void()>> cancelRuns(const QString& session={}) {
@@ -124,22 +156,25 @@ public:
         std::lock_guard lock(mutex); return active.at(id).interrupted;
     }
 
-    std::shared_ptr<const ModelHookContext> hookContext(const Session& session) const {
+    std::shared_ptr<const ModelHookContext> hookContext(const Session& session,const QString& runId={},const CancellationToken& token={},bool forceSync=false) {
         if(options.hooks.isEmpty())return {};
         auto context=std::make_shared<ModelHookContext>();context->model=model;context->modelName=session.model;
         context->session=std::make_shared<Session>(session);context->registry=registry->snapshot();
         for(auto tool:additionalTools())context->registry->add(std::move(tool));
         if(tasks)for(auto tool:agent::taskTools(tasks,session.id,options.taskToolsDeferred))context->registry->add(std::move(tool));
         context->tools=context->registry->definitions();context->policy=policy;
-        context->executionContext={session.id,{},session.workingDirectory};
+        context->executionContext={session.id,runId,session.workingDirectory};
+        context->executionContext.forceSynchronousHooks=forceSync;
+        if(!forceSync)context->executionContext.asyncHooks=hookScope(session.id);
+        context->executionContext.hookCancellation=hookRoot(runId,token);
         context->executionContext.transcriptPath=QDir(options.sessionsDirectory).filePath(session.id+"/transcript.jsonl");
         context->agentExecutor=detail::hookAgentExecutor(options,tasks);return context;
     }
-    QList<Tool> taskToolsFor(const Session& session, const QString& runId, EventCallback send = {}) const {
+    QList<Tool> taskToolsFor(const Session& session, const QString& runId, EventCallback send = {},const CancellationToken& token={}) {
         if (!tasks) return {};
         const auto sessionId=session.id;
         return agent::taskTools(tasks, sessionId, options.taskToolsDeferred,
-            [hooks = options.hooks, sessionId, runId, send, modelContext=hookContext(session),
+            [hooks = options.hooks, sessionId, runId, send, modelContext=hookContext(session,runId,token),
                 transcript=QDir(options.sessionsDirectory).filePath(sessionId+"/transcript.jsonl")](const TaskChange& change, const CancellationToken& token) {
                 std::optional<HookKind> kind;
                 if (change.operation == "TaskCreate") kind = HookKind::TaskCreated;
@@ -197,13 +232,13 @@ public:
         message.metadata = {{"iilocal.shell_state", true}}; return message;
     }
 
-    void startSession(SessionLease& lease,const QString& source,const QString& runId,const CancellationToken& token,const EventCallback& send) {
+    void startSession(SessionLease& lease,const QString& source,const QString& runId,const CancellationToken& token,const EventCallback& send,bool forceSync=false) {
         if(!options.sessionStartHooks||options.hooks.isEmpty())return;
         const auto& session=lease.session();HookResult combined;
         QJsonObject context{{"cwd",session.workingDirectory},{"source",source},{"model",session.model},
             {"transcript_path",QDir(options.sessionsDirectory).filePath(session.id+"/transcript.jsonl")},
             {"permission_mode","unknown"}};
-        const auto modelContext=hookContext(session);
+        const auto modelContext=hookContext(session,runId,token,forceSync);
         for(const auto& hook:options.hooks) {
             context["permission_mode"]=policy->describe({session.id,runId,session.workingDirectory,{},token})["mode"].toString("unknown");
             token.throwIfCancelled();const auto result=hook({HookKind::SessionStart,session.id,runId,{}, {},{},context,modelContext},token);
@@ -251,7 +286,7 @@ public:
         bool stopHookActive=false;
         auto hooks = [&](HookKind kind, const QString& text, const QJsonObject& extra = QJsonObject{}, bool applyControl = true) {
             HookResult combined;
-            const auto modelContext=hookContext(lease->session());
+            const auto modelContext=hookContext(lease->session(),runId,runToken);
             for (const auto& hook : options.hooks) {
                 token.throwIfCancelled();
                 QJsonObject context{{"cwd",lease->session().workingDirectory},
@@ -326,6 +361,8 @@ public:
                 return disposition!="blocked"&&disposition!="stopped";
             },token);
             for(const auto& message:delivered) {
+                {std::lock_guard lock(mutex);const auto found=hookStates.find(request.sessionId);
+                    if(found!=hookStates.end())found->second.wakeInputs.remove(message.id);}
                 if(!replayed.contains(message.id)) {
                     if(message.metadata["iilocal.input"].toObject()["kind"]=="prompt")activeAllowedTools=request.allowedTools;
                     send({EventKind::Message,runId,request.sessionId,{}, {},toJson(message)});
@@ -493,6 +530,8 @@ public:
                 }
                 ToolContext toolBase{session.id, runId, session.workingDirectory, lease->artifactsDirectory(), token, {}, quint64(session.compactions.size()), std::make_shared<Session>(session)};
                 toolBase.permissionRequests=permissionRequests;
+                if(!options.hooks.isEmpty())toolBase.asyncHooks=hookScope(session.id);
+                toolBase.hookCancellation=runToken;
                 toolBase.transcriptPath=QDir(options.sessionsDirectory).filePath(session.id+"/transcript.jsonl");
                 auto runTool = [&](const ToolCall& call) {
                     auto context = toolBase;
@@ -574,11 +613,12 @@ public:
         // Terminal observer failures cannot change the already finalized transcript/result.
         try { send({EventKind::Finished, runId, request.sessionId, {}, result.text, toJson(result)}); } catch (...) {}
         promise->set_value(std::move(result));
+        tryWakes();
     }
 };
 Engine::Engine(std::shared_ptr<Model> model, std::shared_ptr<ToolRegistry> registry,
     std::shared_ptr<const PermissionPolicy> policy, EngineOptions options)
-    : d(std::make_unique<Impl>(std::move(model), std::move(registry), std::move(policy), std::move(options))) {}
+    : d(std::make_shared<Impl>(std::move(model), std::move(registry), std::move(policy), std::move(options))) {}
 Engine::~Engine() {
     try {close();}catch(...) {} // Destructors cannot propagate host cleanup failures.
 }
@@ -592,6 +632,46 @@ Session Engine::createSession(QString model, QString workspace, QString systemPr
 Session Engine::session(const QString& id) const { return d->store.load(id); }
 std::shared_ptr<Model> Engine::hookModel() const {return d->model;}
 AgentHookExecutor Engine::hookAgent() const {return detail::hookAgentExecutor(d->options,d->tasks);}
+std::shared_ptr<AsyncHookScope> Engine::hookScope(const QString& id) const {
+    (void)d->store.metadata(id);return d->hookScope(id);
+}
+QJsonObject Engine::hookStatus(const QString& id,int offset,int limit) const {
+    (void)d->store.metadata(id);
+    if(offset<0||limit<1||limit>128)throw Error(ErrorCode::InvalidArgument,"Invalid async hook page");
+    std::shared_ptr<AsyncHookScope> scope;std::optional<RunHandle> wake;bool queued=false;QJsonObject result{{"session_id",id}};
+    {std::lock_guard lock(d->mutex);const auto found=d->hookStates.find(id);
+        if(found!=d->hookStates.end()) {
+            const auto& state=found->second;scope=state.scope;wake=state.lastWake;
+            result["wake_runs"]=state.wakeCount;result["wake_disabled"]=state.disabled;
+            result["pending_wake_inputs"]=state.wakeInputs.size();result["wake_error"]=state.wakeError;
+            if(wake){const auto run=d->active.find(wake->runId);queued=run!=d->active.end()&&!run->second.executing;}
+        }}
+    const auto records=scope?scope->status():QJsonArray{};QJsonArray page;
+    for(qsizetype i=offset;i<records.size()&&i<qsizetype(offset)+limit;++i)page.append(records[i]);
+    result["count"]=records.size();result["hooks"]=page;result["max_wake_runs"]=d->options.maxAsyncHookWakeRuns;
+    if(qsizetype(offset)+limit<records.size())result["next_offset"]=offset+limit;
+    if(wake) {
+        QJsonObject run{{"run_id",wake->runId},{"cancel_requested",wake->cancellation.isCancelled()},{"state",queued?"queued":"running"}};
+        if(wake->result.wait_for(0ms)==std::future_status::ready){const auto done=wake->result.get();run["state"]=enumName(done.status);run["result"]=toJson(done);}
+        result["wake_run"]=run;
+    }return result;
+}
+QJsonObject Engine::cancelHooks(const QString& id,const QString& hookId) const {
+    (void)d->store.metadata(id);int count=0;bool runCancelled=false;QList<std::function<void()>> completions;
+    {std::lock_guard lock(d->mutex);const auto found=d->hookStates.find(id);
+        if(found!=d->hookStates.end()) {
+            auto& state=found->second;
+            if(state.scope)count=state.scope->cancel(hookId);
+            else if(!hookId.isEmpty())throw Error(ErrorCode::NotFound,"Async hook not found in this session");
+            if(hookId.isEmpty()) {
+                state.disabled=true;state.wakeInputs.clear();
+                if(state.lastWake&&d->active.contains(state.lastWake->runId)){completions=d->cancelRuns(id);runCancelled=true;d->changed.notify_all();}
+            }
+        }else if(!hookId.isEmpty())throw Error(ErrorCode::NotFound,"Async hook not found in this session");
+    }
+    for(const auto& completion:completions)completion();d->tryWakes();
+    return {{"session_id",id},{"cancelled_hooks",count},{"wake_run_cancel_requested",runCancelled}};
+}
 QString Engine::transcriptPath(const QString& id) const {
     (void)d->store.metadata(id);return QDir(d->options.sessionsDirectory).filePath(id+"/transcript.jsonl");
 }
@@ -631,7 +711,13 @@ QJsonObject Engine::endSessionImpl(const QString& id,QString reason,const Cancel
         ~Finish(){std::lock_guard lock(state.mutex);state.endingSessions.remove(id);state.endingSessions.remove(next);if(!clear)state.touchedSessions.remove(id);state.changed.notify_all();}
     } finish{*d,id,{},clear};
     bool ended;
-    {std::lock_guard lock(d->mutex);ended=d->startedSessions.remove(id);}
+    std::shared_ptr<AsyncHookScope> scope;
+    {std::lock_guard lock(d->mutex);ended=d->startedSessions.remove(id);
+        const auto found=d->hookStates.find(id);if(found!=d->hookStates.end()) {
+            scope=found->second.scope;found->second.disabled=true;found->second.wakeInputs.clear();}}
+    // Completion callbacks may acquire the engine mutex. Join them outside it,
+    // before running SessionEnd or transferring any other background owner.
+    if(scope)scope->close();
     QJsonArray diagnostics;
     auto error=[&](const QString& text,const QString& code=QString()) {
         diagnostics.append(QJsonObject{{"hook_event_name","SessionEnd"},{"outcome","non_blocking_error"},{"error",text},{"error_code",code}});
@@ -665,7 +751,7 @@ QJsonObject Engine::endSessionImpl(const QString& id,QString reason,const Cancel
         try {context["permission_mode"]=d->policy->describe({id,{},session.workingDirectory,{},token})["mode"].toString("unknown");}
         catch(const std::exception& e){error(QString::fromUtf8(e.what()));}catch(...){error("Permission inspection failed during session end");}
         std::shared_ptr<const ModelHookContext> modelContext;
-        try {modelContext=d->hookContext(d->store.load(id));}
+        try {modelContext=d->hookContext(d->store.load(id),{},token,true);}
         catch(const Error& e){error(QString::fromUtf8(e.what()),enumName(e.code()));}
         for(const auto& hook:d->options.hooks) {
             if(token.isCancelled()||std::chrono::steady_clock::now()>=deadline)break;
@@ -680,7 +766,9 @@ QJsonObject Engine::endSessionImpl(const QString& id,QString reason,const Cancel
         timedOut=token.isCancelled()||std::chrono::steady_clock::now()>=deadline;
         if(timedOut)error("SessionEnd hook budget expired","timeout");
     }
-    QJsonObject endedReport{{"session_id",id},{"reason",reason},{"ended",ended},{"timed_out",timedOut},{"diagnostics",diagnostics}};
+    QJsonObject endedReport{{"session_id",id},{"reason",reason},{"ended",ended},{"timed_out",timedOut},{"diagnostics",diagnostics},
+        {"async_hooks",scope?scope->status():QJsonArray{}}};
+    {std::lock_guard lock(d->mutex);d->hookStates.erase(id);}
     if(!clear)return endedReport;
     QJsonObject report{{"previous_session_id",id},{"session_id",QString()},{"complete",false},{"end",endedReport}};
     QJsonArray failures;QJsonObject background;QString next;
@@ -708,7 +796,7 @@ QJsonObject Engine::endSessionImpl(const QString& id,QString reason,const Cancel
         }catch(const std::exception& e){failed("tools",QString::fromUtf8(e.what()));}
         try {
             auto lease=d->store.acquire(next);QJsonArray startDiagnostics;
-            d->startSession(*lease,"clear",{}, {},[&](const Event& event){if(event.kind==EventKind::Hook)startDiagnostics.append(toJson(event));});
+            d->startSession(*lease,"clear",{}, {},[&](const Event& event){if(event.kind==EventKind::Hook)startDiagnostics.append(toJson(event));},true);
             report["start_diagnostics"]=startDiagnostics;
             std::lock_guard lock(d->mutex);d->startedSessions.insert(next);d->clearedSessions.remove(next);
         }catch(const std::exception& e){failed("start",QString::fromUtf8(e.what()));}
@@ -785,6 +873,7 @@ ToolResult Engine::runSubagentTool(const QString& id, const QString& name, const
     for (const auto& t : tools) if (t.definition.metadata["source"] == "builtin.subagent") registry->add(t);
     ToolContext context{id, uuid(), session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), operation.token};
     context.transcriptPath=transcriptPath(id);
+    if(!d->options.hooks.isEmpty())context.asyncHooks=d->hookScope(id);context.hookCancellation=operation.token;
     context.sessionSnapshot = std::make_shared<Session>(session);
     context.permissionRequests=requests?requests:d->options.permissionRequests;
     const auto callId = uuid();
@@ -805,6 +894,7 @@ ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJ
         throw Error(ErrorCode::InvalidArgument, "Shell control must refer to the host's native tool");
     ToolContext context{id, uuid(), session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), operation.token};
     context.transcriptPath=transcriptPath(id);
+    if(!d->options.hooks.isEmpty())context.asyncHooks=d->hookScope(id);context.hookCancellation=operation.token;
     context.permissionRequests=requests?requests:d->options.permissionRequests;
     const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks)});
     return runner.run({uuid(), name, args}, context, callback);
@@ -825,9 +915,10 @@ ToolResult Engine::runTaskTool(const QString& id, const QString& name, const QJs
     const auto session = d->store.metadata(id);
     Impl::NativeOperation operation(*d,id,token);
     auto registry = std::make_shared<ToolRegistry>(); const auto runId = uuid();
-    for (auto tool : d->taskToolsFor(session, runId, callback)) registry->add(std::move(tool));
+    for (auto tool : d->taskToolsFor(session, runId, callback,operation.token)) registry->add(std::move(tool));
     ToolContext context{id, runId, session.workingDirectory, QDir(d->options.sessionsDirectory).filePath(id + "/artifacts"), operation.token};
     context.transcriptPath=transcriptPath(id);
+    if(!d->options.hooks.isEmpty())context.asyncHooks=d->hookScope(id);context.hookCancellation=operation.token;
     context.permissionRequests=requests?requests:d->options.permissionRequests;
     const ToolRunner runner(registry, d->policy, {d->options.hooks, d->options.permission, 24000, d->options.permissionResponse, d->options.permissionUpdates, context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks)});
     return runner.run({uuid(), name, args}, context, callback);
@@ -859,43 +950,103 @@ QJsonObject Engine::queuedInputs(const QString& id, int offset, int limit, const
     (void)d->store.metadata(id); return d->inputs.snapshot(id, offset, limit, token);
 }
 QJsonObject Engine::removeInput(const QString& id, const QString& input, const CancellationToken& token) const {
-    (void)d->store.metadata(id); return d->inputs.remove(id, input, token);
+    (void)d->store.metadata(id);const auto result=d->inputs.remove(id,input,token);
+    {std::lock_guard lock(d->mutex);const auto found=d->hookStates.find(id);if(found!=d->hookStates.end())found->second.wakeInputs.remove(input);}
+    return result;
 }
 RunHandle Engine::runQueued(RunRequest request, EventCallback callback) {
     return submit(std::move(request), std::move(callback), false, {}, true);
 }
-RunHandle Engine::submit(RunRequest request, EventCallback callback, bool compactOnly, QString instructions, bool queuedOnly) {
+RunHandle Engine::submit(RunRequest request,EventCallback callback,bool compactOnly,QString instructions,bool queuedOnly) {
+    return d->submit(std::move(request),std::move(callback),compactOnly,std::move(instructions),queuedOnly);
+}
+void Engine::Impl::completedHook(const QString& id,const QJsonObject& result) {
+    const auto text=result["text"].toString();if(text.trimmed().isEmpty())return;
+    if(text.size()>options.maxInputCharacters)throw Error(ErrorCode::ResourceLimit,"Async hook context exceeds engine input limit");
+    {
+        std::lock_guard lock(mutex);const auto found=hookStates.find(id);
+        if(stopping||endingSessions.contains(id)||found==hookStates.end()||found->second.disabled)
+            throw Error(ErrorCode::Cancelled,"Async hook owner has ended or cancelled delivery");
+        const auto input=inputs.enqueue(id,{{"kind","notification"},{"priority","next"},{"text",text}})["input"].toObject();
+        if(result["wake"].toBool())found->second.wakeInputs.insert(input["id"].toString());
+    }
+    if(result["wake"].toBool())tryWakes();
+}
+void Engine::Impl::tryWakes() {
+    QList<RunRequest> ready;
+    {std::lock_guard lock(mutex);if(stopping)return;
+        for(auto& [id,state]:hookStates)if(!state.disabled&&!state.wakeInputs.isEmpty()
+            &&!endingSessions.contains(id)&&!busySessions.contains(id)) {
+                if(state.wakeCount>=options.maxAsyncHookWakeRuns)state.wakeError="Automatic hook wake run limit reached; queued context is retained";
+                else ready.append(state.resume);
+            }}
+    for(const auto& request:ready) {
+        try {
+            const auto handle=submit(request,{},false,{},true,true);
+            if(handle.result.wait_for(0ms)==std::future_status::ready) {
+                const auto result=handle.result.get();
+                if(result.status==RunStatus::Failed&&result.errorCode!=ErrorCode::ModelInUse) {
+                    std::lock_guard lock(mutex);const auto found=hookStates.find(request.sessionId);
+                    if(found!=hookStates.end())found->second.wakeError=result.errorMessage;
+                }
+            }
+        }catch(const std::exception& error) {
+            std::lock_guard lock(mutex);const auto found=hookStates.find(request.sessionId);
+            if(found!=hookStates.end())found->second.wakeError=QString::fromUtf8(error.what());
+        }
+    }
+}
+RunHandle Engine::Impl::submit(RunRequest request, EventCallback callback, bool compactOnly, QString instructions, bool queuedOnly,bool automaticWake) {
     auto promise = std::make_shared<std::promise<RunResult>>();
     RunHandle handle{uuid(), {}, promise->get_future().share()};
     try {
-        if ((!compactOnly && !queuedOnly && request.prompt.trimmed().isEmpty() && request.skill.isEmpty()) || (queuedOnly && !request.prompt.isEmpty()) || request.prompt.size() > d->options.maxInputCharacters
+        if ((!compactOnly && !queuedOnly && request.prompt.trimmed().isEmpty() && request.skill.isEmpty()) || (queuedOnly && !request.prompt.isEmpty()) || request.prompt.size() > options.maxInputCharacters
             || ((compactOnly || queuedOnly) && (!request.skill.isEmpty() || !request.skillArguments.isEmpty()))
             || (request.skill.isEmpty() && !request.skillArguments.isEmpty()) || request.skill.size() > 129 || request.skillArguments.size() > 65536
-            || instructions.size() > d->options.maxInputCharacters
+            || instructions.size() > options.maxInputCharacters
             || request.maxTurns < 1 || request.maxTurns > 10000
-            || request.contextPaths.size() > d->options.projectContext.maxTargetPaths) throw Error(ErrorCode::InvalidArgument, "Invalid agent run request");
+            || request.contextPaths.size() > options.projectContext.maxTargetPaths) throw Error(ErrorCode::InvalidArgument, "Invalid agent run request");
         validateGenerationOptions(request.generation);
         request.allowedTools = parsePermissionRules(request.allowedTools);
-        std::lock_guard lock(d->mutex);
-        if (d->stopping) throw Error(ErrorCode::ShuttingDown, "Agent engine is shutting down");
-        if (d->endingSessions.contains(request.sessionId)) throw Error(ErrorCode::ModelInUse,"Agent session is ending");
-        if (d->active.size() >= size_t(d->options.maxConcurrentRuns + d->options.maxQueuedRuns))
+        std::lock_guard lock(mutex);
+        if(automaticWake) {
+            const auto found=hookStates.find(request.sessionId);
+            if(found==hookStates.end()||found->second.disabled||found->second.wakeInputs.isEmpty())
+                throw Error(ErrorCode::Cancelled,"Async hook wake is no longer pending");
+            request=found->second.resume;
+            if(found->second.wakeCount>=options.maxAsyncHookWakeRuns) {
+                found->second.wakeError="Automatic hook wake run limit reached; queued context is retained";
+                throw Error(ErrorCode::ResourceLimit,found->second.wakeError);
+            }
+        }
+        if (stopping) throw Error(ErrorCode::ShuttingDown, "Agent engine is shutting down");
+        if (endingSessions.contains(request.sessionId)) throw Error(ErrorCode::ModelInUse,"Agent session is ending");
+        if (active.size() >= size_t(options.maxConcurrentRuns + options.maxQueuedRuns))
             throw Error(ErrorCode::QueueFull, "Agent run queue is full");
-        if (d->busySessions.contains(request.sessionId)) throw Error(ErrorCode::ModelInUse, "Agent session already has an accepted run");
+        if (busySessions.contains(request.sessionId)) throw Error(ErrorCode::ModelInUse, "Agent session already has an accepted run");
         auto cancelled=[promise,callback,id=handle.runId,session=request.sessionId] {
             RunResult result;result.runId=id;result.sessionId=session;failure(result,Error(ErrorCode::Cancelled,"Queued run cancelled before execution"));
             try {if(callback)callback({EventKind::Finished,id,session,{},{},toJson(result)});}catch(...) {}
             promise->set_value(std::move(result));
         };
         const auto sessionId=request.sessionId;
-        auto task = QRunnable::create([impl = d.get(), request = std::move(request), callback = std::move(callback),
+        if(automaticWake) {
+            auto& state=hookStates[sessionId];state.lastWake=handle;++state.wakeCount;state.wakeError.clear();
+        }else if(!compactOnly&&(!options.hooks.isEmpty()||hookStates.contains(sessionId))) {
+            auto& state=hookStates[sessionId];
+            // Only host execution settings survive. Skill grants, permission
+            // channels, prompt metadata and per-run allowed tools never do.
+            state.resume={sessionId,{},request.generation,request.maxTurns,request.contextPaths};
+            state.wakeCount=0;state.disabled=false;state.wakeError.clear();
+        }
+        auto task = QRunnable::create([impl = this, request = std::move(request), callback = std::move(callback),
                 id = handle.runId, token = handle.cancellation, promise, compactOnly, instructions = std::move(instructions), queuedOnly]() mutable {
             {std::lock_guard lock(impl->mutex);impl->active.at(id).executing=true;}
             impl->execute(std::move(request), id, token, std::move(callback), promise, compactOnly, std::move(instructions), queuedOnly);
         });
-        d->busySessions.insert(sessionId);d->active.emplace(handle.runId,
+        busySessions.insert(sessionId);active.emplace(handle.runId,
             Impl::ActiveRun{handle.cancellation,CancellationToken::linkedTo(handle.cancellation),sessionId,!compactOnly,false,false,task,std::move(cancelled)});
-        d->pool.start(task);
+        pool.start(task);
     } catch (const Error& error) {
         RunResult result; result.runId = handle.runId; result.sessionId = request.sessionId; failure(result, error);
         try { if (callback) callback({EventKind::Finished, result.runId, result.sessionId, {}, {}, toJson(result)}); } catch (...) {}

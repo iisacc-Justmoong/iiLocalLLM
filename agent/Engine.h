@@ -7,6 +7,7 @@
 #include "ToolSearch.h"
 #include "TaskStore.h"
 #include "InputQueue.h"
+#include "AsyncHooks.h"
 #include "../Service.h"
 
 namespace iiLocalLLM::agent {
@@ -37,6 +38,8 @@ struct EngineOptions {
     PermissionResponseCallback permissionResponse;
     PermissionUpdateCallback permissionUpdates;
     std::shared_ptr<PermissionRequests> permissionRequests;
+    int maxAsyncHookRecords = 128;
+    int maxAsyncHookWakeRuns = 8; // Per explicit run; 0 disables automatic wake, retaining queued context.
 };
 class IILOCALLLM_EXPORT Engine {
 public:
@@ -52,6 +55,11 @@ public:
     QString transcriptPath(const QString& sessionId) const;
     std::shared_ptr<Model> hookModel() const; // C++ host binding for direct MCP/ToolRunner hooks; not a wire capability.
     AgentHookExecutor hookAgent() const; // Owns its captured host configuration; does not re-enter this Engine's session lock.
+    std::shared_ptr<AsyncHookScope> hookScope(const QString& sessionId) const; // Host binding for direct MCP hooks.
+    QJsonObject hookStatus(const QString& sessionId, int offset = 0, int limit = 32) const;
+    // With no hookId, also suppress queued wakes and cancel an active automatic
+    // wake run. A subsequent explicit run re-enables wakes with a fresh budget.
+    QJsonObject cancelHooks(const QString& sessionId, const QString& hookId = {}) const;
     SkillCatalog skills(const QString& sessionId, const CancellationToken& = {}) const;
     QJsonObject permissions(const QString& sessionId, const CancellationToken& = {}) const;
     QStringList sessions() const;
@@ -94,7 +102,7 @@ private:
     QJsonObject endSessionImpl(const QString&,QString,const CancellationToken&,bool clear);
     RunHandle submit(RunRequest, EventCallback, bool compactOnly, QString instructions = {}, bool queuedOnly = false);
     class Impl;
-    std::unique_ptr<Impl> d;
+    std::shared_ptr<Impl> d;
 };
 // Native structured conversation adapter. Unsupported runtimes fail explicitly.
 // Uses the existing Service scheduler, model residency policy, and bounded KV cache.

@@ -98,7 +98,7 @@ timeout은 시작 확인 뒤 적용하며 슬롯 대기와 최대 5초 시작 �
 
 once:true는 동일 프로세스의 공유 실행기에서 세션·설정 항목별 한 번이다. 동시 호출도 먼저 예약한 하나만 실행한다. 프로세스를 시작하면 실패해도 소비하고 시작 전 실패는 예약을 반환한다. 표가 가득 차면 비차단 오류를 남기며 기존 기록을 버리지 않는다. 호스트 재시작 뒤에는 복구하지 않는다.
 
-macOS에서 검증한 데스크톱 POSIX 명령 실행기이다. Windows·iOS·Android·WASM은 명령 설정을 거부하며 Linux 실기기 검증은 별도다. HTTP 훅은 0.29에 추가했다. prompt 훅은 0.30에 추가했다([PromptHooks.md](PromptHooks.md)). agent 훅, 명령 async/asyncRewake, powershell, 명령 중복 제거, PermissionDenied·Notification·Setup·ConfigChange·Worktree·파일 감시·팀/elicitation 이벤트와 스킬·에이전트·플러그인 hooks 병합은 남아 있다. 지원하지 않는 설정은 명시적으로 거부한다.
+macOS에서 검증한 데스크톱 POSIX 명령 실행기이다. Windows·iOS·Android·WASM은 명령 설정을 거부하며 Linux 실기기 검증은 별도다. HTTP 훅은 0.29에 추가했다. prompt 훅은 0.30에 추가했다([PromptHooks.md](PromptHooks.md)). agent 훅은 0.31, 명령 async/asyncRewake는 0.33에 추가했다([AsyncHooks.md](AsyncHooks.md)). powershell, 명령 중복 제거, PermissionDenied·Notification·Setup·ConfigChange·Worktree·파일 감시·팀/elicitation 이벤트와 스킬·에이전트·플러그인 hooks 병합은 남아 있다. 지원하지 않는 설정은 명시적으로 거부한다.
 
 분석 기준은 고정 미러 `c8cd253554319f32ff64ff7000636199f720c9bc`의 schemas/hooks.ts, types/hooks.ts, entrypoints/sdk/coreSchemas.ts, utils/hooks.ts, services/tools/toolHooks.ts이다. 설정·stdin·JSON/종료 코드 순서·매처·권한 우선순위를 관찰해 C++로 구현했다. 미러 출처 주장의 독립 인증이나 전체 Claude Code 호환 인증은 아니다. 실행 증거는 [Verification.md](Verification.md), 남은 전체 목표는 [HarnessParity.md](HarnessParity.md)에 구분한다.
 
@@ -107,3 +107,5 @@ macOS에서 검증한 데스크톱 POSIX 명령 실행기이다. Windows·iOS·A
 0.32.0부터 성공한 MCP 호출의 PostToolUse는 `hookSpecificOutput.updatedMCPToolOutput`을 지원한다. 문자열·MCP 콘텐츠 배열, 원본 구조화 결과 제거, 병합·오류·MCP 재전달 스키마의 계약은 [McpOutputHooks.md](McpOutputHooks.md)를 따른다. 명령 종료 코드가 0이 아니거나 비정상 종료하면 결과 변경을 적용하지 않는다.
 
 macOS 회귀 검사에서는 QProcess 명령 인자에 직접 넣은 한글이 분해형 유니코드로 전달되는 현상을 관찰했다. 이 변경에서 명령 실행기의 인자 인코딩은 수정하지 않았다. 정확한 stdout 코드 포인트를 비교하는 테스트는 JSON Unicode escape를 출력하며, HTTP와 C++ 콜백은 원래 한글 문자열을 직접 검증한다. 고정 스크립트·UTF-8 파일 출력과 명령 인자 문자열은 서로 다른 경로이다.
+
+0.33.0의 비동기 실행·완료 문맥·재실행·세션 정리와 제어 API는 [AsyncHooks.md](AsyncHooks.md)를 따른다. 비동기 결과는 이미 끝난 호출을 차단하거나 바꾸지 않는다.

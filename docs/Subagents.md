@@ -82,3 +82,5 @@ iillm --auth-file /data/private/token agent agents output PARENT_SESSION output.
 0.17.0은 `Subagents::runSkill`과 `attach`의 fork 콜백으로 스킬을 별도 자식에서 실행한다. `Agent.fork_context`는 부모 대화 복사이고 스킬 `context: fork`는 부모 이력 없이 스킬 본문을 실행하는 경로이다. 구체적인 결과·제한은 [Skills.md](Skills.md)를 따른다.
 
 호출 시 부모의 현재 도구 권한을 자식에 전달한다. 사전 로딩된 스킬의 본문은 권한을 추가하지 않으며 재개는 현재 호출자의 권한을 따른다. [권한 수명](Permissions.md)을 참조한다.
+
+0.33.0의 비동기 명령 훅은 세션/연결별로 완료 결과를 보관하고 문맥을 notification/next로 전달한다. asyncRewake 종료 코드 2는 횟수를 제한한 유휴 실행을 요청한다. 세션 종료·clear는 훅을 취소·정리하며, 자식 Engine은 실행이 끝난 뒤 자동 기동하지 않는다. 상태/취소 메서드와 기존 요청별 권한·콜백을 재사용하지 않는 경계는 [AsyncHooks.md](AsyncHooks.md)를 따른다.

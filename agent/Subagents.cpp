@@ -283,6 +283,23 @@ public:
                 hookContext={{"agent_id",job->state["agentId"]},{"agent_type",definition.name},{"parent_session_id",job->state["parent_session_id"]}};}
             hookContext["transcript_path"]=QDir(options.stateDirectory).filePath("sessions/"+request.sessionId+"/transcript.jsonl");
             auto scopedPolicy=std::make_shared<ScopedPolicy>(policy,original,current);
+            auto scoped=std::make_shared<ToolRegistry>();const auto source=registry->snapshot();
+            for(const auto& t:source->definitions()) if(allowed(t,original)&&allowed(t,current)) {
+                scoped->add(source->get(t.name));
+            }
+            auto eo=parent;eo.sessionsDirectory=QDir(options.stateDirectory).filePath("sessions");eo.maxConcurrentRuns=1;eo.maxQueuedRuns=0;
+            eo.sessionStartHooks=false;eo.maxAsyncHookWakeRuns=0;request.userPrompt=false;
+            eo.hooks.clear();for(const auto& hook:parent.hooks)eo.hooks.append([hook,hookContext](HookInput input,const CancellationToken& token){
+                for(auto i=hookContext.begin();i!=hookContext.end();++i)input.context[i.key()]=i.value();
+                if(input.kind==HookKind::Stop)input.kind=HookKind::SubagentStop;
+                return hook(input,token);
+            });
+            eo.toolFilter=[original,current,parentFilter=parent.toolFilter](const ToolDefinition& t){
+                return allowed(t,original)&&allowed(t,current)&&(!parentFilter||parentFilter(t));
+            };
+            const ToolDefinition search{"ToolSearch",{}, {}, {},true};eo.toolSearch.enabled &= eo.toolFilter(search);
+            const ToolDefinition skill{"Skill",{}, {}, {},true};eo.skills.enabled &= allowed(skill,original)&&allowed(skill,current);
+            Engine engine(std::make_shared<ScopedModel>(model,original,current),scoped,scopedPolicy,eo);
             QString startFeedback;
             std::shared_ptr<ModelHookContext> modelContext;
             if(!parent.hooks.isEmpty()) {
@@ -294,6 +311,8 @@ public:
                 for(const auto& tool:snapshot->definitions())if(allowed(tool,original)&&allowed(tool,current))modelContext->registry->add(snapshot->get(tool.name));
                 modelContext->tools=modelContext->registry->definitions();modelContext->policy=scopedPolicy;
                 modelContext->executionContext={request.sessionId,{},options.workingDirectory};
+                modelContext->executionContext.asyncHooks=engine.hookScope(request.sessionId);
+                modelContext->executionContext.hookCancellation=job->token;
                 auto verifierOptions=parent;verifierOptions.sessionsDirectory=QDir(options.stateDirectory).filePath("sessions");
                 verifierOptions.toolFilter=[original,current,filter=parent.toolFilter](const ToolDefinition& tool){return allowed(tool,original)&&allowed(tool,current)&&(!filter||filter(tool));};
                 modelContext->agentExecutor=detail::hookAgentExecutor(verifierOptions,parent.taskToolsEnabled
@@ -314,23 +333,6 @@ public:
                 job->token.throwIfCancelled();auto lease=children.acquire(request.sessionId);
                 Message message{uuid(),MessageRole::User,startFeedback};message.metadata={{"iilocal.subagent_start",hookContext}};lease->append(message);
             }
-            auto scoped=std::make_shared<ToolRegistry>();const auto source=registry->snapshot();
-            for(const auto& t:source->definitions()) if(allowed(t,original)&&allowed(t,current)) {
-                scoped->add(source->get(t.name));
-            }
-            auto eo=parent;eo.sessionsDirectory=QDir(options.stateDirectory).filePath("sessions");eo.maxConcurrentRuns=1;eo.maxQueuedRuns=0;
-            eo.sessionStartHooks=false;request.userPrompt=false;
-            eo.hooks.clear();for(const auto& hook:parent.hooks)eo.hooks.append([hook,hookContext](HookInput input,const CancellationToken& token){
-                for(auto i=hookContext.begin();i!=hookContext.end();++i)input.context[i.key()]=i.value();
-                if(input.kind==HookKind::Stop)input.kind=HookKind::SubagentStop;
-                return hook(input,token);
-            });
-            eo.toolFilter=[original,current,parentFilter=parent.toolFilter](const ToolDefinition& t){
-                return allowed(t,original)&&allowed(t,current)&&(!parentFilter||parentFilter(t));
-            };
-            const ToolDefinition search{"ToolSearch",{}, {}, {},true};eo.toolSearch.enabled &= eo.toolFilter(search);
-            const ToolDefinition skill{"Skill",{}, {}, {},true};eo.skills.enabled &= allowed(skill,original)&&allowed(skill,current);
-            Engine engine(std::make_shared<ScopedModel>(model,original,current),scoped,scopedPolicy,eo);
             job->token.throwIfCancelled();
             require(Clock::now()-started<std::chrono::milliseconds(options.maxRuntimeMs),"Subagent runtime deadline exceeded",ErrorCode::Timeout);
             auto handle=engine.run(request,[&](const Event& event){

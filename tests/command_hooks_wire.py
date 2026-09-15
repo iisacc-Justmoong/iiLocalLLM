@@ -198,7 +198,7 @@ elif event == "Stop" and (root / "stop").exists():
         common_mcp = [mcp, "--workspace", str(workspace), "--no-apps", "--no-background", "--no-agent-profiles"]
         invalid = 0
         for value in ([], {}, {"hooks": {"Notification": []}}, {"hooks": {"PreToolUse": [{"hooks": [{"type": "http"}]}]}},
-                      {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "true", "async": True}]}]}},
+                      {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "true", "async": "true"}]}]}},
                       {"hooks": {"Stop": [{"hooks": [{"type": "command", "command": 1}]}]}},
                       {"hooks": {"Stop": [{"hooks": [{"type": "http", "url": "file:///etc/hosts"}]}]}},
                       {"hooks": {}, "allowedHttpHookUrls": False}):

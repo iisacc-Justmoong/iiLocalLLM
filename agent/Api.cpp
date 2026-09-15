@@ -56,7 +56,8 @@ QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.se
     "agent.shell.start", "agent.shell.output", "agent.shell.stop", "agent.shell.list",
     "agent.agents.run", "agent.agents.output", "agent.agents.stop", "agent.agents.list", "agent.agents.profiles",
     "agent.inputs.enqueue", "agent.inputs.list", "agent.inputs.remove", "agent.inputs.run", "agent.sessions.end", "agent.sessions.clear",
-    "agent.permissions.pending", "agent.permissions.respond"}; }
+    "agent.permissions.pending", "agent.permissions.respond", "agent.hooks.status", "agent.hooks.cancel"}; }
+bool hookControl(const QString& method) {return method=="agent.hooks.status"||method=="agent.hooks.cancel";}
 bool inputControl(const QString& method) {
     return method == "agent.inputs.enqueue" || method == "agent.inputs.list" || method == "agent.inputs.remove";
 }
@@ -172,7 +173,8 @@ public:
                 {"auto_compact_enabled", options.engine.compaction.automatic}, {"tool_search_enabled", options.engine.toolSearch.enabled},
                 {"task_tools_enabled", client->engine->taskToolsEnabled()}, {"background_tasks_enabled", client->engine->backgroundTasksEnabled()},
                 {"input_queue_enabled", true}, {"skills_enabled", options.engine.skills.enabled}, {"subagents_enabled", options.subagentsEnabled},
-                {"hooks_enabled",!options.engine.hooks.isEmpty()},{"permission_requests_enabled",bool(client->permissionRequests)}};
+                {"hooks_enabled",!options.engine.hooks.isEmpty()},{"async_hook_controls_enabled",true},
+                {"max_async_hook_wake_runs",options.engine.maxAsyncHookWakeRuns},{"permission_requests_enabled",bool(client->permissionRequests)}};
         }
         static const QMap<QString, QString> agentMethods{{"agent.agents.run", "Agent"}, {"agent.agents.output", "AgentOutput"},
             {"agent.agents.stop", "AgentStop"}, {"agent.agents.list", "AgentList"}, {"agent.agents.profiles", "AgentProfiles"}};
@@ -191,6 +193,17 @@ public:
             const auto value = future.get();
             require(!timedOut && Clock::now() < job->deadline, "Agent API request deadline exceeded", ErrorCode::Timeout);
             return QJsonObject{{"text", value.text}, {"result", value.data}, {"is_error", value.isError}};
+        }
+        if(hookControl(method)) {
+            const auto id=text(p,"session_id");
+            require(client->engine->sessionMetadata(id).workingDirectory==options.workingDirectory,"Session belongs to a different workspace",ErrorCode::NotFound);
+            job->token.throwIfCancelled();
+            if(method=="agent.hooks.cancel") {
+                fields(p,{"session_id","hook_id"});const auto hookId=text(p,"hook_id",false);
+                require(!p.contains("hook_id")||(!hookId.isEmpty()&&hookId.size()<=128),"Invalid hook_id");
+                return client->engine->cancelHooks(id,hookId);
+            }
+            fields(p,{"session_id","offset","limit"});return client->engine->hookStatus(id,integer(p,"offset",0,0,1000000),integer(p,"limit",32,1,128));
         }
         if (inputControl(method)) {
             const auto id = text(p, "session_id");
@@ -391,7 +404,7 @@ public:
                 {"state", job->running ? "running" : "queued"}, {"cancel_requested", job->token.isCancelled()}});
             return handle;
         }
-        const bool control = inputControl(method) || method == "agent.sessions.end" || method == "agent.sessions.clear" || method == "agent.agents.output" || method == "agent.agents.stop" || method == "agent.agents.list";
+        const bool control = hookControl(method) || inputControl(method) || method == "agent.sessions.end" || method == "agent.sessions.clear" || method == "agent.agents.output" || method == "agent.agents.stop" || method == "agent.agents.list";
         const auto used = std::count_if(active.begin(), active.end(), [control](const auto& item) { return item.second->inputControl == control; });
         const auto capacity = control ? options.maxConcurrentInputControls + options.maxQueuedInputControls
             : options.maxConcurrentRequests + options.maxQueuedRequests;
@@ -421,7 +434,7 @@ Api::Api(std::shared_ptr<Model> model, std::shared_ptr<ToolRegistry> registry,
     : d(std::make_shared<Impl>(std::move(model), std::move(registry), std::move(policy), std::move(options))) {}
 Api::~Api() { d->stop(); }
 bool Api::isControlMethod(const QString& method) const {
-    return method=="agent.permissions.pending"||method=="agent.permissions.respond"||method=="agent.cancel"||method=="agent.status";
+    return hookControl(method)||method=="agent.permissions.pending"||method=="agent.permissions.respond"||method=="agent.cancel"||method=="agent.status";
 }
 RpcHandle Api::dispatch(QString method, QJsonObject params, QString credential, RpcEventCallback callback) {
     return d->dispatch(std::move(method), std::move(params), std::move(credential), std::move(callback));

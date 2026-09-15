@@ -30,3 +30,5 @@ clear/close/endSession을 자신의 실행·도구·이벤트·훅에서 동기 
 참조는 c8cd253554319f32ff64ff7000636199f720c9bc의 commands/clear/conversation.ts, commands/clear/caches.ts이다. 백그라운드 보존·SessionEnd(clear)·새 ID·즉시 SessionStart(clear)는 실제 호출을 확인했다. 참조의 UI 상태·팀·LSP·git 캐시·worktree·플러그인 재초기화 전체는 아직 구현되지 않았다. SDK의 MCP 연결은 여러 소비자가 공유하므로 세션 초기화가 다른 소비자의 서버 연결을 끊지는 않는다. 가중치/유휴 KV의 실제 메모리 해제는 기존 Service의 TTL/LRU 정책이며 clear가 강제 GPU 메모리 반환을 뜻하지 않는다. 전체 하네스 대응 상태는 계속 partial이다.
 
 tests/session_clear_tests.cpp, input_queue_tests.cpp, shell_tasks_tests.cpp, subagent_tests.cpp, mcp_server_tests.cpp가 문맥 분리·실제 프로세스 보존·연속 전환·완료 경쟁·큐 오류/재시도·호스트 재개·진행 호출 취소·종료 경합·인증/상한을 검사한다. tests/command_hooks_wire.py는 API·CLI·MCP HTTP/공식 stdio와 선택적 실제 모델의 clear 시작 문맥을 검사한다. 설치 소비자는 동일 공개 헤더로 다시 빌드하며 실제 결과는 [Verification.md](Verification.md)에 기록한다.
+
+0.33.0의 비동기 명령 훅은 세션/연결별로 완료 결과를 보관하고 문맥을 notification/next로 전달한다. asyncRewake 종료 코드 2는 횟수를 제한한 유휴 실행을 요청한다. 세션 종료·clear는 훅을 취소·정리하며, 자식 Engine은 실행이 끝난 뒤 자동 기동하지 않는다. 상태/취소 메서드와 기존 요청별 권한·콜백을 재사용하지 않는 경계는 [AsyncHooks.md](AsyncHooks.md)를 따른다.

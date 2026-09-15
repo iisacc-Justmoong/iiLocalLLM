@@ -9,6 +9,7 @@
 #include <condition_variable>
 #include <deque>
 #include <optional>
+#include <map>
 
 namespace iiLocalLLM {
 namespace {
@@ -231,6 +232,7 @@ public:
     QString lastError;
     std::mutex activeMutex;
     std::vector<CancellationToken> active;
+    std::map<QString,CancellationToken> activeRpc;
     std::shared_ptr<RpcHandler> rpcHandler;
     std::shared_ptr<std::atomic_int> workResponses=std::make_shared<std::atomic_int>(0);
     std::shared_ptr<std::atomic_int> controlResponses=std::make_shared<std::atomic_int>(0);
@@ -303,12 +305,15 @@ public:
         };
         state->operation = rpcHandler->dispatch(body["method"].toString(), body["params"].toObject(), QString::fromStdString(auth.substr(7)), std::move(callback));
         auto guard = std::shared_ptr<void>(nullptr, [this, state](void*) {
-            state->operation.cancel();
+            // Successful RPC completion may have transferred background work
+            // to its session. Only unfinished/abandoned calls are cancelled.
+            if(!state->operation.result.valid()||state->operation.result.wait_for(0ms)!=std::future_status::ready)
+                state->operation.cancel();
             { std::lock_guard lock(state->mutex); state->abandoned = true; state->frames.clear(); state->buffered = 0; }
-            std::lock_guard lock(activeMutex); std::erase_if(active, [](const auto& token) { return token.isCancelled(); });
+            std::lock_guard lock(activeMutex);activeRpc.erase(state->operation.requestId);
         });
         require(state->operation.result.valid() && !state->operation.requestId.isEmpty() && state->operation.requestId.size() <= 128, "Invalid RPC handler response");
-        { std::lock_guard lock(activeMutex); active.push_back(state->operation.cancellation); }
+        { std::lock_guard lock(activeMutex);activeRpc.emplace(state->operation.requestId,state->operation.cancellation); }
         const QJsonObject envelope{{"id", id}, {"request_id", state->operation.requestId}};
         auto finish = [envelope, limit](const std::shared_future<QJsonValue>& future) {
             auto result = envelope; result["result"] = future.get();
@@ -501,7 +506,8 @@ public:
     {
         stopping = true;
         server.stop();
-        { std::lock_guard lock(activeMutex); for (const auto& token : active) token.cancel(); }
+        { std::lock_guard lock(activeMutex); for (const auto& token : active) token.cancel();
+            for(const auto& [_,token]:activeRpc)token.cancel(); }
         if (thread.joinable()) thread.join();
         boundPort = 0;
     }

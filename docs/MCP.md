@@ -94,3 +94,5 @@ iiLocalLLM.mcp_official은 공식 SDK 서버의 도구·자료·프롬프트·�
 `structuredContent`가 있을 때 설명 텍스트가 있더라도 실제 JSON을 모델 입력에서 보존한다. 서버 bridge는 JSON text block을 함께 반환하고 클라이언트 어댑터는 상대 서버가 빠뜨린 경우 모델용 텍스트에 추가한다. 이미 같은 JSON이 있으면 공백 형식과 무관하게 중복하지 않는다. 원래 MCP content·구조화 데이터·host용 `_meta`는 각각 보존한다. `_meta`는 모델 텍스트에 추가하지 않는다. 실제 앱 연동과 검증은 [LocalApplications.md](LocalApplications.md)에 기록한다.
 
 0.19.0의 `iiLocalLLM.agent.permissions.get`은 빈 인자로 호스트 권한·출처·SHA·미지원 이름을 조회한다. 모델 활성화 없이도 사용할 수 있고 stdio 또는 인증 HTTP의 연결 권한을 따른다. 일반 설정 값은 반환하지 않는다. `--permission-settings FILE`의 동작은 [PermissionSettings.md](PermissionSettings.md)를 따른다.
+
+0.33.0의 비동기 명령 훅은 세션/연결별로 완료 결과를 보관하고 문맥을 notification/next로 전달한다. asyncRewake 종료 코드 2는 횟수를 제한한 유휴 실행을 요청한다. 세션 종료·clear는 훅을 취소·정리하며, 자식 Engine은 실행이 끝난 뒤 자동 기동하지 않는다. 상태/취소 메서드와 기존 요청별 권한·콜백을 재사용하지 않는 경계는 [AsyncHooks.md](AsyncHooks.md)를 따른다.
