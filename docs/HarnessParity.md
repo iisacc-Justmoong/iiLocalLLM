@@ -122,3 +122,7 @@ C++ HTTP/HTTPS POST·JSON 응답을 공통 생명주기와 권한 경로에 연�
 0.32.0은 PostToolUse의 updatedMCPToolOutput을 C++ 도구 경로에 연결한다. 실제 가져오기 MCP 도구만 문자열·MCP 콘텐츠 배열로 관측을 교체하고, 원격 출력 스키마를 먼저 검사한 뒤 모델·transcript·API·MCP로 전달한다. 훅이 설정된 가져오기 도구를 MCP로 재전달할 때는 원격 outputSchema를 공개하지 않는다. 새 런타임 의존성은 없다. 전체 설정 병합·남은 생명주기·실제 앱/플랫폼 검증은 계속 partial이다. [McpOutputHooks.md](McpOutputHooks.md)에 참조 unknown/공급자 콘텐츠와의 차이를 기록한다.
 
 0.33.0은 C++ 비동기 명령 훅, 첫 stdout 행의 async 선언, 완료 문맥의 세션 전달과 asyncRewake 유휴 실행을 추가한다. 세션/연결별 수명과 취소, 자동 실행 횟수 제한, API/CLI/MCP 제어를 제공한다. 변경된 공개 구조체 때문에 소비자 재빌드가 필요하다. 자식 실행 후 재기동·환경 캐시 무효화·전체 생명주기 및 설정 병합은 계속 partial이다. [비동기 훅](AsyncHooks.md)을 따른다.
+
+## 0.34–0.35 계획 검토와 사용자 질문
+
+0.34는 세션 계획 파일·Enter/ExitPlanMode·호스트 수정 검토·변경 충돌 검사·API/MCP 소유자 제어를 추가했다. 0.35는 C++ AskUserQuestion·호스트 답변과 주석·질문 불변 검증·API/IPC/MCP 노출을 추가한다. 기존 JSON Schema 및 PermissionRequests를 재사용해 새 생산 의존성은 없다. [PlanMode.md](PlanMode.md)·[UserQuestions.md](UserQuestions.md)·[Verification.md](Verification.md)에 계약과 증거를 기록한다. 실제 앱 질문/승인 화면, 인터뷰와 이미지 첨부 등 전체 호환성은 진행 중이며 31개 영역의 21 partial·10 pending 상태를 유지한다.

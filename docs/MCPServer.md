@@ -142,3 +142,5 @@ Engine과 모델을 설정하면 `iiLocalLLM.agent.inputs.enqueue/list/remove/ru
 0.32.0부터 훅이 설정된 가져오기 MCP 도구는 관측을 교체할 수 있으므로 재전달 tools/list에서 원격 outputSchema를 생략한다. 원격 서버가 실제 반환한 데이터의 내부 스키마 검증은 유지하고, 변경된 text/content와 빈 structuredContent를 전달한다. 일반 도구와 훅 없는 가져오기 도구의 스키마는 유지한다. [McpOutputHooks.md](McpOutputHooks.md)에 형식과 원본 메타데이터 보존 계약을 기록한다.
 
 0.34의 Engine 계획 도구는 EnterPlanMode/ExitPlanMode로 공개하며 iisacc/plan/status는 예약된 제어 메서드이다. [PlanMode.md](PlanMode.md)에 계약과 남은 범위를 기록한다.
+
+0.35는 C++ AskUserQuestion과 API·MCP 질문/답변을 추가한다. 호스트 응답, 변경 검증, 미리보기와 남은 앱 화면 범위는 [UserQuestions.md](UserQuestions.md)를 따른다.

@@ -1,5 +1,30 @@
 # 구현 검증 기록
 
+## 2026-09-15 C++ 사용자 질문과 호스트 응답 (0.35.0)
+
+C++ AskUserQuestion을 Engine·인증 API·IPC·MCP에 연결했다. 질문·선택지·자유 입력·복수 선택·부분 응답·미리보기·주석을 제공하며 호스트 응답만 answers와 annotations를 추가할 수 있다. 원래 질문이나 metadata를 바꾸는 응답은 도구 실행 전에 거부한다. 기존 JSON Schema·ToolRunner·PermissionRequests를 재사용하며 새로운 생산 의존성은 없다. [UserQuestions.md](UserQuestions.md)에 입력, 제한, 원본과의 차이 및 남은 UI를 기록한다.
+
+| 검증 경계 | 관측 |
+|---|---|
+| Release 전체, inference 라벨 제외 | 74/74, 182.10초 |
+| ASan·UBSan, llama 비활성 Debug | 71/71, 212.73초 |
+| 새 설치 소비자 | 41/41, 65.24초 |
+| 실제 모델 | 소스·설치본 각각 Qwen3 8B, 질문 → 호스트 답변 → 임의 코드 정확히 응답 |
+| 실제 전송 | 소스·설치 daemon HTTP, iillm IPC, MCP HTTP 및 공식 Python MCP 1.26.0 stdio |
+| 설치 산출물 | 소스·stage 라이브러리 바이트/UUID, 공개 헤더 44개, 문서·카탈로그·CLI 버전·실제 로딩 경로 |
+
+질문 데이터 회귀는 개수·유일성·타입·UTF-8 바이트 한도, 입력 위조·질문 변경, 빈 응답, 선택지 밖 자유 입력, 주석, HTML 의도 검사를 포함한다. 권한 검사는 Bypass에서도 질문을 전달하며 DontAsk와 명시 Deny를 유지한다. 채널 소유자 분리, 멱등 재전송과 충돌, 만료·취소·세션 종료, 계획 작성 중 질의, ToolSearch 발견과 대화 분기의 답 보존을 검사한다. API·MCP 전송에서는 일반 실행 작업자 하나가 답을 기다리는 동안 예약 제어 경로로 응답한다. 화면 표시나 실제 사람의 클릭을 시험한 것은 아니다.
+
+실제 추론 검사는 tests/user_questions_runtime_smoke.cpp이다. 호스트가 첫 도구와 마지막 응답 형식을 제한하지만 질문·선택지와 최종 텍스트는 ServiceModel/llama.cpp가 생성한다. 초기 프롬프트와 도구 인자에 없는 임의 코드를 PermissionRequests 응답에서만 제공한다. 소스 93토큰, 설치본 92토큰을 생성하고 각각 2턴으로 코드를 정확히 반환했다. 자율적인 질문 설계의 품질을 보장하는 평가는 아니다. model://qwen3-8b-q4, GGUF 5,027,783,488바이트, SHA-256 d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785이며 Service::loadModel이 두 실행 모두 manifest 파일을 검증했다. context 8192, temperature 0, maxTokens 512, thinking=false, tool_grammar=true이다.
+
+초기 새 Make 타깃 호출은 CMake를 재구성하기 전이어서 타깃이 없었고 테스트가 실행되지 않았다. 이를 기능의 실패 증거로 세지 않는다. 확대된 QTest에서 QJsonValueRef와 QJsonArray 비교의 모호성을 명시적 배열 비교로 수정했다. 브로커의 기존 request.input 경로 및 충돌 재전송 AlreadyExists/HTTP 409 계약도 시험 코드에 반영했다. 초기 로그는 user-questions-red-build.log·user-questions-red.log·user-questions-build-first-failure.log에 보존한다. 실제 모델/공식 연결의 선행 검사도 user-questions-native-trial.log·user-questions-official-trial.json에 보존하며 위 표는 최종 소스를 대상으로 한 전체 검사이다.
+
+검사 동안 소스 해시를 고정하고 끝에서 같음을 확인했다. 새 prefix는 build/user-questions-stage, 소비자는 build/user-questions-consumer/build이다. 라이브러리 SHA-256은 3bad13377bf0505d7b874c934a361bff404614e6b274ab1c1b4110dcfed26243이다. CMake RPATH 변환을 반영한 실행 파일, 경로 환경을 비운 stage 라이브러리 로딩, LLM 런타임에 링크되지 않는 iillm, 공개 헤더와 문서·카탈로그·라이선스를 대조했다. ABI 0.35로 C++ 소비자를 다시 빌드해야 한다.
+
+증거는 build/user-questions-verification.json, user-questions-tested-source.json, 각 final.log/XML, user-questions-{source,installed}-native.json, user-questions-{source,installed}-official-wire.json, user-questions-linkage.json이다. 커밋·원격 SHA 일치와 깨끗한 작업 폴더는 user-questions-publication.json에서 별도로 검증한다.
+
+전체 하네스는 31개 영역의 21 partial·10 pending을 유지한다. 앱별 질문 화면, 이미지 첨부, 인터뷰 UI와 채널별 활성화 등의 요구는 남아 있다. 이번 단계에서 Society·Dreamscapes를 다시 패키징하지 않았고 iPhone은 사용자 지시대로 제외했다. 기존 사용자 데몬 PID 14909는 중단·교체하지 않는다.
+
 ## 2026-09-15 C++ 세션 계획과 검토 전환 (0.34.0)
 
 `EnterPlanMode`·`ExitPlanMode`와 세션별 계획 파일을 C++로 구현했다. 계획 작성 중에는 읽기 전용 도구와 소유 계획 파일만 허용하며 기존 내부 작업·대화 제어를 유지한다. 호스트 검토의 수정 내용과 승인한 파일을 묶고, 검토 도중 또는 실행 직전에 파일·revision이 바뀌면 전환을 거부한다. 인증 API·IPC·MCP 조회와 검토 응답, 재시작·fork·clear, 현재 상태의 모델 문맥 주입을 포함한다. 기존 Qt Core·C++ 동시성 도구를 재사용했으며 새 생산 의존성은 없다. 계약과 참조 차이는 [PlanMode.md](PlanMode.md)에 기록한다.

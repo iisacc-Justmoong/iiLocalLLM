@@ -9,6 +9,7 @@
 #include "InputQueue.h"
 #include "AsyncHooks.h"
 #include "PlanMode.h"
+#include "UserQuestions.h"
 #include "../Service.h"
 
 namespace iiLocalLLM::agent {
@@ -43,6 +44,8 @@ struct EngineOptions {
     int maxAsyncHookWakeRuns = 8; // Per explicit run; 0 disables automatic wake, retaining queued context.
     bool planToolsEnabled = false; // Embedded hosts opt in; daemon and agent-enabled MCP default to enabled.
     bool planToolsDeferred = true;
+    bool userQuestionsEnabled = false; // Embedded hosts opt in; daemon/agent MCP enable by default.
+    UserQuestionOptions userQuestions;
 };
 class IILOCALLLM_EXPORT Engine {
 public:
@@ -92,6 +95,9 @@ public:
     bool subagentsEnabled() const;
     QList<ToolDefinition> subagentToolDefinitions() const;
     bool permissionRequestsEnabled() const;
+    std::optional<Tool> userQuestionTool(bool deferred = false) const;
+    ToolResult runQuestionTool(const QString& sessionId,const QJsonObject& arguments,
+        const CancellationToken& = {},const EventCallback& = {},std::shared_ptr<PermissionRequests> = {}) const;
     std::shared_ptr<PlanMode> planning() const; // Trusted host/MCP binding; null when disabled.
     QJsonObject planStatus(const QString& sessionId,const CancellationToken& = {}) const;
     ToolResult runPlanTool(const QString& sessionId,const QString& name,const QJsonObject& arguments = {},

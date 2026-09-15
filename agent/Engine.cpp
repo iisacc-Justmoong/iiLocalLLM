@@ -66,6 +66,7 @@ public:
             plans=std::make_shared<PlanMode>(QDir(this->options.sessionsDirectory).filePath("plans"));
             for(auto tool:plans->tools(this->policy))configured->add(std::move(tool));
         }
+        if(this->options.userQuestionsEnabled)configured->add(agent::userQuestionTool(this->options.userQuestions));
     }
     std::shared_ptr<Model> model;
     std::shared_ptr<ToolRegistry> registry;
@@ -455,6 +456,7 @@ public:
                     {{}, request.generation, request.maxTurns, request.contextPaths}));
                 for (auto tool : taskToolsFor(session, runId, send)) turnRegistry->add(std::move(tool));
                 if(plans)for(auto tool:plans->tools(policy,options.planToolsDeferred))turnRegistry->add(std::move(tool));
+                if(options.userQuestionsEnabled)turnRegistry->add(agent::userQuestionTool(options.userQuestions));
                 const bool hasTranscriptTool = !session.compactions.isEmpty();
                 if (hasTranscriptTool) detail::addTranscriptTool(*turnRegistry, session);
                 auto filterTools = [&] {
@@ -928,6 +930,23 @@ QJsonObject Engine::permissions(const QString& id,const CancellationToken& token
     auto result=d->policy->describe(context);if(context.planModeActive)result["mode"]="plan";return result;
 }
 std::shared_ptr<PlanMode> Engine::planning() const{return d->plans;}
+std::optional<Tool> Engine::userQuestionTool(bool deferred) const {
+    if(!d->options.userQuestionsEnabled)return std::nullopt;
+    auto options=d->options.userQuestions;options.deferred=deferred;return agent::userQuestionTool(options);
+}
+ToolResult Engine::runQuestionTool(const QString& id,const QJsonObject& args,const CancellationToken& token,
+    const EventCallback& callback,std::shared_ptr<PermissionRequests> requests) const {
+    auto tool=userQuestionTool();if(!tool)throw Error(ErrorCode::RuntimeUnavailable,"User questions are disabled");
+    const auto session=d->store.metadata(id);Impl::NativeOperation operation(*d,id,token);
+    auto registry=std::make_shared<ToolRegistry>();registry->add(std::move(*tool));
+    ToolContext context{id,uuid(),session.workingDirectory,QDir(d->options.sessionsDirectory).filePath(id+"/artifacts"),operation.token};
+    context.transcriptPath=transcriptPath(id);context.sessionSnapshot=std::make_shared<Session>(session);
+    if(!d->options.hooks.isEmpty())context.asyncHooks=d->hookScope(id);context.hookCancellation=operation.token;
+    context.permissionRequests=requests?requests:d->options.permissionRequests;
+    ToolRunnerOptions options{d->options.hooks,d->options.permission,24000,d->options.permissionResponse,d->options.permissionUpdates,
+        context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks),d->plans};
+    return ToolRunner(registry,d->policy,options).run({uuid(),"AskUserQuestion",args},context,callback);
+}
 QJsonObject Engine::planStatus(const QString& id,const CancellationToken& token) const {
     (void)d->store.metadata(id);if(!d->plans)throw Error(ErrorCode::RuntimeUnavailable,"Planning tools are disabled");
     return d->plans->status(id,token);

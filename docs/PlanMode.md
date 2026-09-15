@@ -87,3 +87,5 @@ options.permissionResponse = reviewWithHost;
 이 버전은 전체 참조와 동일하지 않다. UI 인터뷰·AskUserQuestion, 승인 화면의 컨텍스트 초기화/모드 선택, 자동 분류 기반 semantic allowedPrompts, auto 모드 복귀, 팀 리더 mailbox 승인, 원격 파일 스냅샷 복구, 계획 실행 검증 훅, 실제 Society/Dreamscapes 승인 UI는 남아 있다. 전체 하네스 대응표는 partial을 유지한다.
 
 `tests/plan_mode_tests.cpp`는 권한·파일·변경 충돌·취소·병렬 검토·검색·영속·분기·초기화와 모델 상태 주입을 검증한다. `tests/plan_mode_wire.py`는 실제 데몬 HTTP, CLI IPC, 인증 MCP HTTP의 소유권과 검토 응답을 검증한다. `tests/plan_mode_runtime_smoke.cpp`는 호스트가 단계별 도구를 선택하는 유도된 실제 Qwen3 8B 검사이다. 모델이 Enter·Write·Exit의 실제 호출을 생성하고, 최초 입력에 없는 호스트 수정 코드를 최종 답변에 사용해야 통과한다. 모델 대역 검사와 실제 추론을 구분하며 일반 모델의 자율 계획 품질을 보장하지 않는다. 최종 수치와 설치 소비자 증거는 [Verification.md](Verification.md)에 기록한다.
+
+0.35는 C++ AskUserQuestion과 API·MCP 질문/답변을 추가한다. 호스트 응답, 변경 검증, 미리보기와 남은 앱 화면 범위는 [UserQuestions.md](UserQuestions.md)를 따른다.

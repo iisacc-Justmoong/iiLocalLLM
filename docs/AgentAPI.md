@@ -212,3 +212,5 @@ agent.tasks.create/get/list/update/claim 및 agent.todos.write/get을 추가한�
 0.33.0의 비동기 명령 훅은 세션/연결별로 완료 결과를 보관하고 문맥을 notification/next로 전달한다. asyncRewake 종료 코드 2는 횟수를 제한한 유휴 실행을 요청한다. 세션 종료·clear는 훅을 취소·정리하며, 자식 Engine은 실행이 끝난 뒤 자동 기동하지 않는다. 상태/취소 메서드와 기존 요청별 권한·콜백을 재사용하지 않는 경계는 [AsyncHooks.md](AsyncHooks.md)를 따른다.
 
 0.34에서 agent.plan.enter/exit/get을 추가했다. 상태 조회는 예약 제어 경로이고 검토는 기존 permission requests를 사용한다. [PlanMode.md](PlanMode.md)에 계약과 남은 범위를 기록한다.
+
+0.35는 C++ AskUserQuestion과 API·MCP 질문/답변을 추가한다. 호스트 응답, 변경 검증, 미리보기와 남은 앱 화면 범위는 [UserQuestions.md](UserQuestions.md)를 따른다.

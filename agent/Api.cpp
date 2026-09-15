@@ -57,7 +57,7 @@ QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.se
     "agent.agents.run", "agent.agents.output", "agent.agents.stop", "agent.agents.list", "agent.agents.profiles",
     "agent.inputs.enqueue", "agent.inputs.list", "agent.inputs.remove", "agent.inputs.run", "agent.sessions.end", "agent.sessions.clear",
     "agent.permissions.pending", "agent.permissions.respond", "agent.hooks.status", "agent.hooks.cancel",
-    "agent.plan.get", "agent.plan.enter", "agent.plan.exit"}; }
+    "agent.plan.get", "agent.plan.enter", "agent.plan.exit", "agent.questions.ask"}; }
 bool hookControl(const QString& method) {return method=="agent.hooks.status"||method=="agent.hooks.cancel";}
 bool inputControl(const QString& method) {
     return method == "agent.inputs.enqueue" || method == "agent.inputs.list" || method == "agent.inputs.remove" || method=="agent.plan.get";
@@ -175,7 +175,8 @@ public:
                 {"task_tools_enabled", client->engine->taskToolsEnabled()}, {"plan_tools_enabled",bool(client->engine->planning())}, {"background_tasks_enabled", client->engine->backgroundTasksEnabled()},
                 {"input_queue_enabled", true}, {"skills_enabled", options.engine.skills.enabled}, {"subagents_enabled", options.subagentsEnabled},
                 {"hooks_enabled",!options.engine.hooks.isEmpty()},{"async_hook_controls_enabled",true},
-                {"max_async_hook_wake_runs",options.engine.maxAsyncHookWakeRuns},{"permission_requests_enabled",bool(client->permissionRequests)}};
+                {"max_async_hook_wake_runs",options.engine.maxAsyncHookWakeRuns},{"permission_requests_enabled",bool(client->permissionRequests)},
+                {"user_questions_enabled",bool(client->engine->userQuestionTool())}};
         }
         static const QMap<QString, QString> agentMethods{{"agent.agents.run", "Agent"}, {"agent.agents.output", "AgentOutput"},
             {"agent.agents.stop", "AgentStop"}, {"agent.agents.list", "AgentList"}, {"agent.agents.profiles", "AgentProfiles"}};
@@ -195,10 +196,12 @@ public:
             require(!timedOut && Clock::now() < job->deadline, "Agent API request deadline exceeded", ErrorCode::Timeout);
             return QJsonObject{{"text", value.text}, {"result", value.data}, {"is_error", value.isError}};
         }
-        if(method=="agent.plan.enter"||method=="agent.plan.exit") {
+        if(method=="agent.plan.enter"||method=="agent.plan.exit"||method=="agent.questions.ask") {
             const auto id=text(p,"session_id");auto arguments=p;arguments.remove("session_id");
             require(client->engine->sessionMetadata(id).workingDirectory==options.workingDirectory,"Session belongs to a different workspace",ErrorCode::NotFound);
             auto future=std::async(std::launch::async,[client,id,method,arguments,job,callback] {
+                if(method=="agent.questions.ask")return client->engine->runQuestionTool(id,arguments,job->token,
+                    [callback](const Event& event){if(callback)callback(toJson(event));});
                 return client->engine->runPlanTool(id,method=="agent.plan.enter"?"EnterPlanMode":"ExitPlanMode",arguments,job->token,
                     [callback](const Event& event){if(callback)callback(toJson(event));});
             });

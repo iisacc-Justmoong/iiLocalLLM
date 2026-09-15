@@ -36,7 +36,7 @@ int main(int argc, char** argv)
 {
     QCoreApplication app(argc, argv);
     app.setApplicationName(QStringLiteral("iiLocalLLMD"));
-    app.setApplicationVersion(QStringLiteral("0.34.0"));
+    app.setApplicationVersion(QStringLiteral("0.35.0"));
     QCommandLineParser parser;
     parser.setApplicationDescription(QStringLiteral("iiLocalLLM local JSON IPC service"));
     parser.addHelpOption(); parser.addVersionOption();
@@ -68,6 +68,8 @@ int main(int argc, char** argv)
         {"agent-apps-dir", "Private registry of running local application MCP endpoints.", "directory"},
         {"agent-no-apps", "Disable discovery of running local applications."},
         {"agent-no-plan-mode", "Disable session planning and review tools."},
+        {"agent-no-user-questions", "Disable AskUserQuestion."},
+        {"agent-question-preview", "User question preview format (markdown or html).", "format", "markdown"},
         {"agent-no-tasks", "Disable persistent task and todo tools for the agent API."},
         {"agent-no-skills", "Disable local skill discovery and invocation."},
         {"agent-no-subagents", "Disable delegated local agent execution."},
@@ -112,7 +114,7 @@ int main(int argc, char** argv)
         if (parser.isSet("agent-workspace") || parser.isSet("agent-state") || parser.isSet("agent-credentials") || parser.isSet("agent-allow")
             || parser.isSet("agent-no-auto-compact") || parser.isSet("agent-no-project-context") || parser.isSet("agent-context-exclude")
             || parser.isSet("agent-mcp-config") || parser.isSet("agent-mcp-project") || parser.isSet("agent-mcp-eager")
-            || parser.isSet("agent-apps-dir") || parser.isSet("agent-no-apps") || parser.isSet("agent-no-plan-mode") || parser.isSet("agent-no-tasks") || parser.isSet("agent-no-background")
+            || parser.isSet("agent-apps-dir") || parser.isSet("agent-no-apps") || parser.isSet("agent-no-plan-mode") || parser.isSet("agent-no-user-questions") || parser.isSet("agent-question-preview") || parser.isSet("agent-no-tasks") || parser.isSet("agent-no-background")
             || parser.isSet("agent-no-skills") || parser.isSet("agent-skills-dir") || parser.isSet("agent-no-subagents") || parser.isSet("agent-subagent-options")
             || parser.isSet("agent-profiles") || parser.isSet("no-agent-profiles") || parser.isSet("agent-permission-settings") || parser.isSet("agent-permission-requests") || parser.isSet("agent-add-dir") || parser.isSet("agent-hooks")) {
             if (parser.isSet("agent-apps-dir") && parser.isSet("agent-no-apps"))
@@ -138,6 +140,8 @@ int main(int argc, char** argv)
             config.engine.compaction.automatic = !parser.isSet("agent-no-auto-compact");
             config.engine.taskToolsEnabled = !parser.isSet("agent-no-tasks");
             config.engine.planToolsEnabled = !parser.isSet("agent-no-plan-mode");
+            config.engine.userQuestionsEnabled = !parser.isSet("agent-no-user-questions");
+            config.engine.userQuestions.previewFormat = parser.value("agent-question-preview");
             config.engine.skills.enabled = !parser.isSet("agent-no-skills");
             config.engine.skills.directories = parser.values("agent-skills-dir");
             config.subagentsEnabled = !parser.isSet("agent-no-subagents");

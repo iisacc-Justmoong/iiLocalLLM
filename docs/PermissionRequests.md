@@ -70,3 +70,5 @@ permission_resolved 이벤트는 출처와 상태를 제공한다. MCP 진행 �
 정적 비교 대상은 c8cd253554319f32ff64ff7000636199f720c9bc의 source/src/cli/structuredIO.ts(sendRequest/createCanUseTool)와 source/src/utils/permissions/PermissionPromptToolResultSchema.ts이다. 참조의 훅/SDK 경쟁·요청 ID·취소·늦은 응답·빈 모바일 입력을 비교했다. 참조에는 잘못된 updatedPermissions를 무시하는 경로와 훅 결정 반환 전에 권한 갱신을 수행하는 경로가 있다. iiLocalLLM은 응답을 엄격히 검증하고 이긴 응답의 정책만 갱신한다. TypeScript 코드를 실행하거나 이식하지 않았다.
 
 tests/permission_requests_tests.cpp는 실제 파일, 경쟁·중복 응답, 채널 격리, 포화 API/MCP 큐, 하위 에이전트 전달과 기한·취소를 검사한다. tests/permission_requests_wire.py는 별도 daemon/CLI/MCP 프로세스와 선택적 공식 stdio·실제 모델을 검사한다. 관측·설치 증거는 [Verification.md](Verification.md)에 별도로 기록한다. 실제 Society/Dreamscapes 승인 UI 통합·배포, 플랫폼별 검증, 영속 승인 복구, 자동 분류/제안과 나머지 하네스 기능은 이번 범위에 포함되지 않는다.
+
+0.35는 C++ AskUserQuestion과 API·MCP 질문/답변을 추가한다. 호스트 응답, 변경 검증, 미리보기와 남은 앱 화면 범위는 [UserQuestions.md](UserQuestions.md)를 따른다.

@@ -154,6 +154,7 @@ public:
         };
         frozen->add(std::move(permissions));
         if (!options.engine) return frozen;
+        if(auto questions=options.engine->userQuestionTool())frozen->add(std::move(*questions));
         if(const auto plans=options.engine->planning()) {
             for(auto native:plans->tools(policy,false))frozen->add(std::move(native));
             Tool get;get.definition={"iiLocalLLM.agent.plan.get","Read this connection's owned plan and current approval state.",
@@ -348,7 +349,7 @@ public:
         if (!options.artifactsDirectory.isEmpty()) context.artifactsDirectory = QDir(options.artifactsDirectory).filePath(context.sessionId + '/' + context.runId);
         const auto source = frozen->get(name).definition.metadata["source"].toString();
         auto bindContext = [&](bool history=false) {
-            const bool native=source=="builtin.workspace"||source=="builtin.shell"||source=="builtin.shell.control"||source=="builtin.plan";
+            const bool native=source=="builtin.workspace"||source=="builtin.shell"||source=="builtin.shell.control"||source=="builtin.plan"||source=="builtin.user-question";
             if(options.engine&&(native||!options.tools.hooks.isEmpty()||options.engine->planning())) {
                 const auto owner=sessionId(conversation(request.sessionId),context.cancellation);
                 context.planningSessionId=owner;
@@ -401,6 +402,12 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
         return result;
     };
     server.handlers["tools/call"] = [state](const auto& params, const auto& request) { return state->call(params, request); };
+    if(state->options.engine&&state->options.engine->userQuestionTool()) {
+        const auto definition=state->options.engine->userQuestionTool()->definition;
+        server.experimentalCapabilities["iisacc/userQuestions"]=QJsonObject{{"schema","iisacc.user-question/1"},
+            {"tool","AskUserQuestion"},{"permissionRequests",bool(state->options.permissionRequests)},
+            {"responseField","updatedInput"},{"previewFormat",definition.metadata["preview_format"]}};
+    }
     if(state->options.engine&&state->options.engine->planning()) {
         server.experimentalCapabilities["iisacc/planMode"]=QJsonObject{{"schema","iisacc.plan/1"},
             {"statusMethod","iisacc/plan/status"},{"enterTool","EnterPlanMode"},{"exitTool","ExitPlanMode"}};

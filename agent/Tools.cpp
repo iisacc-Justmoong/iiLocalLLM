@@ -243,7 +243,10 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
         auto decision = decide();
         if(hookPermission&&(hookPermission->behavior==PermissionBehavior::Deny
             ||(hookPermission->behavior==PermissionBehavior::Ask&&decision.behavior!=PermissionBehavior::Deny)))decision=*hookPermission;
-        if(tool.requiresPermission&&decision.behavior==PermissionBehavior::Allow)decision={PermissionBehavior::Ask,"This tool requires a reviewed host decision"};
+        if(tool.requiresPermission&&decision.behavior==PermissionBehavior::Allow) {
+            const bool dontAsk=context.permissionMode==PermissionMode::DontAsk||policy_->describe(context)["mode"]=="dontAsk";
+            decision={dontAsk?PermissionBehavior::Deny:PermissionBehavior::Ask,"This tool requires a reviewed host decision"};
+        }
         if (tool.prepare) decision.reason += "\n" + prepared.definition.description + "\n"
             + QString::fromUtf8(QJsonDocument(prepared.definition.metadata).toJson(QJsonDocument::Compact));
         bool allowed = decision.behavior == PermissionBehavior::Allow;
