@@ -96,6 +96,7 @@ struct ModelRequest {
     bool systemPromptOnly = false; // Use exactly the host's task instruction without the normal agent preamble.
     QString toolChoice = "auto";
     bool verificationAgent = false; // Host provenance; never accepted from wire/model data.
+    bool parallelToolCalls = true; // Native generation hint; Engine also validates its actual call-count limit.
 };
 struct ModelReply {
     QString text;

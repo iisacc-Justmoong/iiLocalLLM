@@ -39,6 +39,16 @@ public:
     }
 };
 #include "agent_tests.h"
+void AgentTests::singleToolLimitIsPassedToModels(){
+    for(const int limit:{1,8}){
+        QTemporaryDir root;auto model=std::make_shared<ScriptModel>();auto registry=std::make_shared<a::ToolRegistry>();registry->add(echoTool());
+        model->replies={{{},{{"first","echo",{{"value",1}}}}},{"done",{}}};
+        a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");options.maxToolCallsPerTurn=limit;
+        a::Engine engine(model,registry,std::make_shared<a::RulePolicy>(),options);const auto session=engine.createSession("fixture",root.path());
+        QCOMPARE(engine.run({session.id,"Observe and finish"}).result.get().status,a::RunStatus::Completed);
+        QCOMPARE(model->requests.size(),2);for(const auto& request:model->requests)QCOMPARE(request.parallelToolCalls,limit>1);
+    }
+}
 void AgentTests::completionToolStopsBeforeLaterTools() {
     QTemporaryDir root;auto model=std::make_shared<ScriptModel>();auto registry=std::make_shared<a::ToolRegistry>();
     QList<int> executed;auto regular=echoTool();regular.execute=[&](const QJsonObject& args,const auto&) {

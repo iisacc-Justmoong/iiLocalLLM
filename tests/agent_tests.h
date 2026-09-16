@@ -3,6 +3,7 @@
 class AgentTests : public QObject {
     Q_OBJECT
 private slots:
+    void singleToolLimitIsPassedToModels();
     void completionToolStopsBeforeLaterTools();
     void verifierPermissionModeDoesNotInheritBypass();
     void schemaAndRegistry();

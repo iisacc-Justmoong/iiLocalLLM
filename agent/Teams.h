@@ -16,6 +16,7 @@ struct TeamsOptions {
     int maxRuntimeMs = 300000;
     int maxRunsPerMember = 64;
     int maxMailboxMessages = 256;
+    bool autoClaimTasks = true; // Coordinate pending, unowned, unblocked tasks at startup and while idle.
 };
 
 // Orchestration above Engine. State lives in parentOptions.sessionsDirectory/teams;

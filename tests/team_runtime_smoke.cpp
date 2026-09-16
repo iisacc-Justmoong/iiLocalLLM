@@ -33,11 +33,15 @@ int main(int argc,char** argv){
         for(const auto& definition:registry->definitions())if(definition.name!="Read")registry->remove(definition.name);
         auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);a::EngineOptions eo;eo.sessionsDirectory=root.filePath("sessions");
         eo.projectContext.enabled=false;eo.skills.enabled=false;eo.toolSearch.enabled=false;eo.taskToolsEnabled=true;eo.taskToolsDeferred=false;eo.compaction.automatic=false;
+        eo.maxToolCallsPerTurn=1;
         a::TeamsOptions config;config.workingDirectory=workspace;config.maxTurns=8;config.maxRuntimeMs=180000;config.generation.temperature=0;config.generation.maxTokens=1024;
-        a::SubagentDefinition profile;profile.tools={"Read","TaskCreate","TaskList","SendMessage"};config.definitions={profile};
+        config.autoClaimTasks=false; // This fixture qualifies explicit messages; team_task_runtime_smoke covers automatic work.
+        a::SubagentDefinition profile;profile.tools={"Read","TaskCreate","TaskList","SendMessage"};
+        profile.systemPrompt="Every new assignment requires fresh observations. Call exactly ONE tool per response and WAIT for its result. Read the file first, then create the requested task, then send the observed file marker to team-lead. SendMessage requires separate top-level to, summary, and message arguments. Use a short summary string and put the exact fresh file marker in the message string. Finish every requested step before saying done.";
+        config.definitions={profile};
         auto teams=std::make_shared<a::Teams>(model,registry,policy,eo,config);a::Teams::attach(eo,teams);a::Engine engine(model,registry,policy,eo);
         const auto leader=engine.createSession(uri,workspace);a::ToolContext owner{leader.id,{},workspace};teams->create(owner,{{"team_name","native"}});
-        QString member;bool all=true;print({{"qualification","teams"},{"model",QString::fromLocal8Bit(argv[2])},{"context_tokens",8192},{"max_cached_contexts",1},{"max_tokens",config.generation.maxTokens},{"load_options",load.options}});
+        QString member;bool all=true;print({{"qualification","teams"},{"model",QString::fromLocal8Bit(argv[2])},{"context_tokens",8192},{"max_cached_contexts",1},{"max_tokens",config.generation.maxTokens},{"max_tool_calls_per_turn",eo.maxToolCallsPerTurn},{"load_options",load.options}});
         for(int phase=0;phase<2;++phase){
             const auto marker="TEAM_"+QUuid::createUuid().toString(QUuid::WithoutBraces).remove('-').left(16);put(workspace+"/shared-note.txt",marker.toUtf8());
             const QString prompt="Use Read to read shared-note.txt now. Its entire contents are a marker. Call TaskCreate with subject exactly that observed marker and description 'Observed local team evidence'. Then call SendMessage with to 'team-lead', summary 'Local file observed', and message exactly the observed marker. Finally say done. Do not guess the marker.";
@@ -50,7 +54,7 @@ int main(int argc,char** argv){
             bool completed=false;for(const auto& value:state["team"].toObject()["members"].toArray()){const auto m=value.toObject();if(m["name"]=="reader")completed=m["status"]=="idle"&&m["result"].toObject()["status"]=="completed";}
             const bool passed=state["idle"].toBool()&&completed&&read&&created&&sent&&paired&&shared&&notified;all&=passed;
             print({{"phase",phase?"followup":"initial"},{"passed",passed},{"completed",completed},{"read",read},{"task_created",created},{"message_sent",sent},{"shared_task_visible",shared},{"leader_received",notified},{"paired",paired},{"state",state}});
-            if(!passed){QJsonArray messages;for(const auto& message:transcript.messages)messages.append(a::toJson(message));print({{"failed_phase_transcript",phase?"followup":"initial"},{"messages",messages}});}
+            if(!passed){QJsonArray messages;for(const auto& message:transcript.messages)messages.append(a::toJson(message));print({{"failed_phase_transcript",phase?"followup":"initial"},{"messages",messages}});break;}
         }
         const auto stopped=teams->stop(leader.id,"reader");const auto removed=teams->remove(owner);
         all&=stopped["stopped"].toBool()&&!removed.isError&&teams->status(leader.id)["team"].isNull();

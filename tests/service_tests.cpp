@@ -233,7 +233,7 @@ private slots:
         p->answer="{\"text\":\"{\\\"ok\\\":true}\"}";
         agent::ServiceModel model(service);agent::ModelRequest request;request.model="model://small";
         request.generation.maxTokens=64;request.systemPrompt="EXACT_HOST_CONDITION";request.systemPromptOnly=true;
-        request.toolChoice="none";request.enableThinking=false;
+        request.toolChoice="none";request.enableThinking=false;request.parallelToolCalls=false;
         request.responseSchema={{"type","object"},{"properties",QJsonObject{{"ok",QJsonObject{{"type","boolean"}}}}},
             {"required",QJsonArray{"ok"}},{"additionalProperties",false}};
         request.tools={{"ToolSearch","Definition only",{{"type","object"}}}};
@@ -243,11 +243,13 @@ private slots:
         for(const auto& prepared:p->preparedConversations) {
             QCOMPARE(prepared.responseSchema,request.responseSchema);QVERIFY(prepared.enableThinking.has_value()&&!*prepared.enableThinking);
             QCOMPARE(prepared.toolChoice,"none");QCOMPARE(prepared.messages.first().toObject()["content"],request.systemPrompt);
+            QVERIFY(!prepared.parallelToolCalls);
         }
         QCOMPARE(p->preparedConversations[0].messages,p->preparedConversations[1].messages);
-        request.responseSchema={};request.enableThinking.reset();request.systemPromptOnly=false;request.toolChoice="auto";
+        request.responseSchema={};request.enableThinking.reset();request.systemPromptOnly=false;request.toolChoice="auto";request.parallelToolCalls=true;
         model.generate(request,{},{});const auto restored=p->preparedConversations.last();
         QVERIFY(restored.responseSchema.isEmpty()&&!restored.enableThinking.has_value());QCOMPARE(restored.toolChoice,"auto");
+        QVERIFY(restored.parallelToolCalls);
         QVERIFY(restored.messages.first().toObject()["content"].toString().contains("You are a local agent."));
     }
     void agentToolObservationsPreserveDataAndExactText()

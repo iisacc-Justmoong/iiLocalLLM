@@ -62,6 +62,7 @@ int main(int argc, char** argv) {
         {"no-skills", "Disable local skill discovery and invocation in the agent."},
         {"no-subagents", "Disable delegated local agent execution."},
         {"no-teams", "Disable persistent local teammates and team messaging."},
+        {"no-team-task-claim", "Disable automatic shared-task assignment to local teammates."},
         {"agent-profiles", "Private JSON host configuration for profile directories, overrides and model grants.", "file"},
         {"no-agent-profiles", "Disable agent profile file discovery; retain general-purpose."},
         {"skills-dir", "Additional host-authorized skills directory; repeat in highest-priority-first order.", "directory"},
@@ -256,6 +257,7 @@ int main(int argc, char** argv) {
             }
             if(!privateState.isEmpty()&&!parser.isSet("no-teams")){
                 a::TeamsOptions config;config.workingDirectory=workspace;config.profiles=profiles.profiles;config.definitions=profiles.definitions;
+                config.autoClaimTasks=!parser.isSet("no-team-task-claim");
                 config.allowedModels=profiles.allowedModels;config.modelAliases=profiles.modelAliases;config.maxRuntimeMs=timeout;config.generation.maxTokens=maxTokens;config.generation.temperature=temperature;
                 a::Teams::attach(engineOptions,std::make_shared<a::Teams>(model,registry,policy,engineOptions,config));
             }

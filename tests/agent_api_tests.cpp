@@ -60,6 +60,7 @@ private slots:
         const auto id=call(api,"agent.sessions.create",{{"model","local"}})["session_id"].toString();
         const auto other=call(api,"agent.sessions.create",{{"model","local"}},secondToken)["session_id"].toString();
         QVERIFY(call(api,"agent.info")["teams_enabled"].toBool());
+        QCOMPARE(call(api,"agent.info")["team_auto_task_claim_enabled"].toBool(),config.engine.taskToolsEnabled);
         QVERIFY(!call(api,"agent.teams.create",{{"session_id",id},{"team_name","society"}})["is_error"].toBool());
         error([&]{call(api,"agent.teams.status",{{"session_id",id}},secondToken);},ErrorCode::NotFound);
         QVERIFY(call(api,"agent.teams.status",{{"session_id",other}},secondToken)["result"].toObject()["team"].isNull());

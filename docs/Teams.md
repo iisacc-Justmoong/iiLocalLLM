@@ -1,6 +1,6 @@
 # 로컬 팀 실행
 
-0.48은 이름 있는 팀원이 독립된 C++ Engine 대화에서 실행되고, 같은 팀의 Task 목록과 메시지를 공유하며 유휴 상태에서 후속 메시지를 처리하는 기능을 제공한다. 기존 일회성 Subagents와 함께 사용할 수 있다. 전체 Claude Code 팀 기능과의 호환성은 아직 partial이다.
+0.49는 이름 있는 팀원이 독립된 C++ Engine 대화에서 실행되고, 같은 팀의 Task 목록과 메시지를 공유하며 유휴 상태에서 후속 메시지를 처리하는 기능을 제공한다. 기존 일회성 Subagents와 함께 사용할 수 있다. 전체 Claude Code 팀 기능과의 호환성은 아직 partial이다.
 
 참조는 분석본 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `TeamCreateTool`, `TeamDeleteTool`, `SendMessageTool`, `AgentTool` 및 `utils/swarm/inProcessRunner.ts`이다. 현재 참조의 SendMessage 입력은 `to`, `message`, 선택 `summary`이며, 과거 예제의 `recipient`/`content` 형식을 수용했다고 주장하지 않는다.
 
@@ -37,13 +37,29 @@ Subagents도 사용할 때는 Subagents::attach 다음 Teams::attach를 호출�
 
 팀 이름은 영문·숫자 외 문자를 하이픈으로 바꾸고 소문자로 정규화한다. 팀원 이름은 `@`를 하이픈으로 바꾼 뒤 영문·숫자·하이픈·밑줄 64자 이내로 제한한다. 첫 문자는 영문·숫자여야 한다. 이름 비교에서 대소문자 중복을 거부하며 `team-lead`와 `host`는 예약어이다. 원본의 모든 이름 정규화 규칙을 구현한 것은 아니다.
 
-Teams::attach는 호스트의 taskToolsEnabled 설정을 바꾸지 않는다. 비활성화하면 부모와 팀원 모두 Task 도구를 제공하지 않는다. 데몬의 --agent-no-tasks와 MCP의 --no-tasks도 유지된다.
+TeamsOptions::autoClaimTasks는 기본 true이며 시작 시점과 유휴 상태에서 미배정 작업을 자동 선점한다. false로 끄면 명시적 메시지에만 반응한다. Teams::attach는 호스트의 taskToolsEnabled 설정을 바꾸지 않는다. 비활성화하면 부모와 팀원 모두 Task 도구를 제공하지 않는다. 데몬의 --agent-no-tasks와 MCP의 --no-tasks도 유지된다.
 
 팀원은 항상 비동기로 실행된다. 후속 문자열 메시지는 같은 대화에 전달되고 실제 모델 실행을 다시 시작한다. 브로드캐스트는 발신자를 제외한다. 중단된 수신자나 이전 호스트 활성화의 팀원은 명시적 오류로 처리한다. 별도 프로세스의 주소, `uds:`/`bridge:` 수신자는 지원하지 않는다.
 
 공유 Task는 UUID 기반 전용 namespace를 사용한다. 부모와 팀원, Task lifecycle 검증 에이전트가 같은 목록에 접근한다. 다른 부모·팀·인증 클라이언트의 목록은 분리된다. TeamDelete의 TaskStore::retire는 내용 삭제와 함께 tombstone을 남겨 오래된 도구·다른 프로세스가 목록을 재생성하지 못하게 한다.
 
 팀원의 도구는 선택한 프로필, 부모 필터와 현재 권한 정책을 함께 만족해야 한다. 각 후속 실행 전에 부모의 세션 권한을 상속한다. 팀원의 도구·모델·프로필 본문은 시작 시의 스냅샷이다. 일반 Subagents와 달리 현재 팀원 실행은 프로필의 skills/initialPrompt 등 추가 시작 설정을 거부한다. 팀원이 다시 Agent/TeamCreate/TeamDelete를 호출하여 범위를 넓힐 수 없다. ReadOnly 프로필은 문자열 메시지를 보낼 수 있지만 구조화된 종료 메시지는 읽기 전용 작업으로 취급하지 않는다.
+
+문자열 message의 summary 필수 조건은 현재 도구 설명과 실행 시 검사에 있다. 입력 스키마의 required는 to와 message이며, 고정된 네이티브 XML 문법은 조건부 summary 필수를 강제하지 못한다. 0.49 실제 모델 검사에서 이 인자를 반복 누락하는 실패가 있었다. 빈 값을 대신 채우거나 오류를 성공으로 처리하지 않으며 최종 추론 검증은 미완료이다. 세부 결과는 [Verification.md](Verification.md)에 기록한다.
+
+도구 결과에 의존하는 후속 호출을 한 응답에 미리 만들지 않도록 호스트가 EngineOptions::maxToolCallsPerTurn=1을 설정할 수 있다. 0.49는 이 한도를 ModelRequest::parallelToolCalls=false로 전달하고, ServiceModel의 문맥 측정과 생성 모두 네이티브 parallel_tool_calls 설정에 연결한다. 실제 반환 개수도 기존 한도로 검사한다. 기본 여러 도구 호출 설정은 유지한다.
+
+## 작업 선택과 유휴 알림
+
+시작 시 첫 pending·미배정·선행 작업 완료 항목을 숫자 ID 순서로 선택한다. TaskStore::TaskClaim에 보드 revision을 전달하여 다른 팀원이나 프로세스의 변경과 경쟁할 때 중복 선점하지 않는다. 선점은 owner를 팀원 이름으로, status를 in_progress로 함께 저장한다. 시작 프롬프트는 유지하며 선점한 작업은 공유 Task 문맥과 도구로 확인한다. 유휴 팀원은 500ms 간격으로 확인하되 메시지나 미전달 outbox가 있으면 이를 먼저 처리한다. 할 일이 없을 때 모델을 호출하지 않는다.
+
+유휴 선점은 같은 대화에 `Complete all open tasks. Start with task #...`와 작업 제목·설명을 전달한다. 참조의 task-list 표기 대신 예약된 host 발신자와 검증된 봉투를 사용한다. 큐에서는 내부 알림으로 처리하며 사용자 제출 훅을 실행하지 않는다. 팀원 시스템 지침은 host 배정을 기존 역할·도구 권한 안에서 수행할 새 작업으로 지정한다. 이전 작업을 완료해도 새 배정을 건너뛰지 않고 새 관측을 얻어야 한다. 본문은 시스템 역할이나 도구 권한을 변경할 수 없다. 선점은 호스트의 작업 배정이며 모델의 TaskClaim 도구 실행이나 Task lifecycle 훅으로 기록하지 않는다. 작업 완료는 모델 또는 호스트의 명시적 TaskUpdate가 필요하다. 읽기 전용 프로필 등은 선점한 작업을 완료할 도구 권한이 없을 수 있다.
+
+선점 전 작업 ID·보드 revision·고정 메시지 ID를 팀 기록에 저장한다. TaskStore 반영 후 전달이 실패하면 task_claim 의도를 보존하고 같은 입력 ID로 재시도한다. 봉투의 문자 한도 초과는 선점 전에 거부하며 원문을 잘라내지 않는다. 큐의 바이트 한도 등 이후 오류는 TeamStatus의 task_claim_pending/task_claim_error로 드러낸다. task_claim 원문은 공개 상태에서 숨긴다. last_claimed_task_id는 마지막 전달 또는 시작 선점 ID이다. 재시작 후 중단된 팀원을 자동 실행하지 않는 규칙도 유지한다.
+
+idle_notification은 팀원 발신의 type/from/timestamp/idleReason과 선택 summary/failureReason만 보낸다. 최종 모델 답변은 자동으로 보내지 않으며 명시적 SendMessage나 TeamStatus의 제한된 result로 확인한다. summary는 이번 실행에서 마지막으로 관측한 동료 대상 문자열 SendMessage의 요약이다. 이전 실행, 브로드캐스트와 리더 대상 메시지는 포함하지 않는다. 참조와 같이 도구 호출 시도에서 요약을 추출하므로 전송 성공 영수증으로 해석하면 안 된다.
+
+TeamWait의 idle은 현재 실행·대기 메시지가 없다는 관측이다. 보드의 모든 작업 완료나 다음 500ms 조회에서 작업이 없다는 보장은 아니다. 작업 완료를 기다리는 앱은 Task 상태와 팀원 결과를 함께 확인해야 한다. 작업 자동 선점에도 기존 실행 횟수·턴·시간·취소 한도를 적용한다.
 
 ## 종료·저장·복구
 
@@ -63,7 +79,7 @@ ApiOptions::teamsEnabled와 TeamsOptions로 명시적으로 켤 수 있다. 각 
 
 MCP는 `iiLocalLLM.agent.teams.<동작>` 도구 8개를 제공한다. 외부 session_id 인자는 없으며 연결의 대화로 범위를 고정한다. `iisacc/teams/status`, `inbox`, `send`, `stop` JSON-RPC 제어 메서드는 별도 제어 용량을 사용하되 같은 권한·훅 경로를 거친다. initialize의 `iisacc/teams` capability로 발견한다.
 
-CLI는 `iillm --auth-file TOKEN_FILE agent teams ACTION SESSION [PARAMS_JSON_FILE]` 형식이다. 데몬은 agent API를 켜면 팀을 기본 제공하고 `--agent-no-teams`로 끈다. MCP 실행 파일은 agent와 비공개 `--state`가 있을 때 기본 제공하며 `--no-teams`로 끈다. 기존 `--agent-subagent-options`의 생성 옵션과 호스트 프로필 구성을 데몬 팀원에도 적용한다.
+CLI는 `iillm --auth-file TOKEN_FILE agent teams ACTION SESSION [PARAMS_JSON_FILE]` 형식이다. 데몬은 agent API를 켜면 팀을 기본 제공하고 `--agent-no-teams`로 끈다. 자동 작업 선점만 끄려면 데몬의 --agent-no-team-task-claim, MCP의 --no-team-task-claim을 사용한다. agent.info의 team_auto_task_claim_enabled와 TeamStatus의 auto_task_claim_enabled로 유효 설정을 확인한다. MCP 실행 파일은 agent와 비공개 `--state`가 있을 때 기본 제공하며 `--no-teams`로 끈다. 기존 `--agent-subagent-options`의 생성 옵션과 호스트 프로필 구성을 데몬 팀원에도 적용한다.
 
 ## 남은 범위와 검증
 
@@ -71,6 +87,6 @@ CLI는 `iillm --auth-file TOKEN_FILE agent teams ACTION SESSION [PARAMS_JSON_FIL
 
 중단한 팀원의 재개, 프로필 전체 시작 설정, 실시간 프로필 갱신, 팀 계획 승인, 별도 프로세스/tmux, 원격 팀원, worktree 격리, 전체 팀 UI·Society/Dreamscapes 소비자·모바일 검증이 남아 있다. 따라서 전체 하네스 완료로 판정하지 않는다.
 
-참조의 inProcessRunner는 종료 요청, 리더 메시지, 동료 메시지 순으로 처리 우선순위를 정한다. 현재 구현은 모든 팀 메시지를 같은 next 우선순위의 FIFO로 전달하며 이 우선순위 구분과 유휴 상태의 미배정 Task 자동 선택은 남아 있다. 또한 참조는 팀원의 최종 답변을 리더에게 자동 전송하지 않지만 현재 호스트의 idle_notification에는 최대 8,192자의 실행 결과가 포함된다. SendMessage의 명시적 메시지와 이 호스트 알림은 별도 기록이다.
+참조의 inProcessRunner는 종료 요청, 리더 메시지, 동료 메시지 순으로 처리 우선순위를 정한다. 0.49는 이 순서를 InputQueue의 now/next/later 우선순위로 반영한다. 같은 등급은 FIFO이며 EngineOptions::maxQueuedInputsPerRun=1로 실행 전체에서 메시지 한 건만 소비한다. now도 이미 진행 중인 모델 호출을 끊지는 않는다. 일반 Engine의 기본값 0은 기존 턴당 최대 16건 동작을 유지한다. 유효한 상한은 0~256이다. 직접 UI 입력의 별도 우선 경로는 아직 없다.
 
-`tests/team_tests.cpp`는 실행·대화 유지·공유 Task·권한·종료·이전·복구·보존을 검증한다. `agent_api_tests.cpp`와 `mcp_server_tests.cpp`는 인증과 연결 범위를 검증한다. `team_wire.py`는 실제 HTTP/IPC/MCP 실행 파일을 검사하며 없는 모델의 실패 보고까지 확인한다. 실제 모델의 성공은 별도 `team_runtime_smoke.cpp`의 Read·TaskCreate·SendMessage 결과와 변경된 파일에 대한 후속 실행으로 검증한다. 최종 빌드·테스트·설치·추론 수치는 Verification.md에 별도로 기록한다.
+`tests/team_tests.cpp`는 실행·대화 유지·공유 Task·권한·종료·이전·복구·보존을 검증한다. `agent_api_tests.cpp`와 `mcp_server_tests.cpp`는 인증과 연결 범위를 검증한다. `team_wire.py`는 실제 HTTP/IPC/MCP 실행 파일을 검사하며 없는 모델의 실패 보고까지 확인한다. 실제 모델의 성공은 별도 `team_runtime_smoke.cpp`의 Read·TaskCreate·SendMessage 결과와 변경된 파일에 대한 후속 실행으로 검증한다. team_task_runtime_smoke.cpp는 실제 모델의 TaskGet 선점 확인·Read·SendMessage·TaskUpdate를 초기 실행과 메시지 없는 유휴 실행에서 각각 확인한다. 최종 빌드·테스트·설치·추론 수치는 Verification.md에 별도로 기록한다.

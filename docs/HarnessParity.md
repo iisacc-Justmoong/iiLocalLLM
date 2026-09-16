@@ -168,4 +168,4 @@ C++ 네이티브 Write·Edit·NotebookEdit의 원본을 사용자 메시지 경�
 
 C++ 세션 분기에 artifact·체크포인트의 독립 복사, 대화 경로 갱신, 게시 전 권한/계획 준비와 실패 정리를 추가한다. 자식 문맥 분기도 참조 artifact를 복제한다. API·CLI 및 연결 전환 MCP를 제공한다. [SessionFork.md](SessionFork.md)에 범위와 제한을 기록한다. 대화 rewind UI, 팀 공동 이력과 전체 앱/플랫폼 검증은 남아 있으며 27 partial·4 pending·0 complete를 유지한다.
 
-0.48은 C++ 이름 있는 팀원, 독립 대화, 공유 Task, 유휴 팀원의 후속 메시지 실행, 요청 ID에 묶인 종료, 부모 clear 이전과 API/MCP/CLI 제어를 추가한다. 유휴 리더 자동 실행, 중단 팀원 재개, 별도 프로세스·원격·계획 승인·worktree·실제 앱 소비자는 남아 있다. [Teams.md](Teams.md). 대응표는 28 partial·3 pending·0 complete이며 전체 목표는 완료하지 않았다.
+0.49는 종료·리더·동료 메시지 우선순위와 한 건 단위 실행, 결과 본문 없는 유휴 알림, 시작·유휴 상태의 원자적 자동 Task 선점을 더한다. 0.48에서 제공한 이름 있는 C++ 팀원, 독립 대화, 공유 Task, 유휴 팀원의 후속 메시지 실행, 요청 ID에 묶인 종료, 부모 clear 이전과 API/MCP/CLI 제어를 유지한다. 유휴 리더 자동 실행, 중단 팀원 재개, 별도 프로세스·원격·계획 승인·worktree·실제 앱 소비자는 남아 있다. [Teams.md](Teams.md). 대응표는 28 partial·3 pending·0 complete이며 전체 목표는 완료하지 않았다.

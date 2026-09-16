@@ -1,5 +1,43 @@
 # 구현 검증 기록
 
+## 0.49 자동 팀 작업 배정과 단일 도구 호출
+
+시작·유휴 팀원이 pending·미배정·선행 작업 완료 항목을 원자적으로 선점하고, 전달 실패 시 고정 입력 ID와 배정 의도를 보존한다. 종료 요청·리더·동료 메시지 우선순위, 실행당 입력 한 건, 결과 본문 없는 유휴 알림을 추가했다. 기존 C++ Engine·TaskStore·InputQueue·Qt를 재사용하며 생산 의존성은 추가하지 않는다. 공개 구조체가 변경되어 C++ 소비자는 0.49 헤더와 라이브러리로 함께 재빌드해야 한다. 계약은 [Teams.md](Teams.md)에 있다.
+
+| 검증 | 결과 |
+|---|---|
+| 최종 Release, inference 제외 | 96/97; 같은 바이너리의 실패 항목 단독 재검사 1/1, skip 0 |
+| ASan·UBSan | 92/93; 같은 바이너리의 실패 항목 단독 재검사 1/1, skip 0 |
+| 새 설치 consumer | 59/59, failure/skip 0 |
+| source·installed 전송 | HTTP·native IPC CLI·MCP HTTP·공식 Python MCP stdio |
+| 설치 공개 헤더 | 57개, 소스와 바이트 일치 |
+| 실제 자동 작업 실행 | source startup·idle 통과; installed startup 통과·idle 실패 |
+| 실제 명시적 메시지 실행 | source 실패, installed 실패; 이 경로의 모델 품질 검증은 미완료 |
+
+Release 전체에서 iiLocalLLM.mcp_official이 초기화 30초 제한을 넘어 실패했다(31.56초). 같은 바이너리로 해당 항목만 다시 실행해 1.12초에 통과했다. 최종 sanitizer 전체에서는 iiLocalLLM.mcp_server의 팀 유휴 상태 판정(요청한 대기 상한 1,500ms)과 응답 helper의 단일 응답 판정(대기 상한 2,000ms)이 실패했고, Expected exactly one response 예외 후 프로세스가 ILLEGAL로 종료됐다. ASan·UBSan 메모리 오류 진단은 없었다. 같은 바이너리의 해당 전체 항목 단독 재검사는 4.13초에 통과했다. 두 실패의 원인을 확정하지 않으며 Release 97개나 sanitizer 93개가 한 번에 모두 통과했다고 합산하지 않는다. 초기 병행 검사의 팀 우선순위 대기 실패와 sanitizer worktree 실패도 별도 원본에 보존했다. sanitizer는 llama OFF, leak detection OFF, ASan abort/UBSan halt ON이다. 실제 네이티브 추론은 별도 Release 실행이다.
+
+고정 llama.cpp revision 5202104b59ada9005db079eea43882a2b7bf5802의 JSON 도구 문법에서 바깥 호출 반복이 parallel_tool_calls=false를 무시하는 오류를 확인했다. 원본을 수정하지 않고 빌드 디렉터리의 보정 사본을 컴파일한다. [보정 설명](AgentHarness.md)과 소스의 third_party/llama-common/PATCHES.md에 위치·MIT 라이선스·제한을 명시했다. 설치본에는 share/iiLocalLLM/licenses/llama-common/PATCHES.md로 제공한다. Qwen 2.5·3 템플릿의 auto/required와 single/parallel 조합 8개를 실제 문법 상태 기계로 검사한다. 보정 전 single 네 조합에서 두 호출이 잘못 허용됐고, 보정 후 8개 모두 통과했다(Qt init/cleanup 포함 10/10). 이 검사는 가중치를 사용하지 않으며 모델의 인자 정확도를 증명하지 않는다. Engine의 단일 호출 설정은 ServiceModel 문맥 측정·생성 모두에 전달되며 응답 개수 검사도 유지한다.
+
+자동 실행 검증 모델은 [unsloth/Qwen3.5-2B-GGUF](https://huggingface.co/unsloth/Qwen3.5-2B-GGUF)의 Q4_K_M이며 [원본 Qwen3.5-2B](https://huggingface.co/Qwen/Qwen3.5-2B)와 배포 라이선스는 Apache-2.0이다. revision f6d5376be1edb4d416d56da11e5397a961aca8ae, 1,280,835,840 bytes, SHA-256 `aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223`를 Hub 메타데이터와 대조했다. GGUF architecture는 qwen35이다. 검증용 build 카탈로그에만 보관하며 SDK에 모델을 포함하지 않는다.
+
+조건은 macOS arm64·Apple M1 Max Metal, context/cache 8,192토큰 한 개, temperature 0·topP 0.9·topK 40·minP 0·seed 0, thinking OFF·tool grammar ON, 자동 compaction OFF이다. 자동 작업은 maxTokens 2,048·maxTurns 10·실행당 180초·응답당 도구 한 개이다. 모델 로딩 시간은 실행 시간 제한에 포함하지 않는다. 호스트 프로필은 TaskGet→Read→SendMessage→TaskUpdate와 각 결과를 기다릴 것을 명시한다. 파일에만 존재하는 임의 표식을 매 단계 새로 생성한다. 실제 TaskGet 결과의 owner/status, Read 결과, 정확한 리더 수신, TaskUpdate 완료 결과, 공유 보드·대화 짝·중단·삭제·대기 입력 정리를 검사한다. 두 번째 작업에는 SendMessage나 추가 spawn 없이 같은 유휴 팀원이 자동 반응해야 한다. 모델 요청·응답·관측값을 대체하지 않았다.
+
+| 실행 | 단계 | 모델 턴 | 생성 토큰 | 판정 |
+|---|---|---|---|---|
+| source | startup | 6 | 234 | 통과 |
+| source | idle | 6 | 258 | 통과 |
+| installed | startup | 6 | 236 | 통과 |
+| installed | idle | 10 | 466 | 실패 |
+
+설치본의 자동 작업에서는 첫 작업을 완료했지만 두 번째 작업에서 summary 없이 SendMessage를 반복해 전송과 TaskUpdate 완료가 실패했다. 시작·유휴 선점과 새 Read는 확인됐지만 source의 전체 성공이 설치본에서 재현되지 않았으므로 자동 작업의 최종 모델 검증도 미완료이다.
+
+별도 명시적 메시지 fixture는 Read→TaskCreate→SendMessage와 변경된 파일의 후속 지시를 검사한다. 0.49에서 Qwen3 1.7B는 TaskCreate를 누락했고, Qwen3.5 2B는 summary 인자를 누락하거나 파일 표식 대신 요약 문구를 전송했다. 응답당 도구 한 개와 명확한 인자 지침을 적용한 마지막 source 실행도 본문 불일치로 실패했다. 이 fixture의 최종 설정은 maxTokens 1,024·maxTurns 8이며 나머지는 위와 같다. 성공 조건을 완화하지 않고 실패하면 정리 후 실패로 종료한다. 자동 작업의 통과로 명시적 메시지 경로까지 통과했다고 주장하지 않는다. Qwen3 1.7B 자동 작업의 후속 단계 누락·잘못된 TaskUpdate와 Qwen3 8B의 RAM 보호에 의한 로딩 거절도 기록했다. 네이티브 문법 보정만으로 이런 모델 품질 문제가 해결되지는 않았다.
+
+최종 생산 라이브러리 SHA-256은 `da00a5e3c2a0d82ad801daf1ef5dcc902277bd60bcd792caa90db1799bfedbd5`이다. 새 설치 경로는 build/team-auto-final-stage, 소비자는 build/team-auto-final-consumer/build이다. 실행 중 dyld 기록에서 설치 소비자가 이 stage의 라이브러리를 로드했음을 확인했다. source/stage 라이브러리와 공개 헤더를 대조하고 네 진입점 0.49.0 및 thin iillm의 직접 iiLocalLLM/llama/ggml 비연결을 검사했다. 입력 327개의 해시를 고정했으며 마지막 수정은 수동 네이티브 fixture의 설정·실패 정리뿐이고 생산 라이브러리는 동일하다. 최종 문서를 다시 설치하여 docs 78개와 README·카탈로그·라이선스 보정 기록의 동일성을 대조했다.
+
+구조화 근거는 build/team-auto-verification.json, team-auto-release-qualification.json, team-auto-sanitizer-qualification.json, team-auto-serial-sanitizer.json, team-auto-final-delivery.json, team-auto-final-package-closure.json, team-auto-final-*-wire.json이다. 문법 red/green, 원본 모델 실패와 각 source/installed 실행 로그도 build/team-auto-*에 보존한다. 설치 패키지 통과와 자동 작업·명시적 메시지의 최종 추론 검증 실패를 별도 필드로 기록한다. 이번 검증은 격리된 SDK stage이며 전역 SDK나 Society/Dreamscapes 제품 재설치를 뜻하지 않는다. iPhone 제외 지시를 유지한다. 전체 대응표는 28 partial·3 pending·0 complete이며 전체 하네스 목표는 진행 중이다.
+
+
 ## 0.48 지속되는 로컬 팀과 공유 작업
 
 C++ Teams는 이름 있는 팀원의 독립 Engine 대화·스레드, 공유 Task 목록, 보존 메일함, 유휴 팀원의 후속 실행, 종료 요청·응답과 부모 clear의 소유권 이전을 제공한다. 기존 Qt·표준 C++ 스레드·TaskStore·InputQueue를 사용하며 생산 의존성은 추가하지 않았다. API·MCP·CLI 계약과 참조 하네스의 동작 차이는 [Teams.md](Teams.md)에 기록한다. C++ 소비자는 0.48 헤더와 라이브러리로 함께 재빌드해야 한다.

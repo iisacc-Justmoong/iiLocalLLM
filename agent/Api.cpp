@@ -191,6 +191,7 @@ public:
                 {"auto_compact_enabled", options.engine.compaction.automatic}, {"tool_search_enabled", options.engine.toolSearch.enabled},
                 {"task_tools_enabled", client->engine->taskToolsEnabled()}, {"plan_tools_enabled",bool(client->engine->planning())}, {"background_tasks_enabled", client->engine->backgroundTasksEnabled()},
                 {"input_queue_enabled", true}, {"skills_enabled", options.engine.skills.enabled}, {"subagents_enabled", options.subagentsEnabled}, {"teams_enabled",options.teamsEnabled},
+                {"team_auto_task_claim_enabled",options.teamsEnabled&&options.teams.autoClaimTasks&&options.engine.taskToolsEnabled},
                 {"hooks_enabled",!options.engine.hooks.isEmpty()},{"async_hook_controls_enabled",true},
                 {"max_async_hook_wake_runs",options.engine.maxAsyncHookWakeRuns},{"permission_requests_enabled",bool(client->permissionRequests)},
                 {"user_questions_enabled",bool(client->engine->userQuestionTool())},{"project_memory_enabled",client->engine->projectMemoryEnabled()},

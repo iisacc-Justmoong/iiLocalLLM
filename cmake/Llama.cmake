@@ -42,6 +42,8 @@ function(iilocal_add_llama)
             EXCLUDE_FROM_ALL)
         FetchContent_MakeAvailable(iilocal_llama)
     endif()
+    include("${CMAKE_CURRENT_LIST_DIR}/LlamaToolCalls.cmake")
+    iilocal_fix_llama_tool_call_limit()
     # The upstream common library includes its own compiled HTTP implementation.
     # Isolate its symbols from our independently pinned header-only HTTP server.
     target_compile_definitions(llama-common PRIVATE httplib=iillm_llama_httplib)

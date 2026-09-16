@@ -104,9 +104,11 @@ def main():
                     assert status == 200 and not value.get('error'), (status, value)
                     return value['result']
                 assert rpc('agent.info')['teams_enabled']
+                assert rpc('agent.info')['team_auto_task_claim_enabled']
                 owner = rpc('agent.sessions.create', {'model': 'model://absent-team-fixture'})['session_id']
                 created = rpc('agent.teams.create', {'session_id': owner, 'team_name': 'wire'})
                 assert not created['is_error'] and created['result']['team_name'] == 'wire'
+                assert rpc('agent.teams.status', {'session_id': owner})['result']['team']['auto_task_claim_enabled']
                 assert post(port, '/v1/rpc', 'agent.teams.status', {'session_id': owner}, other)[0] != 200
                 task = rpc('agent.tasks.create', {'session_id': owner, 'subject': 'Shared wire task', 'description': 'Transport proof'})
                 assert not task['is_error']
@@ -123,6 +125,11 @@ def main():
                 assert not rpc('agent.teams.delete', {'session_id': owner})['is_error']
                 assert rpc('agent.tasks.list', {'session_id': owner})['result']['tasks'] == []
                 report.update(http=True, ipc_cli=True, worker_failure_reported=True, authenticated_isolation=True)
+
+            with server('api-no-claim', [*command, '--agent-no-team-task-claim'], r'iiLocalLLM HTTP: http://127\.0\.0\.1:(\d+)') as port:
+                status, disabled, _ = post(port, '/v1/rpc', 'agent.info', {})
+                assert status == 200 and disabled['result']['teams_enabled'] and not disabled['result']['team_auto_task_claim_enabled'], disabled
+                report['daemon_task_claim_opt_out'] = True
 
             common = ['--workspace', str(work), '--models', str(root / 'models'), '--model', 'model://absent-team-fixture',
                 '--allow', '*', '--no-worktrees', '--no-apps', '--no-skills', '--no-agent-profiles']
@@ -141,6 +148,7 @@ def main():
                 team_tools = [t for t in listed['result']['tools'] if t['name'].startswith('iiLocalLLM.agent.teams.')]
                 assert len(team_tools) == 8 and all('session_id' not in t['inputSchema']['properties'] for t in team_tools)
                 assert call('iiLocalLLM.agent.teams.create', {'team_name': 'mcp'})['team_name'] == 'mcp'
+                assert call('iiLocalLLM.agent.teams.status', {})['team']['auto_task_claim_enabled']
                 call('iiLocalLLM.agent.teams.send', {'to': 'team-lead', 'summary': 'MCP transport', 'message': 'MCP_TEAM_MARKER'})
                 _, controlled, _ = post(port, '/mcp', 'iisacc/teams/inbox', {}, session=session)
                 assert any(v['message'] == 'MCP_TEAM_MARKER' for v in controlled['result']['structuredContent']['messages'])
@@ -154,7 +162,7 @@ def main():
                 from mcp.client.stdio import stdio_client
 
                 async def official():
-                    parameters = StdioServerParameters(command=mcp, args=[*common, '--state', str(root / 'mcp-stdio')], env=env, cwd=str(root))
+                    parameters = StdioServerParameters(command=mcp, args=[*common, '--state', str(root / 'mcp-stdio'), '--no-team-task-claim'], env=env, cwd=str(root))
                     with (root / 'stdio.log').open('w') as log:
                         async with stdio_client(parameters, errlog=log) as (read, write):
                             async with ClientSession(read, write) as client:
@@ -162,6 +170,9 @@ def main():
                                 assert 'iisacc/teams' in init.capabilities.experimental
                                 created = await client.call_tool('iiLocalLLM.agent.teams.create', {'team_name': 'stdio'})
                                 assert not created.isError and created.structuredContent['team_name'] == 'stdio'
+                                status = await client.call_tool('iiLocalLLM.agent.teams.status', {})
+                                assert not status.isError and not status.structuredContent['team']['auto_task_claim_enabled']
+                                report['mcp_task_claim_opt_out'] = True
                                 sent = await client.call_tool('iiLocalLLM.agent.teams.send', {'to': 'team-lead', 'summary': 'Official client', 'message': 'STDIO_TEAM_MARKER'})
                                 assert not sent.isError and sent.structuredContent['success']
                                 inbox = await client.call_tool('iiLocalLLM.agent.teams.inbox', {})

@@ -20,6 +20,26 @@ public:
 class InputQueueTests : public QObject {
     Q_OBJECT
 private slots:
+    void perRunInputLimitKeepsOtherAssignmentsForLaterRuns_data(){
+        QTest::addColumn<int>("limit");QTest::addColumn<int>("remaining");
+        QTest::newRow("default-batch")<<0<<0;QTest::newRow("one-assignment")<<1<<2;
+    }
+    void perRunInputLimitKeepsOtherAssignmentsForLaterRuns(){
+        QFETCH(int,limit);QFETCH(int,remaining);QTemporaryDir root;
+        auto model=std::make_shared<QueueModel>();auto registry=std::make_shared<a::ToolRegistry>();
+        a::Tool tool;tool.definition={"Observe","Complete the first turn",QJsonObject{{"type","object"}}};tool.execute=[](const auto&,const auto&){return a::ToolResult{"observed"};};registry->add(tool);
+        int calls=0;model->action=[&](const auto&,const auto&)->a::ModelReply{
+            if(calls++==0)return {{},{{"observation","Observe",{}}}};return {"done",{}};
+        };
+        a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");options.maxQueuedInputsPerRun=limit;
+        a::Engine engine(model,registry,std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass),options);
+        const auto session=engine.createSession("fixture",root.path()).id;
+        for(const auto& text:{"first","second","third"})engine.enqueueInput(session,{{"text",text},{"kind","notification"}});
+        QCOMPARE(engine.runQueued({session,{}}).result.get().status,a::RunStatus::Completed);
+        QCOMPARE(engine.queuedInputs(session)["count"].toInt(),remaining);QCOMPARE(calls,2);
+        int received=0;for(const auto& m:engine.session(session).messages)if(m.metadata.contains("iilocal.input"))++received;QCOMPARE(received,3-remaining);
+        if(remaining){QCOMPARE(engine.runQueued({session,{}}).result.get().status,a::RunStatus::Completed);QCOMPARE(engine.queuedInputs(session)["count"].toInt(),1);}
+    }
     void identifiedReplayAfterAcknowledgementDoesNotDuplicateTranscriptInput(){
         QTemporaryDir root;auto model=std::make_shared<QueueModel>();model->action=[](const auto&,const auto&){return a::ModelReply{"done"};};
         a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");

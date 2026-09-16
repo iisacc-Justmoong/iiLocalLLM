@@ -39,6 +39,7 @@ struct EngineOptions {
     std::shared_ptr<TaskStore> taskStore; // Optional host-owned store, e.g. team boards.
     std::function<QString(const QString&)> taskListId; // Trusted session -> board namespace.
     InputQueueOptions inputQueue;
+    int maxQueuedInputsPerRun = 0; // 0 uses normal batches; coordinators may reserve one assignment per run.
     SkillOptions skills;
     QList<Tool> additionalTools; // Host-owned orchestration tools; merged into each live registry snapshot.
     std::function<bool(const ToolDefinition&)> toolFilter; // Applied before and after deferred discovery.

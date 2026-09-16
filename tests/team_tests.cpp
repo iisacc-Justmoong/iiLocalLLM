@@ -6,6 +6,7 @@
 #include <QtTest/QTest>
 #include <thread>
 #include <atomic>
+#include <mutex>
 using namespace iiLocalLLM;
 namespace a=iiLocalLLM::agent;
 namespace {
@@ -41,7 +42,7 @@ struct Fixture {
         options.skills.enabled=false;options.projectContext.enabled=false;options.toolSearch.enabled=false;
         options.compaction.automatic=false;options.taskToolsEnabled=true;
         if(configureEngine)configureEngine(options);
-        a::TeamsOptions config;config.workingDirectory=work;
+        a::TeamsOptions config;config.workingDirectory=work;config.autoClaimTasks=false;
         if(configure)configure(config);
         teams=std::make_shared<a::Teams>(model,registry,policy,options,config);
         a::Teams::attach(options,teams);engine=std::make_unique<a::Engine>(model,registry,policy,options);
@@ -53,6 +54,168 @@ struct Fixture {
 class TeamTests:public QObject {
     Q_OBJECT
 private slots:
+    void automaticClaimsRespectHostOptOut_data(){
+        QTest::addColumn<bool>("autoClaim");QTest::addColumn<bool>("taskTools");
+        QTest::newRow("automatic-off")<<false<<true;QTest::newRow("tasks-off")<<true<<false;
+    }
+    void automaticClaimsRespectHostOptOut(){
+        QFETCH(bool,autoClaim);QFETCH(bool,taskTools);std::atomic_int calls=0;auto model=std::make_shared<FunctionModel>();
+        model->reply=[&](const auto&,const auto&)->a::ModelReply{++calls;return {"done",{}};};
+        Fixture f(model,[&](auto& options){options.autoClaimTasks=autoClaim;},[&](auto& options){options.taskToolsEnabled=taskTools;});
+        const auto leader=f.owner();f.teams->create(leader,{{"team_name","disabled"}});const auto board=f.teams->taskList(leader.sessionId);
+        const auto id=f.teams->taskStore()->execute(board,"TaskCreate",{{"subject","Do not claim"},{"description","Must remain unowned"}}).data["task"].toObject()["id"].toString();
+        f.teams->spawn(leader,{{"name","worker"},{"prompt","Be ready"}});QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());QTest::qWait(1100);
+        const auto task=f.teams->taskStore()->execute(board,"TaskGet",{{"taskId",id}}).data["task"].toObject();
+        QCOMPARE(task["status"],"pending");QCOMPARE(task["owner"],"");QCOMPARE(calls.load(),1);
+        QVERIFY(!f.teams->status(leader.sessionId)["team"].toObject()["auto_task_claim_enabled"].toBool());
+    }
+    void undeliverableClaimRetainsIntentAndDoesNotRunOrClaimAgain(){
+        std::atomic_int calls=0;auto model=std::make_shared<FunctionModel>();model->reply=[&](const auto&,const auto&)->a::ModelReply{++calls;return {"ready",{}};};
+        Fixture f(model,[](auto& options){options.autoClaimTasks=true;},[](auto& options){options.inputQueue.maxBytes=1024;options.inputQueue.maxTextCharacters=4096;});
+        const auto leader=f.owner();const auto created=f.teams->create(leader,{{"team_name","delivery-limit"}});
+        f.teams->spawn(leader,{{"name","worker"},{"prompt","Wait for a task"}});QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
+        for(const auto& v:f.teams->status(leader.sessionId)["team"].toObject()["members"].toArray())QVERIFY(!v.toObject()["task_claim_pending"].toBool());
+        const auto board=f.teams->taskList(leader.sessionId);const auto task=f.teams->taskStore()->execute(board,"TaskCreate",{{"subject","Larger than queue byte capacity"},{"description",QString(2000,'x')}}).data["task"].toObject()["id"].toString();
+        auto member=[&]{for(const auto& v:f.teams->status(leader.sessionId)["team"].toObject()["members"].toArray())if(v.toObject()["name"]=="worker")return v.toObject();return QJsonObject{};};
+        QTRY_VERIFY_WITH_TIMEOUT(member()["task_claim_pending"].toBool(),5000);
+        QVERIFY(!member().contains("task_claim"));QVERIFY2(!member()["task_claim_error"].toString().isEmpty(),QJsonDocument(member()).toJson().constData());
+        const auto current=f.teams->taskStore()->execute(board,"TaskGet",{{"taskId",task}}).data["task"].toObject();
+        QCOMPARE(current["status"],"in_progress");QCOMPARE(current["owner"],"worker");
+        const auto revision=f.teams->taskStore()->snapshot(board)["revision"].toDouble();QTest::qWait(1100);QCOMPARE(calls.load(),1);
+        QCOMPARE(f.teams->taskStore()->snapshot(board)["revision"].toDouble(),revision);
+        QFile record(created.data["team_file_path"].toString());QVERIFY(record.open(QIODevice::ReadOnly));const auto stored=QJsonDocument::fromJson(record.readAll()).object();record.close();
+        QJsonObject intent;for(const auto& v:stored["members"].toArray())if(v.toObject()["name"]=="worker")intent=v.toObject()["task_claim"].toObject();
+        QCOMPARE(intent["task_id"],task);const auto inputId=intent["message"].toObject()["id"].toString();QVERIFY(!inputId.isEmpty());
+        int copies=0;for(const auto& v:stored["messages"].toArray())if(v.toObject()["id"]==inputId){++copies;QVERIFY(!v.toObject()["queued"].toBool());}
+        QCOMPARE(copies,1);QVERIFY(f.teams->stop(leader.sessionId,"worker")["stopped"].toBool());QVERIFY(!f.teams->remove(leader).isError);
+    }
+    void oversizedAssignmentIsRejectedBeforeClaimAndCanBeCorrected(){
+        auto model=std::make_shared<FunctionModel>();model->reply=[](const auto&,const auto&)->a::ModelReply{return {"ready",{}};};
+        Fixture f(model,[](auto& options){options.autoClaimTasks=true;},[](auto& options){options.inputQueue.maxTextCharacters=4096;});
+        const auto leader=f.owner();f.teams->create(leader,{{"team_name","oversized"}});const auto board=f.teams->taskList(leader.sessionId);
+        const auto task=f.teams->taskStore()->execute(board,"TaskCreate",{{"subject","Oversized assignment"},{"description",QString(4096,'x')}}).data["task"].toObject()["id"].toString();
+        f.teams->spawn(leader,{{"name","worker"},{"prompt","Wait for work"}});QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
+        auto get=[&]{return f.teams->taskStore()->execute(board,"TaskGet",{{"taskId",task}}).data["task"].toObject();};
+        QCOMPARE(get()["status"],"pending");QCOMPARE(get()["owner"],"");
+        QVERIFY(QJsonDocument(f.teams->status(leader.sessionId)).toJson().contains("Task assignment exceeds input limit"));
+        f.teams->taskStore()->execute(board,"TaskUpdate",{{"taskId",task},{"description","Corrected assignment"}});
+        QTRY_COMPARE_WITH_TIMEOUT(get()["owner"],"worker",5000);QCOMPARE(get()["status"],"in_progress");
+        QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
+    }
+    void peerSummaryIsLimitedToTheCurrentRun(){
+        auto model=std::make_shared<FunctionModel>();model->reply=[](const a::ModelRequest& r,const auto&)->a::ModelReply{
+            if(r.messages.last().role!=a::MessageRole::Tool&&r.messages.last().text.contains("send-peer"))return {{},{{"peer-message","SendMessage",{{"to","peer"},{"summary","SHORT_PEER_SUMMARY"},{"message","Private peer message body"}}}}};
+            return {"final reply",{}};
+        };
+        Fixture f(model);const auto leader=f.owner();f.teams->create(leader,{{"team_name","peer-summary"}});
+        f.teams->spawn(leader,{{"name","peer"},{"prompt","Be ready"}});QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
+        f.teams->spawn(leader,{{"name","worker"},{"prompt","send-peer"}});QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
+        auto notice=[&]{QJsonObject found;for(const auto& v:f.teams->inbox(leader.sessionId)["messages"].toArray())if(v.toObject()["from"]=="worker")found=v.toObject()["message"].toObject();return found;};
+        QCOMPARE(notice()["summary"],"[to peer] SHORT_PEER_SUMMARY");
+        f.teams->send(leader,{{"to","worker"},{"summary","Finish"},{"message","Finish without another message"}});QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
+        QVERIFY(!notice().contains("summary"));
+    }
+    void automaticTasksAreClaimedAtStartupAndAfterIdle(){
+        auto model=std::make_shared<FunctionModel>();std::shared_ptr<a::TaskStore> tasks;QString board;std::atomic_int worked=0,userSubmissions=0;std::atomic_bool badInput=false;
+        model->reply=[&](const a::ModelRequest& r,const auto&)->a::ModelReply{
+            if(r.messages.last().role==a::MessageRole::Tool)return {"done",{}};
+            for(const auto& v:tasks->snapshot(board)["tasks"].toArray()){
+                const auto task=v.toObject();if(task["owner"]=="worker"&&task["status"]=="in_progress"){
+                    if(worked.load()>0&&!r.messages.last().text.contains(task["subject"].toString()))badInput=true;
+                    ++worked;return {{},{{"complete-"+task["id"].toString(),"TaskUpdate",{{"taskId",task["id"]},{"status","completed"}}}}};
+                }
+            }return {"no assigned task",{}};
+        };
+        Fixture f(model,[](auto& options){options.autoClaimTasks=true;},[&](auto& options){
+            options.hooks.append([&](const a::HookInput& input,const auto&)->a::HookResult{if(input.kind==a::HookKind::UserPromptSubmit)++userSubmissions;return {};});
+        });const auto leader=f.owner();f.teams->create(leader,{{"team_name","automatic"}});
+        tasks=f.teams->taskStore();board=f.teams->taskList(leader.sessionId);
+        auto make=[&](const QString& subject){return f.engine->runTaskTool(leader.sessionId,"TaskCreate",{{"subject",subject},{"description","Complete this task"}}).data["task"].toObject()["id"].toString();};
+        auto status=[&](const QString& id){return tasks->execute(board,"TaskGet",{{"taskId",id}}).data["task"].toObject()["status"].toString();};
+        const auto first=make("FIRST_AUTO_TASK");f.teams->spawn(leader,{{"name","worker"},{"prompt","Work on the assigned task"}});
+        QTRY_COMPARE_WITH_TIMEOUT(status(first),"completed",5000);QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
+        const auto second=make("SECOND_AUTO_TASK");QTRY_COMPARE_WITH_TIMEOUT(status(second),"completed",5000);
+        QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());QCOMPARE(worked.load(),2);QVERIFY(!badInput.load());
+        QCOMPARE(userSubmissions.load(),0);
+        QCOMPARE(tasks->execute(board,"TaskGet",{{"taskId",second}}).data["task"].toObject()["owner"],"worker");
+    }
+    void idleMembersClaimEachEligibleTaskOnceAndRespectDependencies(){
+        auto model=std::make_shared<FunctionModel>();std::shared_ptr<a::TaskStore> tasks;QString board;std::atomic_bool entered=false,release=false;std::mutex mutex;QStringList claimed;
+        model->reply=[&](const a::ModelRequest& r,const CancellationToken& token)->a::ModelReply{
+            if(r.messages.last().role==a::MessageRole::Tool)return {"done",{}};
+            const QString who=r.systemPrompt.contains("teammate first ")?"first":"second";
+            for(const auto& v:tasks->snapshot(board)["tasks"].toArray()){
+                const auto t=v.toObject();if(t["owner"]!=who||t["status"]!="in_progress")continue;
+                {std::lock_guard lock(mutex);claimed.append(t["id"].toString());}
+                if(t["subject"]=="ROOT_TASK"){entered=true;while(!release.load()){token.throwIfCancelled();std::this_thread::sleep_for(std::chrono::milliseconds(1));}}
+                return {{},{{"complete-"+t["id"].toString(),"TaskUpdate",{{"taskId",t["id"]},{"status","completed"}}}}};
+            }return {"ready",{}};
+        };
+        Fixture f(model,[](auto& options){options.autoClaimTasks=true;});const auto leader=f.owner();f.teams->create(leader,{{"team_name","dependencies"}});
+        tasks=f.teams->taskStore();board=f.teams->taskList(leader.sessionId);
+        auto make=[&](const QString& subject){return tasks->execute(board,"TaskCreate",{{"subject",subject},{"description","Finish the task"}}).data["task"].toObject()["id"].toString();};
+        const auto reserved=make("RESERVED_TASK");tasks->execute(board,"TaskUpdate",{{"taskId",reserved},{"owner","reserved"}});
+        const auto done=make("DONE_TASK");tasks->execute(board,"TaskUpdate",{{"taskId",done},{"status","completed"}});
+        const auto first=make("ROOT_TASK"),second=make("BLOCKED_TASK");tasks->execute(board,"TaskUpdate",{{"taskId",second},{"addBlockedBy",QJsonArray{first}}});
+        tasks->execute(board,"TaskUpdate",{{"taskId",first},{"owner","setup"}});
+        for(const auto& name:{"first","second"})f.teams->spawn(leader,{{"name",name},{"prompt","Wait for tasks"}});
+        QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
+        tasks->execute(board,"TaskUpdate",{{"taskId",first},{"owner",""}});
+        QTRY_VERIFY_WITH_TIMEOUT(entered.load(),5000);QTest::qWait(650);
+        {std::lock_guard lock(mutex);QCOMPARE(claimed,(QStringList{first}));}
+        QCOMPARE(tasks->execute(board,"TaskGet",{{"taskId",second}}).data["task"].toObject()["status"],"pending");
+        release=true;
+        auto complete=[&]{return tasks->execute(board,"TaskGet",{{"taskId",second}}).data["task"].toObject()["status"]=="completed";};
+        QTRY_VERIFY_WITH_TIMEOUT(complete(),5000);QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
+        {std::lock_guard lock(mutex);QCOMPARE(claimed,(QStringList{first,second}));}
+        QCOMPARE(tasks->execute(board,"TaskGet",{{"taskId",reserved}}).data["task"].toObject()["owner"],"reserved");
+    }
+    void idleNotificationsDoNotCopyTheFinalAnswer(){
+        auto model=std::make_shared<FunctionModel>();model->reply=[](const auto&,const auto&)->a::ModelReply{return {"PRIVATE_FINAL_ANSWER",{}};};
+        Fixture f(model);const auto leader=f.owner();f.teams->create(leader,{{"team_name","idle-metadata"}});
+        f.teams->spawn(leader,{{"name","worker"},{"prompt","Finish without sending a message"}});
+        QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
+        const auto inbox=f.teams->inbox(leader.sessionId);QVERIFY(!QJsonDocument(inbox).toJson().contains("PRIVATE_FINAL_ANSWER"));
+        const auto message=inbox["messages"].toArray().last().toObject();QCOMPARE(message["from"],"worker");
+        const auto body=message["message"].toObject();QCOMPARE(body["type"],"idle_notification");QCOMPARE(body["from"],"worker");
+        QCOMPARE(body["idleReason"],"available");QVERIFY(!body["timestamp"].toString().isEmpty());QVERIFY(!body.contains("result"));
+        QVERIFY(!QJsonDocument(f.engine->queuedInputs(leader.sessionId)).toJson().contains("PRIVATE_FINAL_ANSWER"));
+        QVERIFY(QJsonDocument(f.teams->status(leader.sessionId)).toJson().contains("PRIVATE_FINAL_ANSWER"));
+    }
+    void queuedTeamMessagesUseShutdownLeaderAndPeerPriority(){
+        auto model=std::make_shared<FunctionModel>();std::atomic_bool entered=false,released=false;std::mutex mutex;QStringList seen;
+        model->reply=[&](const a::ModelRequest& r,const CancellationToken& token)->a::ModelReply{
+            if(r.messages.last().role==a::MessageRole::Tool)return {"done",{}};
+            const auto value=r.messages.last().text;const auto envelope=QJsonDocument::fromJson(value.mid(value.indexOf('{')).toUtf8()).object();
+            const auto body=envelope["message"];
+            if(body=="peer ready")return {"done",{}};
+            if(body=="hold"){entered=true;while(!released.load()){token.throwIfCancelled();std::this_thread::sleep_for(std::chrono::milliseconds(1));}return {"done",{}};}
+            if(body.isObject()){
+                {std::lock_guard lock(mutex);seen.append("shutdown");}
+                return {{},{{"decline","SendMessage",{{"to","team-lead"},{"message",QJsonObject{{"type","shutdown_response"},{"request_id",body.toObject()["request_id"]},{"approve",false},{"reason","Finish pending messages"}}}}}}};
+            }
+            {std::lock_guard lock(mutex);seen.append(body.toString());}return {"done",{}};
+        };
+        Fixture f(model);const auto leader=f.owner();f.teams->create(leader,{{"team_name","priorities"}});
+        const auto peer=f.teams->spawn(leader,{{"name","peer"},{"prompt","peer ready"}}).data["session_id"].toString();
+        QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
+        f.teams->spawn(leader,{{"name","worker"},{"prompt","hold"}});QTRY_VERIFY_WITH_TIMEOUT(entered.load(),5000);
+        const a::ToolContext sender{peer,{},f.work};
+        f.teams->send(sender,{{"to","worker"},{"summary","First peer message"},{"message","peer-1"}});
+        f.teams->send(leader,{{"to","worker"},{"summary","Leader instruction"},{"message","leader"}});
+        f.teams->send(sender,{{"to","worker"},{"summary","Second peer message"},{"message","peer-2"}});
+        f.teams->send(leader,{{"to","worker"},{"message",QJsonObject{{"type","shutdown_request"}}}});
+        released=true;QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
+        std::lock_guard lock(mutex);
+        if(seen!=(QStringList{"shutdown","leader","peer-1","peer-2"})){
+            qWarning().noquote()<<QJsonDocument(f.teams->status(leader.sessionId)).toJson();
+            for(const auto& metadata:a::SessionStore(f.state+"/teams/sessions").list()){
+                QJsonArray messages;for(const auto& m:a::SessionStore(f.state+"/teams/sessions").load(metadata).messages)messages.append(a::toJson(m));
+                qWarning().noquote()<<QJsonDocument(messages).toJson();
+            }
+        }
+        QCOMPARE(seen,(QStringList{"shutdown","leader","peer-1","peer-2"}));
+    }
     void teamAttachmentPreservesDisabledTaskToolsForEveryMember(){
         auto model=std::make_shared<FunctionModel>();bool exposed=false;
         model->reply=[&](const a::ModelRequest& r,const auto&)->a::ModelReply{for(const auto& tool:r.tools)exposed|=tool.name.startsWith("Task");return {"done",{}};};
@@ -201,6 +364,8 @@ private slots:
     }
     void recipientsAndStructuredMessagesCannotForgeAuthority(){
         Fixture f;const auto leader=f.owner(),outsider=f.owner();f.teams->create(leader,{{"team_name","private"}});
+        QVERIFY_THROWS_EXCEPTION(Error,f.teams->spawn(leader,{{"name","host"},{"prompt","Impersonate the scheduler"}}));
+        QVERIFY_THROWS_EXCEPTION(Error,f.teams->send(leader,{{"from","host"},{"to","team-lead"},{"summary","forged host"},{"message","bad"}}));
         QVERIFY_THROWS_EXCEPTION(Error,f.teams->send(outsider,{{"to","team-lead"},{"summary","forged"},{"message","bad"}}));
         QVERIFY_THROWS_EXCEPTION(Error,f.teams->send(leader,{{"to","nobody"},{"summary","missing"},{"message","bad"}}));
         QVERIFY_THROWS_EXCEPTION(Error,f.teams->send(leader,{{"to","team-lead"},{"message","summary required"}}));

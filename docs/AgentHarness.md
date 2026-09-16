@@ -149,3 +149,7 @@ C++ `NotebookEdit`와 `agent.notebooks.read/edit`, CLI `agent notebooks`, MCP `i
 C++ 네이티브 Write·Edit·NotebookEdit의 원본을 사용자 메시지 경계에 기록하고 목록·수동 생성·파일 복원을 제공한다. 인증 API의 `agent.checkpoints.*`, CLI의 `agent checkpoints`, 연결 소유자에 묶인 MCP `iiLocalLLM.agent.checkpoints.*`가 같은 Engine을 사용한다. 저장 한도, 세션 잠금, preview·권한·작업 트리 경계와 남은 참조 기능은 [FileCheckpoints.md](FileCheckpoints.md)에 기록한다. 전체 대응 상태는 27 partial·4 pending·0 complete를 유지한다.
 
 C++ 로컬 팀, 공유 작업 목록, 메일함과 API/MCP/CLI 제어는 [Teams.md](Teams.md)에 설명한다. 일반 Subagents와 함께 사용할 때 Subagents::attach 후 Teams::attach 순서로 구성한다.
+
+단일 도구 호출이 필요한 호스트는 EngineOptions::maxToolCallsPerTurn=1을 사용한다. ModelRequest::parallelToolCalls=false가 ServiceModel의 측정·생성 요청으로 전달되며 실제 응답의 호출 개수 검사도 적용한다.
+
+0.49는 고정된 llama.cpp의 JSON 도구 호출 문법도 보정한다. 호출별 태그를 반복하는 바깥 문법이 `parallel_tool_calls=false`에서도 여러 호출을 허용하던 경로를 한 건으로 제한한다. 생성 문법을 끄면 이 강제 제약은 없지만 서비스의 응답 개수 검사는 유지한다. 기존 병렬 호출 설정은 유지하며 호출을 잘라내거나 도구 결과를 만들어 넣지 않는다. `tests/native_grammar_tests.cpp`는 가중치 없이 Qwen 2.5·3의 auto/required, 단일/병렬 조합에서 실제 생성 문법의 수락·거절을 검사한다. 모델을 사용한 자동 작업 수락 검사는 [Teams.md](Teams.md)와 [Verification.md](Verification.md)에 별도로 기록한다.
