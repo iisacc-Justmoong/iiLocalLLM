@@ -1,6 +1,6 @@
 # 로컬 팀 실행
 
-0.49는 이름 있는 팀원이 독립된 C++ Engine 대화에서 실행되고, 같은 팀의 Task 목록과 메시지를 공유하며 유휴 상태에서 후속 메시지를 처리하는 기능을 제공한다. 기존 일회성 Subagents와 함께 사용할 수 있다. 전체 Claude Code 팀 기능과의 호환성은 아직 partial이다.
+0.50은 이름 있는 팀원이 독립된 C++ Engine 대화에서 실행되고, 같은 팀의 Task 목록과 메시지를 공유하며 유휴 상태에서 후속 메시지를 처리하는 기능을 제공한다. 기존 일회성 Subagents와 함께 사용할 수 있다. 전체 Claude Code 팀 기능과의 호환성은 아직 partial이다.
 
 참조는 분석본 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `TeamCreateTool`, `TeamDeleteTool`, `SendMessageTool`, `AgentTool` 및 `utils/swarm/inProcessRunner.ts`이다. 현재 참조의 SendMessage 입력은 `to`, `message`, 선택 `summary`이며, 과거 예제의 `recipient`/`content` 형식을 수용했다고 주장하지 않는다.
 
@@ -45,7 +45,11 @@ TeamsOptions::autoClaimTasks는 기본 true이며 시작 시점과 유휴 상태
 
 팀원의 도구는 선택한 프로필, 부모 필터와 현재 권한 정책을 함께 만족해야 한다. 각 후속 실행 전에 부모의 세션 권한을 상속한다. 팀원의 도구·모델·프로필 본문은 시작 시의 스냅샷이다. 일반 Subagents와 달리 현재 팀원 실행은 프로필의 skills/initialPrompt 등 추가 시작 설정을 거부한다. 팀원이 다시 Agent/TeamCreate/TeamDelete를 호출하여 범위를 넓힐 수 없다. ReadOnly 프로필은 문자열 메시지를 보낼 수 있지만 구조화된 종료 메시지는 읽기 전용 작업으로 취급하지 않는다.
 
-문자열 message의 summary 필수 조건은 현재 도구 설명과 실행 시 검사에 있다. 입력 스키마의 required는 to와 message이며, 고정된 네이티브 XML 문법은 조건부 summary 필수를 강제하지 못한다. 0.49 실제 모델 검사에서 이 인자를 반복 누락하는 실패가 있었다. 빈 값을 대신 채우거나 오류를 성공으로 처리하지 않으며 최종 추론 검증은 미완료이다. 세부 결과는 [Verification.md](Verification.md)에 기록한다.
+문자열 message는 비어 있지 않은 summary를 요구하며, 구조화된 제어 메시지는 summary 없이도 허용한다. 0.50은 이 조건을 완전한 객체 두 개의 anyOf로 입력 스키마에 표현한다. 최상위 properties는 도구 탐색을 위해 유지한다. C++·API·MCP가 같은 스키마를 사용하고 실행 전 전체 JSON Schema 검증을 수행한다. 공백만 있는 요약은 실행 시 추가로 거부한다.
+
+고정 llama.cpp의 Qwen3.5 전용 XML 파서는 이 객체 대안을 각각 컴파일한다. 문자열·객체를 함께 허용하는 message 값은 XML 안에서도 JSON으로 인코딩해 실제 객체와 JSON 문자를 담은 문자열을 구분한다. 명시적 문자열 필드인 to·summary는 기존 raw XML 형식을 유지한다. 속성이 여섯 개 이하인 도구는 필수·선택 인자의 모든 순서와 중복 방지를 지원하며, 더 큰 도구는 기존 필수 인자 우선 순서를 유지한다. 임의 JSON Schema 조합과 raw 문자열의 길이 등 모든 제약을 생성 문법에서 보장하는 것은 아니므로 전체 입력 검증이 최종 기준이다. 0.49의 실제 모델 실패와 0.50의 검증 결과는 [Verification.md](Verification.md)에 구분하여 기록한다.
+
+이 형식은 렌더링한 도구 설명에도 안내하고, 이전 도구 호출의 혼합 타입 문자열도 동일한 JSON 인코딩으로 렌더링한다. 입력 스키마·저장된 대화·API 인자는 수정하지 않는다. 예를 들어 message가 문자열 hello라면 모델용 XML 값은 "hello"이며, 파싱 후 전달되는 값은 원래 문자열 hello이다. JSON 객체를 담은 문자열과 실제 제어 객체도 구별한다.
 
 도구 결과에 의존하는 후속 호출을 한 응답에 미리 만들지 않도록 호스트가 EngineOptions::maxToolCallsPerTurn=1을 설정할 수 있다. 0.49는 이 한도를 ModelRequest::parallelToolCalls=false로 전달하고, ServiceModel의 문맥 측정과 생성 모두 네이티브 parallel_tool_calls 설정에 연결한다. 실제 반환 개수도 기존 한도로 검사한다. 기본 여러 도구 호출 설정은 유지한다.
 
@@ -89,4 +93,4 @@ CLI는 `iillm --auth-file TOKEN_FILE agent teams ACTION SESSION [PARAMS_JSON_FIL
 
 참조의 inProcessRunner는 종료 요청, 리더 메시지, 동료 메시지 순으로 처리 우선순위를 정한다. 0.49는 이 순서를 InputQueue의 now/next/later 우선순위로 반영한다. 같은 등급은 FIFO이며 EngineOptions::maxQueuedInputsPerRun=1로 실행 전체에서 메시지 한 건만 소비한다. now도 이미 진행 중인 모델 호출을 끊지는 않는다. 일반 Engine의 기본값 0은 기존 턴당 최대 16건 동작을 유지한다. 유효한 상한은 0~256이다. 직접 UI 입력의 별도 우선 경로는 아직 없다.
 
-`tests/team_tests.cpp`는 실행·대화 유지·공유 Task·권한·종료·이전·복구·보존을 검증한다. `agent_api_tests.cpp`와 `mcp_server_tests.cpp`는 인증과 연결 범위를 검증한다. `team_wire.py`는 실제 HTTP/IPC/MCP 실행 파일을 검사하며 없는 모델의 실패 보고까지 확인한다. 실제 모델의 성공은 별도 `team_runtime_smoke.cpp`의 Read·TaskCreate·SendMessage 결과와 변경된 파일에 대한 후속 실행으로 검증한다. team_task_runtime_smoke.cpp는 실제 모델의 TaskGet 선점 확인·Read·SendMessage·TaskUpdate를 초기 실행과 메시지 없는 유휴 실행에서 각각 확인한다. 최종 빌드·테스트·설치·추론 수치는 Verification.md에 별도로 기록한다.
+`tests/team_tests.cpp`는 조건부 입력 스키마, 실행·대화 유지·공유 Task·권한·종료·이전·복구·보존을 검증한다. `agent_api_tests.cpp`와 `mcp_server_tests.cpp`는 인증과 연결 범위를 검증한다. `team_wire.py`는 실제 HTTP/IPC/MCP 실행 파일, 잘못된 요약의 전송 거부와 없는 모델의 실패 보고를 확인한다. 공식 MCP stdio 클라이언트 경로에서는 기존 검증 환경의 jsonschema로 공개 입력 스키마도 검사한다. 실제 모델의 성공은 별도 `team_runtime_smoke.cpp`의 Read·TaskCreate·SendMessage 결과와 변경된 파일에 대한 후속 실행으로 검증한다. team_task_runtime_smoke.cpp는 실제 모델의 TaskGet 선점 확인·Read·SendMessage·TaskUpdate를 초기 실행과 메시지 없는 유휴 실행에서 각각 확인한다. 최종 빌드·테스트·설치·추론 수치는 Verification.md에 별도로 기록한다.

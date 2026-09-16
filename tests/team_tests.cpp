@@ -54,6 +54,23 @@ struct Fixture {
 class TeamTests:public QObject {
     Q_OBJECT
 private slots:
+    void messageSchemaPreservesConditionalSummary_data(){
+        QTest::addColumn<QJsonObject>("args");QTest::addColumn<bool>("valid");
+        QTest::newRow("plaintext-missing-summary")<<QJsonObject{{"to","team-lead"},{"message","observed"}}<<false;
+        QTest::newRow("plaintext-empty-summary")<<QJsonObject{{"to","team-lead"},{"message","observed"},{"summary",""}}<<false;
+        QTest::newRow("plaintext-complete")<<QJsonObject{{"to","team-lead"},{"message","observed"},{"summary","File observed"}}<<true;
+        QTest::newRow("shutdown-without-summary")<<QJsonObject{{"to","worker"},{"message",QJsonObject{{"type","shutdown_request"}}}}<<true;
+        QTest::newRow("shutdown-empty-summary")<<QJsonObject{{"to","worker"},{"message",QJsonObject{{"type","shutdown_request"}}},{"summary",""}}<<true;
+        QTest::newRow("shutdown-with-summary")<<QJsonObject{{"to","worker"},{"message",QJsonObject{{"type","shutdown_request"}}},{"summary","Stop the worker"}}<<true;
+        QTest::newRow("wrong-summary-type")<<QJsonObject{{"to","team-lead"},{"message","observed"},{"summary",17}}<<false;
+        QTest::newRow("unknown-control-type")<<QJsonObject{{"to","worker"},{"message",QJsonObject{{"type","unknown"}}}}<<false;
+    }
+    void messageSchemaPreservesConditionalSummary(){
+        QFETCH(QJsonObject,args);QFETCH(bool,valid);Fixture f;a::ToolRegistry schema;
+        for(const auto& tool:f.options.additionalTools)if(tool.definition.name=="SendMessage")schema.add(tool);
+        if(valid)schema.validateInput("SendMessage",args);
+        else QVERIFY_THROWS_EXCEPTION(Error,schema.validateInput("SendMessage",args));
+    }
     void automaticClaimsRespectHostOptOut_data(){
         QTest::addColumn<bool>("autoClaim");QTest::addColumn<bool>("taskTools");
         QTest::newRow("automatic-off")<<false<<true;QTest::newRow("tasks-off")<<true<<false;

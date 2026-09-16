@@ -604,7 +604,8 @@ QList<Tool> Teams::tools(std::weak_ptr<Teams> owner,bool leader){
         QJsonObject properties;QJsonArray required;
         if(name=="TeamCreate"){properties={{"team_name",shortText},{"description",string},{"agent_type",shortText}};required={"team_name"};tool.definition.description="Create a team owned by this session, with a new shared task list. One team per leader.";}
         else if(name=="SendMessage"){
-            properties={{"to",shortText},{"summary",QJsonObject{{"type","string"},{"maxLength",512}}},{"message",QJsonObject{{"anyOf",QJsonArray{string,QJsonObject{{"type","object"},{"additionalProperties",false},{"required",QJsonArray{"type"}},{"properties",QJsonObject{{"type",QJsonObject{{"type","string"},{"enum",QJsonArray{"shutdown_request","shutdown_response"}}}},{"reason",string},{"request_id",shortText},{"approve",QJsonObject{{"type","boolean"}}}}}}}}}}};required={"to","message"};
+            auto messageText=string;messageText["description"]="The exact message body delivered to the recipient. The summary is a separate argument.";
+            properties={{"to",shortText},{"summary",QJsonObject{{"type","string"},{"maxLength",512},{"description","A brief summary of the message body. Required for plaintext messages."}}},{"message",QJsonObject{{"anyOf",QJsonArray{messageText,QJsonObject{{"type","object"},{"additionalProperties",false},{"required",QJsonArray{"type"}},{"properties",QJsonObject{{"type",QJsonObject{{"type","string"},{"enum",QJsonArray{"shutdown_request","shutdown_response"}}}},{"reason",string},{"request_id",shortText},{"approve",QJsonObject{{"type","boolean"}}}}}}}}}}};required={"to","message"};
             tool.definition.description="Send a message to a teammate by name, or plaintext to * for broadcast. Plaintext requires summary. Structured shutdown_request is leader-only; shutdown_response must match your request_id and target team-lead. Sender identity is host-owned.";
         }else if(name=="TeamInbox"){properties={{"offset",QJsonObject{{"type","integer"},{"minimum",0}}},{"limit",QJsonObject{{"type","integer"},{"minimum",1},{"maximum",100}}}};tool.definition.description="Read this member's bounded team mailbox.";}
         else if(name=="TeamWait"){properties={{"timeout_ms",QJsonObject{{"type","integer"},{"minimum",0},{"maximum",300000}}}};tool.definition.description="Wait for owned teammates to become idle, with cancellation and a bounded timeout.";}
@@ -612,6 +613,18 @@ QList<Tool> Teams::tools(std::weak_ptr<Teams> owner,bool leader){
         else if(name=="TeamDelete")tool.definition.description="Leader: delete an idle team and its task contents. Active teammates must finish or be stopped first. Conversation history is retained.";
         else tool.definition.description="Inspect this session's team and member execution states.";
         tool.definition.inputSchema={{"type","object"},{"additionalProperties",false},{"properties",properties},{"required",required}};
+        if(name=="SendMessage"){
+            // Complete object alternatives also let native tool grammars enforce
+            // the conditional requirement without changing structured messages.
+            auto plain=tool.definition.inputSchema,structured=plain;
+            auto plainProperties=properties,structuredProperties=properties;
+            const auto messages=properties["message"].toObject()["anyOf"].toArray();
+            plainProperties["message"]=messages[0];structuredProperties["message"]=messages[1];
+            auto summary=plainProperties["summary"].toObject();summary["minLength"]=1;plainProperties["summary"]=summary;
+            plain["properties"]=plainProperties;plain["required"]=QJsonArray{"to","message","summary"};
+            structured["properties"]=structuredProperties;
+            tool.definition.inputSchema["anyOf"]=QJsonArray{plain,structured};
+        }
         tool.execute=[owner,name](const QJsonObject& args,const ToolContext& context){const auto self=owner.lock();require(bool(self),"Team owner is unavailable",ErrorCode::RuntimeUnavailable);
             if(name=="TeamCreate")return self->create(context,args);if(name=="TeamDelete")return self->remove(context);if(name=="SendMessage")return self->send(context,args);
             if(name=="TeamInbox")return result(self->inbox(context.sessionId,args["offset"].toInt(),args["limit"].toInt(100)));

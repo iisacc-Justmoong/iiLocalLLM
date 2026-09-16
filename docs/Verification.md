@@ -1,5 +1,48 @@
 # 구현 검증 기록
 
+## 0.50 조건부 도구 인자와 네이티브 XML 타입 보존
+
+SendMessage의 일반 문자열에는 비어 있지 않은 summary가 필요하고, 구조화된 제어 메시지는 summary 없이 허용하는 계약을 C++·API·MCP 공통 JSON Schema에 표현했다. 고정 llama.cpp의 Qwen3.5 전용 파서에서 완전한 객체 anyOf, 혼합 타입의 JSON 값과 소규모 인자 순서를 처리한다. 모델용 도구 설명·이전 호출도 같은 인코딩으로 렌더링하며 저장된 인자·스키마는 보존한다. 기존 C++·Qt·jsoncons·llama.cpp를 재사용하고 생산 의존성은 추가하지 않았다. 계약과 제한은 [Teams.md](Teams.md), 보정 출처는 third_party/llama-common/PATCHES.md에 있다.
+
+| 검증 | 결과 |
+|---|---|
+| 최종 Release, CTest inference 라벨 제외 | 97/97, failure/skip 0 |
+| ASan·UBSan | 92/93; 같은 바이너리의 실패 항목 단독 재검사 1/1, skip 0 |
+| 새 설치 consumer | 59/59, failure/skip 0 |
+| 네이티브 문법 | 13가지 데이터/검사 조합, Qt init/cleanup 포함 15/15 |
+| CMake 보정 구성 | 원본·이미 보정됨·지원하지 않는 소스의 3가지 판정 통과, 입력 파일 불변 |
+| source·installed 전송 | HTTP·native IPC CLI·MCP HTTP·공식 Python MCP stdio |
+| 공개 헤더 | 57개, 소스와 바이트 일치 |
+| 실제 자동 작업 | source·installed 각각 시작·유휴 통과 |
+| 실제 명시적 메시지 | source 최초·후속 통과; installed 최초 실패·후속 미실행 |
+
+Release는 한 번의 전체 실행에서 모두 통과했다. sanitizer 전체에서는 iiLocalLLM.worktrees가 30.87초에 ILLEGAL로 종료됐다. nonGitAdaptersAreOwnerBoundAndRemovalMustActuallySucceed의 fixture 준비 중 git add main.cpp가 Process crashed, exit=9를 보고했고, 처리하지 않은 std::runtime_error가 테스트를 종료시켰다. ASan·UBSan 메모리 오류 진단은 없었다. 동일 바이너리의 해당 전체 항목만 다시 실행해 58.565초에 통과했다. 자식 Git 프로세스 종료 원인은 확정하지 않으며, 전체 93개가 한 번에 통과했다고 합산하지 않는다. sanitizer는 llama OFF, leak detection OFF, ASan abort/UBSan halt ON이며 네이티브 파서·모델 추론은 별도 Release로 검사한다. 이전 0.49의 전체 실행 실패 기록을 이 결과로 덮어쓰지 않는다. 공식 MCP 1.26.0 stdio 경로에서는 기존 환경의 jsonschema 4.26.0(MIT) 검증기로 공개 스키마의 유효성, 누락·빈 요약 거부, 구조화된 메시지 허용을 대조했다. HTTP·MCP에서도 잘못된 일반 메시지의 거부를 확인했다.
+
+회귀 검사에서는 누락·빈 요약의 스키마 수락, 전용 XML 파서의 누락 인자 수락, 혼합 문자열을 raw로 렌더링하던 과거 호출 이력을 순서대로 재현했다. Qwen3.5는 일반 XML 자동 생성기 대신 common_chat_params_init_qwen3_coder를 선택한다. 최종 보정은 이 전용 경로를 대상으로 하며 일반 XML 생성기 변경은 포함하지 않는다. 문법은 문자열·실제 객체·JSON 문자를 담은 문자열을 구별하고 필수/선택 인자 순서, 중복, 부분 대안과 큰 서명을 검사한다. 전체 JSON Schema 조합과 raw 문자열의 모든 제약을 문법이 보장하는 것은 아니며 실행 전 jsoncons 검증과 팀 권한 검사가 유지된다.
+
+초기 네이티브 보정만 적용한 검사는 명시적 최초 단계와 자동 유휴 단계에서 실패했다. 요약은 존재했으나 일반 메시지 대신 종료 요청 객체를 생성했다. 모델용 템플릿의 raw 문자열 안내와 새 JSON 인코딩의 불일치를 확인하고, 렌더링한 도구 설명과 대화 이력을 함께 수정했다. 기존 native fixture의 지시·성공 조건·턴/토큰 한도를 바꾸거나 표식을 주입하지 않았다. 이 수정 뒤 예비 source와 최종 0.50 source의 각 4단계가 통과했다. 설치본에서는 자동 시작·유휴는 통과했지만 명시적 최초 단계가 실패했다. 초기 실패는 team-schema-source-native-preliminary.json과 해당 로그에 그대로 보존했다.
+
+최종 모델은 0.49에 기록한 Qwen3.5 2B Q4_K_M이며 실제 파일의 크기 1,280,835,840 bytes·GGUF v3·SHA-256 `aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223`를 다시 확인했다. 가중치는 검증 카탈로그에만 두고 SDK에 포함하지 않는다. macOS arm64·Apple M1 Max Metal, context/cache 8,192토큰 한 개, temperature 0·topP 0.9·topK 40·minP 0·seed 0, thinking OFF·tool grammar ON, 자동 compaction OFF이다. 명시적 작업은 maxTokens 1,024·maxTurns 8, 자동 작업은 2,048·10이며 실행당 180초와 응답당 도구 한 개를 유지한다. 모델 로딩은 실행 제한에 포함하지 않는다.
+
+매 단계 파일에만 존재하는 새 임의 표식을 읽는다. 명시적 작업은 Read→TaskCreate→SendMessage와 공유 보드·정확한 리더 수신을 확인한다. 자동 작업은 TaskGet의 실제 선점 상태→Read→SendMessage→TaskUpdate를 확인하고 두 번째 작업에는 추가 spawn이나 메시지를 보내지 않는다. 두 경로 모두 완료 상태·도구 결과 짝·중단·삭제·대기 입력 정리를 확인한다.
+
+| 실행 | 경로 | 단계 | 모델 턴 | 기록된 생성 토큰 | 판정 |
+|---|---|---|---|---|---|
+| source | explicit | initial | 4 | 319 | 통과 |
+| source | explicit | followup | 4 | 367 | 통과 |
+| source | automatic | startup | 6 | 244 | 통과 |
+| source | automatic | idle | 5 | 215 | 통과 |
+| installed | explicit | initial | 5 | 436 | 실패 |
+| installed | automatic | startup | 6 | 242 | 통과 |
+| installed | automatic | idle | 5 | 216 | 통과 |
+| installed | explicit | followup | — | — | 최초 단계 실패로 미실행 |
+
+설치본의 명시적 최초 단계는 Read와 TaskCreate를 완료했지만, 일반 문자열 대신 shutdown_request 객체를 전송했다. 첫 객체에 표식을 request_id로 넣어 거부됐고, 다음 객체도 리더 전용 권한 검사에서 거부됐다. 이어 Structured response reached the output limit before a complete turn 오류로 5번째 턴에서 실패했다. 436토큰은 RunResult에 누적된 사용량이며 오류로 끝난 마지막 생성까지 포함하는 전체 시도 사용량으로 해석하지 않는다. 후속 단계는 실행하지 않았고 중단·삭제 정리는 성공했다. 소스와 설치본의 동일 라이브러리를 확인했으므로 오래된 라이브러리로 설명할 수 없다. 명시적 메시지의 최종 모델 검증과 전체 모델 품질 검증은 미완료로 유지하며, 자동 작업 통과로 대체하지 않는다.
+
+최종 source/stage 라이브러리 SHA-256은 `1a0c40fcd7a5c0e872808c9363dc30227fe6ef04901cbb6debdb7bf0ddf5c0e6`이다. 격리된 설치 경로는 build/team-schema-final-stage, 소비자는 build/team-schema-final-consumer/build이다. 설치 소비자의 dyld 기록으로 이 stage의 라이브러리 로딩을 확인했다. 네 진입점은 0.50.0이며 thin iillm은 iiLocalLLM·llama·ggml을 직접 링크하지 않는다. 빌드 입력 331개의 해시를 고정하고 최종 검증까지 변경이 없음을 대조했다. 최종 문서와 설치 파일의 일치는 별도 team-schema-final-package-closure.json에 기록한다.
+
+구조화 근거는 build/team-schema-verification.json, team-schema-serial-release.json, team-schema-serial-sanitizer.json, team-schema-sanitizer-worktrees-recheck.json, team-schema-source-final-native.json, team-schema-final-delivery.json, team-schema-final-*-wire.json, team-schema-cmake-probe.json이다. SDK stage 검증이며 전역 SDK나 Society/Dreamscapes 제품 재설치를 뜻하지 않는다. iPhone 제외 지시는 유지한다. 전체 대응표는 28 partial·3 pending·0 complete로, 전체 하네스 목표와 앱·플랫폼 전체 검증은 진행 중이다.
+
 ## 0.49 자동 팀 작업 배정과 단일 도구 호출
 
 시작·유휴 팀원이 pending·미배정·선행 작업 완료 항목을 원자적으로 선점하고, 전달 실패 시 고정 입력 ID와 배정 의도를 보존한다. 종료 요청·리더·동료 메시지 우선순위, 실행당 입력 한 건, 결과 본문 없는 유휴 알림을 추가했다. 기존 C++ Engine·TaskStore·InputQueue·Qt를 재사용하며 생산 의존성은 추가하지 않는다. 공개 구조체가 변경되어 C++ 소비자는 0.49 헤더와 라이브러리로 함께 재빌드해야 한다. 계약은 [Teams.md](Teams.md)에 있다.

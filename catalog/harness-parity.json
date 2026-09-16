@@ -32,9 +32,14 @@
         "tests/reasoning_runtime_smoke.cpp",
         "tests/service_tests.cpp",
         "tests/task_runtime_smoke.cpp",
-        "docs/NativeThinking.md"
+        "docs/NativeThinking.md",
+        "cmake/LlamaToolCalls.cmake",
+        "cmake/LlamaQwenTools.cpp.in",
+        "tests/native_grammar_tests.cpp",
+        "tests/team_task_runtime_smoke.cpp",
+        "third_party/llama-common/PATCHES.md"
       ],
-      "remaining": "Native llama.cpp Jinja, explicit thinking-template control for text and tool prompts, grammar, PEG parsing and Service-owned cache are implemented. Reasoning-only output is not promoted to an agent action. Native tool observations preserve text, structured data and error state; measured and generated inputs match. MLX tools, external local providers, incremental reasoning/tool streaming and broader model qualification remain."
+      "remaining": "Native llama.cpp Jinja, explicit thinking-template control for text and tool prompts, grammar, PEG parsing and Service-owned cache are implemented. Reasoning-only output is not promoted to an agent action. Native tool observations preserve text, structured data and error state; measured and generated inputs match. MLX tools, external local providers, incremental reasoning/tool streaming and broader model qualification remain. Version 0.50 corrects the pinned Qwen3.5 specialized XML parser, complete object alternatives, mixed argument types, bounded argument permutations and matching prompt/history encoding. This is not full JSON Schema grammar support or full model qualification; see Teams.md and Verification.md."
     },
     {
       "id": "tools",
@@ -45,9 +50,12 @@
         "tests/agent_tests.cpp",
         "agent/Engine.cpp",
         "tests/service_tests.cpp",
-        "docs/AgentHarness.md"
+        "docs/AgentHarness.md",
+        "agent/Teams.cpp",
+        "tests/team_tests.cpp",
+        "tests/team_wire.py"
       ],
-      "remaining": "Schema validation, frozen per-turn registry, permissions, concurrency, large text artifacts and native text/data/error observations are implemented. Structured data participates in native context measurement. Aliases, structured-result paging and remaining tool protocols remain."
+      "remaining": "Schema validation, frozen per-turn registry, permissions, concurrency, large text artifacts and native text/data/error observations are implemented. Structured data participates in native context measurement. Aliases, structured-result paging and remaining tool protocols remain. Version 0.50 publishes complete conditional SendMessage schemas through the common C++/API/MCP tools and preserves typed native XML arguments. Grammar constraints do not replace full schema validation."
     },
     {
       "id": "permissions",
@@ -378,9 +386,11 @@
         "tests/team_wire.py",
         "tests/agent_api_tests.cpp",
         "tests/mcp_server_tests.cpp",
-        "docs/Teams.md"
+        "docs/Teams.md",
+        "tests/team_task_runtime_smoke.cpp",
+        "tests/native_grammar_tests.cpp"
       ],
-      "remaining": "Version 0.48 implements in-process named teammates, independent conversations, shared Task namespaces, bounded persistent messaging, idle teammate follow-up, authenticated shutdown, session clear transfer, lifecycle cleanup and API/IPC/MCP/CLI controls. Idle leader auto-wake, reference mailbox priorities and idle task claiming, reference idle-notification contents, stopped/restarted teammate resume, full profile setup, team plan approval, separate-process/tmux, remote routing, worktree isolation, and actual Society/Dreamscapes and mobile consumers remain. See Teams.md and Verification.md."
+      "remaining": "Version 0.50 retains in-process named teammates, independent conversations, shared Task namespaces, persistent messaging, authenticated shutdown, session clear transfer and API/IPC/MCP/CLI controls. Version 0.49 adds shutdown/leader/peer priority, one queued input per run, reference-style idle metadata and atomic startup/idle task claiming with durable assignment identity. Version 0.50 adds the conditional SendMessage input schema and native typed XML encoding; native model qualification is recorded separately in Verification.md. Idle leader auto-wake, stopped/restarted teammate resume, full profile setup, team plan approval, separate-process/tmux, remote routing, worktree isolation, and actual Society/Dreamscapes and mobile consumers remain. See Teams.md and Verification.md."
     },
     {
       "id": "mcp_client",

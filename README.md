@@ -2,7 +2,7 @@
 
 C++ 에이전트 하네스를 확장 중이다. 현재 실행 계층은 [AgentHarness.md](docs/AgentHarness.md), 전체 요구사항과 남은 구현은 [HarnessParity.md](docs/HarnessParity.md)에 기록한다. MCP/API 및 앱 전체 호환 완료와 기존 대화 기능 완료는 별도 상태로 관리한다.
 
-0.49.0은 [로컬 팀](docs/Teams.md)의 시작·유휴 상태에서 공유 작업을 자동 선점하고, 종료 요청·리더·동료 메시지를 우선순위에 따라 한 건씩 처리한다. 유휴 알림과 명시적 결과 전송도 구분한다.
+0.50.0은 [로컬 팀](docs/Teams.md)의 조건부 메시지 입력 스키마와 Qwen3.5 네이티브 XML 도구 문법을 보정한다. 필수 요약, 문자열·객체 구분, 인자 순서와 대화 이력의 인코딩을 같은 계약에 맞춘다. 시작·유휴 상태의 공유 작업 자동 선점과 우선순위별 메시지 처리도 제공한다.
 
 0.47.0은 [보관 파일과 체크포인트를 포함한 세션 분기](docs/SessionFork.md)를 추가한다. 대화의 경로를 새 소유자에 연결하고 부모 백업과 독립된 사본을 만든다. C++·API·CLI·MCP 및 자식 에이전트의 문맥 분기에 적용한다.
 
@@ -34,7 +34,7 @@ C++ 에이전트 하네스를 확장 중이다. 현재 실행 계층은 [AgentHa
 
 0.24.0은 C++·API·MCP의 대화 초기화와 즉시 SessionStart(clear)를 제공한다. 백그라운드 셸·자식 에이전트·완료 알림은 새 대화로 이어진다. 계약과 오류 복구 한계는 [SessionClear.md](docs/SessionClear.md)에 기록한다.
 
-C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.49.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
+C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.50.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
 
 C++ stdio MCP 클라이언트가 외부 도구·리소스·프롬프트를 인식하고 에이전트 엔진에 연결한다. `iillm-mcp` 서버와 C++ 내장 API로 앱 도구 및 로컬 에이전트 실행을 외부 MCP 클라이언트에 제공한다. 프로토콜·정책·자료 보존 및 현재 지원 경계는 [MCP.md](docs/MCP.md) · [MCP 서버·앱 도구 제공](docs/MCPServer.md)에 설명한다.
 
@@ -111,7 +111,7 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-기존 llama.cpp 소스는 `IILOCALLLM_LLAMA_SOURCE_DIR`로 지정한다. 검증 커밋은 `5202104b59ada9005db079eea43882a2b7bf5802`이다. 다른 커밋의 C API 호환성은 별도 확인이 필요하다. 0.49는 JSON 도구 호출 문법의 단일 호출 제한을 [빌드 시 보정](docs/AgentHarness.md)한다. 원본 체크아웃은 수정하지 않으며, 보정 위치가 달라진 외부 소스는 구성 오류로 알린다.
+기존 llama.cpp 소스는 `IILOCALLLM_LLAMA_SOURCE_DIR`로 지정한다. 검증 커밋은 `5202104b59ada9005db079eea43882a2b7bf5802`이다. 다른 커밋의 C API 호환성은 별도 확인이 필요하다. JSON 도구 호출의 단일 호출 제한과 Qwen3.5 XML 도구 인자를 [빌드 시 보정](docs/AgentHarness.md)한다. 원본 체크아웃은 수정하지 않으며, 보정 위치가 달라진 외부 소스는 구성 오류로 알린다.
 
 새 빌드 구성은 설치된 CUDA Toolkit 및 Vulkan SDK(glslc, SPIRV-Headers 포함)를 탐지하여 해당 llama.cpp 모듈의 기본 빌드 여부를 정한다. Metal은 Apple 플랫폼의 기본 빌드를 따른다. GGML_CUDA/GGML_VULKAN 등의 CMake 값은 배포 패키지의 포함 모듈을 정하며 앱의 실행 장치 선택 API가 아니다. 기존 CMake 캐시 값은 보존한다.
 

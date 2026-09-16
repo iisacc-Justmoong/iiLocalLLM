@@ -109,6 +109,11 @@ def main():
                 created = rpc('agent.teams.create', {'session_id': owner, 'team_name': 'wire'})
                 assert not created['is_error'] and created['result']['team_name'] == 'wire'
                 assert rpc('agent.teams.status', {'session_id': owner})['result']['team']['auto_task_claim_enabled']
+                for extra in ({}, {'summary': ''}):
+                    invalid = rpc('agent.teams.send', {'session_id': owner, 'to': 'team-lead', 'message': 'INVALID_SUMMARY_MARKER', **extra})
+                    assert invalid['is_error'], invalid
+                assert all(v['message'] != 'INVALID_SUMMARY_MARKER' for v in rpc('agent.teams.inbox', {'session_id': owner})['result']['messages'])
+                report['http_conditional_summary'] = True
                 assert post(port, '/v1/rpc', 'agent.teams.status', {'session_id': owner}, other)[0] != 200
                 task = rpc('agent.tasks.create', {'session_id': owner, 'subject': 'Shared wire task', 'description': 'Transport proof'})
                 assert not task['is_error']
@@ -149,6 +154,7 @@ def main():
                 assert len(team_tools) == 8 and all('session_id' not in t['inputSchema']['properties'] for t in team_tools)
                 assert call('iiLocalLLM.agent.teams.create', {'team_name': 'mcp'})['team_name'] == 'mcp'
                 assert call('iiLocalLLM.agent.teams.status', {})['team']['auto_task_claim_enabled']
+                call('iiLocalLLM.agent.teams.send', {'to': 'team-lead', 'message': 'INVALID_SUMMARY_MARKER'}, failure=True)
                 call('iiLocalLLM.agent.teams.send', {'to': 'team-lead', 'summary': 'MCP transport', 'message': 'MCP_TEAM_MARKER'})
                 _, controlled, _ = post(port, '/mcp', 'iisacc/teams/inbox', {}, session=session)
                 assert any(v['message'] == 'MCP_TEAM_MARKER' for v in controlled['result']['structuredContent']['messages'])
@@ -158,6 +164,7 @@ def main():
                 report['mcp_http'] = True
                 report['mcp_control_path'] = True
             if args.official_stdio:
+                from jsonschema import Draft202012Validator
                 from mcp import ClientSession, StdioServerParameters
                 from mcp.client.stdio import stdio_client
 
@@ -168,6 +175,16 @@ def main():
                             async with ClientSession(read, write) as client:
                                 init = await client.initialize()
                                 assert 'iisacc/teams' in init.capabilities.experimental
+                                listed = await client.list_tools()
+                                schema = next(t.inputSchema for t in listed.tools if t.name == 'iiLocalLLM.agent.teams.send')
+                                Draft202012Validator.check_schema(schema)
+                                validator = Draft202012Validator(schema)
+                                plain = {'to': 'team-lead', 'message': 'Observed'}
+                                assert not validator.is_valid(plain)
+                                assert not validator.is_valid({**plain, 'summary': ''})
+                                assert validator.is_valid({**plain, 'summary': 'File observed'})
+                                assert validator.is_valid({'to': 'worker', 'message': {'type': 'shutdown_request'}})
+                                report['official_conditional_schema'] = True
                                 created = await client.call_tool('iiLocalLLM.agent.teams.create', {'team_name': 'stdio'})
                                 assert not created.isError and created.structuredContent['team_name'] == 'stdio'
                                 status = await client.call_tool('iiLocalLLM.agent.teams.status', {})

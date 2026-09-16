@@ -153,3 +153,5 @@ C++ 로컬 팀, 공유 작업 목록, 메일함과 API/MCP/CLI 제어는 [Teams.
 단일 도구 호출이 필요한 호스트는 EngineOptions::maxToolCallsPerTurn=1을 사용한다. ModelRequest::parallelToolCalls=false가 ServiceModel의 측정·생성 요청으로 전달되며 실제 응답의 호출 개수 검사도 적용한다.
 
 0.49는 고정된 llama.cpp의 JSON 도구 호출 문법도 보정한다. 호출별 태그를 반복하는 바깥 문법이 `parallel_tool_calls=false`에서도 여러 호출을 허용하던 경로를 한 건으로 제한한다. 생성 문법을 끄면 이 강제 제약은 없지만 서비스의 응답 개수 검사는 유지한다. 기존 병렬 호출 설정은 유지하며 호출을 잘라내거나 도구 결과를 만들어 넣지 않는다. `tests/native_grammar_tests.cpp`는 가중치 없이 Qwen 2.5·3의 auto/required, 단일/병렬 조합에서 실제 생성 문법의 수락·거절을 검사한다. 모델을 사용한 자동 작업 수락 검사는 [Teams.md](Teams.md)와 [Verification.md](Verification.md)에 별도로 기록한다.
+
+0.50은 Qwen3.5가 선택하는 `common_chat_params_init_qwen3_coder` 전용 XML 파서도 보정한다. 완전한 객체 `anyOf`의 필수 인자, 혼합 타입의 JSON 값, 여섯 개 이하 속성의 인자 순서와 중복을 생성 문법에 반영한다. 모델용 도구 설명과 이전 도구 호출도 같은 인코딩으로 렌더링하며 원래 스키마·대화 인자는 보존한다. 일반 자동 파서의 XML 경로를 수정한 것으로 대체하지 않는다. 원본 체크아웃을 유지하고 빌드 사본만 컴파일하며, 정확한 소스 형태가 다르면 CMake가 실패한다. 소스의 `third_party/llama-common/PATCHES.md`와 설치본의 `share/iiLocalLLM/licenses/llama-common/PATCHES.md`에 MIT 출처와 보정 범위를 기록한다. 부분 대안·임의 교집합·raw 문자열의 모든 제약은 이 생성 문법의 지원 범위가 아니며 기존 jsoncons 입력 검증이 계속 적용된다.

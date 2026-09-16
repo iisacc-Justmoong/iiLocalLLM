@@ -77,7 +77,7 @@ iillm --auth-file /data/private/token agent agents output PARENT_SESSION output.
 
 참조의 조건부 implicit fork는 타입 생략 시 부모 프롬프트·컨텍스트를 이어받고 백그라운드로 강제 전환한다. iiLocalLLM은 `fork_context`와 `run_in_background`를 명시적으로 구분한다. 참조의 재개 실행 경로와 iiLocalLLM의 `Agent.resume` 필드도 동일한 wire schema라고 주장하지 않는다.
 
-내장 전문 역할 전체와 조건부 선택, 에이전트 파일의 외부 훅 실행, 추가 MCP 서버·메모리, 실행 도중 자동 백그라운드 전환, 팀·SendMessage·mailbox, worktree·remote 격리, 공통 TaskOutput/TaskStop으로의 통합, 전체 trace·비용 집계와 광범위한 실제 앱 작업 검증은 남아 있다. 실제 모델 결과와 실패 기록은 [Verification.md](Verification.md)에 분리해 기록한다.
+이름 있는 로컬 팀원·SendMessage·mailbox와 시작·유휴 Task 선점은 [Teams.md](Teams.md)의 별도 Teams 계층에서 제공한다. 내장 전문 역할 전체와 조건부 선택, 에이전트 파일의 외부 훅 실행, 추가 MCP 서버·메모리, 실행 도중 자동 백그라운드 전환, 별도 프로세스 팀·worktree·remote 격리, 공통 TaskOutput/TaskStop으로의 통합, 전체 trace·비용 집계와 광범위한 실제 앱 작업 검증은 남아 있다. 실제 모델 결과와 실패 기록은 [Verification.md](Verification.md)에 분리해 기록한다.
 
 0.17.0은 `Subagents::runSkill`과 `attach`의 fork 콜백으로 스킬을 별도 자식에서 실행한다. `Agent.fork_context`는 부모 대화 복사이고 스킬 `context: fork`는 부모 이력 없이 스킬 본문을 실행하는 경로이다. 구체적인 결과·제한은 [Skills.md](Skills.md)를 따른다.
 
