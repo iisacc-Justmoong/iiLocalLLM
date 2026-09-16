@@ -66,21 +66,27 @@ public:
     const QHash<QString,ReadState>& observations(const ToolContext& c)const {
         auto it=forkReads.constFind(c.sessionId);return it==forkReads.cend()?reads:it.value();
     }
+    QString rootFor(const ToolContext& context) const {
+        if(context.workingDirectory.isEmpty())return root;
+        const auto active=QFileInfo(context.workingDirectory).canonicalFilePath();
+        require(!active.isEmpty()&&(active==root||QFileInfo(context.originalWorkingDirectory).canonicalFilePath()==root),"Tool registry belongs to a different workspace");
+        return active;
+    }
     bool isPrivate(const QString& path,const ToolContext& context) const {
         if(inside(path,context.plansDirectory))return true;
         for(const auto& denied:context.protectedPaths)
             if(inside(path,denied)||inside(path,QFileInfo(denied).canonicalFilePath()))return true;
         return std::any_of(privatePaths.cbegin(),privatePaths.cend(),[&](const auto& denied) {
-            return inside(path,denied)||inside(path,QFileInfo(denied).canonicalFilePath());
+            const auto active=rootFor(context);const auto rebound=inside(denied,root)?QDir(active).filePath(QDir(root).relativeFilePath(denied)):denied;
+            return inside(path,denied)||inside(path,QFileInfo(denied).canonicalFilePath())||inside(path,rebound)||inside(path,QFileInfo(rebound).canonicalFilePath());
         });
     }
-    QJsonObject contextPaths(const QString& path) const {
-        return inside(path,root)?QJsonObject{{"iilocal.context_paths",QJsonArray{path}}}:QJsonObject{};
+    QJsonObject contextPaths(const QString& path,const ToolContext& context) const {
+        return inside(path,rootFor(context))?QJsonObject{{"iilocal.context_paths",QJsonArray{path}}}:QJsonObject{};
     }
-    QString key(const ToolContext& c, const QString& path) const { return c.sessionId + QChar(0) + QString::number(c.contextRevision) + QChar(0) + path; }
+    QString key(const ToolContext& c, const QString& path) const { return c.sessionId + QChar(0) + QString::number(c.contextRevision) + QChar(0) + QString::number(c.workspaceRevision) + QChar(0) + path; }
     QString resolve(QString path, const ToolContext& c, bool write = false) const {
-        require(c.workingDirectory.isEmpty() || QFileInfo(c.workingDirectory).canonicalFilePath() == root,
-            "Tool registry belongs to a different workspace");
+        const auto root=rootFor(c);
         require(!path.isEmpty() && !path.contains(QChar(0)), "A nonempty path is required");
         if (QDir::isRelativePath(path)) path = QDir(root).absoluteFilePath(path);
         path = QDir::cleanPath(path);
@@ -215,7 +221,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         const bool complete = offset == 1 && limit >= lines.size()&&!byteTruncated;
         workspace->remember(c, path, bytes, complete);
         return ToolResult{QString::fromUtf8(excerpt), {{"path", path}, {"offset", offset}, {"lines", byteTruncated?(excerpt.isEmpty()?0:excerpt.count('\n')+1):output.size()}, {"complete", complete},
-            {"sha256",sha},{"truncated",!complete},{"bytes",excerpt.size()}}, false, {}, workspace->contextPaths(path)};
+            {"sha256",sha},{"truncated",!complete},{"bytes",excerpt.size()}}, false, {}, workspace->contextPaths(path,c)};
     }; read.definition.metadata = {{"source", "builtin.workspace"}}; preparePath(read, workspace, false);
     read.captureReadState=[workspace](const ToolContext& parent) {
         QHash<QString,Workspace::ReadState> observations;const auto prefix=workspace->key(parent,{});
@@ -250,7 +256,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         if (QFileInfo::exists(path)) before = workspace->writable(c, path);
         const auto backup = workspace->write(c, path, a["content"].toString().toUtf8(), before);
         return ToolResult{"Wrote " + path, {{"path", path}, {"backup_path", backup},
-            {"sha256",QString::fromLatin1(QCryptographicHash::hash(a["content"].toString().toUtf8(),QCryptographicHash::Sha256).toHex())}}, false, {}, workspace->contextPaths(path)};
+            {"sha256",QString::fromLatin1(QCryptographicHash::hash(a["content"].toString().toUtf8(),QCryptographicHash::Sha256).toHex())}}, false, {}, workspace->contextPaths(path,c)};
     }; write.definition.metadata = {{"source", "builtin.workspace"}}; preparePath(write, workspace, true); registry.add(std::move(write));
     Tool edit;
     edit.definition = {"Edit", "Replace exact text in a previously read UTF-8 file. Multiple matches require replace_all=true.",
@@ -266,7 +272,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         text.replace(old, replacement);
         const auto backup = workspace->write(c, path, text.toUtf8(), before);
         return ToolResult{"Edited " + path, {{"path", path}, {"replacements", matches}, {"backup_path", backup},
-            {"sha256",QString::fromLatin1(QCryptographicHash::hash(text.toUtf8(),QCryptographicHash::Sha256).toHex())}}, false, {}, workspace->contextPaths(path)};
+            {"sha256",QString::fromLatin1(QCryptographicHash::hash(text.toUtf8(),QCryptographicHash::Sha256).toHex())}}, false, {}, workspace->contextPaths(path,c)};
     }; edit.definition.metadata = {{"source", "builtin.workspace"}}; preparePath(edit, workspace, true); registry.add(std::move(edit));
     Tool glob;
     glob.definition = {"Glob", "List matching file paths relative to path (default: workspace). A ** path component matches zero or more directory levels; * and ? stay within one component. path must be an authorized working directory. Up to 1000 results and 10000 scanned files.",
@@ -304,7 +310,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
             QString text; try { text = decode(readFile(path)); } catch (const Error&) { continue; }
             const auto lines = text.split('\n');
             for (qsizetype n = 0; n < lines.size() && matches.size() < 100; ++n) if (regex.match(lines[n]).hasMatch()) {
-                const auto relative = QDir(workspace->root).relativeFilePath(path);
+                const auto relative = QDir(workspace->rootFor(c)).relativeFilePath(path);
                 matches.append(relative + ':' + QString::number(n + 1) + ':' + lines[n]);
                 values.append(QJsonObject{{"path", relative}, {"line", n + 1}, {"text", lines[n]}});
             }
@@ -339,7 +345,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         }
         const int timeout = a["timeout_ms"].toInt(30000); require(timeout <= 600000, "Foreground shell timeout exceeds 600000 ms");
         QByteArray output, errors;
-        const auto value = detail::shellProcess(workspace->root, a["command"].toString(), timeout, c.cancellation, {}, [&](const QByteArray& bytes, bool error) {
+        const auto value = detail::shellProcess(workspace->rootFor(c), a["command"].toString(), timeout, c.cancellation, {}, [&](const QByteArray& bytes, bool error) {
             if (output.size() + errors.size() + bytes.size() > maxFileBytes) throw Error(ErrorCode::ResourceLimit, "Shell output exceeds 1 MiB");
             (error ? errors : output).append(bytes);
         },{},c.readOnlyShell?&environment:nullptr);

@@ -30,7 +30,7 @@
 | plugins | manifest·명령/스킬/에이전트/훅/MCP/LSP 등록·버전/캐시·설치/갱신 | pending |
 | hooks | 전체 생명주기·C++ 콜백·명령·HTTP·모델/에이전트·입력 변경·결과/차단 | partial |
 | tasks | 계획·Todo/Task·작업 의존성·입력 큐·백그라운드 작업/알림 | partial |
-| git | 작업 디렉터리·worktree·브랜치·변경 이력·복구 | pending |
+| git | 작업 디렉터리·worktree·브랜치·변경 이력·복구 | partial |
 | editor | LSP·IDE 통신·파일 변경 알림·진단·심볼/정의/참조 | partial |
 | frontends | CLI interactive/headless·구조화 입출력·앱용 상태/이벤트·LVRS UI 바인딩 | partial |
 | remote | 원격/bridge 실행·인증·연결 복원·메시지 라우팅 | pending |
@@ -153,3 +153,6 @@ C++ MemoryDream은 기본 OFF인 자동 실행, 24시간·5개 대화·10분 목
 0.42의 전체 대응표는 24 partial·7 pending·0 complete이다.
 
 0.43은 호스트가 구성한 stdio 언어 서버, LSP 9개 연산, 버전별 문서 동기화·진단, 소유 세션과 읽기 권한, API/MCP/CLI를 구현한다. IDE 미저장 버퍼·전체 프로젝트 watcher·동적 등록·플러그인 자동 설정과 전체 앱/플랫폼 검증은 남아 있다. [Lsp.md](Lsp.md). 전체 대응표는 25 partial·6 pending·0 complete이다.
+
+
+0.44는 C++ 소유 작업 트리와 같은 대화의 파일·셸·권한 경로 전환, 생성·보존·재개·삭제 및 인증 API/MCP/CLI를 연결한다. [Worktrees.md](Worktrees.md)에 활성 clear 제한, 팀/서브에이전트·설정 훅·자동 복구와 실제 앱/플랫폼의 남은 범위를 명시한다. 대응표는 26 partial·5 pending·0 complete이며 전체 목표는 미완료이다.

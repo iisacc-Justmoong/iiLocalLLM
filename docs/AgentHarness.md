@@ -135,3 +135,6 @@ C++ MemoryDream은 기본 OFF인 자동 실행, 24시간·5개 대화·10분 목
 0.42는 C++ WebFetch의 익명 URL 조회, HTML5/문자 인코딩 변환, 소유자별 캐시, 로컬 모델 추출과 도메인 권한을 제공한다. [WebFetch.md](WebFetch.md)에 상한과 참조 차이 및 남은 웹 기능을 기록한다.
 
 0.43은 C++ LSP로 정의·참조·호버·심볼·구현·호출 계층을 조회한다. 문서 동기화·세션별 서버 수명·권한과 API/MCP 노출은 [Lsp.md](Lsp.md)를 따른다. 편집기 연결과 전체 프로젝트 파일 watcher는 남아 있다.
+
+
+0.44의 `EnterWorktree`·`ExitWorktree`와 소유 상태 조회는 [Worktrees.md](Worktrees.md)에 정의한다. `agent.worktrees.enter/exit/status`, CLI `agent worktrees`, MCP `iiLocalLLM.agent.worktrees.status`가 같은 실행 경로·권한·보존 계약을 사용한다. 활성 worktree의 clear와 팀/서브에이전트 전체 격리는 남아 있다.

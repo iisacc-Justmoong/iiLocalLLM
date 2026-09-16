@@ -769,8 +769,19 @@
     {
       "id": "git",
       "requirement": "작업 디렉터리·worktree·브랜치·변경 이력·복구",
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "agent/Worktrees.h",
+        "agent/Worktrees.cpp",
+        "agent/Engine.cpp",
+        "agent/WorkspaceTools.cpp",
+        "agent/PermissionSettings.cpp",
+        "tests/worktree_tests.cpp",
+        "tests/worktree_runtime_smoke.cpp",
+        "tests/worktree_wire.py",
+        "docs/Worktrees.md"
+      ],
+      "remaining": "Version 0.44 adds owned C++ EnterWorktree/ExitWorktree, same-session and same-batch file/shell workspace binding, durable keep/resume, bounded change-content snapshots, branch compare-and-delete, host non-Git adapters and sparse checkout, authenticated API/MCP/CLI. Active-worktree clear/ownership transfer, delegated/team isolation, startup/tmux/PR modes, copy/include/symlink settings, full lifecycle hooks, automatic failed/stale-worktree recovery and all platform/app qualification remain. See Worktrees.md and Verification.md."
     },
     {
       "id": "editor",

@@ -144,3 +144,6 @@ Engine과 모델을 설정하면 `iiLocalLLM.agent.inputs.enqueue/list/remove/ru
 0.34의 Engine 계획 도구는 EnterPlanMode/ExitPlanMode로 공개하며 iisacc/plan/status는 예약된 제어 메서드이다. [PlanMode.md](PlanMode.md)에 계약과 남은 범위를 기록한다.
 
 0.35는 C++ AskUserQuestion과 API·MCP 질문/답변을 추가한다. 호스트 응답, 변경 검증, 미리보기와 남은 앱 화면 범위는 [UserQuestions.md](UserQuestions.md)를 따른다.
+
+
+0.44의 `EnterWorktree`·`ExitWorktree`와 소유 상태 조회는 [Worktrees.md](Worktrees.md)에 정의한다. `agent.worktrees.enter/exit/status`, CLI `agent worktrees`, MCP `iiLocalLLM.agent.worktrees.status`가 같은 실행 경로·권한·보존 계약을 사용한다. 활성 worktree의 clear와 팀/서브에이전트 전체 격리는 남아 있다.

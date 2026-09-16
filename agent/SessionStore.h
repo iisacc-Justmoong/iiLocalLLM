@@ -8,6 +8,8 @@ public:
     const Session& session() const;
     void append(Message message);
     void compact(Compaction checkpoint);
+    // Host execution view only. The immutable on-disk authorization header stays unchanged.
+    void setExecutionDirectory(QString);
     QString artifactsDirectory() const;
 private:
     friend class SessionStore;

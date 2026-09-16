@@ -166,6 +166,16 @@ SettingsPermissionPolicy::SettingsPermissionPolicy(PermissionSettingsOptions opt
     for (auto& path : options_.flagFiles) { require(!path.trimmed().isEmpty(), "Empty settings file path"); path = QFileInfo(path).absoluteFilePath(); }
     RulePolicy(PermissionMode::Default, cliRules_ + hostRules_);
 }
+std::unique_ptr<SettingsPermissionPolicy> SettingsPermissionPolicy::workspacePolicy(const ToolContext& context) const {
+    const auto root=QFileInfo(context.workingDirectory).canonicalFilePath();
+    if(root==options_.workingDirectory)return {};
+    require(!root.isEmpty()&&QFileInfo(context.originalWorkingDirectory).canonicalFilePath()==options_.workingDirectory,"Permission settings workspace mismatch");
+    auto result=std::make_unique<SettingsPermissionPolicy>(*this);
+    // CLI directory grants retain their original absolute authority. Project and
+    // local settings are loaded afresh from the active execution workspace.
+    for(auto& path:result->options_.additionalDirectories)if(QDir::isRelativePath(path)&&!path.startsWith('~'))path=QDir(options_.workingDirectory).absoluteFilePath(path);
+    result->options_.workingDirectory=root;return result;
+}
 PermissionSettingsSnapshot SettingsPermissionPolicy::snapshot(const CancellationToken& token) const {
     std::lock_guard guard(state_->mutex);Runtime runtime;return snapshotLocked({{}, {},options_.workingDirectory,{},token},runtime,{});
 }
@@ -256,7 +266,7 @@ PermissionSettingsSnapshot SettingsPermissionPolicy::snapshotLocked(const ToolCo
         QJsonObject entry{{"input",input},{"source",source}};
         if(input.trimmed().isEmpty()) { entry["status"]="empty";if(!duplicate&&visible)result.additionalDirectories.append(entry);return; }
         const auto path=absoluteDirectory(input);auto& targets=ephemeral?runtimeTargets:directoryTargets;
-        const auto bindingKey=authority+QChar::Null+input;(ephemeral?activeRuntime:activeBindings).insert(bindingKey);
+        const auto bindingKey=options_.workingDirectory+QChar::Null+authority+QChar::Null+input;(ephemeral?activeRuntime:activeBindings).insert(bindingKey);
         const QFileInfo info(path);const auto canonical=info.canonicalFilePath();entry["path"]=path;
         if(canonical.isEmpty()||!info.exists())entry["status"]="not_found";
         else if(!info.isDir())entry["status"]="not_directory";
@@ -287,9 +297,9 @@ PermissionSettingsSnapshot SettingsPermissionPolicy::snapshotLocked(const ToolCo
     for(const auto& value:options_.additionalDirectories)directory(value,"cliArg","cliArg",false,!runtime.cliDirectories&&!runtimeDirectories.contains(absoluteDirectory(value)));
     if(runtime.cliDirectories)for(const auto& value:*runtime.cliDirectories)directory(value,"cliArg","cliArg",true);
     for(auto i=directoryTargets.begin();i!=directoryTargets.end();)
-        if(!activeBindings.contains(i.key()))i=directoryTargets.erase(i);else ++i;
+        if(i.key().startsWith(options_.workingDirectory+QChar::Null)&&!activeBindings.contains(i.key()))i=directoryTargets.erase(i);else ++i;
     for(auto i=runtimeTargets.begin();i!=runtimeTargets.end();)
-        if(!activeRuntime.contains(i.key()))i=runtimeTargets.erase(i);else ++i;
+        if(i.key().startsWith(options_.workingDirectory+QChar::Null)&&!activeRuntime.contains(i.key()))i=runtimeTargets.erase(i);else ++i;
     for (const auto& layer : layers) {
         if (result.managedRulesOnly && layer.source != "policySettings") continue;
         const auto p = layer.data.value("permissions").toObject();
@@ -316,6 +326,7 @@ PermissionSettingsSnapshot SettingsPermissionPolicy::snapshotLocked(const ToolCo
     RulePolicy(result.mode, result.rules);state_->targets=std::move(directoryTargets);runtime.targets=std::move(runtimeTargets);return result;
 }
 PermissionDecision SettingsPermissionPolicy::decide(const ToolDefinition& tool, const QJsonObject& args, const ToolContext& context) const {
+    if(auto scoped=workspacePolicy(context))return scoped->decide(tool,args,context);
     require(QFileInfo(context.workingDirectory).canonicalFilePath() == options_.workingDirectory, "Permission settings workspace mismatch");
     const auto current = sessionSnapshot(context);
     for (const auto& feature : current.unsupportedFeatures) if (feature.startsWith("permissions."))
@@ -325,6 +336,7 @@ PermissionDecision SettingsPermissionPolicy::decide(const ToolDefinition& tool, 
     return RulePolicy(current.mode, current.rules).decide(tool, args, scoped);
 }
 QStringList SettingsPermissionPolicy::workingDirectories(const ToolContext& context) const {
+    if(auto scoped=workspacePolicy(context))return scoped->workingDirectories(context);
     require(QFileInfo(context.workingDirectory).canonicalFilePath() == options_.workingDirectory, "Permission settings workspace mismatch");
     const auto current=sessionSnapshot(context);
     for(const auto& feature:current.unsupportedFeatures)if(feature.startsWith("permissions."))
@@ -332,6 +344,7 @@ QStringList SettingsPermissionPolicy::workingDirectories(const ToolContext& cont
     auto paths=current.workingDirectories+PermissionPolicy::workingDirectories(context);paths.removeDuplicates();return paths;
 }
 QJsonObject SettingsPermissionPolicy::describe(const ToolContext& context) const {
+    if(auto scoped=workspacePolicy(context))return scoped->describe(context);
     require(QFileInfo(context.workingDirectory).canonicalFilePath() == options_.workingDirectory, "Permission settings workspace mismatch");
     auto current=sessionSnapshot(context);if(context.permissionMode)current.mode=*context.permissionMode;
     return current.toJson();
@@ -356,6 +369,7 @@ void checkUpdateContext(const PermissionSettingsOptions& options,const ToolConte
 }
 }
 void SettingsPermissionPolicy::applyUpdates(const QJsonArray& updates,const ToolContext& context) const {
+    if(auto scoped=workspacePolicy(context)){scoped->applyUpdates(updates,context);return;}
     checkUpdateContext(options_,context);detail::validatePermissionUpdates(updates);if(updates.isEmpty())return;
     std::lock_guard guard(state_->mutex);
     require(state_->sessions.contains(context.sessionId)||state_->sessions.size()<options_.maxRuntimeSessions,"Permission runtime session limit reached",ErrorCode::ResourceLimit);
@@ -426,13 +440,15 @@ void SettingsPermissionPolicy::applyUpdates(const QJsonArray& updates,const Tool
             QStringList wanted;for(const auto& item:update["directories"].toArray()){const auto path=absolute(item.toString());if(!wanted.contains(path))wanted.append(path);}
             auto previous=destination=="cliArg"?candidate.cliDirectories.value_or(options_.additionalDirectories):strings(permissions["additionalDirectories"].toArray());
             if(destination=="cliArg"&&!candidate.cliDirectories)for(const auto& input:previous) {
-                const auto key=QString("cliArg")+QChar::Null+input;if(state_->targets.contains(key))candidate.targets[key]=state_->targets[key];
+                const auto prefix=options_.workingDirectory+QChar::Null+"cliArg"+QChar::Null;const auto key=prefix+input;
+                if(state_->targets.contains(key))candidate.targets[prefix+absolute(input)]=state_->targets[key];
             }
+            if(destination=="cliArg")for(auto& path:previous)path=absolute(path);
             if(type=="addDirectories")for(const auto& path:wanted) {
                 previous.removeIf([&](const QString& old){return absolute(old)==path;});previous.append(path);candidate.removedDirectories.remove(path);
                 // This explicit new grant may bind to a newly selected target.
                 for(auto it=candidate.targets.begin();it!=candidate.targets.end();)
-                    if(it.key().startsWith(destination+QChar::Null)&&absolute(it.key().section(QChar::Null,1))==path)it=candidate.targets.erase(it);else ++it;
+                    if(it.key().startsWith(options_.workingDirectory+QChar::Null+destination+QChar::Null)&&absolute(it.key().section(QChar::Null,2))==path)it=candidate.targets.erase(it);else ++it;
             } else {
                 previous.removeIf([&](const QString& old){return wanted.contains(absolute(old));});
                 for(const auto& path:wanted)candidate.removedDirectories.insert(path);
@@ -466,13 +482,15 @@ void SettingsPermissionPolicy::applyUpdates(const QJsonArray& updates,const Tool
     } catch(...) {state_->targets=previousTargets;throw;}
 }
 void SettingsPermissionPolicy::inheritSession(const ToolContext& parent,const ToolContext& child) const {
-    checkUpdateContext(options_,parent);checkUpdateContext(options_,child);if(parent.sessionId==child.sessionId)return;
+    auto parentScope=workspacePolicy(parent),childScope=workspacePolicy(child);
+    checkUpdateContext(parentScope?parentScope->options_:options_,parent);checkUpdateContext(childScope?childScope->options_:options_,child);if(parent.sessionId==child.sessionId)return;
     std::lock_guard guard(state_->mutex);
     if(!state_->sessions.contains(parent.sessionId)){state_->sessions.remove(child.sessionId);return;}
     require(state_->sessions.contains(child.sessionId)||state_->sessions.size()<options_.maxRuntimeSessions,"Permission runtime session limit reached",ErrorCode::ResourceLimit);
     state_->sessions[child.sessionId]=state_->sessions.value(parent.sessionId);
 }
 void SettingsPermissionPolicy::forgetSession(const ToolContext& context) const {
+    if(auto scoped=workspacePolicy(context)){scoped->forgetSession(context);return;}
     checkUpdateContext(options_,context);std::lock_guard guard(state_->mutex);state_->sessions.remove(context.sessionId);
 }
 QJsonObject PermissionSettingsSnapshot::toJson() const {

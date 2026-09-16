@@ -167,6 +167,14 @@ public:
             status.execute=[self](const QJsonObject&,const ToolContext& context){auto value=self->options.engine->lspStatus(context.sessionId,context.cancellation);return ToolResult{QString::fromUtf8(QJsonDocument(value).toJson(QJsonDocument::Compact)),value};};
             frozen->add(std::move(status));
         }
+        if(options.engine->worktreesEnabled()) {
+            for(const auto& name:{"EnterWorktree","ExitWorktree"})frozen->add(*options.engine->worktreeTool(name));
+            Tool status;status.definition.name="iiLocalLLM.agent.worktrees.status";status.definition.description="Inspect this connection owner's active and retained worktrees, changed files and new commits.";
+            status.definition.inputSchema={{"type","object"},{"properties",QJsonObject{}},{"additionalProperties",false}};
+            status.definition.readOnly=true;status.definition.concurrencySafe=true;status.definition.metadata={{"source","builtin.worktree.control"}};
+            status.execute=[self](const QJsonObject&,const ToolContext& context){auto value=self->options.engine->worktreeStatus(context.sessionId,context.cancellation);return ToolResult{QString::fromUtf8(QJsonDocument(value).toJson(QJsonDocument::Compact)),value};};
+            frozen->add(std::move(status));
+        }
         options.engine->bindProjectMemoryTools(*frozen,false);
         if(options.engine->projectMemoryEnabled()) {
             Tool memory;memory.definition={"iiLocalLLM.agent.memory.get","Inspect this connection owner's project memory index and search topic metadata/content. query is a case-insensitive literal.",
@@ -367,7 +375,7 @@ public:
             QJsonObject value{{"session_id", id}, {"model", self->options.model}, {"message_count", 0}};
             if (!id.isEmpty()) {
                 const auto session = self->options.engine->session(id);
-                value["message_count"] = session.messages.size(); value["compaction_count"] = session.compactions.size();
+                value["working_directory"]=session.workingDirectory;value["message_count"] = session.messages.size(); value["compaction_count"] = session.compactions.size();
                 if (!session.compactions.isEmpty()) value["compaction"] = toJson(session.compactions.last());
                 if (args["include_messages"].toBool()) { QJsonArray messages; for (const auto& m : session.messages) messages.append(toJson(m)); value["messages"] = messages; }
             }
@@ -408,8 +416,9 @@ public:
         }
         if (!options.artifactsDirectory.isEmpty()) context.artifactsDirectory = QDir(options.artifactsDirectory).filePath(context.sessionId + '/' + context.runId);
         const auto source = frozen->get(name).definition.metadata["source"].toString();
+        std::shared_ptr<void> workspaceScope;
         auto bindContext = [&](bool history=false) {
-            const bool native=source=="builtin.workspace"||source=="builtin.shell"||source=="builtin.shell.control"||source=="builtin.plan"||source=="builtin.user-question"||source=="builtin.memory"||source=="builtin.session-history"||source=="builtin.web"||source=="builtin.lsp"||source=="builtin.lsp.control";
+            const bool native=source=="builtin.workspace"||source=="builtin.shell"||source=="builtin.shell.control"||source=="builtin.plan"||source=="builtin.user-question"||source=="builtin.memory"||source=="builtin.session-history"||source=="builtin.web"||source=="builtin.lsp"||source=="builtin.lsp.control"||source=="builtin.worktree"||source=="builtin.worktree.control";
             if(options.engine&&(native||!options.tools.hooks.isEmpty()||options.engine->planning())) {
                 const auto owner=sessionId(conversation(request.sessionId),context.cancellation);
                 context.planningSessionId=owner;
@@ -424,6 +433,7 @@ public:
                         catch(const Error& error){if(error.code()!=ErrorCode::ModelInUse)throw;}
                     if(!context.sessionSnapshot)context.sessionSnapshot=std::make_shared<Session>(options.engine->sessionMetadata(owner));
                 }
+                if(native)workspaceScope=options.engine->bindWorkspaceContext(context);
             }
         };
         int hookProgress=0;
@@ -444,7 +454,8 @@ public:
         const bool userQuestion = source == "builtin.user-question" && name == "AskUserQuestion";
         const bool webFetch = source == "builtin.web" && name == "WebFetch";
         const bool lsp = source=="builtin.lsp"||source=="builtin.lsp.control";
-        if (shellControl || inputControl || subagentControl || sessionControl || planControl || userQuestion || webFetch || lsp || memoryControl) { bindContext(userQuestion||webFetch||lsp); return wireResult(runner.run(call, context,observe)); }
+        const bool worktree = source=="builtin.worktree"||source=="builtin.worktree.control";
+        if (shellControl || inputControl || subagentControl || sessionControl || planControl || userQuestion || webFetch || lsp || worktree || memoryControl) { bindContext(userQuestion||webFetch||lsp||worktree); return wireResult(runner.run(call, context,observe)); }
         std::shared_lock shared(execution, std::defer_lock); std::unique_lock exclusive(execution, std::defer_lock);
         if (runner.concurrencySafe(call)) acquire(shared, context.cancellation); else acquire(exclusive, context.cancellation);
         bindContext(true);
@@ -470,6 +481,8 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
         return result;
     };
     server.handlers["tools/call"] = [state](const auto& params, const auto& request) { return state->call(params, request); };
+    if(state->options.engine&&state->options.engine->worktreesEnabled())
+        server.experimentalCapabilities["iisacc/worktrees"]=QJsonObject{{"schema","iisacc.worktrees/1"},{"enterTool","EnterWorktree"},{"exitTool","ExitWorktree"},{"statusTool","iiLocalLLM.agent.worktrees.status"},{"scope","connection-owner"}};
     if(state->options.engine&&state->options.engine->lspTool())
         server.experimentalCapabilities["iisacc/lsp"]=QJsonObject{{"schema","iisacc.lsp/1"},{"tool","LSP"},{"statusTool","iiLocalLLM.agent.lsp.status"},{"positionEncoding","utf-16"}};
     if(state->options.engine&&state->options.engine->webFetchTool())

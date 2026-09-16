@@ -73,6 +73,11 @@ public:
 SessionLease::SessionLease(std::unique_ptr<Impl> impl) : d(std::move(impl)) {}
 SessionLease::~SessionLease() = default;
 const Session& SessionLease::session() const { return d->value; }
+void SessionLease::setExecutionDirectory(QString path) {
+    const auto root=QFileInfo(path).canonicalFilePath();
+    if(root.isEmpty()||!QFileInfo(root).isDir())throw Error(ErrorCode::InvalidArgument,"Execution workspace must exist");
+    d->value.workingDirectory=root;
+}
 QString SessionLease::artifactsDirectory() const { return QDir(d->directory).filePath("artifacts"); }
 void SessionLease::compact(Compaction c) {
     detail::validateCompaction(d->value, c);

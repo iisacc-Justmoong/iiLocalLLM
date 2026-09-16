@@ -47,6 +47,8 @@ int main(int argc, char** argv) {
         {"no-memory-recall", "Disable model-ranked project memory recall."},
         {"no-memory-extraction", "Disable automatic project memory extraction after main-agent responses."},
         {"no-session-history", "Disable owned session transcript search."},
+        {"no-worktrees", "Disable owned worktree lifecycle tools."},
+        {"worktree-config", "Private host JSON for worktree storage, base ref and sparse paths.", "file"},
         {"lsp-config", "Private host JSON configuring local language servers; requires --model.", "file"},
         {"no-web-fetch", "Disable anonymous web page fetching and local extraction."},
         {"web-model", "Local WebFetch extraction model (default: session model).", "model"},
@@ -153,6 +155,7 @@ int main(int argc, char** argv) {
         QList<a::PermissionRule> rules,hostRules;
         for (const auto& value : parser.values("allow")) rules.append({value, a::PermissionBehavior::Allow});
         const bool agent = parser.isSet("model");
+        if(!agent&&(parser.isSet("worktree-config")||parser.isSet("no-worktrees")))throw std::runtime_error("Worktree options require --model");
         if(!agent&&parser.isSet("lsp-config"))throw std::runtime_error("--lsp-config requires --model");
         if(!agent&&(parser.isSet("web-model")||parser.isSet("web-private-origin")))throw std::runtime_error("WebFetch options require --model");
         if(parser.isSet("auto-dream")&&(!agent||parser.isSet("no-memory")||parser.isSet("no-session-history")))
@@ -184,7 +187,7 @@ int main(int argc, char** argv) {
 #endif
         if (parser.isSet("apps-dir")) connectionOptions.localApplicationsDirectory = QFileInfo(parser.value("apps-dir")).absoluteFilePath();
         QStringList privatePaths{privateState.isEmpty()?QDir(workspace).filePath(".iilocal-llm"):privateState};
-        for(const auto& key:{"credentials","permission-settings","permission-requests","agent-profiles","model-options","sessions","artifacts","hooks","lsp-config"})
+        for(const auto& key:{"credentials","permission-settings","permission-requests","agent-profiles","model-options","sessions","artifacts","hooks","lsp-config","worktree-config"})
             if(parser.isSet(key))privatePaths.append(parser.value(key));
         for(const auto& file:connectionOptions.configFiles)privatePaths.append(QDir::isAbsolutePath(file)?file:QDir(workspace).filePath(file));
         if(!connectionOptions.localApplicationsDirectory.isEmpty())privatePaths.append(connectionOptions.localApplicationsDirectory);
@@ -213,6 +216,13 @@ int main(int argc, char** argv) {
             engineOptions.memoryRecall.enabled = !parser.isSet("no-memory-recall");
             engineOptions.memoryExtraction.enabled = !parser.isSet("no-memory-extraction");
             engineOptions.sessionHistoryEnabled = !parser.isSet("no-session-history");
+            engineOptions.worktrees.enabled=!parser.isSet("no-worktrees");
+            if(parser.isSet("worktree-config")) {
+                if(parser.isSet("no-worktrees"))throw std::runtime_error("Worktree configuration conflicts with disabled worktrees");
+                QJsonParseError parse;const auto json=QJsonDocument::fromJson(iiLocalLLMClient::readPrivateFile(parser.value("worktree-config")),&parse);
+                if(parse.error!=QJsonParseError::NoError||!json.isObject())throw std::runtime_error("Invalid worktree host configuration");
+                engineOptions.worktrees=a::worktreeOptionsFromJson(json.object());
+            }
             if(parser.isSet("lsp-config")) {
                 QJsonParseError parse;const auto json=QJsonDocument::fromJson(iiLocalLLMClient::readPrivateFile(parser.value("lsp-config")),&parse);
                 if(parse.error!=QJsonParseError::NoError||!json.isObject())throw std::runtime_error("Invalid LSP host configuration");

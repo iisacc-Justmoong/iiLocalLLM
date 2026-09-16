@@ -162,9 +162,9 @@ public:
         try {
             QFile output(outputPath(*job));
             require(!QFileInfo(output.fileName()).isSymLink() && output.open(QIODevice::WriteOnly | QIODevice::Append), "Cannot open shell output", ErrorCode::StorageFailure);
-            QString command; int timeout;
-            { std::lock_guard guard(job->mutex); command = job->metadata["command"].toString(); timeout = job->metadata["timeout_ms"].toInt(); }
-            const auto value = detail::shellProcess(workspace, command, timeout, job->cancel, [&] {
+            QString command,cwd; int timeout;
+            { std::lock_guard guard(job->mutex); command = job->metadata["command"].toString();cwd=job->metadata["working_directory"].toString(); timeout = job->metadata["timeout_ms"].toInt(); }
+            const auto value = detail::shellProcess(cwd, command, timeout, job->cancel, [&] {
                 std::lock_guard guard(job->mutex); job->metadata["status"] = "running"; job->metadata["started_at"] = double(now());
                 save(*job); job->ready = true; job->changed.notify_all();
             }, [&](const QByteArray& bytes, bool) {
@@ -210,7 +210,8 @@ QJsonObject ShellTasks::start(const ToolContext& context, QString command, QStri
     context.cancellation.throwIfCancelled();
     require(sessionValid(context.sessionId) && command.toUtf8().size() <= 65536 && !command.trimmed().isEmpty() && !command.contains(QChar(0))
         && description.toUtf8().size() <= 4096 && timeoutMs > 0 && timeoutMs <= d->options.maxRuntimeMs
-        && QFileInfo(context.workingDirectory).canonicalFilePath() == d->workspace, "Invalid shell execution request");
+        && !QFileInfo(context.workingDirectory).canonicalFilePath().isEmpty()
+        && (QFileInfo(context.workingDirectory).canonicalFilePath() == d->workspace||QFileInfo(context.originalWorkingDirectory).canonicalFilePath()==d->workspace), "Invalid shell execution request");
     auto job = std::make_shared<Impl::Job>();
     const auto id = "sh-" + QUuid::createUuid().toString(QUuid::WithoutBraces);
     {
@@ -228,7 +229,7 @@ QJsonObject ShellTasks::start(const ToolContext& context, QString command, QStri
         const auto points = command.toUcs4();
         const auto label = description.isEmpty() ? QString::fromUcs4(points.constData(), std::min(points.size(), qsizetype(1024))) : description;
         job->metadata = {{"schema", "iisacc.agent.shell/1"}, {"task_id", id}, {"task_type", "local_bash"}, {"session_id", context.sessionId},
-            {"run_id", context.runId}, {"working_directory", d->workspace}, {"command", command}, {"description", label},
+            {"run_id", context.runId}, {"working_directory", QFileInfo(context.workingDirectory).canonicalFilePath()}, {"command", command}, {"description", label},
             {"status", "pending"}, {"created_at", double(now())}, {"started_at", QJsonValue::Null}, {"finished_at", QJsonValue::Null},
             {"exitCode", QJsonValue::Null}, {"output_bytes", 0}, {"timeout_ms", timeoutMs}, {"error_code", ""}, {"error", ""}};
         Impl::save(*job); d->jobs.emplace(id, job);

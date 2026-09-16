@@ -60,7 +60,7 @@ QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.se
     "agent.plan.get", "agent.plan.enter", "agent.plan.exit", "agent.questions.ask",
     "agent.memory.get", "agent.memory.read", "agent.memory.write", "agent.memory.edit", "agent.memory.glob", "agent.memory.grep", "agent.memory.forget", "agent.memory.recall",
     "agent.memory.extract", "agent.memory.extraction.status", "agent.memory.extraction.cancel", "agent.sessions.search",
-    "agent.memory.dream", "agent.memory.dream.status", "agent.memory.dream.cancel", "agent.web.fetch", "agent.lsp.query", "agent.lsp.status"}; }
+    "agent.memory.dream", "agent.memory.dream.status", "agent.memory.dream.cancel", "agent.web.fetch", "agent.lsp.query", "agent.lsp.status", "agent.worktrees.status", "agent.worktrees.enter", "agent.worktrees.exit"}; }
 bool dreamControl(const QString& method){return method=="agent.memory.dream.status"||method=="agent.memory.dream.cancel";}
 bool extractionControl(const QString& method){return method=="agent.memory.extraction.status"||method=="agent.memory.extraction.cancel";}
 bool hookControl(const QString& method) {return method=="agent.hooks.status"||method=="agent.hooks.cancel";}
@@ -171,7 +171,7 @@ public:
     }
     Session session(const std::shared_ptr<Client>& client, const QJsonObject& p) {
         auto result = client->engine->session(text(p, "session_id"));
-        require(result.workingDirectory == options.workingDirectory, "Session belongs to a different workspace", ErrorCode::NotFound); return result;
+        require(client->engine->sessionMetadata(result.id).workingDirectory == options.workingDirectory, "Session belongs to a different workspace", ErrorCode::NotFound); return result;
     }
     QJsonValue perform(const std::shared_ptr<Client>& client, const std::shared_ptr<Job>& job, RpcEventCallback callback) {
         const auto& p = job->params; const auto& method = job->method;
@@ -187,18 +187,19 @@ public:
                 {"user_questions_enabled",bool(client->engine->userQuestionTool())},{"project_memory_enabled",client->engine->projectMemoryEnabled()},
                 {"memory_recall_enabled",client->engine->memoryRecallEnabled()},{"memory_extraction_enabled",client->engine->memoryExtractionEnabled()},
                 {"session_history_enabled",bool(client->engine->sessionSearchTool())},{"memory_dream_available",client->engine->memoryDreamAvailable()},
-                {"lsp_enabled",bool(client->engine->lspTool())},{"web_fetch_enabled",bool(client->engine->webFetchTool())},{"auto_dream_enabled",client->engine->automaticMemoryDream()}};
+                {"worktrees_enabled",client->engine->worktreesEnabled()},{"lsp_enabled",bool(client->engine->lspTool())},{"web_fetch_enabled",bool(client->engine->webFetchTool())},{"auto_dream_enabled",client->engine->automaticMemoryDream()}};
         }
-        if(method=="agent.lsp.status") {
+        if(method=="agent.lsp.status"||method=="agent.worktrees.status") {
             require(p.size()==1,"LSP status accepts only session_id");
             const auto id=text(p,"session_id");
             require(client->engine->sessionMetadata(id).workingDirectory==options.workingDirectory,"Session belongs to a different workspace",ErrorCode::NotFound);
-            return client->engine->lspStatus(id,job->token);
+            return method=="agent.worktrees.status"?client->engine->worktreeStatus(id,job->token):client->engine->lspStatus(id,job->token);
         }
-        if(method=="agent.web.fetch"||method=="agent.lsp.query") {
+        if(method=="agent.web.fetch"||method=="agent.lsp.query"||method=="agent.worktrees.enter"||method=="agent.worktrees.exit") {
             const auto id=text(p,"session_id");auto arguments=p;arguments.remove("session_id");
             require(client->engine->sessionMetadata(id).workingDirectory==options.workingDirectory,"Session belongs to a different workspace",ErrorCode::NotFound);
             auto future=std::async(std::launch::async,[client,id,arguments,job,callback,method] {
+                if(method.startsWith("agent.worktrees."))return client->engine->runWorktreeTool(id,method.endsWith("enter")?"EnterWorktree":"ExitWorktree",arguments,job->token,[callback](const Event& event){if(callback)callback(toJson(event));});
                 if(method=="agent.lsp.query")return client->engine->runLsp(id,arguments,job->token,[callback](const Event& event){if(callback)callback(toJson(event));});
                 return client->engine->runWebFetch(id,arguments,job->token,[callback](const Event& event){if(callback)callback(toJson(event));});
             });

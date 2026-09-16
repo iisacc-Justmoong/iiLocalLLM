@@ -17,6 +17,7 @@
 #include "MemoryDream.h"
 #include "WebFetch.h"
 #include "Lsp.h"
+#include "Worktrees.h"
 #include "../Service.h"
 
 namespace iiLocalLLM::agent {
@@ -61,6 +62,7 @@ struct EngineOptions {
     SessionHistoryOptions sessionHistory; // Uses this Engine's sessionsDirectory; no external path from a caller.
     bool webFetchEnabled = false; // Embedded opt-in; agent-enabled daemon/MCP expose it by default.
     WebFetchOptions webFetch;
+    WorktreeOptions worktrees; // Embedded hosts opt in; daemon/agent MCP enable by default.
     LspOptions lsp; // Explicit trusted server configuration; empty disables LSP.
     MemoryDreamOptions memoryDream; // Available with memory + history; automatic scheduling is opt-in.
 };
@@ -112,6 +114,14 @@ public:
     ToolResult runLsp(const QString& sessionId,const QJsonObject&,const CancellationToken& = {},
         const EventCallback& = {},std::shared_ptr<PermissionRequests> = {}) const;
     QJsonObject lspStatus(const QString& sessionId,const CancellationToken& = {}) const;
+    bool worktreesEnabled() const;
+    std::optional<Tool> worktreeTool(const QString& name,bool deferred=false) const;
+    QJsonObject worktreeStatus(const QString& sessionId,const CancellationToken& = {}) const;
+    ToolResult runWorktreeTool(const QString& sessionId,const QString& name,const QJsonObject&,
+        const CancellationToken& = {},const EventCallback& = {},std::shared_ptr<PermissionRequests> = {}) const;
+    // Trusted direct-tool/MCP scope. With worktrees enabled, retains admission and
+    // a transcript lease until the returned guard is released. Rejects a busy run.
+    std::shared_ptr<void> bindWorkspaceContext(ToolContext&) const;
     QStringList sessions() const;
     std::optional<Tool> sessionSearchTool(bool deferred = false) const;
     ToolResult runSessionSearch(const QString& ownerSessionId,const QJsonObject& arguments,

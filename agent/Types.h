@@ -77,6 +77,9 @@ struct ToolContext {
     int maxReadBytes = 1024 * 1024; // Host excerpt budget; partial reads never authorize an edit.
     QString expectedReadSha256; // Optional host snapshot check, applied before recording a read.
     bool readOnlyShell = false; // Host-only native classifier + fixed environment; never accepted from model/wire input.
+    // Trusted Engine binding, never decoded from arguments, transcripts or MCP.
+    QString originalWorkingDirectory;
+    quint64 workspaceRevision = 0;
 };
 struct ModelRequest {
     QString model;

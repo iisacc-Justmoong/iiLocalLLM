@@ -1,5 +1,32 @@
 # 구현 검증 기록
 
+## 2026-09-16 C++ 세션별 작업 트리 (0.44.0)
+
+C++ `EnterWorktree`·`ExitWorktree`, 소유 상태의 원자적 저장, 보존·재개·삭제와 같은 응답 안의 파일·셸 실행 경로 전환을 구현했다. 세션의 원래 작업 공간은 인증 식별자로 유지한다. 프로젝트 권한·지침·메모리와 수명 훅은 현재 실행 경로를 사용한다. 기존 Qt Core와 외부 Git 명령을 사용하며 새 생산 Python/TypeScript 런타임은 추가하지 않았다. 계약·한도·참조 차이는 [Worktrees.md](Worktrees.md)에 기록한다.
+
+| 검증 | 최종 결과 |
+|---|---|
+| Release, inference 제외 | 92/92 |
+| ASan·UBSan | 89/89, llama OFF·leak detection OFF |
+| 새 설치 소비자 | 55/55 |
+| 실제 Qwen3-8B Q4 | source·installed 모두 EnterWorktree → Read → ExitWorktree keep, 파일에만 있는 임의 표식 답변 |
+| 인증 전송 | source·installed HTTP·IPC CLI·MCP HTTP·공식 MCP 1.26 stdio 통과 |
+| 소유권·보존 | 원본 미커밋 파일, 다른 소유자, 변경·ignored 파일·새 커밋·잠금 보호, keep·재개와 실제 삭제 확인 |
+| 설치 동일성 | 공개 헤더 54개, 네 진입점 0.44.0, dylib 해시·UUID·실제 로더 경로와 thin CLI 통과 |
+
+실제 모델 검사는 thinking OFF·native tool grammar ON인 기존 ServiceModel을 사용하며 요청·응답을 치환하지 않는다. 임의 표식은 Git에 커밋된 marker.txt에만 있고 사용자 질문에는 포함하지 않았다. source는 4턴·생성 75토큰, installed는 4턴·생성 75토큰이며 각각 모델 도구 호출 세 번을 순서대로 수행했다. Read 결과의 절대 경로가 새 작업 트리 안인지, 원본 파일과 보존한 작업 트리가 유지되는지 검사했다. 이후 호스트 직접 호출로 재개·깨끗한 삭제를 수행하고 transcript 메시지 수가 유지됨을 확인했다. 해당 모델·시나리오에 대한 관측값이다.
+
+전송 fixture는 실제 Git과 파일 도구·네이티브 셸을 사용한다. 미설치 모델 식별자를 사용하므로 추론 결과로 합산하지 않는다. 상태/capability 발견, 인증·앱 소유권, 인수 위조 거절, 다른 소유자의 접근 거절, 실행 경로, 변경 파일 삭제 거절, CLI keep·재개·명시적 discard, 직접 호출의 transcript 보존을 확인했다. MCP 기본 프로젝트 메모리 활성화 상태에서도 전환 뒤 Write가 통과했다.
+
+회귀는 이름·브랜치 충돌, 실패한 생성의 비활성 기록, 사라진 작업 트리에서 keep 복귀, 준비 후 상태·파일 내용 변경, Git 잠금, sparse checkout·공백 경로, 캐시된 원격 기준 커밋, 비 Git 호스트 어댑터 실패, 복사된 private 파일 보호, CLI 추가 경로의 원래 기준 유지, 프로젝트 권한 재로딩과 읽기 관찰 만료, 같은 모델 응답 안의 Enter→Read→Write→Bash→keep→원본 Write, 재시작·fork·clear 거절·실행 중 백그라운드 셸의 삭제 방지, 현재 작업 트리의 SessionEnd 훅을 포함한다. 65 MiB 변경 파일은 삭제 미리보기부터 거절하며 keep은 성공한다. 외부 프로세스의 동시 쓰기를 막는 OS 샌드박스는 아니다.
+
+초기 fixture 문자열 구분자와 빌드 대상 이름 오류를 보존했다. 첫 전체 검사는 공식 MCP 초기화의 기존 30초 기한 초과로 91/92였고, 코드·기한을 바꾸지 않은 독립 재검사는 통과했다. 원인은 확정하지 않았다. 전환 뒤 MCP Write가 프로젝트 메모리 초기화 누락으로 실패한 것을 실제 전송에서 재현하고 실행 범위 바인딩에 현재 메모리 디렉터리 초기화를 추가했다. SessionEnd가 원래 경로·스냅샷을 받던 오류도 실패로 재현해 수정했다. 수정 뒤 92/92가 통과했으며, 추가 검토에서 내용 스냅샷이 불완전한 삭제 미리보기가 생성되는 실패를 재현해 미리보기 단계부터 거절하도록 보완했다. 마지막 수정 후 전체 Release·sanitizer·설치 소비자·실제 모델·전송 검사를 순차 실행했다. 이전 결과는 build/worktree-before-lifecycle 및 build/worktree-before-preview에, 실패 증거는 build/worktree-wire-preflight.*, worktree-end-hook-red.log, worktree-preview-red.log 등에 보존한다.
+
+최종 검증 전 407개 소스·테스트·문서 입력의 SHA-256을 고정하고 검사 후 일치함을 확인했다. 마지막에 Verification.md와 Worktrees.md의 검증 범위 표현만 갱신하고 stage 문서를 다시 대조한다. prefix는 build/worktree-stage, 소비자는 build/worktree-consumer/build이다. Release와 stage dylib SHA-256은 `fefb358183e1f59a0ce1345a97a290bec1dadade7c6c7646e5a80ae4276e7deb`이다. 구조화 증거는 build/worktree-verification.json, 읽기용 보고서는 build/worktree-REPORT.md이다.
+
+검증 플랫폼은 macOS arm64이다. 활성 작업 트리의 clear/소유권 이전, 위임·팀 격리, startup/tmux/PR 모드, copy/include/symlink 설정, 전체 VCS 수명 훅, 실패·stale worktree 자동 복구와 다른 플랫폼·제품 앱 UI는 남아 있다. 이번 결과는 검증용 SDK 설치이며 Society·Dreamscapes 제품 재설치 증거는 별도로 관리한다. iPhone은 사용자 지시로 제외한다. C++ 소비자는 0.44 헤더와 라이브러리로 함께 재빌드해야 한다. 전체 대응표는 26 partial·5 pending·0 complete이며 전체 하네스 목표는 진행 중이다.
+
+
 ## 2026-09-16 C++ LSP (0.43.0)
 
 C++ LSP의 9개 코드 탐색 연산, Content-Length stdio 전송·초기화 협상, 소유 세션별 프로세스, 버전이 있는 UTF-16 문서 동기화·진단, 기존 Read/LSP 권한과 인증 API·MCP·CLI를 구현했다. 생산 Python/TypeScript 런타임이나 새 라이브러리 의존성은 추가하지 않았다. 호스트가 설치한 언어 서버를 사용하며 계약·한도·참조 차이는 [Lsp.md](Lsp.md)에 기록한다.

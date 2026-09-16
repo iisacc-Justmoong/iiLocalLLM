@@ -46,6 +46,7 @@ private:
     struct Runtime;
     struct State;
     std::shared_ptr<State> state_;
+    std::unique_ptr<SettingsPermissionPolicy> workspacePolicy(const ToolContext&) const;
     PermissionSettingsSnapshot sessionSnapshot(const ToolContext&) const;
     PermissionSettingsSnapshot snapshotLocked(const ToolContext&,Runtime&,const QHash<QString,QJsonObject>&) const;
 };
