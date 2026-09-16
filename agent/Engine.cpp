@@ -65,6 +65,7 @@ public:
             throw Error(ErrorCode::InvalidArgument, "Invalid agent engine configuration");
         pool.setMaxThreadCount(this->options.maxConcurrentRuns);
         if(this->options.sessionHistoryEnabled)history=std::make_shared<SessionHistory>(this->options.sessionsDirectory,this->options.sessionHistory);
+        if(this->options.fileCheckpointsEnabled)checkpoints=std::make_shared<FileCheckpoints>(QDir(this->options.sessionsDirectory).filePath("file-checkpoints"));
         if(!this->options.lsp.servers.isEmpty()){auto config=this->options.lsp;config.protectedPaths.append(this->options.sessionsDirectory);lsp=std::make_shared<Lsp>(std::move(config),this->policy);}
         if(this->options.webFetchEnabled)web=std::make_shared<WebFetch>(this->model,this->options.webFetch);
         if(this->options.worktrees.enabled)worktrees=std::make_shared<Worktrees>(QDir(this->options.sessionsDirectory).filePath("worktrees"),this->options.worktrees);
@@ -110,6 +111,7 @@ public:
     std::shared_ptr<WebFetch> web;
     std::shared_ptr<Lsp> lsp;
     std::shared_ptr<Worktrees> worktrees;
+    std::shared_ptr<FileCheckpoints> checkpoints;
     QSet<QString> workspaceTransitions;
     QThreadPool pool;
     std::mutex mutex;
@@ -185,6 +187,10 @@ public:
     };
 
     ToolContext executionContext(ToolContext context) const {
+        if(checkpoints){
+            context.protectedPaths.append(options.sessionsDirectory);
+            context.beforeFileWrite=[owner=checkpoints](const QString& path,const std::optional<QByteArray>& before,const ToolContext& scope){owner->track(path,before,scope);};
+        }
         if(!worktrees)return context;
         const auto original=store.metadata(context.sessionId).workingDirectory;
         ToolContext owner=context;owner.workingDirectory=original;
@@ -402,6 +408,13 @@ public:
             for (auto message : detail::pendingSkillMessages(lease->session().messages)) lease->append(std::move(message));
         };
         bool stopHookActive=false;
+        QString fileCheckpointId;
+        auto checkpointPrompt=[&](const QString& id){
+            if(!checkpoints)return;
+            auto context=permissionContext({request.sessionId,runId,lease->session().workingDirectory,lease->artifactsDirectory(),token});
+            context.workingDirectories=policy->workingDirectories(context);
+            checkpoints->checkpoint(id,context);fileCheckpointId=id;
+        };
         auto hooks = [&](HookKind kind, const QString& text, const QJsonObject& extra = QJsonObject{}, bool applyControl = true) {
             HookResult combined;
             const auto modelContext=hookContext(lease->session(),runId,runToken);
@@ -487,7 +500,7 @@ public:
                     send({EventKind::InputDelivered,runId,request.sessionId,{}, {},message.metadata["iilocal.input"].toObject()});
                 }
                 enforcePrompt(message);
-                if(message.metadata["iilocal.input"].toObject()["kind"]=="prompt") {memoryQuery=message.text;memoryQueryId=message.id;}
+                if(message.metadata["iilocal.input"].toObject()["kind"]=="prompt") {memoryQuery=message.text;memoryQueryId=message.id;checkpointPrompt(message.id);}
             }
             return count;
         };
@@ -530,6 +543,7 @@ public:
                 { std::lock_guard lock(mutex); active.at(runId).acceptsInput = false; }
                 Message invocation{{}, MessageRole::User, submittedPrompt};
                 invocation.metadata = user.metadata; append(invocation);enforcePrompt(invocation);
+                checkpointPrompt(lease->session().messages.last().id);
                 const auto& session = lease->session();
                 ToolContext context{session.id, runId, session.workingDirectory, lease->artifactsDirectory(), runToken, {},
                     quint64(session.compactions.size()), std::make_shared<Session>(session)};
@@ -545,7 +559,7 @@ public:
                 if (response.isError && response.text.isEmpty()) response.text = result.errorMessage.isEmpty() ? enumName(result.status) : result.errorMessage;
                 append(std::move(response));
             } else if (!compactOnly && !queuedOnly) {append(user);enforcePrompt(user);
-                if(request.userPrompt){memoryQuery=user.text;memoryQueryId=lease->session().messages.last().id;}}
+                if(request.userPrompt){memoryQuery=user.text;memoryQueryId=lease->session().messages.last().id;checkpointPrompt(memoryQueryId);}}
             else if (compactOnly && modelMessages(lease->session()).isEmpty()) throw Error(ErrorCode::InvalidArgument, "Cannot compact an empty session");
             QString lastContextFingerprint;
             bool allowLater = queuedOnly;
@@ -696,6 +710,7 @@ public:
                 }
                 ToolContext toolBase{session.id, runId, session.workingDirectory, lease->artifactsDirectory(), token, {}, quint64(session.compactions.size()), std::make_shared<Session>(session)};
                 toolBase=executionContext(std::move(toolBase));
+                toolBase.fileCheckpointId=fileCheckpointId;
                 toolBase.permissionRequests=permissionRequests;
                 if(!options.hooks.isEmpty())toolBase.asyncHooks=hookScope(session.id);
                 toolBase.hookCancellation=runToken;
@@ -881,6 +896,55 @@ bool Engine::notebookToolsEnabled() const {
     for(const auto& tool:d->registry->definitions())if(tool.metadata["source"]=="builtin.workspace")names.insert(tool.name);
     return names.contains("Read")&&names.contains("NotebookEdit");
 }
+bool Engine::fileCheckpointsEnabled() const {return bool(d->checkpoints);}
+QJsonObject Engine::fileCheckpoints(const QString& id,const CancellationToken& token) const {
+    if(!d->checkpoints)return {{"enabled",false},{"snapshots",QJsonArray{}}};
+    const auto session=d->store.metadata(id);ToolContext context{id,{},session.workingDirectory,{},token};
+    auto guard=bindWorkspaceContext(context,true);return d->checkpoints->list(context);
+}
+QJsonObject Engine::checkpointFiles(const QString& id,const CancellationToken& token) const {
+    if(!d->checkpoints)throw Error(ErrorCode::RuntimeUnavailable,"File checkpoints are disabled");
+    const auto session=d->store.metadata(id);ToolContext context{id,{},session.workingDirectory,{},token};
+    auto guard=bindWorkspaceContext(context,true);context=d->permissionContext(context);context.workingDirectories=d->policy->workingDirectories(context);
+    return d->checkpoints->checkpoint(uuid(),context);
+}
+ToolResult Engine::rewindFiles(const QString& id,const QString& messageId,bool dryRun,const CancellationToken& token,
+    const EventCallback& callback,std::shared_ptr<PermissionRequests> requests) const {
+    if(!d->checkpoints)throw Error(ErrorCode::RuntimeUnavailable,"File checkpoints are disabled");
+    const auto session=d->store.metadata(id);ToolContext context{id,uuid(),session.workingDirectory,{},token};
+    auto guard=bindWorkspaceContext(context,true);context=d->permissionContext(context);context.transcriptPath=transcriptPath(id);
+    context.permissionRequests=requests?requests:d->options.permissionRequests;
+    if(!d->options.hooks.isEmpty())context.asyncHooks=d->hookScope(id);context.hookCancellation=context.cancellation;
+    auto registry=std::make_shared<ToolRegistry>();Tool tool;
+    tool.definition={"RewindFiles","Restore native file changes to a recorded checkpoint. Preview lists every changed file; new files can be deleted. Conversation remains intact.",
+        {{"type","object"},{"additionalProperties",false},{"properties",QJsonObject{{"message_id",QJsonObject{{"const",messageId},{"type","string"}}},{"dry_run",QJsonObject{{"const",dryRun},{"type","boolean"}}}}},{"required",QJsonArray{"message_id","dry_run"}}},
+        {},dryRun,false,!dryRun};
+    const auto files=d->checkpoints;const auto native=d->registry->snapshot();const auto policy=d->policy;
+    auto verify=[native,policy](const QJsonObject& preview,const ToolContext& scope){
+        const auto write=native->get("Write");
+        if(write.definition.metadata["source"]!="builtin.workspace"||!write.prepare)throw Error(ErrorCode::RuntimeUnavailable,"Native Write permission scope is unavailable");
+        for(const auto& value:preview["filesChanged"].toArray()){
+            QJsonObject args{{"path",value.toString()},{"content",""}};const auto prepared=write.prepare(args,scope);
+            if(policy->decide(prepared.definition,args,scope).behavior==PermissionBehavior::Deny)
+                throw Error(ErrorCode::Unauthorized,"Current file permission denies rewind: "+value.toString());
+        }
+    };
+    tool.prepare=[files,verify,policy,messageId,dryRun,definition=tool.definition](const QJsonObject&,const ToolContext& scope){
+        const auto preview=files->rewind(messageId,true,scope);verify(preview,scope);auto definitionWithPreview=definition;
+        definitionWithPreview.metadata={{"source","builtin.checkpoint"},{"files_changed",preview["filesChanged"]},{"changes",preview["changes"]}};
+        return PreparedTool{definitionWithPreview,[files,verify,policy,messageId,dryRun,scope,preview]{
+            auto current=scope;current.workingDirectories=policy->workingDirectories(current);
+            verify(preview,current);const auto report=files->rewind(messageId,dryRun,current,preview["fingerprint"].toString());
+            return ToolResult{dryRun?"File rewind preview.":report["complete"].toBool()?"File rewind completed.":"File rewind stopped; inspect filesRestored and errors.",report,!report["complete"].toBool()};
+        }};
+    };
+    tool.execute=[prepare=tool.prepare](const QJsonObject& args,const ToolContext& scope){return prepare(args,scope).execute();};registry->add(std::move(tool));
+    ToolRunnerOptions options{d->options.hooks,d->options.permission,24000,d->options.permissionResponse,d->options.permissionUpdates,
+        context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks),d->plans};
+    auto result=ToolRunner(registry,d->policy,options).run({uuid(),"RewindFiles",{{"message_id",messageId},{"dry_run",dryRun}}},context,callback);
+    if(!dryRun)for(const auto& definition:d->registry->definitions()){const auto tool=d->registry->get(definition.name);if(tool.clearReadState)tool.clearReadState(context);}
+    return result;
+}
 ToolResult Engine::runNotebookTool(const QString& id,const QString& name,const QJsonObject& input,const CancellationToken& token,
     const EventCallback& callback,std::shared_ptr<PermissionRequests> requests) const {
     if(name!="Read"&&name!="NotebookEdit")throw Error(ErrorCode::InvalidArgument,"Unknown notebook operation");
@@ -972,6 +1036,9 @@ Session Engine::forkSession(const QString& id, const QString& throughMessageId) 
     std::lock_guard lock(d->mutex);
     if(d->stopping)throw Error(ErrorCode::ShuttingDown,"Agent engine is shutting down");
     if (d->busySessions.contains(id)||d->endingSessions.contains(id)) throw Error(ErrorCode::ModelInUse, "Cannot fork an active or ending session");
+    if(d->checkpoints){const auto owner=d->store.metadata(id);auto context=d->executionContext({id,{},owner.workingDirectory});
+        const auto history=d->checkpoints->list(context);if(history["total_tracked_files"].toInt()>0)
+            throw Error(ErrorCode::RuntimeUnavailable,"Forking tracked file checkpoints requires artifact cloning, which is not yet supported");}
     auto session=d->store.fork(id,throughMessageId);
     d->createdSessions.insert(session.id);d->touchedSessions.insert(session.id);
     try {d->policy->inheritSession({id,{},session.workingDirectory},{session.id,{},session.workingDirectory});}

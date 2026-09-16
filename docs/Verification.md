@@ -1,5 +1,19 @@
 # 구현 검증 기록
 
+## 0.46 — 파일 체크포인트와 복원
+
+C++ FileCheckpoints의 메시지별 원본 기록, Write/Edit/NotebookEdit 저장 전 추적, missing-file 복원, 현재 작업 디렉터리·권한·미리보기 fingerprint, API·MCP·CLI를 검증했다. 원본 내용과 QFile 권한을 복원하며 대화는 유지한다. 계약과 남은 기능은 [FileCheckpoints.md](FileCheckpoints.md)에 있다.
+
+- 최종 Release **94/94**, ASan/UBSan **91/91**: 전체 대상 재실행에서 failure/skip 0. sanitizer는 llama OFF, leak detection OFF이다.
+- 새 설치 prefix `build/checkpoint-final-stage`, 독립 consumer `build/checkpoint-final-consumer/build`: **57/57**. 공개 헤더 **56개**가 소스와 일치하며 네 실행 파일이 0.46.0을 반환한다. 실제 dyld 로그에서 최종 설치 라이브러리 로딩을 확인했다. iillm은 Qt Core/Network만 연결하고 iiLocalLLM/llama/ggml을 직접 연결하지 않는다.
+- 소스·설치 바이너리 각각 HTTP, IPC CLI, MCP HTTP, 공식 MCP Python SDK 1.26 stdio에서 checkpoint 생성·목록·preview·원문 복원 및 소유자 분리를 확인했다. Jupyter nbformat 5.11.1 검증도 통과했다. 이 전송 검사에는 모델 추론이 없다.
+- 기존 `model://qwen3-8b-q4`를 사용한 실제 ServiceModel: source 3턴/1528 생성 토큰, installed 3턴/1652 생성 토큰. 두 경우 모두 Read → NotebookEdit, 정확한 셀 소스와 응답, 원본/편집본 바이트 복원, 대화 불변 및 13개 검사가 통과했다. 응답·코드 비교는 추가로 trim 없이 확인했다. 모델 요청/응답을 대체하지 않았다.
+- 실제 모델 조건은 context 4096, cache 1개/4096, 턴당 maxTokens 1024, maxTurns 6, thinking ON, tool grammar OFF, temperature 0.6/top_p 0.95/top_k 20/min_p 0/seed 0이다. 다른 모델·샘플링 모드의 품질까지 증명하지 않는다.
+
+초기 검사에서 테스트 fixture의 혼합 auto 선언·임시 QJsonValueRef 보관을 수정했다. 기존 SessionEnd 검사는 40ms 안에 두 콜백이 시작된다고 가정해 Release/sanitizer 병행 및 sanitizer 단독 재검에서 실패했다. 예외 복구와 짧은 공유 예산을 분리해 검사하며 제품의 시간 제한은 변경하지 않았다. 초기 wire fixture의 Write 허용 누락은 실제 복원을 거부했고, 명시적 허용을 추가한 뒤 통과했다. 실패 로그는 `build/checkpoint-*`에 보존했다.
+
+최종 소스/설치 라이브러리 SHA-256: `692de1ac7d8b352565a216040854c54ff7adeb4ed8d4773d736fa0a7532799ca`. 소스·테스트 입력 241개를 hash로 고정했으며 상세 증거는 `build/checkpoint-verification.json`에 있다. 이는 SDK 설치 검증이며 제품 앱 재설치나 모바일 실기기 검증은 아니다. iPhone 제외 지시를 유지한다. 대화 rewind, artifact를 포함한 fork, Bash simulated-sed, IDE/팀 통합은 남아 있고 전체 대응표는 **27 partial / 4 pending / 0 complete**이다.
+
 ## 2026-09-16 C++ Jupyter 노트북 셀 편집 (0.45.0)
 
 C++ NotebookEdit의 셀 교체·삽입·삭제, 실제 ID 우선 선택과 cell-N 인덱스, 구형 minor 호환, 형식 전환과 코드 실행 결과 초기화를 추가했다. 기존 파일 도구의 권한·관찰 해시·원자적 저장·백업을 사용하며 C++ 직접 호출, 인증 HTTP/IPC·CLI와 MCP로 제공한다. 계약·참조 구현과의 차이는 [Notebooks.md](Notebooks.md)를 따른다. 생산 의존성은 기존 Qt Core이며 공식 nbformat 5.11.1은 검증용으로만 사용한다.

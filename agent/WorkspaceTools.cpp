@@ -160,6 +160,10 @@ public:
         require(resolve(path, c, true) == path, "File path changed before writing");
         if (before) require(readFile(path) == *before, "File changed before writing");
         else require(!QFileInfo::exists(path), "File appeared before writing; read it first");
+        if(c.beforeFileWrite&&path!=c.planFilePath)c.beforeFileWrite(path,before,c);
+        require(resolve(path,c,true)==path,"File path changed while checkpointing");
+        if(before)require(readFile(path)==*before,"File changed while checkpointing");
+        else require(!QFileInfo::exists(path),"File appeared while checkpointing");
         QSaveFile file(path);
         if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit())
             throw Error(ErrorCode::StorageFailure, "Cannot write file: " + path);

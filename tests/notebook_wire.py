@@ -37,6 +37,7 @@ def main():
         parser.add_argument(name, type=Path)
     parser.add_argument('--report', type=Path, required=True)
     parser.add_argument('--official-stdio', action='store_true')
+    parser.add_argument('--checkpoints', action='store_true')
     args = parser.parse_args()
     daemon, cli, mcp = (str(getattr(args, key).resolve()) for key in ('daemon', 'cli', 'mcp'))
     env = dict(os.environ)
@@ -126,6 +127,8 @@ def main():
             command = [daemon, '--socket', str(root / 's'), '--http-port', '0', '--models-root', str(root / 'models'),
                 '--agent-workspace', str(work), '--agent-state', str(root / 'api'), '--agent-credentials', credentials,
                 '--agent-allow', 'NotebookEdit', '--agent-no-worktrees', '--agent-no-apps', '--agent-no-skills', '--agent-no-subagents', '--no-agent-profiles']
+            if args.checkpoints:
+                command += ['--agent-allow', 'RewindFiles', '--agent-allow', 'Write']
             with server('api', command, r'iiLocalLLM HTTP: http://127\.0\.0\.1:(\d+)') as port:
                 def rpc(method, params=None, credential=token, expected=200):
                     status, data, _ = post(port, '/v1/rpc', method, params or {}, credential)
@@ -133,6 +136,10 @@ def main():
                     return data.get('result', data)
                 assert rpc('agent.info')['notebooks_enabled']
                 owner = rpc('agent.sessions.create', {'model': 'model://missing-fixture'})['session_id']
+                before_api = path.read_bytes()
+                if args.checkpoints:
+                    assert rpc('agent.info')['file_checkpoints_enabled']
+                    point = rpc('agent.checkpoints.create', {'session_id': owner})['message_id']
                 observed = {'session_id': owner, 'notebook_path': 'book.ipynb'}
                 edit = {**observed, 'cell_id': 'main', 'new_source': 'checked = ' + repr(marker)}
                 assert rpc('agent.notebooks.edit', edit)['is_error']
@@ -170,10 +177,25 @@ def main():
                 report['validated_documents'] += 2
                 report['legacy_notebook'] = legacy_value
                 report.update(http=True, ipc_cli=True, owner_isolation=True, stale_read_rejected=True, outside_scope_rejected=True, transcript_unchanged=True)
+                if args.checkpoints:
+                    assert rpc('agent.checkpoints.list', {'session_id': owner})['snapshots']
+                    rpc('agent.checkpoints.list', {'session_id': owner}, other_token, 404)
+                    edited = path.read_bytes()
+                    preview = rpc('agent.checkpoints.rewind', {'session_id': owner, 'message_id': point, 'dry_run': True})
+                    assert not preview['is_error'] and path.read_bytes() == edited, preview
+                    params = private('rewind.json', {'message_id': point})
+                    output = subprocess.run([cli, '--socket', str(root / 's'), '--auth-file', auth, 'agent', 'checkpoints', 'rewind', owner, params], cwd=root, env=env, capture_output=True, text=True, timeout=40, check=True)
+                    restored = json.loads(output.stdout)
+                    assert not restored['is_error'] and restored['result']['complete'] and path.read_bytes() == before_api
+                    assert rpc('agent.notebooks.edit', edit)['is_error'], 'Rewind must invalidate prior reads'
+                    report['checkpoint_http_and_ipc'] = True
 
             mcp_args = ['--workspace', str(work), '--models', str(root / 'models'), '--model', 'model://missing-fixture',
                 '--allow', 'NotebookEdit', '--no-worktrees', '--no-apps', '--no-skills', '--no-subagents', '--no-agent-profiles']
             init_args = {'protocolVersion': '2025-11-25', 'capabilities': {}, 'clientInfo': {'name': 'notebook-verifier', 'version': '1'}}
+            if args.checkpoints:
+                for rule in ('Write', 'RewindFiles'):
+                    mcp_args += ['--allow', rule]
             with server('mcp-http', [mcp, *mcp_args, '--state', str(root / 'mcp-http'), '--http-port', '0', '--credentials', credentials], r'http://127\.0\.0\.1:(\d+)/mcp') as port:
                 status, init, session = post(port, '/mcp', 'initialize', init_args)
                 assert status == 200 and session and 'iisacc/notebooks' in init['result']['capabilities']['experimental'], init
@@ -182,6 +204,10 @@ def main():
                     _, value, _ = post(port, '/mcp', 'tools/call', {'name': name, 'arguments': values}, session=session)
                     assert not value.get('error') and value['result'].get('isError', False) is failure, value
                     return value['result']['structuredContent']
+                before_mcp = path.read_bytes()
+                if args.checkpoints:
+                    assert 'iisacc/fileCheckpoints' in init['result']['capabilities']['experimental']
+                    point = call('iiLocalLLM.agent.checkpoints.create', {})['message_id']
                 _, listed, _ = post(port, '/mcp', 'tools/list', {}, session=session)
                 assert {'Read', 'NotebookEdit'} <= {tool['name'] for tool in listed['result']['tools']}
                 edit = {'notebook_path': 'book.ipynb', 'new_source': 'x = 2', 'cell_id': 'main', 'cell_type': 'code'}
@@ -195,6 +221,12 @@ def main():
                 assert len(verify()['cells']) == 2
                 assert post(port, '/mcp', 'tools/list', {}, other_token, session)[0] == 404
                 report['mcp_http'] = True
+                if args.checkpoints:
+                    preview = call('iiLocalLLM.agent.checkpoints.rewind', {'message_id': point, 'dry_run': True})
+                    assert preview['dryRun'] and preview['filesChanged']
+                    result = call('iiLocalLLM.agent.checkpoints.rewind', {'message_id': point})
+                    assert result['complete'] and path.read_bytes() == before_mcp
+                    report['checkpoint_mcp_http'] = True
 
             if args.official_stdio:
                 async def official():
@@ -205,12 +237,20 @@ def main():
                             async with ClientSession(reader, writer) as client:
                                 init = await client.initialize()
                                 assert 'iisacc/notebooks' in init.capabilities.experimental
+                                before_stdio = path.read_bytes()
+                                if args.checkpoints:
+                                    assert 'iisacc/fileCheckpoints' in init.capabilities.experimental
+                                    point = (await client.call_tool('iiLocalLLM.agent.checkpoints.create', {})).structuredContent['message_id']
                                 result = await client.call_tool('Read', {'path': 'book.ipynb'})
                                 assert not result.isError, result
                                 result = await client.call_tool('NotebookEdit', {'notebook_path': 'book.ipynb', 'cell_id': 'cell-0', 'new_source': '# ' + marker})
                                 assert not result.isError, result
                                 assert result.structuredContent['cell_type'] == 'markdown'
                                 assert verify()['cells'][1]['source'] == '# ' + marker
+                                if args.checkpoints:
+                                    restored = await client.call_tool('iiLocalLLM.agent.checkpoints.rewind', {'message_id': point})
+                                    assert not restored.isError and restored.structuredContent['complete'] and path.read_bytes() == before_stdio
+                                    report['checkpoint_official_stdio'] = True
                         return True
                 report['official_stdio'] = asyncio.run(official())
                 report['mcp_client_version'] = importlib.metadata.version('mcp')

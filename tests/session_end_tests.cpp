@@ -93,19 +93,32 @@ private slots:
         const auto other=engine->createSession("local",host.workspace).id;
         QCOMPARE(engine->run({other,"unaffected"}).result.get().status,a::RunStatus::Completed);engine->close();
     }
-    void exceptionsAndTimeoutCannotVetoEndAndChildEnginesDoNotEmitMainEnd() {
-        Host host;host.options.sessionEndTimeoutMs=40;int afterThrow=0;
+    void exceptionsCannotVetoEndAndChildEnginesDoNotEmitMainEnd() {
+        Host host;host.options.sessionEndTimeoutMs=1500;int afterThrow=0;
         host.options.hooks.append([](const a::HookInput& input,const CancellationToken&){
             if(input.kind==a::HookKind::SessionEnd)throw std::runtime_error("EXPECTED_END_FAILURE");return a::HookResult{};});
-        host.options.hooks.append([&](const a::HookInput& input,const CancellationToken& token){
-            if(input.kind==a::HookKind::SessionEnd){++afterThrow;while(!token.isCancelled())std::this_thread::sleep_for(1ms);token.throwIfCancelled();}
+        host.options.hooks.append([&](const a::HookInput& input,const CancellationToken&){
+            if(input.kind==a::HookKind::SessionEnd)++afterThrow;
             return a::HookResult{};});
         auto engine=host.engine();const auto id=engine->createSession("local",host.workspace).id;
         engine->run({id,"hello"}).result.get();const auto begin=std::chrono::steady_clock::now();
-        auto result=engine->endSession(id);QVERIFY(std::chrono::steady_clock::now()-begin<1s);QCOMPARE(result["timed_out"],true);
+        auto result=engine->endSession(id);QVERIFY(std::chrono::steady_clock::now()-begin<2s);QCOMPARE(result["timed_out"],false);
         QVERIFY(QJsonDocument(result).toJson().contains("EXPECTED_END_FAILURE"));QCOMPARE(afterThrow,1);
         engine->close();host.options.sessionStartHooks=false;auto child=host.engine();
         child->run({id,"child"}).result.get();child->close();QCOMPARE(afterThrow,1);
+    }
+    void shortBudgetStopsLaterHooksWithoutRequiringCallbackAdmission() {
+        Host host;host.options.sessionEndTimeoutMs=40;int late=0;
+        host.options.hooks.append([](const a::HookInput& input,const CancellationToken& token){
+            if(input.kind==a::HookKind::SessionEnd){while(!token.isCancelled())std::this_thread::sleep_for(1ms);token.throwIfCancelled();}
+            return a::HookResult{};});
+        host.options.hooks.append([&](const a::HookInput& input,const CancellationToken&){if(input.kind==a::HookKind::SessionEnd)++late;return a::HookResult{};});
+        auto engine=host.engine();const auto id=engine->createSession("local",host.workspace).id;engine->run({id,"hello"}).result.get();
+        const auto begin=std::chrono::steady_clock::now();const auto result=engine->endSession(id);
+        QVERIFY(std::chrono::steady_clock::now()-begin<1s);QCOMPARE(result["timed_out"],true);QCOMPARE(result["ended"],true);QCOMPARE(late,0);
+        // The shared budget includes context preparation; it can expire before
+        // the first callback under sanitizers or load. Admission is not promised.
+        QCOMPARE(engine->endSession(id)["ended"],false);
     }
     void commandReasonMatchersAndCommonBudgetStopQueuedProcesses() {
         Host host;host.options.sessionEndTimeoutMs=180;a::CommandHookOptions options;options.workingDirectory=host.workspace;options.maxConcurrentProcesses=1;

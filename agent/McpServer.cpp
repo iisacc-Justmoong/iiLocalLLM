@@ -176,6 +176,21 @@ public:
             status.execute=[self](const QJsonObject&,const ToolContext& context){auto value=self->options.engine->worktreeStatus(context.sessionId,context.cancellation);return ToolResult{QString::fromUtf8(QJsonDocument(value).toJson(QJsonDocument::Compact)),value};};
             frozen->add(std::move(status));
         }
+        if(options.engine->fileCheckpointsEnabled())for(const QString action:{QStringLiteral("list"),QStringLiteral("create"),QStringLiteral("rewind")}){
+            Tool control;control.definition.name="iiLocalLLM.agent.checkpoints."+action;
+            control.definition.description="Inspect, create or rewind file checkpoints owned by this MCP connection. Rewind preserves the conversation and checks native file permissions.";
+            control.definition.readOnly=action=="list";control.definition.concurrencySafe=false;
+            control.definition.metadata={{"source","builtin.checkpoint.control"}};
+            QJsonObject properties;if(action=="rewind")properties={{"message_id",QJsonObject{{"type","string"},{"minLength",36},{"maxLength",36}}},{"dry_run",QJsonObject{{"type","boolean"}}}};
+            control.definition.inputSchema={{"type","object"},{"properties",properties},{"additionalProperties",false}};
+            if(action=="rewind")control.definition.inputSchema["required"]=QJsonArray{"message_id"};
+            control.execute=[self,action](const QJsonObject& args,const ToolContext& context){
+                const auto owner=self->sessionId(self->conversation(context.sessionId),context.cancellation);
+                if(action=="rewind")return self->options.engine->rewindFiles(owner,args["message_id"].toString(),args["dry_run"].toBool(),context.cancellation,permissionEvents(context),context.permissionRequests);
+                const auto result=action=="list"?self->options.engine->fileCheckpoints(owner,context.cancellation):self->options.engine->checkpointFiles(owner,context.cancellation);
+                return ToolResult{QString::fromUtf8(QJsonDocument(result).toJson(QJsonDocument::Compact)),result};
+            };frozen->add(std::move(control));
+        }
         options.engine->bindProjectMemoryTools(*frozen,false);
         if(options.engine->projectMemoryEnabled()) {
             Tool memory;memory.definition={"iiLocalLLM.agent.memory.get","Inspect this connection owner's project memory index and search topic metadata/content. query is a case-insensitive literal.",
@@ -448,7 +463,7 @@ public:
         const bool subagentControl = options.engine && source == "builtin.subagent.control";
         const bool sessionControl=options.engine&&source=="builtin.session.control"&&name=="iiLocalLLM.agent.clear";
         const bool planControl=options.engine&&(source=="builtin.plan.control"||source=="builtin.plan");
-        const bool memoryControl=options.engine&&source=="builtin.memory.control";
+        const bool memoryControl=options.engine&&(source=="builtin.memory.control"||source=="builtin.checkpoint.control");
         // Questions and web extraction do not mutate the application workspace.
         // Holding the registry lock while waiting on a person/network/model
         // would block independent app actions. WebFetch owns its own admission.
@@ -488,6 +503,8 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
         server.experimentalCapabilities["iisacc/notebooks"]=QJsonObject{{"schema","iisacc.notebooks/1"},{"readTool","Read"},{"editTool","NotebookEdit"},{"readFormat","utf8-json"},{"nbformat",4},{"maxBytes",1024*1024}};
     if(state->options.engine&&state->options.engine->worktreesEnabled())
         server.experimentalCapabilities["iisacc/worktrees"]=QJsonObject{{"schema","iisacc.worktrees/1"},{"enterTool","EnterWorktree"},{"exitTool","ExitWorktree"},{"statusTool","iiLocalLLM.agent.worktrees.status"},{"scope","connection-owner"}};
+    if(state->options.engine&&state->options.engine->fileCheckpointsEnabled())
+        server.experimentalCapabilities["iisacc/fileCheckpoints"]=QJsonObject{{"schema","iisacc.file-checkpoints/1"},{"listTool","iiLocalLLM.agent.checkpoints.list"},{"createTool","iiLocalLLM.agent.checkpoints.create"},{"rewindTool","iiLocalLLM.agent.checkpoints.rewind"},{"scope","connection-owner"}};
     if(state->options.engine&&state->options.engine->lspTool())
         server.experimentalCapabilities["iisacc/lsp"]=QJsonObject{{"schema","iisacc.lsp/1"},{"tool","LSP"},{"statusTool","iiLocalLLM.agent.lsp.status"},{"positionEncoding","utf-16"}};
     if(state->options.engine&&state->options.engine->webFetchTool())

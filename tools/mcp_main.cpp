@@ -47,6 +47,7 @@ int main(int argc, char** argv) {
         {"no-memory-recall", "Disable model-ranked project memory recall."},
         {"no-memory-extraction", "Disable automatic project memory extraction after main-agent responses."},
         {"no-session-history", "Disable owned session transcript search."},
+        {"no-file-checkpoints", "Disable native file checkpoints and rewind controls."},
         {"no-worktrees", "Disable owned worktree lifecycle tools."},
         {"worktree-config", "Private host JSON for worktree storage, base ref and sparse paths.", "file"},
         {"lsp-config", "Private host JSON configuring local language servers; requires --model.", "file"},
@@ -155,6 +156,7 @@ int main(int argc, char** argv) {
         QList<a::PermissionRule> rules,hostRules;
         for (const auto& value : parser.values("allow")) rules.append({value, a::PermissionBehavior::Allow});
         const bool agent = parser.isSet("model");
+        if(!agent&&parser.isSet("no-file-checkpoints"))throw std::runtime_error("--no-file-checkpoints requires --model");
         if(!agent&&(parser.isSet("worktree-config")||parser.isSet("no-worktrees")))throw std::runtime_error("Worktree options require --model");
         if(!agent&&parser.isSet("lsp-config"))throw std::runtime_error("--lsp-config requires --model");
         if(!agent&&(parser.isSet("web-model")||parser.isSet("web-private-origin")))throw std::runtime_error("WebFetch options require --model");
@@ -163,6 +165,8 @@ int main(int argc, char** argv) {
         if (agent) {
             hostRules.append({"iiLocalLLM.agent.run", a::PermissionBehavior::Allow});
             hostRules.append({"iiLocalLLM.agent.clear", a::PermissionBehavior::Allow});
+            hostRules.append({"iiLocalLLM.agent.checkpoints.create", a::PermissionBehavior::Allow});
+            hostRules.append({"iiLocalLLM.agent.checkpoints.rewind", a::PermissionBehavior::Allow}); // Inner RewindFiles checks file policy and approval.
             // The inner native Agent/AgentStop call still evaluates host policy.
             hostRules.append({"iiLocalLLM.agent.agents.run", a::PermissionBehavior::Allow});
             hostRules.append({"iiLocalLLM.agent.agents.stop", a::PermissionBehavior::Allow});
@@ -216,6 +220,7 @@ int main(int argc, char** argv) {
             engineOptions.memoryRecall.enabled = !parser.isSet("no-memory-recall");
             engineOptions.memoryExtraction.enabled = !parser.isSet("no-memory-extraction");
             engineOptions.sessionHistoryEnabled = !parser.isSet("no-session-history");
+            engineOptions.fileCheckpointsEnabled = !parser.isSet("no-file-checkpoints");
             engineOptions.worktrees.enabled=!parser.isSet("no-worktrees");
             if(parser.isSet("worktree-config")) {
                 if(parser.isSet("no-worktrees"))throw std::runtime_error("Worktree configuration conflicts with disabled worktrees");

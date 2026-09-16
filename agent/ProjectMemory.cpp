@@ -189,6 +189,7 @@ public:
             if(args.contains("content"))require(args["content"].toString().toUtf8().size()<=self->options.maxFileBytes,"Memory file exceeds byte limit",ErrorCode::ResourceLimit);
             if(QFileInfo(path).isFile())require(QFileInfo(path).size()<=self->options.maxFileBytes,"Memory file exceeds byte limit",ErrorCode::ResourceLimit);
             auto scope=context;scope.workingDirectory=e->directory;scope.workingDirectories={e->directory};
+            scope.beforeFileWrite={}; // Project memory has its own lifecycle, outside workspace rewind.
             // Routing already narrows access to this exact owned directory.
             // Private ancestors protect ordinary tools; protected descendants
             // inside the memory directory still remain excluded.

@@ -159,3 +159,7 @@ C++ MemoryDream은 기본 OFF인 자동 실행, 24시간·5개 대화·10분 목
 
 
 0.45는 nbformat 4 셀 편집과 C++/인증 API/CLI/MCP 전송을 추가한다. [노트북 계약](Notebooks.md)과 [검증 기록](Verification.md)을 기준으로 files·permissions·multimodal·api·mcp_server·packaging의 근거를 보강한다. 현재 합계는 27 partial·4 pending·0 complete이다. 셀 이미지 출력·PDF/이미지/음성 입력과 전체 앱/플랫폼 검증이 남아 있으므로 multimodal은 partial이다.
+
+## 파일 체크포인트 (0.46)
+
+C++ 네이티브 Write·Edit·NotebookEdit의 원본을 사용자 메시지 경계에 기록하고 목록·수동 생성·파일 복원을 제공한다. 인증 API의 `agent.checkpoints.*`, CLI의 `agent checkpoints`, 연결 소유자에 묶인 MCP `iiLocalLLM.agent.checkpoints.*`가 같은 Engine을 사용한다. 저장 한도, 세션 잠금, preview·권한·작업 트리 경계와 남은 참조 기능은 [FileCheckpoints.md](FileCheckpoints.md)에 기록한다. 전체 대응 상태는 27 partial·4 pending·0 complete를 유지한다.

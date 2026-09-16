@@ -231,3 +231,7 @@ agent.tasks.create/get/list/update/claim 및 agent.todos.write/get을 추가한�
 ## Jupyter 노트북 셀 편집 (0.45)
 
 C++ `NotebookEdit`와 `agent.notebooks.read/edit`, CLI `agent notebooks`, MCP `iisacc/notebooks`는 [Notebooks.md](Notebooks.md)의 읽기 선행·경로 권한·세션/revision·원자적 저장·백업 계약을 공유한다. API의 노트북 읽기는 raw UTF-8 JSON이며 kernel 실행과 셀 이미지 렌더링은 포함하지 않는다. 생산 의존성은 기존 Qt Core이며 공식 nbformat은 독립 검증에만 사용한다.
+
+## 파일 체크포인트 (0.46)
+
+C++ 네이티브 Write·Edit·NotebookEdit의 원본을 사용자 메시지 경계에 기록하고 목록·수동 생성·파일 복원을 제공한다. 인증 API의 `agent.checkpoints.*`, CLI의 `agent checkpoints`, 연결 소유자에 묶인 MCP `iiLocalLLM.agent.checkpoints.*`가 같은 Engine을 사용한다. 저장 한도, 세션 잠금, preview·권한·작업 트리 경계와 남은 참조 기능은 [FileCheckpoints.md](FileCheckpoints.md)에 기록한다. 전체 대응 상태는 27 partial·4 pending·0 complete를 유지한다.

@@ -80,6 +80,8 @@ struct ToolContext {
     // Trusted Engine binding, never decoded from arguments, transcripts or MCP.
     QString originalWorkingDirectory;
     quint64 workspaceRevision = 0;
+    QString fileCheckpointId; // Accepted user-message ID; empty direct edits get a fresh checkpoint.
+    std::function<void(const QString&,const std::optional<QByteArray>&,const ToolContext&)> beforeFileWrite;
 };
 struct ModelRequest {
     QString model;

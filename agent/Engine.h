@@ -18,6 +18,7 @@
 #include "WebFetch.h"
 #include "Lsp.h"
 #include "Worktrees.h"
+#include "FileCheckpoints.h"
 #include "../Service.h"
 
 namespace iiLocalLLM::agent {
@@ -65,6 +66,7 @@ struct EngineOptions {
     WorktreeOptions worktrees; // Embedded hosts opt in; daemon/agent MCP enable by default.
     LspOptions lsp; // Explicit trusted server configuration; empty disables LSP.
     MemoryDreamOptions memoryDream; // Available with memory + history; automatic scheduling is opt-in.
+    bool fileCheckpointsEnabled = false; // Embedded opt-in; daemon and agent MCP enable by default.
 };
 class IILOCALLLM_EXPORT Engine {
 public:
@@ -115,6 +117,11 @@ public:
         const EventCallback& = {},std::shared_ptr<PermissionRequests> = {}) const;
     QJsonObject lspStatus(const QString& sessionId,const CancellationToken& = {}) const;
     bool notebookToolsEnabled() const;
+    bool fileCheckpointsEnabled() const;
+    QJsonObject fileCheckpoints(const QString& sessionId,const CancellationToken& = {}) const;
+    QJsonObject checkpointFiles(const QString& sessionId,const CancellationToken& = {}) const;
+    ToolResult rewindFiles(const QString& sessionId,const QString& messageId,bool dryRun=false,
+        const CancellationToken& = {},const EventCallback& = {},std::shared_ptr<PermissionRequests> = {}) const;
     // Read accepts notebook_path plus optional offset/limit; NotebookEdit uses
     // its native arguments. A session lease binds observations to compaction.
     ToolResult runNotebookTool(const QString& sessionId,const QString& name,const QJsonObject&,

@@ -147,6 +147,7 @@ PermissionDecision RulePolicy::decide(const ToolDefinition& tool, const QJsonObj
         "iiLocalLLM.agent.memory.dream","iiLocalLLM.agent.memory.dream.status","iiLocalLLM.agent.memory.dream.cancel"}.contains(tool.name);
     const bool planControl=tool.metadata["source"]=="builtin.plan"&&QStringList{"EnterPlanMode","ExitPlanMode"}.contains(tool.name);
     const bool engineControl=(tool.metadata["source"]=="builtin.agent.control"&&QStringList{"iiLocalLLM.agent.run","iiLocalLLM.agent.compact","iiLocalLLM.agent.inputs.run"}.contains(tool.name))
+        ||(tool.metadata["source"]=="builtin.checkpoint.control"&&QStringList{"iiLocalLLM.agent.checkpoints.create","iiLocalLLM.agent.checkpoints.rewind"}.contains(tool.name))
         ||(tool.metadata["source"]=="builtin.session.control"&&tool.name=="iiLocalLLM.agent.clear")
         ||(tool.metadata["source"]=="builtin.input.control"&&QStringList{"iiLocalLLM.agent.inputs.enqueue","iiLocalLLM.agent.inputs.remove"}.contains(tool.name));
     const bool ownPlan=!context.planFilePath.isEmpty()&&context.planModeActive&&tool.metadata["source"]=="builtin.workspace"
