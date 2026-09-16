@@ -158,6 +158,7 @@ public:
         frozen->add(std::move(permissions));
         if (!options.engine) return frozen;
         if(auto history=options.engine->sessionSearchTool())frozen->add(std::move(*history));
+        if(auto web=options.engine->webFetchTool())frozen->add(std::move(*web));
         options.engine->bindProjectMemoryTools(*frozen,false);
         if(options.engine->projectMemoryEnabled()) {
             Tool memory;memory.definition={"iiLocalLLM.agent.memory.get","Inspect this connection owner's project memory index and search topic metadata/content. query is a case-insensitive literal.",
@@ -400,7 +401,7 @@ public:
         if (!options.artifactsDirectory.isEmpty()) context.artifactsDirectory = QDir(options.artifactsDirectory).filePath(context.sessionId + '/' + context.runId);
         const auto source = frozen->get(name).definition.metadata["source"].toString();
         auto bindContext = [&](bool history=false) {
-            const bool native=source=="builtin.workspace"||source=="builtin.shell"||source=="builtin.shell.control"||source=="builtin.plan"||source=="builtin.user-question"||source=="builtin.memory"||source=="builtin.session-history";
+            const bool native=source=="builtin.workspace"||source=="builtin.shell"||source=="builtin.shell.control"||source=="builtin.plan"||source=="builtin.user-question"||source=="builtin.memory"||source=="builtin.session-history"||source=="builtin.web";
             if(options.engine&&(native||!options.tools.hooks.isEmpty()||options.engine->planning())) {
                 const auto owner=sessionId(conversation(request.sessionId),context.cancellation);
                 context.planningSessionId=owner;
@@ -408,6 +409,7 @@ public:
                 // resolve their owner. Hooks get that actual owner's snapshot.
                 if(native)context.sessionId=owner;
                 context.transcriptPath=options.engine->transcriptPath(owner);
+                if(source=="builtin.web")context.sessionSnapshot=std::make_shared<Session>(options.engine->sessionMetadata(owner));
                 if(!options.tools.hooks.isEmpty()) {
                     context.asyncHooks=options.engine->hookScope(owner);context.hookCancellation=context.cancellation;
                     if(history)try {context.sessionSnapshot=std::make_shared<Session>(options.engine->session(owner));}
@@ -428,10 +430,12 @@ public:
         const bool sessionControl=options.engine&&source=="builtin.session.control"&&name=="iiLocalLLM.agent.clear";
         const bool planControl=options.engine&&(source=="builtin.plan.control"||source=="builtin.plan");
         const bool memoryControl=options.engine&&source=="builtin.memory.control";
-        // Native questions wait for a person and do not mutate the app. Holding
-        // the registry's shared lock here would block all exclusive app tools.
+        // Questions and web extraction do not mutate the application workspace.
+        // Holding the registry lock while waiting on a person/network/model
+        // would block independent app actions. WebFetch owns its own admission.
         const bool userQuestion = source == "builtin.user-question" && name == "AskUserQuestion";
-        if (shellControl || inputControl || subagentControl || sessionControl || planControl || userQuestion || memoryControl) { bindContext(userQuestion); return wireResult(runner.run(call, context,observe)); }
+        const bool webFetch = source == "builtin.web" && name == "WebFetch";
+        if (shellControl || inputControl || subagentControl || sessionControl || planControl || userQuestion || webFetch || memoryControl) { bindContext(userQuestion||webFetch); return wireResult(runner.run(call, context,observe)); }
         std::shared_lock shared(execution, std::defer_lock); std::unique_lock exclusive(execution, std::defer_lock);
         if (runner.concurrencySafe(call)) acquire(shared, context.cancellation); else acquire(exclusive, context.cancellation);
         bindContext(true);
@@ -457,6 +461,8 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
         return result;
     };
     server.handlers["tools/call"] = [state](const auto& params, const auto& request) { return state->call(params, request); };
+    if(state->options.engine&&state->options.engine->webFetchTool())
+        server.experimentalCapabilities["iisacc/webFetch"]=QJsonObject{{"schema","iisacc.web-fetch/1"},{"tool","WebFetch"},{"domainPermission",true},{"localModel",true}};
     if(state->options.engine&&state->options.engine->sessionSearchTool())
         server.experimentalCapabilities["iisacc/sessionHistory"]=QJsonObject{{"schema","iisacc.session-history/1"},{"searchTool","SessionSearch"},
             {"scope","host-workspace"},{"cursorScope","connection-conversation"},{"pagination","single-use-cursor"},{"matching","case-insensitive-literal"}};

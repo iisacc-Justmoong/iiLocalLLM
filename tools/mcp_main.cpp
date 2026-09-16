@@ -47,6 +47,9 @@ int main(int argc, char** argv) {
         {"no-memory-recall", "Disable model-ranked project memory recall."},
         {"no-memory-extraction", "Disable automatic project memory extraction after main-agent responses."},
         {"no-session-history", "Disable owned session transcript search."},
+        {"no-web-fetch", "Disable anonymous web page fetching and local extraction."},
+        {"web-model", "Local WebFetch extraction model (default: session model).", "model"},
+        {"web-private-origin", "Trusted exact private web origin; repeat. Still requires WebFetch domain permission.", "origin"},
         {"auto-dream", "Enable automatic project memory consolidation after eligible main-agent responses."},
         {"memory-recall-model", "Local selector model (default: conversation model).", "model"},
         {"question-preview", "User question preview format (markdown or html).", "format", "markdown"},
@@ -149,6 +152,7 @@ int main(int argc, char** argv) {
         QList<a::PermissionRule> rules,hostRules;
         for (const auto& value : parser.values("allow")) rules.append({value, a::PermissionBehavior::Allow});
         const bool agent = parser.isSet("model");
+        if(!agent&&(parser.isSet("web-model")||parser.isSet("web-private-origin")))throw std::runtime_error("WebFetch options require --model");
         if(parser.isSet("auto-dream")&&(!agent||parser.isSet("no-memory")||parser.isSet("no-session-history")))
             throw std::runtime_error("--auto-dream requires --model, project memory and session history");
         if (agent) {
@@ -207,6 +211,9 @@ int main(int argc, char** argv) {
             engineOptions.memoryRecall.enabled = !parser.isSet("no-memory-recall");
             engineOptions.memoryExtraction.enabled = !parser.isSet("no-memory-extraction");
             engineOptions.sessionHistoryEnabled = !parser.isSet("no-session-history");
+            engineOptions.webFetchEnabled = !parser.isSet("no-web-fetch");
+            engineOptions.webFetch.model = parser.value("web-model");
+            engineOptions.webFetch.privateOrigins = parser.values("web-private-origin");
             engineOptions.memoryDream.automatic = parser.isSet("auto-dream");
             engineOptions.memoryRecall.model = parser.value("memory-recall-model");
             engineOptions.userQuestions.previewFormat = parser.value("question-preview");

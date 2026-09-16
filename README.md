@@ -2,7 +2,7 @@
 
 C++ 에이전트 하네스를 확장 중이다. 현재 실행 계층은 [AgentHarness.md](docs/AgentHarness.md), 전체 요구사항과 남은 구현은 [HarnessParity.md](docs/HarnessParity.md)에 기록한다. MCP/API 및 앱 전체 호환 완료와 기존 대화 기능 완료는 별도 상태로 관리한다.
 
-0.41.0은 [프로젝트 메모리 정리](docs/MemoryDream.md)를 추가한다. 24시간·최근 대화 수 조건, 프로세스 잠금, 부모 문맥과 권한을 유지한 C++ 정리 작업, 성공 시각·진행 요약과 인증 API·MCP·CLI를 제공한다. 자동 실행은 기본 OFF이다.
+0.42.0은 [프로젝트 메모리 정리](docs/MemoryDream.md)를 추가한다. 24시간·최근 대화 수 조건, 프로세스 잠금, 부모 문맥과 권한을 유지한 C++ 정리 작업, 성공 시각·진행 요약과 인증 API·MCP·CLI를 제공한다. 자동 실행은 기본 OFF이다.
 
 0.40.0은 [저장된 대화 검색](docs/SessionHistory.md)을 제공한다. C++ `SessionSearch`로 큰 JSONL 기록을 나누어 검색하며 소유 범위·원문 위치·변경 감지·권한을 인증 API·MCP·CLI에 연결한다. [대화 종료 메모리 추출](docs/MemoryExtraction.md)도 유지한다.
 
@@ -22,7 +22,7 @@ C++ 에이전트 하네스를 확장 중이다. 현재 실행 계층은 [AgentHa
 
 0.24.0은 C++·API·MCP의 대화 초기화와 즉시 SessionStart(clear)를 제공한다. 백그라운드 셸·자식 에이전트·완료 알림은 새 대화로 이어진다. 계약과 오류 복구 한계는 [SessionClear.md](docs/SessionClear.md)에 기록한다.
 
-C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.41.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
+C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.42.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
 
 C++ stdio MCP 클라이언트가 외부 도구·리소스·프롬프트를 인식하고 에이전트 엔진에 연결한다. `iillm-mcp` 서버와 C++ 내장 API로 앱 도구 및 로컬 에이전트 실행을 외부 MCP 클라이언트에 제공한다. 프로토콜·정책·자료 보존 및 현재 지원 경계는 [MCP.md](docs/MCP.md) · [MCP 서버·앱 도구 제공](docs/MCPServer.md)에 설명한다.
 
@@ -337,3 +337,5 @@ GGUF smoke는 chatml을 명시하여 경량 테스트 모델도 사용한다. �
 0.33.0은 C++ 비동기 명령 훅, 첫 stdout 행의 async 선언, 완료 문맥의 세션 전달과 asyncRewake 유휴 실행을 추가한다. 세션/연결별 수명과 취소, 자동 실행 횟수 제한, API/CLI/MCP 제어를 제공한다. 변경된 공개 구조체 때문에 소비자 재빌드가 필요하다. 자식 실행 후 재기동·환경 캐시 무효화·전체 생명주기 및 설정 병합은 계속 partial이다. [비동기 훅](docs/AsyncHooks.md)을 따른다.
 
 0.34.0은 EnterPlanMode·ExitPlanMode, 세션별 계획 파일과 검토 해시, 호스트 수정, 실행 전환의 동시성 제어를 추가한다. 재시작·분기·초기화와 인증 API/IPC/MCP를 같은 상태에 연결한다. 공개 구조체와 ABI 0.34에 맞춰 소비자를 다시 빌드한다. 팀 리더 검토·인터뷰 UI·자동 권한 분류·전체 앱 검증은 계속 partial이다. [계획 모드](docs/PlanMode.md)를 따른다.
+
+0.42의 C++ [WebFetch](docs/WebFetch.md)는 URL 조회·HTML 변환·캐시·도메인 권한과 로컬 모델 추출을 Engine/API/MCP/CLI에 제공한다. WebSearch와 전체 플랫폼 검증은 별도 진행 중이다.

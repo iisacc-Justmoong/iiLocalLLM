@@ -130,3 +130,6 @@ C++ 호스트가 등록한 `Tool.completesRun` 도구는 성공할 때 추가 �
 ## 0.41 프로젝트 메모리 정리
 
 C++ MemoryDream은 기본 OFF인 자동 실행, 24시간·5개 대화·10분 목록 주기, QLockFile의 프로세스 간 배제와 성공 시각 저장을 추가한다. 부모 문맥·도구 정의·읽기 캐시를 유지하고 추출과 공통 실행 코드를 사용하며, 주 transcript와 분리된 진행/완료 상태를 API·MCP·CLI로 제공한다. 수동 요청도 동일 권한·잠금·한도를 적용한다. [MemoryDream.md](MemoryDream.md)에 참조의 낙관적 타임스탬프/기능 플래그와의 차이, 부분 쓰기와 협력적 취소, 남은 앱 UI·worktree·팀·원격·플랫폼 범위를 명시한다. 대응표는 23 partial·8 pending·0 complete를 유지한다.
+
+
+0.42는 C++ WebFetch의 익명 URL 조회, HTML5/문자 인코딩 변환, 소유자별 캐시, 로컬 모델 추출과 도메인 권한을 제공한다. [WebFetch.md](WebFetch.md)에 상한과 참조 차이 및 남은 웹 기능을 기록한다.

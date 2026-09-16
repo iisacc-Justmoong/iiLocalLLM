@@ -14,7 +14,7 @@
 | permissions | 정책 계층·모드·규칙·사용자/호스트 질문·자동 분류·OS 샌드박스 | partial |
 | files | Read/Write/Edit/Glob/Grep·동시 변경 감지·백업·되돌리기 | partial |
 | shell | Bash/PowerShell·환경·cwd·프로세스 트리 취소·백그라운드 작업 | partial |
-| web | WebFetch/WebSearch·컨텐츠 변환·캐시·네트워크 정책 | pending |
+| web | WebFetch/WebSearch·컨텐츠 변환·캐시·네트워크 정책 | partial |
 | multimodal | 이미지·PDF·노트북·음성 입력과 모델별 지원 협상 | pending |
 | context | 프롬프트 조합·CLAUDE/AGENTS 규칙·첨부·요약·microcompact·cache 관리 | partial |
 | memory | 프로젝트 Markdown 메모리·검색·자동 정리·세션 메모리 | partial |
@@ -146,3 +146,8 @@ C++ 프로젝트별 Markdown 저장, MEMORY.md 자동 문맥, 목록·검색, �
 ## 0.41 프로젝트 메모리 정리
 
 C++ MemoryDream은 기본 OFF인 자동 실행, 24시간·5개 대화·10분 목록 주기, QLockFile의 프로세스 간 배제와 성공 시각 저장을 추가한다. 부모 문맥·도구 정의·읽기 캐시를 유지하고 추출과 공통 실행 코드를 사용하며, 주 transcript와 분리된 진행/완료 상태를 API·MCP·CLI로 제공한다. 수동 요청도 동일 권한·잠금·한도를 적용한다. [MemoryDream.md](MemoryDream.md)에 참조의 낙관적 타임스탬프/기능 플래그와의 차이, 부분 쓰기와 협력적 취소, 남은 앱 UI·worktree·팀·원격·플랫폼 범위를 명시한다. 대응표는 23 partial·8 pending·0 complete를 유지한다.
+
+
+0.42는 WebFetch의 조회·HTML5/인코딩 변환·캐시·도메인 권한·로컬 모델 추출과 API/MCP/CLI를 구현한다. WebSearch, 렌더링·로그인·프록시, 완전한 앱/플랫폼 검증은 남아 있어 web 영역은 partial이다. [WebFetch.md](WebFetch.md).
+
+0.42의 전체 대응표는 24 partial·7 pending·0 complete이다.

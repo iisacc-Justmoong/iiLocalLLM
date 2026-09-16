@@ -77,3 +77,6 @@ Read/Write/Edit도 canonical 대상을 준비하고 실행 직전에 원래 경�
 `ToolContext.permissionMode`는 C++ 호스트의 호출 한 번에만 적용하는 모드 선택이다. RulePolicy와 SettingsPermissionPolicy는 기존 명시적 규칙·추가 디렉터리·호스트 거부를 보존하고 이 모드로 기본 동작을 판단한다. 검증 에이전트의 dontAsk가 부모의 acceptEdits/bypass 기본 허용을 상속하지 않도록 사용한다. 원래 저장된 모드는 변경하지 않으며 API·MCP 입력에서 이 필드를 받아들이지 않는다. 커스텀 PermissionPolicy는 같은 호스트 계약을 구현해야 한다.
 
 0.34의 계획 모드는 해당 세션의 계획 파일과 검토·실행 전환을 제공하며 명시적 Deny/Ask를 보존한다. [PlanMode.md](PlanMode.md)에 계약과 남은 범위를 기록한다.
+
+
+WebFetch는 읽기 전용이어도 기본 Ask이다. `WebFetch(domain:example.com)`은 정확한 정규화 호스트만 매칭하며, 서브도메인 접미사나 와일드카드로 확장하지 않는다. 기존 deny/ask/allow와 Bypass/DontAsk 및 설정 계층을 따른다. 자세한 네트워크 계약은 [WebFetch.md](WebFetch.md)를 참조한다.

@@ -7,6 +7,7 @@
 #include <chrono>
 #include <memory>
 #include <QtCore/QMap>
+#include <QtCore/QUrl>
 extern "C" {
 #include "wildmatch.h"
 }
@@ -183,6 +184,11 @@ bool valueMatch(const Rule& rule, const QString& name, const QJsonObject& args, 
         auto value = args[name == "Skill" ? "skill" : "subagent_type"].toString();
         if (name == "Skill" && value.startsWith('/')) value.remove(0, 1);
         return rule.content.endsWith(":*") ? value.startsWith(rule.content.chopped(2)) : value == rule.content;
+    }
+    if(name=="WebFetch"&&rule.content.startsWith("domain:")) {
+        const QUrl url(args["url"].toString(),QUrl::StrictMode);
+        const auto host=QUrl::toAce(url.host()).toLower();
+        return url.isValid()&&!host.isEmpty()&&host==QUrl::toAce(rule.content.sliced(7)).toLower();
     }
     return false; // Unknown tools never treat argument rules as whole-tool grants.
 }

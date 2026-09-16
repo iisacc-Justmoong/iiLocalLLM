@@ -65,6 +65,7 @@ public:
             throw Error(ErrorCode::InvalidArgument, "Invalid agent engine configuration");
         pool.setMaxThreadCount(this->options.maxConcurrentRuns);
         if(this->options.sessionHistoryEnabled)history=std::make_shared<SessionHistory>(this->options.sessionsDirectory,this->options.sessionHistory);
+        if(this->options.webFetchEnabled)web=std::make_shared<WebFetch>(this->model,this->options.webFetch);
         auto configured = this->registry->snapshot();
         for (const auto& tool : additionalTools()) configured->add(tool);
         if (this->options.skills.enabled) {
@@ -104,6 +105,7 @@ public:
     std::shared_ptr<MemoryExtraction> extraction;
     std::shared_ptr<SessionHistory> history;
     std::shared_ptr<MemoryDream> dream;
+    std::shared_ptr<WebFetch> web;
     QThreadPool pool;
     std::mutex mutex;
     std::mutex joining;
@@ -181,6 +183,7 @@ public:
     QList<Tool> additionalTools() const {
         auto result = options.additionalTools;
         if(history)result.append(history->tool());
+        if(web)result.append(web->tool(options.webFetch.deferred));
         if (options.additionalToolsProvider) result.append(options.additionalToolsProvider());
         return result;
     }
@@ -774,6 +777,22 @@ QString Engine::transcriptPath(const QString& id) const {
     (void)d->store.metadata(id);return QDir(d->options.sessionsDirectory).filePath(id+"/transcript.jsonl");
 }
 QStringList Engine::sessions() const { return d->store.list(); }
+std::optional<Tool> Engine::webFetchTool(bool deferred)const {
+    if(!d->web)return std::nullopt;return d->web->tool(deferred);
+}
+ToolResult Engine::runWebFetch(const QString& id,const QJsonObject& arguments,const CancellationToken& token,
+    const EventCallback& callback,std::shared_ptr<PermissionRequests> requests)const {
+    if(!d->web)throw Error(ErrorCode::RuntimeUnavailable,"WebFetch is disabled");
+    const auto session=d->store.metadata(id);Impl::NativeOperation operation(*d,id,token);
+    auto registry=std::make_shared<ToolRegistry>();registry->add(d->web->tool());
+    ToolContext context{id,uuid(),session.workingDirectory,QDir(d->options.sessionsDirectory).filePath(id+"/artifacts"),operation.token};
+    context.transcriptPath=transcriptPath(id);context.sessionSnapshot=std::make_shared<Session>(session);
+    if(!d->options.hooks.isEmpty())context.asyncHooks=d->hookScope(id);context.hookCancellation=operation.token;
+    context.permissionRequests=requests?requests:d->options.permissionRequests;
+    ToolRunnerOptions options{d->options.hooks,d->options.permission,24000,d->options.permissionResponse,d->options.permissionUpdates,
+        context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks),d->plans};
+    return ToolRunner(registry,d->policy,options).run({uuid(),"WebFetch",arguments},context,callback);
+}
 std::optional<Tool> Engine::sessionSearchTool(bool deferred)const {
     if(!d->history)return std::nullopt;return d->history->tool(deferred);
 }

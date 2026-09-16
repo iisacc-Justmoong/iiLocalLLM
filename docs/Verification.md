@@ -1,5 +1,32 @@
 # 구현 검증 기록
 
+## 2026-09-16 C++ WebFetch (0.42.0)
+
+C++ WebFetch의 익명 GET, HTML5/인코딩 변환, 소유 세션별 TTL/LRU 캐시, 도메인 권한, 로컬 모델 추출 및 API·MCP·CLI를 구현했다. Lexbor 3.0.0을 해시 고정해 비공개 링크하고 Apache-2.0 LICENSE와 NOTICE를 설치한다. 계약·기본 한도·참조 차이는 [WebFetch.md](WebFetch.md)에 기록했다.
+
+| 검증 | 최종 결과 |
+|---|---|
+| Release, inference 제외 | 90/90 |
+| ASan·UBSan | 87/87, llama OFF·leak detection OFF |
+| 새 설치 소비자 | 53/53 |
+| 실제 Qwen3-8B Q4 | source·installed 페이지에만 있는 임의 코드 추출·답변, 캐시를 사용한 새 모델 추출 통과 |
+| 인증 전송 | source·installed HTTP/IPC·CLI·MCP HTTP·공식 MCP 1.26 stdio 통과 |
+| TLS·공개 네트워크 | Host/SNI, 올바른 CA, 신뢰하지 않는 인증서·다른 호스트명 거부, source·installed 실제 공개 HTTPS GET 통과 |
+| 설치 동일성 | 공개 헤더 52개, 네 진입점 0.42.0, dylib 해시·UUID·로더 경로, 비공개 파서 심볼과 thin CLI 통과 |
+
+실제 모델은 thinking OFF, native tool grammar ON이며 ServiceModel 요청/응답을 변경하지 않았다. fixture가 호스트의 도구 사용과 답변 형식을 지정하지만, 임의 코드는 원격 HTTP fixture의 HTML에만 존재한다. 최초 추출 결과와 주 답변에 정확한 코드가 있고, 캐시 적중 뒤 다른 추출 요청도 실제 모델이 다시 처리했다. HTTP 요청 수는 각각 1회이다. source는 주 대화 2턴·생성 57토큰, 최초/캐시 추출 생성 45/10토큰, installed는 주 대화 2턴·생성 60토큰, 최초/캐시 추출 생성 44/13토큰이다. 추출 사용량은 도구 결과에 별도로 기록하며 주 transcript에는 별도 명시적 추출을 추가하지 않는다. 이 결과는 해당 모델/시나리오의 관측값이다.
+
+전송 fixture는 실제 익명 GET과 PDF bytes·SHA-256·소유 artifact 경로, domain 권한, 새로운 origin의 재승인 경계, 인증 및 앱 소유권·CLI/MCP 발견을 검사했다. 모델 이름은 의도적으로 미설치 식별자이며 바이너리 전송 성공을 추론 증거로 합산하지 않았다. 로컬 추론은 위 source/installed native fixture와 별개이다. 공개 HTTPS probe도 에코 어댑터로 DNS·TLS·변환을 검사하며 실제 모델 추론 증거와 구분한다.
+
+회귀는 리디렉션·오류 비캐시, TTL/LRU/소유권/용량, 인코딩과 UTF-16 경계, HTML 토큰·깊이, 본문/출력 한도, 실제 모델 문맥 측정 기반 축소, 취소·기한·병렬 상한, 입력 위조 거절, native 도구 루프, API owner 및 MCP 연결 모델 바인딩을 포함한다. 웹 모델이 기다리는 중 독립된 MCP 앱 명령이 응답하는 것도 검사했다.
+
+초기 헤더 미구현 링크/컴파일 실패와 fixture 타입 오류를 보존했다. 인코딩 검사에서 Lexbor의 BOM 없음 값 처리 오류를 발견해 수정했다. 최초 실제 모델은 Markdown의 불필요한 식별자 밑줄 이스케이프를 답변에 포함했다. 이를 단위 실패로 재현하고 CommonMark의 단어 내부 밑줄을 보존했으며, 모델에 서식과 원본 식별자의 구분을 명시했다. 성공 조건을 낮추거나 모델 답변을 후처리하지 않았다. 별도 동시성 실패에서는 WebFetch가 일반 MCP 실행 잠금을 점유해 앱 명령을 막았다. 자체 입장/캐시 제어를 사용하도록 수정하고 최종 전체 검사를 다시 수행했다. 실패와 수정 전 전체 결과는 build/web-fetch-before-identifiers, web-fetch-before-mcp-concurrency, identifier-red 및 mcp-concurrency-red 로그에 보존한다.
+
+검증 전 392개 입력의 SHA-256을 고정하고 검사 후 일치함을 확인했다. 이 검증 문서만 마지막에 갱신하고 설치 문서를 다시 대조한다. prefix는 build/web-fetch-stage, 소비자는 build/web-fetch-consumer/build이다. Release와 stage dylib SHA-256은 `50df0cbc6f13596cbf8888ec83f706bbda73c03a998a12ee77e44711dd544bb6`이다. 구조화 증거는 build/web-fetch-verification.json, 읽기용 보고서는 build/web-fetch-REPORT.md이다.
+
+검증 플랫폼은 macOS arm64이며 다른 플랫폼과 실제 앱 WebFetch UI·완전한 앱 워크플로는 별도 검증 대상이다. 현재 Mac Society/Dreamscapes의 실제 로딩 라이브러리와 홈 SDK는 기존 0.36 조합임을 확인했다. 이번 단계에서 제품 앱을 0.42로 재설치하지 않았으며 iPhone은 사용자 지시로 제외했다. C++ 소비자는 0.42 헤더와 라이브러리로 함께 재빌드해야 한다. WebSearch·브라우저 렌더링·인증 서비스·프록시와 전체 하네스는 남아 있다. 전체 대응표는 24 partial·7 pending·0 complete이다.
+
+
 ## 2026-09-16 C++ 프로젝트 메모리 정리 (0.41.0)
 
 C++ MemoryDream, 기본 OFF인 자동 실행, 24시간·5개 다른 대화·10분 목록 검사 조건, 프로세스 잠금과 성공 시각 저장, 수동 요청·진행/취소와 인증 API·MCP·CLI를 구현했다. 추출과 공통 메모리 작업 코드를 사용하고 부모 문맥·도구·생성 설정과 읽기 캐시를 유지한다. 새 생산 의존성은 없으며 [MemoryDream.md](MemoryDream.md)에 참조와 다른 잠금/시각 계약 및 남은 범위를 기록한다.

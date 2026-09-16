@@ -15,6 +15,7 @@
 #include "MemoryExtraction.h"
 #include "SessionHistory.h"
 #include "MemoryDream.h"
+#include "WebFetch.h"
 #include "../Service.h"
 
 namespace iiLocalLLM::agent {
@@ -57,6 +58,8 @@ struct EngineOptions {
     MemoryExtractionOptions memoryExtraction; // Isolated automatic maintenance after a main-agent response.
     bool sessionHistoryEnabled = false; // Embedded opt-in; daemon and agent MCP enable it by default.
     SessionHistoryOptions sessionHistory; // Uses this Engine's sessionsDirectory; no external path from a caller.
+    bool webFetchEnabled = false; // Embedded opt-in; agent-enabled daemon/MCP expose it by default.
+    WebFetchOptions webFetch;
     MemoryDreamOptions memoryDream; // Available with memory + history; automatic scheduling is opt-in.
 };
 class IILOCALLLM_EXPORT Engine {
@@ -100,6 +103,9 @@ public:
     void bindProjectMemoryTools(ToolRegistry&,bool deferredForget = true) const;
     ToolResult runMemoryTool(const QString& sessionId,const QString& name,const QJsonObject& arguments = {},
         const CancellationToken& = {},const EventCallback& = {},std::shared_ptr<PermissionRequests> = {}) const;
+    std::optional<Tool> webFetchTool(bool deferred = false) const;
+    ToolResult runWebFetch(const QString& sessionId,const QJsonObject&,const CancellationToken& = {},
+        const EventCallback& = {},std::shared_ptr<PermissionRequests> = {}) const;
     QStringList sessions() const;
     std::optional<Tool> sessionSearchTool(bool deferred = false) const;
     ToolResult runSessionSearch(const QString& ownerSessionId,const QJsonObject& arguments,

@@ -155,7 +155,7 @@ PermissionDecision RulePolicy::decide(const ToolDefinition& tool, const QJsonObj
         return {PermissionBehavior::Deny, "Plan mode allows read-only tools, the owned plan file, internal task state and stopping owned executions"};
     if (detail::permissionRulesMatch(asks, tool, args, context, false)) matched = PermissionBehavior::Ask;
     else if (detail::permissionRulesMatch(allows, tool, args, context, true)) matched = PermissionBehavior::Allow;
-    auto decision = matched.value_or(mode == PermissionMode::Bypass || tool.readOnly || taskState || stopOwnShell || ownPlan || memoryControl
+    auto decision = matched.value_or(mode == PermissionMode::Bypass || (tool.readOnly && tool.name != "WebFetch") || taskState || stopOwnShell || ownPlan || memoryControl
         || (mode == PermissionMode::AcceptEdits && tool.editsFiles) ? PermissionBehavior::Allow : PermissionBehavior::Ask);
     if (decision == PermissionBehavior::Ask && mode == PermissionMode::DontAsk) decision = PermissionBehavior::Deny;
     return {decision, matched ? "Tool permission rule (host or current invocation)" : "Session permission mode"};

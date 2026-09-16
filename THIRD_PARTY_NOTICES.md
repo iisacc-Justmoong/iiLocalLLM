@@ -87,3 +87,7 @@ Qt는 응답 헤더 전 EOF에서 POST를 재전송할 수 있으므로, 공개 
 ## MCP HTTP 서버 (0.8.0)
 
 기존 [cpp-httplib 0.54.1](https://github.com/yhirose/cpp-httplib/tree/v0.54.1)의 HTTP 서버·동적 worker pool·chunked content provider를 사용한다. MIT 원문과 기존 고정 해시를 유지한다. 별도 네트워크 파서·TLS 라이브러리·Python 생산 서버를 도입하지 않는다. 연결별 MCP 상태, 인증 principal과 세션 연결, SSE 재개 기록 및 상한은 iiLocalLLM의 고유 전송 계약으로 구현했다. 암호 해시와 UUID에는 기존 Qt Core를 사용한다. 공식 Python MCP SDK 1.26.0 및 httpx는 독립 HTTP 클라이언트 시험에만 사용한다.
+
+## 0.42.0 WebFetch HTML5 파서
+
+[Lexbor v3.0.0](https://github.com/lexbor/lexbor/releases/tag/v3.0.0)을 2026-09-16 확인했다. 원본 archive SHA-256 `eafaa79ef9871f0bbb1978eda8677d184f7ecdcaa203d7cd25b3f86e32c014c2`, 다운로드 5,777,325바이트이다. 라이선스는 [Apache-2.0](https://github.com/lexbor/lexbor/blob/v3.0.0/LICENSE)이며 LICENSE와 NOTICE를 설치한다. cmake/WebParser.cmake는 core/dom/ns/tag/html/encoding과 플랫폼 ports만 비공개 object로 컴파일한다. C API/심볼/헤더를 SDK에 공개하지 않으며 추가 동적 라이브러리는 없다. 전체 CSS/style/URL 엔진·예제·upstream 테스트를 제품에 링크하지 않는다. 기존 Qt Network를 조회에 재사용한다. 의존성 선정과 구현 차이는 docs/WebFetch.md를 따른다.
