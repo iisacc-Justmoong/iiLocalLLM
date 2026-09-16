@@ -1,5 +1,37 @@
 # 구현 검증 기록
 
+## 0.47 세션 분기 복제
+
+파일 편집 백업·큰 도구 결과·파일 체크포인트를 가진 세션을 새 소유자로 분기한다. 원시 바이트/권한 보존, 대화 경로 갱신, 포함 메시지 경계, 부모 백업 삭제 뒤 자식 복원, 게시 전 실패 정리와 현재 권한 상속을 C++로 구현했다. 자식 에이전트 문맥 분기 및 API·CLI·MCP 연결 전환도 같은 복사 경로를 사용한다. 전체 계약과 참조 경로별 차이는 [SessionFork.md](SessionFork.md)에 기록한다.
+
+| 검증 | 결과 |
+|---|---|
+| 최종 Release | 95/95, 실패·skip 0 |
+| ASan/UBSan | 전체 91/92; 실패한 worktree 전체를 같은 바이너리로 단독 재검사 1/1, skip 0 |
+| 새 설치 consumer | 58/58, 실패·skip 0 |
+| 소스·설치 전송 | HTTP, native IPC CLI, MCP HTTP, 공식 Python MCP stdio 통과 |
+| 설치 헤더 | 56개 소스와 바이트 일치 |
+
+소스/설치 라이브러리 SHA-256은 `b175b55b4ea7f295ae3620a4032c7c6a6e0dfa7870ebc9a3b2ba728d308891cd`이다. installed consumer의 dyld 출력 및 실행 중인 네이티브 소비자의 파일 매핑에서 로드 경로가 `build/fork-final-stage/lib/libiiLocalLLM.0.47.0.dylib`임을 확인했다. 네 entrypoint는 0.47.0이며 thin `iillm`은 libiiLocalLLM/llama/ggml에 연결하지 않는다. sanitizer는 llama OFF, leak 검사 OFF, ASan abort/UBSan halt ON이다. 네이티브 추론 검증은 아래 별도 Release 실행이다.
+
+기존 Qwen3-8B Q4 모델을 사용하며 모델 요청·응답을 바꾸지 않았다. context 4096, cached context 1, 턴당 maxTokens 1024, maxTurns 6, thinking ON, tool grammar OFF, temperature 0.6/topP 0.95/topK 20/minP 0/seed 0이다. 부모가 실제 Read→NotebookEdit를 수행한 뒤 분기했고, 부모 artifact·checkpoint 디렉터리를 제거한 상태에서 자식 모델이 복제된 backup을 Read했다. 원본/편집본의 정확한 바이트 복원과 marker 정답을 모두 확인했다. 부모·자식 사용량은 분리한다.
+
+| 실행 | 부모 턴 / 생성 토큰 | 자식 턴 / 생성 토큰 | 검사 |
+|---|---|---|---|
+| 소스 | 3 / 1714 | 2 / 1030 | 19/19 |
+| 설치본 | 3 / 1500 | 2 / 1225 | 19/19 |
+
+전송 검사는 실제 데몬/CLI/MCP 프로세스와 nbformat 5.11.1 및 공식 Python MCP 1.26.0을 사용한다. 전송 fixture 자체는 모델 추론을 호출하지 않는다. API 소유자 격리와 MCP 외부 session_id 거부를 확인했다. 네이티브 모델 검증과 전송 검증을 혼동하지 않는다.
+
+새 회귀 검사의 최초 실행은 기존 artifact 분기 미지원 오류로 실패했다(`build/fork-red-tests.log`). 수정 중 집중 4/4를 통과했고, 최초 전체 Release 결과는 이후 디렉터리 접근/진행 중 MCP 분기 보완 전 빌드이므로 `build/fork-release.json`에 별도 보관한다. 후속 병행 검사에서도 Release의 MCP 초기화와 sanitizer의 git fixture/명령 훅/공식 MCP 검사에 실패가 있었다. `build/fork-current-release.json`과 `build/fork-sanitizer.json`에 원래 결과를 보존한다. 진단용 C++ 실행은 Python import가 진행 중인 상태에서 30초 초기화 기한을 넘겼고, 같은 MCP 바이너리의 단독 실행은 초기화 10.9초에 통과했다(`build/fork-isolated-mcp.xml`). 첫 pwd/명령 훅 오류의 상세 반환값은 기존 assertion이 보관하지 않아 원인을 단정하지 않는다.
+
+이후 순차 Release에서도 Notebook 권한 검사와 공식 MCP 초기화가 실패했다(`build/fork-serial-release.json`). Notebook 전체의 동일 바이너리 검사 12회는 연속 통과했다(`build/fork-notebook-repeat.log`).
+
+최종 sanitizer 전체에서도 worktree fixture의 `git init -q -b main`이 `Process crashed; exit=9`로 실패했다. ASan/UBSan 메모리 오류 진단은 없었으며, Git 프로세스가 SIGKILL로 종료된 이유는 확정하지 못했다. 동일 바이너리의 worktree 전체 단독 재검사는 `build/fork-sanitizer-worktree.json`에 별도 보관한다. sanitizer 92개가 한 번에 모두 통과했다고 합산하지 않는다. 기한과 성공 판정은 유지했으며 Notebook·memory extraction·worktree·명령 훅 네 검사의 실패 메시지에 실제 오류와 명령을 추가했다. 이 진단 보강을 포함한 최종 전체 결과는 `build/fork-qualified-release.json`, `build/fork-qualified-sanitizer.json`이다. 간헐 실패의 원인을 확정하거나 수정했다고 주장하지 않는다. 고정한 C++ 소스/헤더(.cpp/.h)·Python·CMake 파일 318개의 해시를 최종 산출물과 대조했다.
+
+상세 기록은 `build/fork-verification.json`, `build/fork-final-delivery.json`, `build/fork-final-*-wire.json`, `build/fork-*-native.json`, `build/fork-final-loader.log`에 남긴다. 이번 stage는 전역 SDK 설치나 Society/Dreamscapes 재설치를 뜻하지 않는다. iPhone 제외 방침은 유지한다. 대화 rewind UI·팀 공동 이력·원격 재개·전체 앱/플랫폼 검증이 남아 있으며 전체 하네스는 미완료이다.
+
+
 ## 0.46 — 파일 체크포인트와 복원
 
 C++ FileCheckpoints의 메시지별 원본 기록, Write/Edit/NotebookEdit 저장 전 추적, missing-file 복원, 현재 작업 디렉터리·권한·미리보기 fingerprint, API·MCP·CLI를 검증했다. 원본 내용과 QFile 권한을 복원하며 대화는 유지한다. 계약과 남은 기능은 [FileCheckpoints.md](FileCheckpoints.md)에 있다.

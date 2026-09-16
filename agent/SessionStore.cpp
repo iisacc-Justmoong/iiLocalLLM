@@ -9,6 +9,9 @@
 #include <QtCore/QUuid>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QRegularExpression>
+#include <QtCore/QDirIterator>
+#include <QtCore/QDateTime>
+#include <algorithm>
 
 namespace iiLocalLLM::agent {
 namespace {
@@ -24,18 +27,73 @@ QString safeId(const QString& id) {
     if (!uuid.match(id).hasMatch()) throw Error(ErrorCode::InvalidArgument, "Invalid agent session ID");
     return id;
 }
-Session publish(const QString& root, qint64 maximum, Session value) {
+void plain(const QString& path) {
+    for(auto info=QFileInfo(path);;info=QFileInfo(info.absolutePath())) {
+        storage(!info.isSymLink(),"Session artifact paths must not contain symlinks");
+        if(info.absoluteFilePath()==info.absolutePath())break;
+    }
+}
+void readableDirectory(const QFileInfo& info) {
+    storage(info.isDir()&&info.isReadable(),"Cannot enumerate session artifact directory");
+#ifdef Q_OS_UNIX
+    storage(info.isExecutable(),"Cannot traverse session artifact directory");
+#endif
+}
+QJsonValue mapStrings(const QJsonValue& value,const std::function<QString(QString)>& map) {
+    if(value.isString())return map(value.toString());
+    if(value.isArray()){QJsonArray result;for(const auto& v:value.toArray())result.append(mapStrings(v,map));return result;}
+    if(value.isObject()){QJsonObject result;const auto object=value.toObject();for(auto it=object.begin();it!=object.end();++it)result[map(it.key())]=mapStrings(it.value(),map);return result;}
+    return value;
+}
+void cloneArtifacts(Session& value,const QString& source,const QString& destination,bool all) {
+    if(source.isEmpty())return;
+    const auto from=QDir::cleanPath(QFileInfo(source).absoluteFilePath()),to=QDir(destination).filePath("artifacts");
+    plain(from);if(!QFileInfo::exists(from))return;readableDirectory(QFileInfo(from));
+    QStringList references{value.systemPrompt};
+    auto collect=[&](QString text){references.append(text);return text;};
+    for(const auto& message:value.messages)(void)mapStrings(toJson(message),collect);
+    for(const auto& checkpoint:value.compactions)references.append(checkpoint.summary);
+    int entries=0;qint64 total=0;
+    QDirIterator files(from,QDir::AllEntries|QDir::NoDotAndDotDot|QDir::Hidden|QDir::System,QDirIterator::Subdirectories);
+    while(files.hasNext()) {
+        const auto path=files.next();const auto info=files.fileInfo();const auto relative=QDir(from).relativeFilePath(path);
+        if(++entries>4096||relative.count('/')>32)throw Error(ErrorCode::ResourceLimit,"Session artifact tree exceeds 4096 entries or 32 levels");
+        plain(path);if(info.isDir()){readableDirectory(info);continue;}storage(info.isFile(),"Session artifact must be a regular file");
+        if(!all&&!std::any_of(references.cbegin(),references.cend(),[&](const auto& s){
+            qsizetype at=0;while((at=s.indexOf(path,at))>=0){at+=path.size();if(at==s.size())return true;
+                const auto next=s[at];if(!next.isLetterOrNumber()&&!QStringLiteral("/._-%~\\").contains(next))return true;}return false;
+        }))continue;
+        constexpr qint64 fileLimit=64*1024*1024,totalLimit=256*1024*1024;
+        if(info.size()>fileLimit||total>totalLimit-info.size())throw Error(ErrorCode::ResourceLimit,"Session artifact copy exceeds 64 MiB per file or 256 MiB total");
+        QFile input(path);storage(input.open(QIODevice::ReadOnly),"Cannot read session artifact");
+        const auto bytes=input.read(fileLimit+1);
+        storage(input.error()==QFileDevice::NoError&&bytes.size()==info.size(),"Session artifact changed while copying");
+        plain(path);const QFileInfo after(path);
+        storage(after.isFile()&&after.size()==info.size()&&after.lastModified()==info.lastModified()
+            &&after.metadataChangeTime()==info.metadataChangeTime()&&after.permissions()==info.permissions(),"Session artifact changed while copying");
+        const auto target=QDir(to).filePath(relative);storage(QDir().mkpath(QFileInfo(target).absolutePath()),"Cannot create fork artifact directory");
+        QSaveFile output(target);storage(output.open(QIODevice::WriteOnly)&&output.setPermissions(info.permissions())
+            &&output.write(bytes)==bytes.size()&&output.commit(),"Cannot copy session artifact");total+=bytes.size();
+    }
+    const auto remap=[&](QString text){if(text==from)return to;return text.replace(from+'/',to+'/');};
+    value.systemPrompt=remap(value.systemPrompt);
+    for(auto& message:value.messages)message=messageFromJson(mapStrings(toJson(message),remap).toObject());
+    for(auto& checkpoint:value.compactions)checkpoint.summary=remap(checkpoint.summary);
+}
+Session publish(const QString& root, qint64 maximum, Session value,
+    const std::function<void(Session&,const QString&)>& initialize = {}) {
     if(!value.parentSessionId.isEmpty()) {
         safeId(value.parentSessionId);
         if(value.parentSessionId==value.id)throw Error(ErrorCode::InvalidArgument,"A session cannot be its own parent");
     }
+    const auto directory = QDir(root).filePath(value.id);
+    storage(QDir().mkdir(directory), "Cannot create agent session directory");
+    struct DirectoryGuard { QString path; bool keep = false; ~DirectoryGuard() { if (!keep) QDir(path).removeRecursively(); } } guard{directory};
+    if(initialize)initialize(value,directory);
     const auto header = line({{"type", "session"}, {"version", 2}, {"id", value.id}, {"model", value.model},
         {"system_prompt", value.systemPrompt}, {"working_directory", value.workingDirectory},{"parent_session_id",value.parentSessionId}});
     if (header.size() > 4 * 1024 * 1024 || header.size() > maximum)
         throw Error(ErrorCode::ResourceLimit, "Agent transcript header exceeds limit");
-    const auto directory = QDir(root).filePath(value.id);
-    storage(QDir().mkdir(directory), "Cannot create agent session directory");
-    struct DirectoryGuard { QString path; bool keep = false; ~DirectoryGuard() { if (!keep) QDir().rmdir(path); } } guard{directory};
     QSaveFile file(QDir(directory).filePath("transcript.jsonl"));
     storage(file.open(QIODevice::WriteOnly) && file.write(header) == header.size(), "Cannot create agent transcript");
     detail::ProtocolState state; QString parent; qint64 size = header.size();
@@ -133,10 +191,8 @@ Session SessionStore::create(QString model, QString prompt, QString workingDirec
     Session value{QUuid::createUuid().toString(QUuid::WithoutBraces), std::move(model), std::move(prompt), workspace, {}};
     return publish(directory_, maxTranscriptBytes_, std::move(value));
 }
-Session SessionStore::fork(const QString& id, const QString& throughMessageId) const {
+Session SessionStore::fork(const QString& id, const QString& throughMessageId,const std::function<void(const Session&)>& beforePublish) const {
     const auto source = acquire(id); auto value = source->session();
-    if (!QDir(source->artifactsDirectory()).entryList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden).isEmpty())
-        throw Error(ErrorCode::RuntimeUnavailable, "Forking sessions with artifacts requires artifact cloning, which is not yet supported");
     if (!throughMessageId.isEmpty()) {
         qsizetype end = 0;
         while (end < value.messages.size() && value.messages[end].id != throughMessageId) ++end;
@@ -148,9 +204,12 @@ Session SessionStore::fork(const QString& id, const QString& throughMessageId) c
     if (!pendingToolCalls(value.messages).isEmpty())
         throw Error(ErrorCode::InvalidArgument, "Cannot fork across an unresolved tool call");
     value.parentSessionId=id;value.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
-    return publish(directory_, maxTranscriptBytes_, std::move(value));
+    return publish(directory_, maxTranscriptBytes_, std::move(value),[&](Session& target,const QString& directory){
+        cloneArtifacts(target,source->artifactsDirectory(),directory,throughMessageId.isEmpty());
+        if(beforePublish)beforePublish(target);
+    });
 }
-Session SessionStore::createFromSnapshot(Session value,const std::function<void(const QString&, QList<Message>&)>& initialize) const {
+Session SessionStore::createFromSnapshot(Session value,const std::function<void(const QString&, QList<Message>&)>& initialize,const QString& artifacts) const {
     const auto workspace = QFileInfo(value.workingDirectory).canonicalFilePath();
     if (value.model.trimmed().isEmpty() || workspace.isEmpty() || !QFileInfo(workspace).isDir()
         || !pendingToolCalls(value.messages).isEmpty())
@@ -160,7 +219,7 @@ Session SessionStore::createFromSnapshot(Session value,const std::function<void(
     value.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     if(initialize) initialize(value.id,value.messages);
     if(!pendingToolCalls(value.messages).isEmpty()) throw Error(ErrorCode::InvalidArgument,"Unresolved initialized child snapshot");
-    return publish(directory_, maxTranscriptBytes_, std::move(value));
+    return publish(directory_, maxTranscriptBytes_, std::move(value),[&](Session& target,const QString& directory){cloneArtifacts(target,artifacts,directory,false);});
 }
 std::unique_ptr<SessionLease> SessionStore::acquire(const QString& id) const {
     const auto directory = QDir(directory_).filePath(safeId(id));

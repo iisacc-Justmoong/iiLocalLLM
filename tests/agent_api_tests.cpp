@@ -369,7 +369,7 @@ private slots:
         QCOMPARE(call(api, "agent.sessions.list", {}, secondToken)["sessions"].toArray().size(), 0);
         api.close(); error([&] { call(api, "agent.info"); }, ErrorCode::ShuttingDown);
     }
-    void forkRefusesArtifactsAndOversizedHeaderIsAtomic() {
+    void forkCopiesArtifactsAndOversizedHeaderIsAtomic() {
         QTemporaryDir root; a::SessionStore store(root.path(), 1024);
         error([&] { store.create("fixture", QString(2048, 'x'), root.path()); }, ErrorCode::ResourceLimit);
         QVERIFY(store.list().isEmpty());
@@ -377,8 +377,9 @@ private slots:
         const auto source = store.create("fixture", {}, root.path());
         { auto lease = store.acquire(source.id); QDir().mkpath(lease->artifactsDirectory());
             QFile file(QDir(lease->artifactsDirectory()).filePath("result.txt")); QVERIFY(file.open(QIODevice::WriteOnly)); file.write("observation"); }
-        error([&] { store.fork(source.id); }, ErrorCode::RuntimeUnavailable);
-        QCOMPARE(store.list().size(), 1);
+        const auto child=store.fork(source.id);QFile copy(root.filePath(child.id+"/artifacts/result.txt"));
+        QVERIFY(copy.open(QIODevice::ReadOnly));QCOMPARE(copy.readAll(),"observation");
+        QCOMPARE(store.list().size(), 2);
     }
 };
 QTEST_GUILESS_MAIN(AgentApiTests)

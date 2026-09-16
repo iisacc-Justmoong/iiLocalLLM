@@ -235,3 +235,5 @@ C++ `NotebookEdit`와 `agent.notebooks.read/edit`, CLI `agent notebooks`, MCP `i
 ## 파일 체크포인트 (0.46)
 
 C++ 네이티브 Write·Edit·NotebookEdit의 원본을 사용자 메시지 경계에 기록하고 목록·수동 생성·파일 복원을 제공한다. 인증 API의 `agent.checkpoints.*`, CLI의 `agent checkpoints`, 연결 소유자에 묶인 MCP `iiLocalLLM.agent.checkpoints.*`가 같은 Engine을 사용한다. 저장 한도, 세션 잠금, preview·권한·작업 트리 경계와 남은 참조 기능은 [FileCheckpoints.md](FileCheckpoints.md)에 기록한다. 전체 대응 상태는 27 partial·4 pending·0 complete를 유지한다.
+
+0.47부터 `agent.sessions.fork`는 artifact와 파일 체크포인트를 독립 복사한다. thin CLI도 `agent sessions fork SESSION [PARAMS_JSON_FILE]`을 제공한다. 범위와 실패 정리는 [SessionFork.md](SessionFork.md)를 따른다.

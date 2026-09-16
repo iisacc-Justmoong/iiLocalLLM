@@ -516,7 +516,8 @@ elif event == "Stop" and (root / "stop").exists():
             report["session_clear"]["mcp_http"] = data["result"]["structuredContent"]
             mcp_id = data["result"]["structuredContent"]["session_id"]
 
-            assert not call("rewrite.txt").get("isError")
+            rewritten = call("rewrite.txt")
+            assert not rewritten.get("isError"), rewritten
             assert not (workspace / "rewrite.txt").exists() and (workspace / "rewritten.txt").read_text() == "REWRITTEN"
             assert not call("request-rewrite.txt").get("isError") and (workspace / "request-rewritten.txt").read_text() == "REQUEST_REWRITTEN"
             assert not (workspace / "request-rewrite.txt").exists()

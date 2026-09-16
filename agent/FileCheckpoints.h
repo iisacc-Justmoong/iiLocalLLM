@@ -10,6 +10,11 @@ public:
     QJsonObject checkpoint(const QString& messageId,const ToolContext&) const;
     void track(const QString& path,const std::optional<QByteArray>& before,const ToolContext&) const;
     QJsonObject list(const ToolContext&) const;
+    // Caller holds the source session lease. Copies verified blobs to a fresh
+    // owner; an explicit message set keeps only matching snapshots and files.
+    // The target must not exist. Failure cleans the newly created target.
+    void fork(const ToolContext& source,const QString& targetSessionId,
+        const std::optional<QStringList>& retainedMessageIds = {}) const;
     // Preflights every target and blob before mutation; each file is atomic,
     // the set is not. Partial failures report exactly which files were restored.
     QJsonObject rewind(const QString& messageId,bool dryRun,const ToolContext&,

@@ -880,6 +880,8 @@ QJsonObject Engine::worktreeStatus(const QString& id,const CancellationToken& to
 }
 std::shared_ptr<void> Engine::bindWorkspaceContext(ToolContext& context) const {return bindWorkspaceContext(context,false);}
 std::shared_ptr<void> Engine::bindWorkspaceContext(ToolContext& context,bool leaseSession) const {
+    (void)d->store.metadata(context.sessionId);
+    context.artifactsDirectory=QDir(QFileInfo(d->options.sessionsDirectory).canonicalFilePath()).filePath(context.sessionId+"/artifacts");
     if(!d->worktrees&&!leaseSession)return {};
     struct Scope {
         std::shared_ptr<Impl> state;Impl::NativeOperation operation;std::unique_ptr<SessionLease> lease;
@@ -1036,14 +1038,28 @@ Session Engine::forkSession(const QString& id, const QString& throughMessageId) 
     std::lock_guard lock(d->mutex);
     if(d->stopping)throw Error(ErrorCode::ShuttingDown,"Agent engine is shutting down");
     if (d->busySessions.contains(id)||d->endingSessions.contains(id)) throw Error(ErrorCode::ModelInUse, "Cannot fork an active or ending session");
-    if(d->checkpoints){const auto owner=d->store.metadata(id);auto context=d->executionContext({id,{},owner.workingDirectory});
-        const auto history=d->checkpoints->list(context);if(history["total_tracked_files"].toInt()>0)
-            throw Error(ErrorCode::RuntimeUnavailable,"Forking tracked file checkpoints requires artifact cloning, which is not yet supported");}
-    auto session=d->store.fork(id,throughMessageId);
+    QString child;QStringList ownedState;QString workspace;
+    Session session;
+    try {session=d->store.fork(id,throughMessageId,[&](const Session& target){
+        child=target.id;workspace=target.workingDirectory;
+        {
+            std::optional<QStringList> retained;if(!throughMessageId.isEmpty()){retained.emplace();for(const auto& message:target.messages)retained->append(message.id);}
+            // A disabled runtime must still preserve previously saved history.
+            FileCheckpoints(QDir(d->options.sessionsDirectory).filePath("file-checkpoints")).fork({id,{},workspace},child,retained);
+            ownedState.append(QDir(d->options.sessionsDirectory).filePath("file-checkpoints/"+child));
+        }
+        d->policy->inheritSession({id,{},workspace},{child,{},workspace});
+        if(d->plans){const auto path=QDir(d->options.sessionsDirectory).filePath("plans/"+child);
+            if(QFileInfo::exists(path)||QFileInfo(path).isSymLink())throw Error(ErrorCode::AlreadyExists,"Fork plan target already exists");
+            ownedState.append(path);d->plans->fork(id,child);}
+    });} catch(...) {
+        const auto failure=std::current_exception();QStringList errors;
+        if(!child.isEmpty())try{d->policy->forgetSession({child,{},workspace});}catch(...){errors.append("permission state");}
+        for(const auto& path:ownedState)if(QFileInfo::exists(path)&&!QDir(path).removeRecursively())errors.append(path);
+        if(!errors.isEmpty())throw Error(ErrorCode::StorageFailure,"Fork was not published; cleanup failed: "+errors.join(", "));
+        std::rethrow_exception(failure);
+    }
     d->createdSessions.insert(session.id);d->touchedSessions.insert(session.id);
-    try {d->policy->inheritSession({id,{},session.workingDirectory},{session.id,{},session.workingDirectory});}
-    catch(const Error& error){throw Error(error.code(),"Permission inheritance failed for new fork "+session.id+": "+QString::fromUtf8(error.what()));}
-    if(d->plans)d->plans->fork(id,session.id);
     return session;
 }
 QJsonObject Engine::endSession(const QString& id,QString reason,const CancellationToken& caller) {

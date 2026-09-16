@@ -106,7 +106,8 @@ private slots:
     a::ToolContext context{id,{},f.work};auto guard=engine.bindWorkspaceContext(context,true);
     QVERIFY(a::ToolRunner(registry,policy).run({uuid(),"Write",{{"path","file.txt"},{"content","stale read"}}},context).isError);
     a::ToolContext independent{id,{},f.work};QVERIFY(!engine.bindWorkspaceContext(independent,false));
-    QVERIFY_THROWS_EXCEPTION(Error,engine.checkpointFiles(id));guard.reset();QVERIFY_THROWS_EXCEPTION(Error,engine.forkSession(id));
+    QVERIFY_THROWS_EXCEPTION(Error,engine.checkpointFiles(id));guard.reset();const auto fork=engine.forkSession(id);
+    QCOMPARE(engine.fileCheckpoints(fork.id)["snapshots"],engine.fileCheckpoints(id)["snapshots"]);
  }
  void nativeControlsTrackNewFilesAndRespectCurrentWriteDeny(){
     Fixture f;auto registry=tools(f.work);auto allow=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);auto model=std::make_shared<EditModel>();const auto config=options(f.root.filePath("sessions"));QString id,point;
@@ -145,18 +146,30 @@ private slots:
     const auto run=call("agent.run",{{"session_id",id},{"prompt","change"}});QCOMPARE(read(f.path),"edited");
     const auto history=call("agent.checkpoints.list",{{"session_id",id}});QVERIFY2(!history["snapshots"].toArray().isEmpty(),QJsonDocument(QJsonObject{{"history",history},{"run",run}}).toJson().constData());
     const auto point=history["snapshots"].toArray().first().toObject()["message_id"].toString();
-    QVERIFY(!call("agent.checkpoints.rewind",{{"session_id",id},{"message_id",point}})["is_error"].toBool());QCOMPARE(read(f.path),"original\r\n");
+    const auto child=call("agent.sessions.fork",{{"session_id",id}})["session_id"].toString();QVERIFY(child!=id&&!child.isEmpty());
+    QVERIFY_THROWS_EXCEPTION(Error,call("agent.sessions.fork",{{"session_id",child}},QString(48,'b')));
+    QVERIFY(!call("agent.checkpoints.rewind",{{"session_id",child},{"message_id",point}})["is_error"].toBool());QCOMPARE(read(f.path),"original\r\n");
     QVERIFY_THROWS_EXCEPTION(Error,call("agent.checkpoints.list",{{"session_id",id}},QString(48,'b')));
     QVERIFY_THROWS_EXCEPTION(Error,call("agent.checkpoints.rewind",{{"session_id",id},{"message_id",point},{"dry_run","false"}}));
     auto engine=std::make_shared<a::Engine>(model,registry,policy,options(f.root.filePath("mcp")));a::McpServerOptions mo;mo.engine=engine;mo.model="fixture";mo.workingDirectory=f.work;
-    const auto serverOptions=a::mcpServerOptions(registry,policy,mo);QVERIFY(serverOptions.experimentalCapabilities.contains("iisacc/fileCheckpoints"));mcp::ServerSession server(serverOptions);
+    const auto serverOptions=a::mcpServerOptions(registry,policy,mo);QVERIFY(serverOptions.experimentalCapabilities.contains("iisacc/fileCheckpoints"));QVERIFY(serverOptions.experimentalCapabilities.contains("iisacc/sessionFork"));mcp::ServerSession server(serverOptions);
     int number=0;auto rpc=[&](QString method,QJsonObject params){const int n=++number;server.receive(QJsonObject{{"jsonrpc","2.0"},{"id",n},{"method",method},{"params",params}});
         for(int i=0;i<400;++i)for(const auto& v:server.takeMessages(10))if(v.toObject()["id"]==n)return v.toObject();throw std::runtime_error("MCP timeout");};
     rpc("initialize",{{"protocolVersion","2025-11-25"},{"capabilities",QJsonObject{}},{"clientInfo",QJsonObject{{"name","test"},{"version","1"}}}});server.receive(QJsonObject{{"jsonrpc","2.0"},{"method","notifications/initialized"}});
     auto tool=[&](QString name,QJsonObject args={}){const auto response=rpc("tools/call",{{"name",name},{"arguments",args}});if(response.contains("error"))throw std::runtime_error(QJsonDocument(response).toJson().constData());return response["result"].toObject();};
     const auto checkpoint=tool("iiLocalLLM.agent.checkpoints.create")["structuredContent"].toObject()["message_id"].toString();
     QVERIFY(!tool("Write",{{"path","mcp.txt"},{"content","new"}})["isError"].toBool());QCOMPARE(read(f.work+"/mcp.txt"),"new");
+    const auto old=tool("iiLocalLLM.agent.session")["structuredContent"].toObject()["session_id"].toString();
+    QVERIFY(!tool("Read",{{"path","file.txt"}})["isError"].toBool());
+    const auto edited=tool("Write",{{"path","file.txt"},{"content","mcp edit"}});QVERIFY(!edited["isError"].toBool());
+    const auto backup=edited["structuredContent"].toObject()["backup_path"].toString();QVERIFY2(backup.contains('/'+old+"/artifacts/"),qPrintable(backup));
+    QVERIFY(tool("iiLocalLLM.agent.fork",{{"session_id",id}})["isError"].toBool());
+    const auto forked=tool("iiLocalLLM.agent.fork");QVERIFY2(!forked["isError"].toBool(),QJsonDocument(forked).toJson().constData());
+    const auto newId=forked["structuredContent"].toObject()["session_id"].toString();QVERIFY(!newId.isEmpty()&&newId!=old);
+    QCOMPARE(tool("iiLocalLLM.agent.session")["structuredContent"].toObject()["session_id"].toString(),newId);
+    auto copied=backup;copied.replace('/'+old+"/artifacts/",'/'+newId+"/artifacts/");QCOMPARE(read(copied),"original\r\n");
     const auto restored=tool("iiLocalLLM.agent.checkpoints.rewind",{{"message_id",checkpoint}});QVERIFY2(!restored["isError"].toBool(),QJsonDocument(restored).toJson().constData());QVERIFY(!QFileInfo::exists(f.work+"/mcp.txt"));
+    QCOMPARE(read(f.path),"original\r\n");
  }
 };
 QTEST_GUILESS_MAIN(FileCheckpointTests)

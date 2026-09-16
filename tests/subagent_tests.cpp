@@ -405,6 +405,16 @@ private slots:
         auto agents=h.start(); auto result=agents->run(h.context(p),{{"prompt","use parent"},{"fork_context",true}});
         QVERIFY(!result.isError); QCOMPARE(p.messages.size(),2); QCOMPARE(a::pendingToolCalls(p.messages).size(),1);
     }
+    void forkContextCopiesReferencedArtifactsIntoChildOwnership() {
+        Host h;auto p=h.parent();const auto artifacts=QDir(h.engineOptions.sessionsDirectory).filePath(p.id+"/artifacts");QVERIFY(QDir().mkpath(artifacts));
+        QFile file(artifacts+"/result");QVERIFY(file.open(QIODevice::WriteOnly));file.write("parent evidence bytes");file.close();
+        p.messages={{"u",a::MessageRole::User,artifacts+"/result"}};auto context=h.context(p);context.artifactsDirectory=artifacts;
+        QString copied;h.model->next=[&](const auto& request,const auto&){copied=request.messages.first().text;QFile backup(copied);
+            if(copied==artifacts+"/result"||!backup.open(QIODevice::ReadOnly)||backup.readAll()!="parent evidence bytes")throw std::runtime_error("missing child artifact");
+            return a::ModelReply{"copied",{}};};
+        auto agents=h.start();const auto result=agents->run(context,{{"prompt","inspect evidence"},{"fork_context",true}});QVERIFY2(!result.isError,qPrintable(result.text));
+        QVERIFY(copied.contains('/'+result.data["session_id"].toString()+"/artifacts/"));QVERIFY(QFile::remove(artifacts+"/result"));QVERIFY(QFileInfo::exists(copied));
+    }
 };
 QTEST_GUILESS_MAIN(SubagentTests)
 #include "subagent_tests.moc"

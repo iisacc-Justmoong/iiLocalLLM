@@ -151,6 +151,33 @@ QJsonObject FileCheckpoints::list(const ToolContext& c)const{
     for(const auto& v:j.state["snapshots"].toArray()){const auto o=v.toObject();if(o["scope"]==key)result.append(QJsonObject{{"message_id",o["message_id"]},{"timestamp",o["timestamp"]},{"tracked_files",o["files"].toObject().size()}});}
     return {{"enabled",true},{"snapshots",result},{"sequence",j.state["sequence"]},{"total_tracked_files",tracked},{"max_snapshots",snapshotLimit},{"workspace",c.workingDirectory},{"workspace_revision",QString::number(c.workspaceRevision)}};
 }
+void FileCheckpoints::fork(const ToolContext& c,const QString& destination,const std::optional<QStringList>& retained)const{
+    c.cancellation.throwIfCancelled();
+    validId(c.sessionId);validId(destination);check(destination!=c.sessionId,"Checkpoint fork requires a new owner",ErrorCode::InvalidArgument);
+    const auto path=QDir(directory_).filePath(destination);plainPath(path);
+    check(!QFileInfo::exists(path),"Checkpoint fork target already exists",ErrorCode::AlreadyExists);
+    const auto source=QDir(directory_).filePath(c.sessionId);plainPath(source+"/state.json");
+    if(!QFileInfo::exists(source+"/state.json"))return;
+    Journal original(directory_,c);auto state=original.state;auto snapshots=state["snapshots"].toArray();
+    if(retained){const QSet<QString> ids(retained->cbegin(),retained->cend());
+        QJsonArray keep;for(const auto& v:snapshots)if(ids.contains(v.toObject()["message_id"].toString()))keep.append(v);snapshots=keep;
+        QJsonObject scopes;for(const auto& v:snapshots){const auto snap=v.toObject();const auto key=snap["scope"].toString();
+            auto owner=state["scopes"].toObject()[key].toObject();auto initial=scopes[key].toObject()["initial"].toObject();const auto originals=owner["initial"].toObject(),files=snap["files"].toObject();
+            for(auto f=files.begin();f!=files.end();++f)initial[f.key()]=originals[f.key()];owner["initial"]=initial;scopes[key]=owner;}
+        state["scopes"]=scopes;state["sequence"]=snapshots.size();
+    }
+    state["snapshots"]=snapshots;state["session_id"]=destination;
+    check(QDir().mkdir(path),"Checkpoint fork target already exists or cannot be created");
+    struct Guard{QString path;bool keep=false;~Guard(){if(!keep)QDir(path).removeRecursively();}} guard{path};
+    auto context=c;context.sessionId=destination;Journal targetJournal(directory_,context);targetJournal.state=state;targetJournal.validate(context);
+    QJsonObject blobs;auto collect=[&](const QJsonObject& files){for(const auto& v:files){const auto b=v.toObject();if(!b["exists"].toBool())continue;
+        const auto id=b["sha256"].toString();check(!blobs.contains(id)||blobs[id]==b["bytes"],"Conflicting checkpoint blob sizes",ErrorCode::ProtocolError);blobs[id]=b["bytes"];}};
+    for(const auto& v:state["scopes"].toObject())collect(v.toObject()["initial"].toObject());for(const auto& v:snapshots)collect(v.toObject()["files"].toObject());
+    qint64 total=0;for(auto it=blobs.begin();it!=blobs.end();++it){c.cancellation.throwIfCancelled();
+        const auto bytes=read(original.dir+'/'+it.key()+".blob",fileLimit);check(bytes.size()==it.value().toInteger()&&hash(bytes)==it.key(),"Checkpoint fork blob digest mismatch",ErrorCode::ProtocolError);
+        total+=bytes.size();check(total<=blobLimit,"Checkpoint fork exceeds blob limit",ErrorCode::ResourceLimit);write(path+'/'+it.key()+".blob",bytes);}
+    targetJournal.save(context);guard.keep=true;
+}
 QJsonObject FileCheckpoints::rewind(const QString& id,bool dryRun,const ToolContext& c,const QString& expected)const{
     validId(id);Journal j(directory_,c);const auto key=scope(c);const int index=j.find(id,key);
     check(index>=0,"Checkpoint not found in the current workspace",ErrorCode::NotFound);

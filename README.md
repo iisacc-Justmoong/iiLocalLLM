@@ -2,6 +2,8 @@
 
 C++ 에이전트 하네스를 확장 중이다. 현재 실행 계층은 [AgentHarness.md](docs/AgentHarness.md), 전체 요구사항과 남은 구현은 [HarnessParity.md](docs/HarnessParity.md)에 기록한다. MCP/API 및 앱 전체 호환 완료와 기존 대화 기능 완료는 별도 상태로 관리한다.
 
+0.47.0은 [보관 파일과 체크포인트를 포함한 세션 분기](docs/SessionFork.md)를 추가한다. 대화의 경로를 새 소유자에 연결하고 부모 백업과 독립된 사본을 만든다. C++·API·CLI·MCP 및 자식 에이전트의 문맥 분기에 적용한다.
+
 0.46.0은 C++ [파일 체크포인트와 복원](docs/FileCheckpoints.md)을 추가한다. 사용자 메시지별 원본 기록, 새 파일 삭제 복원, 세션 잠금·작업 트리 경계·권한과 인증 API·MCP·CLI를 제공한다.
 
 0.45.0은 C++ [Jupyter 노트북 셀 편집](docs/Notebooks.md)을 추가한다. NotebookEdit의 읽기 선행·권한·변경 감지·백업과 인증 API·MCP·CLI를 제공하며, 같은 세션의 작업 트리와 압축 경계를 따른다.

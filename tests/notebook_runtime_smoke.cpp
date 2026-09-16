@@ -14,10 +14,11 @@ void write(const QString& path,const QByteArray& bytes){QFile file(path);require
 QByteArray read(const QString& path){QFile file(path);require(file.open(QIODevice::ReadOnly),"Cannot read fixture");return file.readAll();}
 }
 int main(int argc,char** argv){QCoreApplication app(argc,argv);
-    if(argc<3||argc>7)return 2;bool toolGrammar=true,qwenSampling=false,thinking=false,checkpoints=false;
+    if(argc<3||argc>8)return 2;bool toolGrammar=true,qwenSampling=false,thinking=false,checkpoints=false,forks=false;
     for(int i=3;i<argc;++i){const auto option=QString::fromLocal8Bit(argv[i]);
         if(option=="--no-tool-grammar")toolGrammar=false;else if(option=="--qwen-sampling")qwenSampling=true;
-        else if(option=="--thinking"){thinking=true;qwenSampling=true;}else if(option=="--checkpoints")checkpoints=true;else return 2;}
+        else if(option=="--thinking"){thinking=true;qwenSampling=true;}else if(option=="--checkpoints")checkpoints=true;
+        else if(option=="--forks"){forks=true;checkpoints=true;}else return 2;}
     try {
         QTemporaryDir root(QDir::current().filePath("notebook-native-XXXXXX"));require(root.isValid(),"Cannot create fixture");
         const auto work=root.filePath("work");QDir().mkpath(work);
@@ -66,7 +67,7 @@ int main(int argc,char** argv){QCoreApplication app(argc,argv);
             {"other_data_preserved",cells.size()==2&&cells[1].toObject()==preserved&&after["metadata"]==notebook["metadata"]},
             {"original_preserved_in_backup",backupPreserved},{"host_read",!hostRead.isError},
             {"host_transcript_unchanged",engine.session(session.id).messages.size()==messageCount}};
-        QJsonObject checkpointReport;
+        QJsonObject checkpointReport,forkReport;
         if(checkpoints){
             const auto changedBytes=read(path);const auto originalId=engine.session(session.id).messages.first().id;
             const auto saved=engine.checkpointFiles(session.id);const auto preview=engine.rewindFiles(session.id,originalId,true);
@@ -75,9 +76,26 @@ int main(int argc,char** argv){QCoreApplication app(argc,argv);
             const auto redo=engine.rewindFiles(session.id,saved["message_id"].toString());checks["rewind_exact_edited_bytes"]=!redo.isError&&read(path)==changedBytes;
             checks["rewind_transcript_unchanged"]=engine.session(session.id).messages.size()==messageCount;
             checkpointReport={{"preview",preview.data},{"undo",undo.data},{"redo",redo.data},{"history",engine.fileCheckpoints(session.id)}};
+            if(forks){
+                const auto child=engine.forkSession(session.id);QString childBackup;
+                for(const auto& message:child.messages)if(message.data.contains("backup_path"))childBackup=message.data["backup_path"].toString();
+                checks["fork_copied_backup"]=!childBackup.isEmpty()&&childBackup!=backup&&read(childBackup)==originalBytes;
+                require(QDir(root.filePath("sessions/"+session.id+"/artifacts")).removeRecursively(),"Cannot remove parent artifacts in fixture");
+                require(QDir(root.filePath("sessions/file-checkpoints/"+session.id)).removeRecursively(),"Cannot remove parent checkpoint fixture");
+                const auto beforeCalls=calls.size();auto follow=request;follow.sessionId=child.id;
+                follow.prompt="Use Read to read the complete backup notebook at "+childBackup+". Return only the string assigned to secret in code cell main, without quote characters. Read that exact backup path now. Do not change any files.";
+                const auto answer=engine.run(follow).result.get();QJsonArray childCalls;for(qsizetype i=beforeCalls;i<calls.size();++i)childCalls.append(calls[i]);
+                checks["fork_native_answer"]=answer.status==a::RunStatus::Completed&&answer.text==marker;
+                checks["fork_native_reads_owned_backup"]=childCalls.size()==1&&childCalls[0].toObject()["name"]=="Read"
+                    &&childCalls[0].toObject()["arguments"].toObject()["path"]==childBackup&&!childCalls[0].toObject()["is_error"].toBool();
+                checks["fork_native_does_not_edit"]=read(path)==changedBytes;
+                const auto restored=engine.rewindFiles(child.id,originalId);checks["fork_rewind_after_parent_removed"]=!restored.isError&&read(path)==originalBytes;
+                const auto replay=engine.rewindFiles(child.id,saved["message_id"].toString());checks["fork_redo_exact_bytes"]=!replay.isError&&read(path)==changedBytes;
+                forkReport={{"child_session_id",child.id},{"answer",a::toJson(answer)},{"tools",childCalls},{"backup",childBackup},{"undo",restored.data},{"redo",replay.data}};
+            }
         }
         bool passed=true;for(const auto& value:checks)passed&=value.toBool();
-        const QJsonObject report{{"passed",passed},{"checks",checks},{"file_checkpoints",checkpointReport},{"model",uri},{"model_requests_unmodified",true},{"marker",marker},{"answer",a::toJson(result)},
+        const QJsonObject report{{"passed",passed},{"checks",checks},{"file_checkpoints",checkpointReport},{"session_fork",forkReport},{"model",uri},{"model_requests_unmodified",true},{"marker",marker},{"answer",a::toJson(result)},
             {"tools",modelCalls},{"notebook",after},{"context_tokens",4096},{"cached_contexts",1},{"tool_grammar",toolGrammar},{"original_preserved_in_backup",backupPreserved},
             {"thinking",thinking},{"sampling",thinking?"qwen-thinking":qwenSampling?"qwen-nonthinking":"greedy"},{"temperature",request.generation.temperature},{"top_p",request.generation.topP},
             {"top_k",request.generation.topK},{"min_p",request.generation.minP},{"seed",qint64(request.generation.seed)},

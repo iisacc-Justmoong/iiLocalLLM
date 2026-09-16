@@ -49,7 +49,7 @@ EventCallback permissionEvents(const ToolContext& context) {
 class Bridge : public std::enable_shared_from_this<Bridge> {
 public:
     struct Conversation {
-        std::timed_mutex mutex,identity;QString id;bool resetting=false;
+        std::timed_mutex mutex,identity;QString id;bool resetting=false;QStringList forkParents;
         std::map<QString,CancellationToken> active;std::condition_variable_any changed;
         std::shared_ptr<PermissionRequests> permissionRequests;
         std::shared_ptr<AsyncHookScope> hooks=std::make_shared<AsyncHookScope>();
@@ -122,7 +122,9 @@ public:
         if (options.engine) {
             if (!current) return;
             owner = sessionId(current, {}, false); if (owner.isEmpty()) return;
-            options.engine->endSession(owner,"other");return;
+            options.engine->endSession(owner,"other");
+            QStringList parents;{std::lock_guard guard(current->identity);parents=current->forkParents;}
+            for(const auto& parent:parents)options.engine->endSession(parent,"other");return;
         }
         stopShells(owner);
     }
@@ -343,6 +345,18 @@ public:
             return ToolResult{report["complete"].toBool()?"Conversation cleared.":"Conversation replacement requires attention; inspect diagnostics.",report,!report["complete"].toBool()};
         };
         frozen->add(std::move(clear));
+        Tool fork;fork.definition.name="iiLocalLLM.agent.fork";
+        fork.definition.description="Fork this connection's idle conversation, including owned artifacts and file checkpoints, and switch to the new conversation. An optional through_message_id selects an inclusive complete message boundary. Running jobs are not copied.";
+        fork.definition.metadata={{"source","builtin.session.fork"}};
+        fork.definition.inputSchema={{"type","object"},{"additionalProperties",false},{"properties",QJsonObject{{"through_message_id",QJsonObject{{"type","string"},{"minLength",1}}}}}};
+        fork.execute=[self](const QJsonObject& args,const ToolContext& context){
+            const auto owner=self->conversation(context.sessionId);std::unique_lock lock(owner->identity,std::defer_lock);acquire(lock,context.cancellation);
+            if(owner->resetting||owner->active.size()!=1||!owner->active.contains(context.runId))throw Error(ErrorCode::ModelInUse,"Cannot fork a busy MCP conversation");
+            if(owner->id.isEmpty())throw Error(ErrorCode::NotFound,"This MCP connection has no conversation to fork");
+            const auto session=self->options.engine->forkSession(owner->id,args["through_message_id"].toString());
+            owner->forkParents.append(owner->id);owner->id=session.id;
+            return ToolResult{"Conversation forked.",{{"session_id",session.id},{"parent_session_id",session.parentSessionId},{"message_count",session.messages.size()},{"compaction_count",session.compactions.size()}}};
+        };frozen->add(std::move(fork));
         Tool skills; skills.definition.name = "iiLocalLLM.agent.skills.list";
         skills.definition.description = "List local skill metadata and unsupported features for this connection's agent. Does not load a model or execute a skill.";
         skills.definition.readOnly = true; skills.definition.concurrencySafe = true;
@@ -461,7 +475,8 @@ public:
         const bool inputControl = options.engine && source == "builtin.input.control"
             && QStringList{"iiLocalLLM.agent.inputs.enqueue", "iiLocalLLM.agent.inputs.list", "iiLocalLLM.agent.inputs.remove"}.contains(name);
         const bool subagentControl = options.engine && source == "builtin.subagent.control";
-        const bool sessionControl=options.engine&&source=="builtin.session.control"&&name=="iiLocalLLM.agent.clear";
+        const bool sessionControl=options.engine&&((source=="builtin.session.control"&&name=="iiLocalLLM.agent.clear")
+            ||(source=="builtin.session.fork"&&name=="iiLocalLLM.agent.fork"));
         const bool planControl=options.engine&&(source=="builtin.plan.control"||source=="builtin.plan");
         const bool memoryControl=options.engine&&(source=="builtin.memory.control"||source=="builtin.checkpoint.control");
         // Questions and web extraction do not mutate the application workspace.
@@ -505,6 +520,7 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
         server.experimentalCapabilities["iisacc/worktrees"]=QJsonObject{{"schema","iisacc.worktrees/1"},{"enterTool","EnterWorktree"},{"exitTool","ExitWorktree"},{"statusTool","iiLocalLLM.agent.worktrees.status"},{"scope","connection-owner"}};
     if(state->options.engine&&state->options.engine->fileCheckpointsEnabled())
         server.experimentalCapabilities["iisacc/fileCheckpoints"]=QJsonObject{{"schema","iisacc.file-checkpoints/1"},{"listTool","iiLocalLLM.agent.checkpoints.list"},{"createTool","iiLocalLLM.agent.checkpoints.create"},{"rewindTool","iiLocalLLM.agent.checkpoints.rewind"},{"scope","connection-owner"}};
+    if(state->options.engine)server.experimentalCapabilities["iisacc/sessionFork"]=QJsonObject{{"schema","iisacc.session-fork/1"},{"tool","iiLocalLLM.agent.fork"},{"switchesConversation",true},{"scope","connection-owner"}};
     if(state->options.engine&&state->options.engine->lspTool())
         server.experimentalCapabilities["iisacc/lsp"]=QJsonObject{{"schema","iisacc.lsp/1"},{"tool","LSP"},{"statusTool","iiLocalLLM.agent.lsp.status"},{"positionEncoding","utf-16"}};
     if(state->options.engine&&state->options.engine->webFetchTool())

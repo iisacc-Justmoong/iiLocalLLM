@@ -164,8 +164,10 @@ private slots:
         struct Restore {QByteArray old;bool had;~Restore(){if(had)qputenv("BASH_ENV",old);else qunsetenv("BASH_ENV");}} restore{old,had};
         a::ToolContext context{"child",{},f.work};context.readOnlyShell=true;
         a::ToolRunner runner(f.tools,std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass));
-        for(const auto& command:QStringList{"pwd","printf '%s\\n' hello | wc -c","cat startup.sh","head -n 1 startup.sh","ls -l startup.sh"})
-            QVERIFY2(!runner.run({"safe","Bash",{{"command",command}}},context).isError,qPrintable(command));
+        for(const auto& command:QStringList{"pwd","printf '%s\\n' hello | wc -c","cat startup.sh","head -n 1 startup.sh","ls -l startup.sh"}) {
+            const auto result=runner.run({"safe","Bash",{{"command",command}}},context);
+            QVERIFY2(!result.isError,qPrintable(command+": "+result.text+QString::fromUtf8(QJsonDocument(result.data).toJson())));
+        }
         QVERIFY(!QFileInfo::exists(marker));
         for(const auto& command:QStringList{"echo bad > changed.txt","cat $(touch changed.txt)","printf -v PATH .; cat startup.sh","printf '%10n' PATH; cat startup.sh",
             "cat /etc/passwd","ls -R .","find . -delete","git status","cat startup.sh &","PATH=. cat startup.sh"})

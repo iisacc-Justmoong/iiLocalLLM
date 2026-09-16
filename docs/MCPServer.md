@@ -39,7 +39,7 @@ build/iillm-mcp --workspace /absolute/project \
 | iiLocalLLM.agent.run | prompt, 선택 new_session·max_turns·context_paths | 해당 MCP 연결의 로컬 대화에서 에이전트 실행. 상태·텍스트·턴·사용량·실행/세션 ID를 structuredContent로 반환 |
 | iiLocalLLM.agent.session | 선택 include_messages | 해당 연결의 대화 ID·모델·메시지 수, 선택 transcript 반환. 다른 세션 ID를 입력받지 않음 |
 
-에이전트 이벤트는 요청의 progressToken이 있을 때 증가하는 progress와 `_meta["iisacc/agentEvent"]`로 전달한다. 클라이언트 취소는 MCP 요청 → Engine RunHandle → 실제 추론·도구로 전파한다. 완료·실패 후 도구 결과는 기존 JSONL 복구 계약을 따른다. 연결 종료 시 연결과 대화 사이의 메모리 매핑을 제거하고 영속 transcript는 보존한다. 다른 연결의 기존 대화를 자동으로 재개하지 않는다. 인증된 재개·fork API는 아직 남아 있다.
+에이전트 이벤트는 요청의 progressToken이 있을 때 증가하는 progress와 `_meta["iisacc/agentEvent"]`로 전달한다. 클라이언트 취소는 MCP 요청 → Engine RunHandle → 실제 추론·도구로 전파한다. 완료·실패 후 도구 결과는 기존 JSONL 복구 계약을 따른다. 연결 종료 시 연결과 대화 사이의 메모리 매핑을 제거하고 영속 transcript는 보존한다. 다른 연결의 기존 대화를 자동으로 재개하지 않는다. 0.47은 연결 소유 대화의 분기와 새 대화 전환을 제공한다. 과거 대화의 선택·재개는 아직 남아 있다. [SessionFork.md](SessionFork.md)를 따른다.
 
 ## 앱에 내장
 
@@ -156,3 +156,5 @@ C++ `NotebookEdit`와 `agent.notebooks.read/edit`, CLI `agent notebooks`, MCP `i
 ## 파일 체크포인트 (0.46)
 
 C++ 네이티브 Write·Edit·NotebookEdit의 원본을 사용자 메시지 경계에 기록하고 목록·수동 생성·파일 복원을 제공한다. 인증 API의 `agent.checkpoints.*`, CLI의 `agent checkpoints`, 연결 소유자에 묶인 MCP `iiLocalLLM.agent.checkpoints.*`가 같은 Engine을 사용한다. 저장 한도, 세션 잠금, preview·권한·작업 트리 경계와 남은 참조 기능은 [FileCheckpoints.md](FileCheckpoints.md)에 기록한다. 전체 대응 상태는 27 partial·4 pending·0 complete를 유지한다.
+
+0.47의 `iiLocalLLM.agent.fork`는 선택 `through_message_id`로 대화를 분기하며 `iisacc/sessionFork`로 발견한다. 현재 연결 소유자만 사용하고 Engine 소유 artifact·체크포인트를 복제한다. [SessionFork.md](SessionFork.md).

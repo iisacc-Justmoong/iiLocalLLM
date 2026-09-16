@@ -60,6 +60,6 @@ MCP는 `experimental["iisacc/fileCheckpoints"]`와 `iiLocalLLM.agent.checkpoints
 
 ## 남은 참조 대응
 
-대화 자체 rewind/메시지 선택 UI, 변경 행 수·IDE 알림, 파일 artifact를 가진 세션 fork/resume-copy, 부모·팀과 자식의 공동 체크포인트, Bash의 제한된 simulated-sed 경로 연결은 아직 구현되지 않았다. 일반 Bash/외부 프로그램의 미추적 파일 수정은 포착하지 않는다. 이미 추적된 파일의 다음 사용자 경계 상태만 포착한다. 외부에서 만든 수정도 복원 대상 원본과 다르면 덮어쓸 수 있으므로 preview의 변경 파일을 확인해야 한다.
+대화 자체 rewind/메시지 선택 UI, 변경 행 수·IDE 알림, 부모·팀과 자식의 공동 체크포인트, Bash의 제한된 simulated-sed 경로 연결은 아직 구현되지 않았다. 일반 Bash/외부 프로그램의 미추적 파일 수정은 포착하지 않는다. 이미 추적된 파일의 다음 사용자 경계 상태만 포착한다. 외부에서 만든 수정도 복원 대상 원본과 다르면 덮어쓸 수 있으므로 preview의 변경 파일을 확인해야 한다.
 
-기존 artifact fork 제한을 유지하며 새 파일만 기록된 세션도 기록을 조용히 버리는 fork 대신 명시적 미지원 오류를 반환한다. files와 sessions의 대응 상태는 partial이다. SDK 검증은 제품 앱 재설치나 모든 플랫폼의 실기기 동작을 의미하지 않는다.
+0.47부터 artifact와 파일 체크포인트를 새 세션으로 독립 복사한다. 전체/메시지 경계 분기와 실패 계약은 [SessionFork.md](SessionFork.md)를 따른다. files와 sessions의 대응 상태는 partial이다. SDK 검증은 제품 앱 재설치나 모든 플랫폼의 실기기 동작을 의미하지 않는다.

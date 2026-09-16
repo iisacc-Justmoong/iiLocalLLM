@@ -22,13 +22,18 @@ public:
     explicit SessionStore(QString directory, qint64 maxTranscriptBytes = 64 * 1024 * 1024);
     Session create(QString model, QString systemPrompt, QString workingDirectory) const;
     // Atomically clones an immutable, already-paired snapshot with a fresh ID.
-    // External artifacts are not copied. The caller must handle that boundary.
+    // Optionally copies artifacts referenced by this snapshot from a trusted
+    // source directory. Live jobs, grants and file checkpoints are not copied.
     // initialize receives the fresh ID before publication. It may append seed
     // messages; exceptions leave no session on disk. No store lock is held.
     Session createFromSnapshot(Session snapshot,
-        const std::function<void(const QString&, QList<Message>&)>& initialize = {}) const;
-    // Copies a complete message boundary into a new, atomically published session.
-    Session fork(const QString& id, const QString& throughMessageId = {}) const;
+        const std::function<void(const QString&, QList<Message>&)>& initialize = {},
+        const QString& sourceArtifactsDirectory = {}) const;
+    // Copies a complete message boundary and its owned artifacts. beforePublish
+    // runs with the source lease held, after cloning, before transcript publication.
+    // Its caller must roll back any external state if publication throws.
+    Session fork(const QString& id, const QString& throughMessageId = {},
+        const std::function<void(const Session&)>& beforePublish = {}) const;
     // Lease excludes concurrent writers, including other processes, for the whole run.
     std::unique_ptr<SessionLease> acquire(const QString& id) const;
     Session load(const QString& id) const;

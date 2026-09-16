@@ -165,6 +165,7 @@ int main(int argc, char** argv) {
         if (agent) {
             hostRules.append({"iiLocalLLM.agent.run", a::PermissionBehavior::Allow});
             hostRules.append({"iiLocalLLM.agent.clear", a::PermissionBehavior::Allow});
+            hostRules.append({"iiLocalLLM.agent.fork", a::PermissionBehavior::Allow});
             hostRules.append({"iiLocalLLM.agent.checkpoints.create", a::PermissionBehavior::Allow});
             hostRules.append({"iiLocalLLM.agent.checkpoints.rewind", a::PermissionBehavior::Allow}); // Inner RewindFiles checks file policy and approval.
             // The inner native Agent/AgentStop call still evaluates host policy.

@@ -472,7 +472,6 @@ ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args
             seed.systemPrompt=fork?context.sessionSnapshot->systemPrompt:definition.systemPrompt;
             if(!fork && seed.systemPrompt.isEmpty()) seed.systemPrompt="Perform the delegated task using the available tools and report the observed result.";
             if(fork) {
-                require(context.artifactsDirectory.isEmpty() || QDir(context.artifactsDirectory).entryList(QDir::AllEntries|QDir::NoDotAndDotDot|QDir::Hidden).isEmpty(),"Forking parent artifacts is not implemented",ErrorCode::RuntimeUnavailable);
                 for(const auto& call:pendingToolCalls(seed.messages)) seed.messages.append({uuid(),MessageRole::Tool,"Parent operation is still pending. This child has not executed it.",{},call.id,true,{{"parent_pending",true}}});
             }
             const auto child=d->children.createFromSnapshot(std::move(seed),[&](const QString& childId,QList<Message>& messages){
@@ -483,7 +482,7 @@ ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args
                 auto metadata=message.metadata["iilocal.skill"].toObject();metadata["agent_profile"]=definition.name;message.metadata["iilocal.skill"]=metadata;
                 messages.append(std::move(message));
             }
-            });request.sessionId=child.id;
+            },fork?context.artifactsDirectory:QString{});request.sessionId=child.id;
             job->state={{"schema","iisacc.subagent/1"},{"agentId","agent-"+uuid()},{"parent_session_id",parent.id},{"session_id",child.id},
                 {"agent_type",definition.name},{"profile",profileJson(definition)},{"model",model},{"fork_context",fork},{"created_at",QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}};
             if(skill)job->state["skill"]=skill->prompt.metadata["iilocal.skill"];
@@ -500,7 +499,7 @@ ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args
             if(resume.isEmpty()) {
                 try {d->policy->forgetSession({request.sessionId,{},d->options.workingDirectory});}catch(...) {}
                 const auto directory=QDir(d->options.stateDirectory).filePath("sessions/"+request.sessionId);
-                QFile::remove(QDir(directory).filePath("transcript.jsonl"));QDir().rmdir(directory);
+                QDir(directory).removeRecursively();
             }
             throw;
         }

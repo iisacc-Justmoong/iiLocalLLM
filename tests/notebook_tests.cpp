@@ -116,7 +116,8 @@ private slots:
     const a::ToolCall call{"edit","NotebookEdit",{{"notebook_path",f.path},{"cell_id","first"},{"new_source","x"}}};
     auto policy=std::make_shared<a::SettingsPermissionPolicy>(settings);QVERIFY(a::ToolRunner(f.registry,policy).run(call,f.context).isError);
     settings.fallbackMode=a::PermissionMode::DontAsk;settings.inlineSettings={{"permissions",QJsonObject{{"allow",QJsonArray{"NotebookEdit(book.ipynb)"}}}}};
-    policy=std::make_shared<a::SettingsPermissionPolicy>(settings);QVERIFY(!a::ToolRunner(f.registry,policy).run(call,f.context).isError);
+    policy=std::make_shared<a::SettingsPermissionPolicy>(settings);const auto allowed=a::ToolRunner(f.registry,policy).run(call,f.context);
+    QVERIFY2(!allowed.isError,qPrintable(allowed.text+QString::fromUtf8(QJsonDocument(allowed.data).toJson())));
     auto plan=std::make_shared<a::RulePolicy>(a::PermissionMode::Plan);QVERIFY(a::ToolRunner(f.registry,plan).run(call,f.context).isError);
     auto accept=std::make_shared<a::RulePolicy>(a::PermissionMode::AcceptEdits);QVERIFY(!a::ToolRunner(f.registry,accept).run(call,f.context).isError);
     const auto second=f.root.filePath("second.ipynb"),link=f.root.filePath("alias.ipynb");write(second,read(f.path));QVERIFY(QFile::link(f.path,link));

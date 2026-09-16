@@ -14,7 +14,7 @@ namespace {
 QByteArray git(const QString& root,QStringList args) {
     QProcess p;p.setWorkingDirectory(root);p.start("git",args);
     if(!p.waitForStarted(5000)||!p.waitForFinished(30000)||p.exitCode()!=0)
-        throw std::runtime_error(("fixture git failed: "+p.readAllStandardError()).constData());
+        throw std::runtime_error(("fixture git failed ("+args.join(' ').toUtf8()+"): "+p.errorString().toUtf8()+"; exit="+QByteArray::number(p.exitCode())+"; "+p.readAllStandardError()).constData());
     return p.readAllStandardOutput().trimmed();
 }
 void write(const QString& path,const QByteArray& bytes) {

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(iiLocalLLM VERSION 0.46.0 LANGUAGES CXX)
+project(iiLocalLLM VERSION 0.47.0 LANGUAGES CXX)
 
 if(PROJECT_IS_TOP_LEVEL AND CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT)
     if(DEFINED ENV{HOME})
@@ -158,6 +158,11 @@ foreach(_entrypoint IN LISTS _versioned_entrypoints)
 endforeach()
 
 if(BUILD_TESTING)
+    add_executable(iiLocalLLMSessionForkTests tests/session_fork_tests.cpp)
+    target_link_libraries(iiLocalLLMSessionForkTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
+    set_target_properties(iiLocalLLMSessionForkTests PROPERTIES AUTOMOC ON)
+    add_test(NAME iiLocalLLM.session_fork COMMAND iiLocalLLMSessionForkTests)
+    set_tests_properties(iiLocalLLM.session_fork PROPERTIES TIMEOUT 90)
     add_executable(iiLocalLLMFileCheckpointTests tests/file_checkpoint_tests.cpp)
     target_link_libraries(iiLocalLLMFileCheckpointTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
     set_target_properties(iiLocalLLMFileCheckpointTests PROPERTIES AUTOMOC ON)

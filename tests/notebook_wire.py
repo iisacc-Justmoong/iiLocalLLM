@@ -38,7 +38,9 @@ def main():
     parser.add_argument('--report', type=Path, required=True)
     parser.add_argument('--official-stdio', action='store_true')
     parser.add_argument('--checkpoints', action='store_true')
+    parser.add_argument('--forks', action='store_true')
     args = parser.parse_args()
+    args.checkpoints = args.checkpoints or args.forks
     daemon, cli, mcp = (str(getattr(args, key).resolve()) for key in ('daemon', 'cli', 'mcp'))
     env = dict(os.environ)
     for key in ('DYLD_LIBRARY_PATH', 'DYLD_FRAMEWORK_PATH', 'DYLD_FALLBACK_LIBRARY_PATH', 'LIBRARY_PATH'):
@@ -180,6 +182,18 @@ def main():
                 if args.checkpoints:
                     assert rpc('agent.checkpoints.list', {'session_id': owner})['snapshots']
                     rpc('agent.checkpoints.list', {'session_id': owner}, other_token, 404)
+                    if args.forks:
+                        original_owner = owner
+                        copied = rpc('agent.sessions.fork', {'session_id': owner})
+                        assert copied['parent_session_id'] == owner and copied['session_id'] != owner
+                        owner = copied['session_id']
+                        output = subprocess.run([cli, '--socket', str(root / 's'), '--auth-file', auth, 'agent', 'sessions', 'fork', owner], cwd=root, env=env, capture_output=True, text=True, timeout=40, check=True)
+                        child = json.loads(output.stdout)
+                        assert child['parent_session_id'] == owner and child['session_id'] != owner
+                        owner = child['session_id']
+                        assert rpc('agent.checkpoints.list', {'session_id': owner})['snapshots'] == rpc('agent.checkpoints.list', {'session_id': original_owner})['snapshots']
+                        rpc('agent.sessions.fork', {'session_id': owner}, other_token, 404)
+                        report['fork_http_and_ipc'] = True
                     edited = path.read_bytes()
                     preview = rpc('agent.checkpoints.rewind', {'session_id': owner, 'message_id': point, 'dry_run': True})
                     assert not preview['is_error'] and path.read_bytes() == edited, preview
@@ -222,6 +236,14 @@ def main():
                 assert post(port, '/mcp', 'tools/list', {}, other_token, session)[0] == 404
                 report['mcp_http'] = True
                 if args.checkpoints:
+                    if args.forks:
+                        assert 'iisacc/sessionFork' in init['result']['capabilities']['experimental']
+                        parent = call('iiLocalLLM.agent.session', {})['session_id']
+                        copied = call('iiLocalLLM.agent.fork', {})
+                        assert copied['parent_session_id'] == parent and copied['session_id'] != parent
+                        assert call('iiLocalLLM.agent.session', {})['session_id'] == copied['session_id']
+                        call('iiLocalLLM.agent.fork', {'session_id': parent}, failure=True)
+                        report['fork_mcp_http'] = True
                     preview = call('iiLocalLLM.agent.checkpoints.rewind', {'message_id': point, 'dry_run': True})
                     assert preview['dryRun'] and preview['filesChanged']
                     result = call('iiLocalLLM.agent.checkpoints.rewind', {'message_id': point})
@@ -248,6 +270,13 @@ def main():
                                 assert result.structuredContent['cell_type'] == 'markdown'
                                 assert verify()['cells'][1]['source'] == '# ' + marker
                                 if args.checkpoints:
+                                    if args.forks:
+                                        assert 'iisacc/sessionFork' in init.capabilities.experimental
+                                        parent = (await client.call_tool('iiLocalLLM.agent.session', {})).structuredContent['session_id']
+                                        child = await client.call_tool('iiLocalLLM.agent.fork', {})
+                                        assert not child.isError and child.structuredContent['parent_session_id'] == parent
+                                        assert child.structuredContent['session_id'] != parent
+                                        report['fork_official_stdio'] = True
                                     restored = await client.call_tool('iiLocalLLM.agent.checkpoints.rewind', {'message_id': point})
                                     assert not restored.isError and restored.structuredContent['complete'] and path.read_bytes() == before_stdio
                                     report['checkpoint_official_stdio'] = True

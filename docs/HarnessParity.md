@@ -163,3 +163,7 @@ C++ MemoryDream은 기본 OFF인 자동 실행, 24시간·5개 대화·10분 목
 ## 파일 체크포인트 (0.46)
 
 C++ 네이티브 Write·Edit·NotebookEdit의 원본을 사용자 메시지 경계에 기록하고 목록·수동 생성·파일 복원을 제공한다. 인증 API의 `agent.checkpoints.*`, CLI의 `agent checkpoints`, 연결 소유자에 묶인 MCP `iiLocalLLM.agent.checkpoints.*`가 같은 Engine을 사용한다. 저장 한도, 세션 잠금, preview·권한·작업 트리 경계와 남은 참조 기능은 [FileCheckpoints.md](FileCheckpoints.md)에 기록한다. 전체 대응 상태는 27 partial·4 pending·0 complete를 유지한다.
+
+## 세션 분기 복제 (0.47)
+
+C++ 세션 분기에 artifact·체크포인트의 독립 복사, 대화 경로 갱신, 게시 전 권한/계획 준비와 실패 정리를 추가한다. 자식 문맥 분기도 참조 artifact를 복제한다. API·CLI 및 연결 전환 MCP를 제공한다. [SessionFork.md](SessionFork.md)에 범위와 제한을 기록한다. 대화 rewind UI, 팀 공동 이력과 전체 앱/플랫폼 검증은 남아 있으며 27 partial·4 pending·0 complete를 유지한다.

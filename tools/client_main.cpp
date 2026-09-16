@@ -142,7 +142,7 @@ int main(int argc, char** argv)
                     : args[1] == "checkpoints" ? QStringList{"list","create","rewind"}
                     : args[1] == "lsp" ? QStringList{"query","status"}
                     : args[1] == "web" ? QStringList{"fetch"}
-                    : args[1] == "sessions" ? QStringList{"search"}
+                    : args[1] == "sessions" ? QStringList{"search","fork"}
                     : args[1] == "memory" ? QStringList{"get","read","write","edit","glob","grep","forget","recall","extract","extraction.status","extraction.cancel","dream","dream.status","dream.cancel"}
                     : args[1] == "agents" ? QStringList{"run", "output", "stop", "list", "profiles"}
                     : args[1] == "inputs" ? QStringList{"enqueue", "list", "remove", "run"}
