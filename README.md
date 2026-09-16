@@ -1,6 +1,10 @@
 # iiLocalLLM
 
-C++ 에이전트 하네스를 확장 중이다. 현재 실행 계층은 [AgentHarness.md](docs/AgentHarness.md), 전체 요구사항과 남은 구현은 [HarnessParity.md](docs/HarnessParity.md)에 기록한다. MCP/API 및 앱 전체 호환 완료와 기존 대화 기능 완료는 별도 상태로 관리한다.
+로컬 LLM 대화와 C++ 에이전트 실행을 제공하는 MVP 모듈이다. 0.52.0의 완료 범위는 모델 로드·대화·스트리밍·세션·취소, 도구 실행, C++/native IPC/HTTP/MCP 연동과 로컬 플러그인 실행이다. 실행 방법은 아래 CLI 예시, 실행 계층은 [AgentHarness.md](docs/AgentHarness.md), 실제 모델과 새 설치본의 최종 검증은 [Verification.md](docs/Verification.md)를 따른다.
+
+[HarnessParity.md](docs/HarnessParity.md)는 참조 하네스 전체와의 비교 자료이다. 마켓플레이스·실행 중 플러그인 갱신·원격 하네스와 모든 앱·플랫폼의 동등성은 이번 MVP 완료 범위에 포함하지 않는다. 아래 버전별 기록의 미완료 항목은 해당 버전 당시의 범위이다.
+
+0.52.0은 C++ [로컬 플러그인 저장소와 실행](docs/Plugins.md)을 추가한다. 설치된 revision의 스킬·명령·에이전트·훅·MCP·LSP를 기존 실행기에 연결하고, 앱은 인증 API와 MCP로 구성 상태를 확인한다. 갱신·제거는 이전 캐시와 데이터를 보존하며 다음 호스트 시작에 적용한다.
 
 0.51.0은 [로컬 팀](docs/Teams.md)의 도구 스키마를 역할과 실제 미결 종료 요청에 맞춰 갱신한다. 리더만 종료를 요청하고, 해당 팀원만 요청 ID에 묶인 승인·거부를 보낼 수 있다.
 
@@ -36,7 +40,7 @@ C++ 에이전트 하네스를 확장 중이다. 현재 실행 계층은 [AgentHa
 
 0.24.0은 C++·API·MCP의 대화 초기화와 즉시 SessionStart(clear)를 제공한다. 백그라운드 셸·자식 에이전트·완료 알림은 새 대화로 이어진다. 계약과 오류 복구 한계는 [SessionClear.md](docs/SessionClear.md)에 기록한다.
 
-C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.51.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
+C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.52.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
 
 C++ stdio MCP 클라이언트가 외부 도구·리소스·프롬프트를 인식하고 에이전트 엔진에 연결한다. `iillm-mcp` 서버와 C++ 내장 API로 앱 도구 및 로컬 에이전트 실행을 외부 MCP 클라이언트에 제공한다. 프로토콜·정책·자료 보존 및 현재 지원 경계는 [MCP.md](docs/MCP.md) · [MCP 서버·앱 도구 제공](docs/MCPServer.md)에 설명한다.
 
@@ -296,7 +300,7 @@ IILOCALLLM_WITH_LLAMA=ON INSTALL_PREFIX="$PWD/build/stage" ./install.sh
 IILOCALLLM_WITH_LLAMA를 생략하면 기존 CMake 선택을 유지하며 새 구성의 기본값은 ON이다. 과거 OFF로 구성했던 build/는 `IILOCALLLM_WITH_LLAMA=ON ./install.sh`로 활성화한다. INSTALL_PREFIX, QT_PREFIX_PATH, CMAKE_PREFIX_PATH로 경로를 설정한다. Qt와 MLX Python 환경은 패키지에 복사하지 않는다.
 
 ```cmake
-find_package(iiLocalLLM 0.22.0 CONFIG REQUIRED)
+find_package(iiLocalLLM 0.52.0 CONFIG REQUIRED)
 target_link_libraries(your_app PRIVATE iiLocalLLM::iiLocalLLM)
 ```
 

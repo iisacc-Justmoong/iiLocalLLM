@@ -2,11 +2,19 @@
 #include "Types.h"
 
 namespace iiLocalLLM::agent {
+// Host-resolved document, including a legacy command Markdown file. A digest
+// binds the selected cache revision; plugin variables expand only in the body.
+struct SkillSource {
+    QString name, root, path, sha256, pluginRoot, pluginData;
+    QMap<QString, QString> agentAliases;
+};
 struct SkillOptions {
     bool enabled = true;
+    bool includeProject = true;
     // Explicit skills directories, highest priority first. Never inferred from HOME.
     // Each directory contains <name>/SKILL.md; the workspace's .claude/skills is last.
     QStringList directories;
+    QList<SkillSource> sources;
     int maxFileBytes = 128 * 1024;
     int maxTotalBytes = 512 * 1024;
     int maxSkills = 128;

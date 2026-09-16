@@ -729,8 +729,25 @@
     {
       "id": "plugins",
       "requirement": "manifest·명령/스킬/에이전트/훅/MCP/LSP 등록·버전/캐시·설치/갱신",
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "agent/Plugins.h",
+        "agent/Plugins.cpp",
+        "agent/PluginRuntime.h",
+        "agent/PluginRuntime.cpp",
+        "tools/plugins_main.cpp",
+        "tests/plugin_tests.cpp",
+        "tests/plugin_runtime_smoke.cpp",
+        "tests/plugin_wire.py",
+        "docs/Plugins.md"
+      ],
+      "remaining": [
+        "remote/Git/marketplace acquisition and update policy",
+        "marketplace-scoped and semver dependency resolution",
+        "live reload/revocation and cache garbage collection",
+        "MCPB, userConfig, settings, outputStyles, channels and remaining command metadata",
+        "manifest-less package discovery and broader external-plugin compatibility qualification"
+      ]
     },
     {
       "id": "hooks",

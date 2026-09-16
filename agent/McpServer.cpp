@@ -386,6 +386,12 @@ public:
             return ToolResult{"Local skill catalog", self->options.engine->skills(id, context.cancellation).toJson()};
         };
         frozen->add(std::move(skills));
+        Tool plugins; plugins.definition.name="iiLocalLLM.agent.plugins.list";
+        plugins.definition.description="List the host's configured plugin snapshot, component counts, dependency blocks and unsupported features. Server runtime state is separate.";
+        plugins.definition.readOnly=true;plugins.definition.concurrencySafe=true;
+        plugins.definition.inputSchema={{"type","object"},{"additionalProperties",false},{"properties",QJsonObject{}}};
+        plugins.execute=[self](const QJsonObject&,const ToolContext&){return ToolResult{"Configured plugin snapshot",self->options.engine->plugins()};};
+        frozen->add(std::move(plugins));
         const auto text = QJsonObject{{"type", "string"}, {"minLength", 1}, {"maxLength", 65536}};
         const auto inputId = QJsonObject{{"type", "string"}, {"minLength", 1}, {"maxLength", 128}};
         for (const QString action : {QStringLiteral("enqueue"), QStringLiteral("list"), QStringLiteral("remove")}) {

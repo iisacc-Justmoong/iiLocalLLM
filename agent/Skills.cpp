@@ -23,10 +23,10 @@ QString decode(const QByteArray& bytes) {
 }
 QString normalizeName(QString name) {
     name = name.trimmed(); if (name.startsWith('/')) name.remove(0, 1);
-    static const QRegularExpression valid("^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$");
+    static const QRegularExpression valid("\\A[A-Za-z0-9_][A-Za-z0-9_.:-]{0,127}\\z");
     require(valid.match(name).hasMatch() && name != "." && name != "..", "Invalid skill name"); return name;
 }
-struct Loaded { SkillInfo info; QString body; };
+struct Loaded { SkillInfo info; QString body, pluginRoot, pluginData; };
 struct YamlDocument {
     yaml_document_t doc{}; bool loaded = false;
     ~YamlDocument() { if (loaded) yaml_document_delete(&doc); }
@@ -138,10 +138,10 @@ QList<Loaded> scan(const QString& workspace, const SkillOptions& options, const 
     token.throwIfCancelled(); if (!options.enabled) return {};
     require(options.maxFileBytes > 0 && options.maxFileBytes <= 1024 * 1024 && options.maxTotalBytes > 0 && options.maxTotalBytes <= 16 * 1024 * 1024
         && options.maxSkills > 0 && options.maxSkills <= 1024 && options.maxScannedEntries > 0 && options.maxScannedEntries <= 65536
-        && options.directories.size() <= 64, "Invalid skill discovery limits");
+        && options.directories.size() <= 64 && options.sources.size() <= options.maxSkills, "Invalid skill discovery limits");
     const auto cwd = QFileInfo(workspace).canonicalFilePath();
     require(!cwd.isEmpty() && QFileInfo(cwd).isDir() && !QDir(cwd).isRoot(), "Invalid skill workspace");
-    auto directories = options.directories; directories.append(QDir(cwd).filePath(".claude/skills"));
+    auto directories = options.directories; if(options.includeProject) directories.append(QDir(cwd).filePath(".claude/skills"));
     QList<Loaded> result; QSet<QString> seenRoots, seenFiles, seenNames; qint64 total = 0; int scanned = 0, files = 0;
     for (qsizetype index = 0; index < directories.size(); ++index) {
         token.throwIfCancelled(); const auto input = directories[index];
@@ -150,7 +150,7 @@ QList<Loaded> scan(const QString& workspace, const SkillOptions& options, const 
         if (!rootInfo.exists() && !rootInfo.isSymLink()) continue;
         const auto root = rootInfo.canonicalFilePath();
         require(!root.isEmpty() && rootInfo.isDir() && !QDir(root).isRoot(), "Skills path must be a directory");
-        if (index + 1 == directories.size()) require(inside(root, cwd), "Workspace skills directory escapes the workspace");
+        if (options.includeProject && index + 1 == directories.size()) require(inside(root, cwd), "Workspace skills directory escapes the workspace");
         if (seenRoots.contains(root)) continue; seenRoots.insert(root);
         QDirIterator iterator(root, QDir::AllEntries | QDir::Hidden | QDir::NoDotAndDotDot); QStringList entries;
         while (iterator.hasNext()) {
@@ -175,16 +175,33 @@ QList<Loaded> scan(const QString& workspace, const SkillOptions& options, const 
             result.append(parse(name, path, raw, token)); seenFiles.insert(path); seenNames.insert(name);
         }
     }
+    for (const auto& source : options.sources) {
+        token.throwIfCancelled(); const auto name = normalizeName(source.name);
+        require(!source.root.isEmpty() && QDir::isAbsolutePath(source.root) && QDir::isAbsolutePath(source.path), "Skill source paths must be absolute");
+        const auto root = QFileInfo(source.root).canonicalFilePath(), path = QFileInfo(source.path).canonicalFilePath();
+        require(!root.isEmpty() && !QDir(root).isRoot() && !path.isEmpty() && inside(path, root), "Skill source escapes its root");
+        if (seenNames.contains(name)) { shadowed.append(QJsonObject{{"name", name}, {"path", path}, {"reason", "duplicate_name"}}); continue; }
+        require(++files <= options.maxSkills, "Too many skills", ErrorCode::ResourceLimit);
+        const auto raw = detail::readContextFile(root, path, options.maxFileBytes, token); total += raw.size();
+        require(total <= options.maxTotalBytes, "Skill input exceeds total byte limit", ErrorCode::ResourceLimit);
+        auto value = parse(name, path, raw, token);
+        require(!source.sha256.isEmpty() && value.info.sha256 == source.sha256, "Skill source changed after activation", ErrorCode::StorageFailure);
+        value.pluginRoot = source.pluginRoot; value.pluginData = source.pluginData;
+        if (source.agentAliases.contains(value.info.agent)) value.info.agent = source.agentAliases.value(value.info.agent);
+        result.append(std::move(value)); seenNames.insert(name);
+    }
     return result;
 }
 QString expand(const Loaded& skill, const QString& raw, const QString& session) {
     const auto args = detail::splitPromptArguments(raw);
-    static const QRegularExpression placeholder(R"(\$\{CLAUDE_SKILL_DIR\}|\$\{CLAUDE_SESSION_ID\}|\$ARGUMENTS\[(\d+)\]|\$(\d+)(?!\w)|\$([A-Za-z_][A-Za-z0-9_]*)(?![\w\[]))");
+    static const QRegularExpression placeholder(R"(\$\{CLAUDE_PLUGIN_ROOT\}|\$\{CLAUDE_PLUGIN_DATA\}|\$\{CLAUDE_SKILL_DIR\}|\$\{CLAUDE_SESSION_ID\}|\$ARGUMENTS\[(\d+)\]|\$(\d+)(?!\w)|\$([A-Za-z_][A-Za-z0-9_]*)(?![\w\[]))");
     auto matches = placeholder.globalMatch(skill.body); QString output; qsizetype pos = 0; bool substitutedArgument = false;
     while (matches.hasNext()) {
         const auto m = matches.next(); output += skill.body.mid(pos, m.capturedStart() - pos); QString replacement = m.captured();
         if (replacement == "${CLAUDE_SKILL_DIR}") replacement = QDir::fromNativeSeparators(skill.info.directory);
         else if (replacement == "${CLAUDE_SESSION_ID}") replacement = session;
+        else if (replacement == "${CLAUDE_PLUGIN_ROOT}" && !skill.pluginRoot.isEmpty()) replacement = skill.pluginRoot;
+        else if (replacement == "${CLAUDE_PLUGIN_DATA}" && !skill.pluginData.isEmpty()) replacement = skill.pluginData;
         else {
             int index = -1;
             if (!m.captured(1).isEmpty() || !m.captured(2).isEmpty()) {

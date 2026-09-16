@@ -66,7 +66,9 @@ struct Config {
     QByteArray fingerprint;
 };
 std::map<QString, Config> readConfigs(const McpConnectionOptions& options) {
-    QJsonObject merged;
+    QJsonObject merged = options.inlineServers;
+    require(QJsonDocument(merged).toJson(QJsonDocument::Compact).size() <= 1024*1024 && merged.size() <= options.maxServers,
+        "Inline MCP configuration exceeds limit");
     require(options.configFiles.size() <= 64, "Too many MCP configuration files");
     for (const auto& name : options.configFiles) {
         QFile file(QDir(options.workingDirectory).absoluteFilePath(name));
@@ -86,6 +88,14 @@ std::map<QString, Config> readConfigs(const McpConnectionOptions& options) {
             && !it.key().contains(QRegularExpression("[\\x{0}-\\x{1f}\\x{7f}]")), "Invalid MCP server name");
         require(it.value().isObject(), "MCP server definition must be an object");
         const auto object = it.value().toObject(); Config c; c.name = it.key();
+        auto variables = options.environment;
+        const auto extra = options.serverVariables.value(c.name);
+        require(extra.size() <= 256, "Too many MCP interpolation variables");
+        for(auto v=extra.begin();v!=extra.end();++v) {
+            require(QRegularExpression(R"(\A[A-Za-z_][A-Za-z0-9_]*\z)").match(v.key()).hasMatch()
+                && v.value().size()<=65536 && !v.value().contains(QChar::Null), "Invalid MCP interpolation variable");
+            variables.insert(v.key(),v.value());
+        }
         c.disabled = flag(object, "disabled"); c.alwaysLoad = flag(object, "alwaysLoad");
         c.initializeTimeoutMs = timeout(object, "initializeTimeoutMs");
         c.requestTimeoutMs = timeout(object, "requestTimeoutMs");
@@ -95,30 +105,30 @@ std::map<QString, Config> readConfigs(const McpConnectionOptions& options) {
         if (c.type == "streamable-http") c.type = "http";
         require(c.type == "stdio" || c.type == "http", "Unsupported MCP transport; use stdio or http");
         c.environment = options.environment;
-        c.cwd = object.contains("cwd") ? QDir(options.workingDirectory).absoluteFilePath(expand(object["cwd"], options.environment)) : options.workingDirectory;
+        c.cwd = object.contains("cwd") ? QDir(options.workingDirectory).absoluteFilePath(expand(object["cwd"], variables)) : options.workingDirectory;
         require(QFileInfo(c.cwd).isDir(), "MCP working directory does not exist");
         if (c.type == "stdio") {
             require(!object.contains("url") && !object.contains("headers"), "Stdio MCP configuration cannot contain HTTP fields");
-            c.command = expand(object["command"], options.environment);
+            c.command = expand(object["command"], variables);
             require(!c.command.trimmed().isEmpty(), "MCP command is empty");
             require(!object.contains("args") || object["args"].isArray(), "MCP arguments must be an array");
             const auto args = object["args"].toArray(); require(args.size() <= 256, "Too many MCP arguments");
-            for (const auto& arg : args) c.args.append(expand(arg, options.environment));
+            for (const auto& arg : args) c.args.append(expand(arg, variables));
             require(!object.contains("env") || object["env"].isObject(), "MCP environment must be an object");
             const auto env = object["env"].toObject(); require(env.size() <= 256, "Too many MCP environment entries");
             for (auto v = env.begin(); v != env.end(); ++v) {
                 require(QRegularExpression(QRegularExpression::anchoredPattern("[A-Za-z_][A-Za-z0-9_]*")).match(v.key()).hasMatch(), "Invalid MCP environment variable name");
-                c.environment.insert(v.key(), expand(v.value(), options.environment));
+                c.environment.insert(v.key(), expand(v.value(), variables));
             }
         } else {
             require(!object.contains("command") && !object.contains("args") && !object.contains("env"), "HTTP MCP configuration cannot contain stdio fields");
-            c.endpoint = QUrl(expand(object["url"], options.environment), QUrl::StrictMode);
+            c.endpoint = QUrl(expand(object["url"], variables), QUrl::StrictMode);
             require(c.endpoint.isValid() && (c.endpoint.scheme() == "https" || c.endpoint.scheme() == "http")
                 && !c.endpoint.host().isEmpty() && c.endpoint.userInfo().isEmpty() && !c.endpoint.hasFragment(), "Invalid MCP HTTP endpoint");
             require(!object.contains("headers") || object["headers"].isObject(), "MCP headers must be an object");
             const auto headers = object["headers"].toObject(); require(headers.size() <= 128, "Too many MCP headers");
             for (auto h = headers.begin(); h != headers.end(); ++h) {
-                const auto key = h.key().toLatin1().toLower(); const auto value = expand(h.value(), options.environment);
+                const auto key = h.key().toLatin1().toLower(); const auto value = expand(h.value(), variables);
                 require(QRegularExpression(QRegularExpression::anchoredPattern("[!#$%&'*+.^_`|~0-9A-Za-z-]+")).match(h.key()).hasMatch()
                     && !value.contains(QRegularExpression("[\\x{0}-\\x{1f}\\x{7f}]"))
                     && QString::fromLatin1(value.toLatin1()) == value && !c.headers.contains(key), "Invalid MCP HTTP header");
@@ -243,7 +253,8 @@ public:
                 QList<Tool> tools;
                 const auto generation = entry.client->connectionGeneration();
                 if (entry.client->serverCapabilities().contains("tools"))
-                    tools = mcpTools(entry.client, {entry.config.name, entry.config.appId, options.trustAnnotations}, cancellation);
+                    tools = mcpTools(entry.client, {entry.config.name, entry.config.appId, options.trustAnnotations,
+                        options.normalizedNameServers.contains(entry.config.name)}, cancellation);
                 if (generation != entry.client->connectionGeneration() || !entry.client->isConnected())
                     throw Error(ErrorCode::RuntimeFailure, "MCP session changed during discovery");
                 for (auto& tool : tools) {

@@ -20,6 +20,10 @@ struct IILOCALLLM_EXPORT SubagentDefinition {
     QJsonObject metadata;
     QJsonObject toJson(bool includePrompt = false) const;
 };
+struct AgentProfileSource {
+    QString name, root, path, sha256, pluginRoot, pluginData;
+    QMap<QString, QString> skillAliases;
+};
 struct AgentProfileOptions {
     bool enabled = true;
     bool includeBuiltins = true;
@@ -28,6 +32,7 @@ struct AgentProfileOptions {
     QString userDirectory; // Explicit host path; the library never infers HOME.
     QString managedDirectory;
     QStringList pluginDirectories;
+    QList<AgentProfileSource> pluginSources;
     QStringList directories; // Flag-scope directories, highest priority first.
     QJsonObject overrides; // Name -> JSON definition; same scope as CLI --agents.
     int maxFileBytes = 128 * 1024;

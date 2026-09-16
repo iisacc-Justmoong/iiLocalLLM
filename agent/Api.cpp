@@ -50,7 +50,7 @@ QStringList contextPaths(const QJsonObject& parameters, int limit) {
     }
     return paths;
 }
-QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.sessions.list", "agent.sessions.get",
+QStringList methods() { return {"agent.info", "agent.plugins.list", "agent.sessions.create", "agent.sessions.list", "agent.sessions.get",
     "agent.sessions.fork", "agent.sessions.compact", "agent.context.get", "agent.skills.list", "agent.permissions.get", "agent.mcp.status", "agent.run", "agent.cancel", "agent.status",
     "agent.tasks.create", "agent.tasks.get", "agent.tasks.list", "agent.tasks.update", "agent.tasks.claim", "agent.todos.write", "agent.todos.get",
     "agent.shell.start", "agent.shell.output", "agent.shell.stop", "agent.shell.list",
@@ -184,6 +184,7 @@ public:
     }
     QJsonValue perform(const std::shared_ptr<Client>& client, const std::shared_ptr<Job>& job, RpcEventCallback callback) {
         const auto& p = job->params; const auto& method = job->method;
+        if(method=="agent.plugins.list"){fields(p,{});return client->engine->plugins();}
         if (method == "agent.info") {
             fields(p, {}); QJsonArray names; for (const auto& name : methods()) names.append(name);
             return QJsonObject{{"protocol", "iisacc.agent/1"}, {"client_id", client->id}, {"methods", names}, {"max_turns", options.maxTurns},

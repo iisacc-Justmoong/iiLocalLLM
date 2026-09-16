@@ -22,6 +22,7 @@
 #include "../Service.h"
 
 namespace iiLocalLLM::agent {
+struct PluginSnapshot;
 struct EngineOptions {
     QString sessionsDirectory;
     int maxConcurrentRuns = 4;
@@ -41,6 +42,7 @@ struct EngineOptions {
     InputQueueOptions inputQueue;
     int maxQueuedInputsPerRun = 0; // 0 uses normal batches; coordinators may reserve one assignment per run.
     SkillOptions skills;
+    std::shared_ptr<const PluginSnapshot> pluginSnapshot; // Frozen data, assigned by the host composition layer.
     QList<Tool> additionalTools; // Host-owned orchestration tools; merged into each live registry snapshot.
     std::function<bool(const ToolDefinition&)> toolFilter; // Applied before and after deferred discovery.
     // Invoked outside engine locks, before each model turn and native dispatch.
@@ -91,6 +93,7 @@ public:
     // wake run. A subsequent explicit run re-enables wakes with a fresh budget.
     QJsonObject cancelHooks(const QString& sessionId, const QString& hookId = {}) const;
     SkillCatalog skills(const QString& sessionId, const CancellationToken& = {}) const;
+    QJsonObject plugins() const;
     QJsonObject permissions(const QString& sessionId, const CancellationToken& = {}) const;
     bool projectMemoryEnabled() const;
     QJsonObject memory(const QString& sessionId,const QString& query = {},const CancellationToken& = {}) const;

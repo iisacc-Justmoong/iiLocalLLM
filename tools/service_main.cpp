@@ -7,6 +7,7 @@
 #include "CommandHookConfig.h"
 #include <agent/Api.h>
 #include <agent/McpConnections.h>
+#include <agent/PluginRuntime.h>
 #include <agent/ShellTasks.h>
 #include <mcp/LocalApplications.h>
 #include <QtCore/QCommandLineParser>
@@ -63,6 +64,7 @@ int main(int argc, char** argv)
         {"agent-add-dir", "Additional file working directory; repeat. Does not enable disk settings without --agent-permission-settings.", "directory"},
         {"agent-hooks", "Private command/HTTP/prompt/agent hook JSON configuration outside the workspace.", "file"},
         {"agent-mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
+        {"agent-plugins", "Private local plugin store; applies its selected snapshot at startup.", "directory"},
         {"agent-mcp-project", "Load workspace/.mcp.json after explicit MCP configuration files."},
         {"agent-mcp-eager", "Publish all configured MCP tools to the model without ToolSearch."},
         {"agent-apps-dir", "Private registry of running local application MCP endpoints.", "directory"},
@@ -129,7 +131,7 @@ int main(int argc, char** argv)
         if (parser.isSet("agent-workspace") || parser.isSet("agent-state") || parser.isSet("agent-credentials") || parser.isSet("agent-allow")
             || parser.isSet("agent-no-auto-compact") || parser.isSet("agent-no-project-context") || parser.isSet("agent-context-exclude") || parser.isSet("agent-no-memory")
             || parser.isSet("agent-no-memory-recall") || parser.isSet("agent-memory-recall-model") || parser.isSet("agent-no-memory-extraction") || parser.isSet("agent-no-session-history") || parser.isSet("agent-no-file-checkpoints") || parser.isSet("agent-auto-dream") || parser.isSet("agent-no-web-fetch") || parser.isSet("agent-web-model") || parser.isSet("agent-web-private-origin") || parser.isSet("agent-lsp-config") || parser.isSet("agent-worktree-config") || parser.isSet("agent-no-worktrees")
-            || parser.isSet("agent-mcp-config") || parser.isSet("agent-mcp-project") || parser.isSet("agent-mcp-eager")
+            || parser.isSet("agent-plugins") || parser.isSet("agent-mcp-config") || parser.isSet("agent-mcp-project") || parser.isSet("agent-mcp-eager")
             || parser.isSet("agent-apps-dir") || parser.isSet("agent-no-apps") || parser.isSet("agent-no-plan-mode") || parser.isSet("agent-no-user-questions") || parser.isSet("agent-question-preview") || parser.isSet("agent-no-tasks") || parser.isSet("agent-no-background")
             || parser.isSet("agent-no-skills") || parser.isSet("agent-skills-dir") || parser.isSet("agent-no-subagents") || parser.isSet("agent-no-teams") || parser.isSet("agent-no-team-task-claim") || parser.isSet("agent-subagent-options")
             || parser.isSet("agent-profiles") || parser.isSet("no-agent-profiles") || parser.isSet("agent-permission-settings") || parser.isSet("agent-permission-requests") || parser.isSet("agent-add-dir") || parser.isSet("agent-hooks")) {
@@ -267,13 +269,21 @@ int main(int argc, char** argv)
 #endif
             if (parser.isSet("agent-apps-dir")) connections.localApplicationsDirectory = QFileInfo(parser.value("agent-apps-dir")).absoluteFilePath();
             QStringList privatePaths{agentConfig->stateDirectory};
+            if(parser.isSet("agent-plugins")){
+                if(parser.value("agent-plugins").isEmpty())throw std::runtime_error("--agent-plugins requires a store");
+                a::PluginStore store({QFileInfo(parser.value("agent-plugins")).absoluteFilePath()});
+                a::CommandHookOptions hooks;hooks.workingDirectory=agentConfig->workingDirectory;
+                auto runtime=std::make_shared<a::PluginRuntime>(store.snapshot(),hooks);
+                a::PluginRuntime::attach(agentConfig->engine,agentConfig->subagents.profiles,connections,runtime);
+                agentConfig->teams.profiles=agentConfig->subagents.profiles;privatePaths.append(store.directory());
+            }
             for(const auto& key:{"agent-credentials","agent-permission-settings","agent-permission-requests","agent-profiles","agent-subagent-options","agent-hooks","agent-lsp-config","agent-worktree-config"})
                 if(parser.isSet(key))privatePaths.append(parser.value(key));
             for(const auto& file:connections.configFiles)privatePaths.append(QDir::isAbsolutePath(file)?file:QDir(agentConfig->workingDirectory).filePath(file));
             if(!connections.localApplicationsDirectory.isEmpty())privatePaths.append(connections.localApplicationsDirectory);
             agentConfig->engine.lsp.protectedPaths=privatePaths;
             auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, agentConfig->workingDirectory, shells,privatePaths);
-            if (!connections.configFiles.isEmpty() || !connections.localApplicationsDirectory.isEmpty())
+            if (!connections.inlineServers.isEmpty() || !connections.configFiles.isEmpty() || !connections.localApplicationsDirectory.isEmpty())
                 agentConfig->mcp = std::make_shared<a::McpConnections>(registry, std::move(connections));
             agent = std::make_shared<a::Api>(std::make_shared<a::ServiceModel>(service), registry, agentPolicy, std::move(*agentConfig));
         }

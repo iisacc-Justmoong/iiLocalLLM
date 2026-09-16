@@ -1,5 +1,40 @@
 # 구현 검증 기록
 
+## 0.52 MVP 완료와 로컬 플러그인
+
+로컬 모델 대화·에이전트 도구 실행·C++/native IPC/HTTP/MCP 연동을 MVP 완료 범위로 검증했다. 이번 변경은 C++ PluginStore·PluginSnapshot·PluginRuntime, 호스트 CLI와 인증 상태 조회를 추가한다. 스킬·명령·에이전트·훅·MCP·LSP는 기존 실행기에 연결하며 생산 의존성은 추가하지 않았다. 설치·갱신·비활성화·제거, 캐시 무결성, 데이터 보존, 의존성 차단과 이름 공간 계약은 [Plugins.md](Plugins.md)를 따른다.
+
+| 최종 검증 | 결과 |
+|---|---|
+| Release 전체 회귀, inference 라벨 제외 | 99/99, 실패·건너뜀 0 |
+| ASan·UBSan 전체 회귀, inference 라벨 제외 | 95/95, 실패·건너뜀 0 |
+| 새 설치 소비자 전체 | 60/60, 실패·건너뜀 0 |
+| 플러그인 Qt 검사 | 13/13, init/cleanup 포함 |
+| source·installed 전송 | HTTP·인증 IPC CLI·MCP HTTP·공식 MCP stdio 통과 |
+| 설치본의 실제 CLI·HTTP 대화 | 대화 기억·캐시·clear·JSON/SSE·도구 결과 반영 통과 |
+| 실제 플러그인 모델 실행 | source·installed 각각 스킬 → MCP 도구 → 응답 통과 |
+
+최종 Release는 314.66초, sanitizer는 395.17초, 설치 소비자는 195.48초에 각각 한 번의 전체 실행으로 통과했다. sanitizer는 llama OFF, leak detection OFF, ASan abort/UBSan halt ON이다. 가중치를 사용하는 추론은 별도 Release 실행이며, 전체 inference 라벨의 모든 모델·워크플로를 재실행했다는 뜻은 아니다.
+
+초기 Release 전체 실행은 iiLocalLLM.mcp_stdio의 initializationTimeoutDetails 진단 단언에서 실패해 98/99였다. 당시 동일 바이너리의 해당 항목 단독 재검사는 통과했으며, 원래 실패의 예외 내용과 원인을 확정하지 않는다. 위 99/99는 최종 소스로 새로 완료한 전체 실행 결과이다. 이름 공간과 구성 계층 수정 과정에서 중단한 두 전체 재검사는 성공으로 계산하지 않는다. 원본 실패는 build/plugin-serial-release.json과 plugin-mcp-timeout-recheck.log에 보존한다.
+
+설치본 대화 시험은 기존 tests/chat_smoke.py를 수정 없이 실행했다. Qwen2.5 0.5B Q4_K_M·llama.cpp·Metal에서 산술 답변 4, 같은 대화의 이름 Mira 기억, 두 번째 턴의 cached_tokens 37, clear 후 이력·캐시 초기화와 system prompt 보존을 확인했다. CLI와 HTTP가 모델 로드 한 번을 공유했고 JSON/SSE 응답이 일치했다. HTTP 도구 호출은 새 임의 값이 있는 파일을 실제 Read로 읽고 그 값을 최종 응답에 포함했다.
+
+| 플러그인 실제 모델 | 모델 턴 | 성공한 MCP 호출 | 생성 토큰 |
+|---|---|---|---|
+| source | 2 | 1 | 59 |
+| installed | 2 | 1 | 65 |
+
+모델은 Qwen3.5 2B Q4_K_M이며 크기 1,280,835,840 bytes·SHA-256 aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223를 확인했다. macOS arm64·Metal, context/cache 8,192토큰 한 개, maxTokens 1,024·maxTurns 4, temperature 0·topP 0.9·topK 40·minP 0·seed 0, thinking OFF·tool grammar ON, 자동 compaction OFF, 실행 대기 120초 조건이다. 최종 fixture를 source·installed에서 각각 한 번 실행했으며 요청·성공 조건을 변경하지 않았다.
+
+매 실행의 새 임의 표식은 패키지에 포함한 독립 C++ MCP 프로세스의 환경 변수에만 넣고 모델 입력에는 넣지 않았다. 설치된 스킬이 mcp__plugin_runtime_peer__echo를 한 번 호출하고 실제 결과의 표식을 포함한 응답으로 완료했으며, 미결 도구 호출이 남지 않았다. 두 응답에는 표식 외의 설명도 있으므로 최종 응답 전체의 바이트 일치나 엄격한 표현 형식 준수를 주장하지 않는다. 전송 fixture의 native_inference:false와 이 실제 모델 결과의 true를 구분한다. 공식 Python MCP SDK는 1.26.0이다.
+
+새 SDK는 build/p52v, 소비자는 build/p52w/build이다. 최종 라이브러리의 source/install SHA-256은 ba08c90ddcc280595663926d2a147abd00913a56927665e5bf76783c1bb72e9c, Mach-O UUID는 7582F702-A7DF-37BC-B21D-36488DE4AD06이다. dyld 기록에서 소비자가 해당 설치 경로의 라이브러리를 로드했음을 확인했다. 공개 헤더 59개·문서 79개를 대조했고, 다섯 CLI 진입점은 0.52.0이다. thin iillm의 직접 iiLocalLLM·llama·ggml 링크는 없다. 이전 stage가 있던 첫 설치 검증은 새 경로 조건에서 중단하고, 비어 있던 위 경로로 다시 설치했다.
+
+검증 동안 고정한 소스·문서 입력 440개는 변경되지 않았다. 이후 README·HarnessParity·Plugins·이 검증 기록만 갱신하고 문서를 다시 설치한다. 최종 패키지 대조는 build/plugin-mvp-package-closure.json, 전체 결과는 plugin-final-release.json·plugin-normalized-sanitizer.json·plugin-delivery.json·plugin-final-source-wire.json·plugin-final-installed-wire.json과 각 로그에 보관한다.
+
+이 결과로 현재 macOS 환경의 MVP를 완료한다. 전체 참조 대응표의 29 partial·2 pending·0 complete는 유지한다. 마켓플레이스·실행 중 reload·원격 하네스, 모든 앱·플랫폼·모델의 동등성은 추가 범위이다. 이번 설치는 SDK 검증용 stage이며 제품 앱·기기 재설치를 뜻하지 않는다. iPhone 제외 조건도 유지한다.
+
 ## 0.51 역할과 미결 요청에 맞춘 팀 메시지 스키마
 
 리더에게 종료 요청 객체를, 일반 팀원에게 문자열 메시지를 제공한다. 해당 팀원에게 실제 미결 요청이 생기면 현재 request_id·team-lead 수신자·필수 approve와 거부 이유를 제한하는 응답 스키마를 추가한다. 응답 처리 뒤 제거하고 새 요청에는 새 ID를 사용한다. Engine의 직접 팀 호출도 도구 탐색과 같은 추가 도구 공급자를 사용한다. 기존 실행 시 권한·요청 소유권 검사를 유지한다. [Teams.md](Teams.md)에 참조의 고정 합집합과 현재 동적 스키마의 차이를 기록했다. 기존 Qt·jsoncons를 재사용하고 생산 의존성은 추가하지 않았다.

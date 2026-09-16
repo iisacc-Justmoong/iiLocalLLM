@@ -7,7 +7,18 @@
 
 namespace iiLocalLLM::agent {
 namespace {
-QString toolName(const QString& server, const QString& remote) {
+QString toolName(const QString& server, const QString& remote, bool normalized) {
+    if(normalized){
+        auto identifier=[](QString value){
+            const bool cloud=value.startsWith("claude.ai ");
+            value.replace(QRegularExpression("[^a-zA-Z0-9_-]"),"_");
+            if(cloud){value.replace(QRegularExpression("_+"),"_");value.remove(QRegularExpression("^_|_$"));}
+            return value;
+        };
+        const auto name="mcp__"+identifier(server)+"__"+identifier(remote);
+        if(name.size()>128)throw Error(ErrorCode::ResourceLimit,"Normalized MCP tool name exceeds the host limit");
+        return name;
+    }
     const QString original = "mcp__" + server + "__" + remote;
     auto name = original; name.replace(QRegularExpression("[^A-Za-z0-9_.:-]"), "_");
     if (name != original || name.size() > 128)
@@ -26,7 +37,7 @@ QList<Tool> mcpTools(std::shared_ptr<mcp::Client> client, const McpToolOptions& 
     ToolRegistry validation;
     for (const auto& value : definitions) {
         const auto remote = value.toObject(); const auto remoteName = remote["name"].toString();
-        Tool tool; tool.isMcp = true; tool.definition.name = toolName(options.serverName, remoteName);
+        Tool tool; tool.isMcp = true; tool.definition.name = toolName(options.serverName, remoteName, options.normalizeNames);
         if (names.contains(tool.definition.name)) throw Error(ErrorCode::AlreadyExists, "MCP tool name collision");
         names.insert(tool.definition.name);
         tool.definition.description = remote["description"].toString();

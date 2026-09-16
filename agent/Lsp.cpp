@@ -75,7 +75,7 @@ public:
             &&options.maxResultCharacters>0&&options.maxResultCharacters<=100000&&options.maxInstances>0&&options.maxInstances<=32&&options.maxDocuments>0&&options.maxDocuments<=128
             &&options.maxQueuedRequests>0&&options.maxQueuedRequests<=32,"Invalid LSP limits");
         QSet<QString> names,extensions;
-        for(const auto& server:options.servers){require(QRegularExpression("\\A[A-Za-z0-9_.-]{1,64}\\z").match(server.name).hasMatch()&&!names.contains(server.name),"Invalid or duplicate LSP server name");names.insert(server.name);
+        for(const auto& server:options.servers){require(QRegularExpression("\\A[A-Za-z0-9_.:-]{1,128}\\z").match(server.name).hasMatch()&&!names.contains(server.name),"Invalid or duplicate LSP server name");names.insert(server.name);
             require(!server.command.isEmpty()&&server.command.size()<=4096&&!server.command.contains(QChar::Null)&&server.arguments.size()<=128&&!server.extensions.isEmpty()&&server.extensions.size()<=128,"Invalid LSP server command or extensions");
             for(const auto& arg:server.arguments)require(arg.size()<=65536&&!arg.contains(QChar::Null),"Invalid LSP argument");
             for(auto it=server.extensions.begin();it!=server.extensions.end();++it){require(QRegularExpression("\\A\\.[a-z0-9_.+-]{1,32}\\z").match(it.key()).hasMatch()&&!extensions.contains(it.key())&&!it.value().isEmpty()&&it.value().size()<=128&&!it.value().contains(QChar::Null),"Invalid or ambiguous LSP extension mapping");extensions.insert(it.key());}

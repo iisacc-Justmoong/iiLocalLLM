@@ -1,5 +1,6 @@
 #pragma once
 #include "McpTools.h"
+#include <QtCore/QSet>
 
 namespace iiLocalLLM::agent {
 struct McpConnectionOptions {
@@ -7,6 +8,13 @@ struct McpConnectionOptions {
     // Host-authorized files, in increasing priority. Later entries replace whole
     // server definitions. They are reread only by explicit reload().
     QStringList configFiles;
+    // Host-resolved definitions (for example an installed plugin snapshot).
+    // Files have higher priority. Values are never exposed by status().
+    QJsonObject inlineServers;
+    // Additional interpolation values scoped to one host-configured server.
+    // Expansion is one pass, so a replacement path cannot introduce a variable.
+    QMap<QString, QMap<QString, QString>> serverVariables;
+    QSet<QString> normalizedNameServers; // Explicit plugin naming convention; other servers retain SDK names.
     // Optional private same-user registry of running app HTTP endpoints. Refreshed
     // automatically; it cannot supply commands, arguments, environment or remote URLs.
     QString localApplicationsDirectory;

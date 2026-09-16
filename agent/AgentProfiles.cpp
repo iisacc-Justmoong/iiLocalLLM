@@ -95,7 +95,7 @@ AgentProfileCatalog discoverAgentProfiles(const QString& workspace,const AgentPr
     if(!options.enabled){catalog.profiles=host;if(catalog.profiles.isEmpty())catalog.profiles.append(SubagentDefinition{});return catalog;}
     require(options.maxFileBytes>0&&options.maxFileBytes<=1024*1024&&options.maxTotalBytes>0&&options.maxTotalBytes<=16*1024*1024
         &&options.maxProfiles>=1&&options.maxProfiles<=1024&&options.maxScannedEntries>=1&&options.maxScannedEntries<=65536
-        &&options.directories.size()+options.pluginDirectories.size()<=64&&host.size()<=128&&options.overrides.size()<=128,"Invalid agent profile discovery limits");
+        &&options.directories.size()+options.pluginDirectories.size()<=64&&options.pluginSources.size()<=options.maxProfiles&&host.size()<=128&&options.overrides.size()<=128,"Invalid agent profile discovery limits");
     const auto cwd=QFileInfo(workspace).canonicalFilePath();require(!cwd.isEmpty()&&QFileInfo(cwd).isDir()&&!QDir(cwd).isRoot(),"Invalid agent profile workspace");
     QSet<QString> names,roots,files;int scanned=0; qint64 total=0;
     auto add=[&](SubagentDefinition profile){
@@ -155,6 +155,38 @@ AgentProfileCatalog discoverAgentProfiles(const QString& workspace,const AgentPr
         }
     }
     scan(options.userDirectory,"user");for(const auto& dir:options.pluginDirectories)scan(dir,"plugin");
+    for (const auto& source : options.pluginSources) {
+        token.throwIfCancelled(); const auto claimed = name(source.name);
+        if (names.contains(claimed)) { catalog.shadowed.append(QJsonObject{{"name",claimed},{"source","plugin"},{"path",source.path}}); continue; }
+        try {
+            require(QDir::isAbsolutePath(source.root) && QDir::isAbsolutePath(source.path), "Plugin agent paths must be absolute");
+            const auto root = QFileInfo(source.root).canonicalFilePath(), path = QFileInfo(source.path).canonicalFilePath();
+            require(!root.isEmpty() && !QDir(root).isRoot() && !path.isEmpty() && inside(path,root), "Plugin agent escapes its root");
+            const auto bytes = detail::readContextFile(root,path,options.maxFileBytes,token);
+            total += bytes.size(); require(total <= options.maxTotalBytes,"Agent profiles exceed total byte limit",ErrorCode::ResourceLimit);
+            const auto digest = QString::fromLatin1(QCryptographicHash::hash(bytes,QCryptographicHash::Sha256).toHex());
+            require(!source.sha256.isEmpty() && digest == source.sha256,"Plugin agent changed after activation",ErrorCode::StorageFailure);
+            const auto document = detail::readFrontmatter(bytes,token);
+            auto fields=document.fields;
+            if(!fields.contains("description"))fields["description"]="Agent from "+source.name+" plugin";
+            auto profile = parse(claimed,fields,document.body,false);
+            // Single pass: replacement paths cannot introduce another variable.
+            auto expand = [&](const QString& input) {
+                QString out; qsizetype offset = 0;
+                static const QRegularExpression variables(R"(\$\{CLAUDE_PLUGIN_(ROOT|DATA)\})");
+                auto matches = variables.globalMatch(input);
+                while (matches.hasNext()) { const auto match = matches.next(); out += input.mid(offset,match.capturedStart()-offset);
+                    out += match.captured(1)=="ROOT" ? source.pluginRoot : source.pluginData; offset=match.capturedEnd(); }
+                return out+input.mid(offset);
+            };
+            profile.systemPrompt=expand(profile.systemPrompt); profile.initialPrompt=expand(profile.initialPrompt);
+            for(auto& skill:profile.skills) if(source.skillAliases.contains(skill)) skill=source.skillAliases.value(skill);
+            profile.source="plugin"; profile.path=path; profile.directory=QFileInfo(path).absolutePath(); profile.sha256=digest; add(std::move(profile));
+        } catch(const Error& e) {
+            if(e.code()==ErrorCode::Cancelled||e.code()==ErrorCode::ResourceLimit)throw;
+            names.insert(claimed);catalog.failedFiles.append(QJsonObject{{"name",claimed},{"path",source.path},{"source","plugin"},{"error",QString::fromUtf8(e.what())}});
+        }
+    }
     if(options.includeBuiltins)for(auto p:builtins())add(std::move(p));
     return catalog;
 }

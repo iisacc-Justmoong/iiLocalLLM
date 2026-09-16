@@ -1,5 +1,6 @@
 #include "agent/McpServer.h"
 #include "agent/McpConnections.h"
+#include "agent/PluginRuntime.h"
 #include "agent/ShellTasks.h"
 #include "agent/Subagents.h"
 #include "agent/Teams.h"
@@ -38,6 +39,7 @@ int main(int argc, char** argv) {
         {"add-dir", "Additional file working directory; repeat. Does not enable disk settings without --permission-settings.", "directory"},
         {"hooks", "Private command/HTTP/prompt/agent hook JSON configuration outside the workspace.", "file"},
         {"mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
+        {"plugins", "Private local plugin store; requires --model and applies at startup.", "directory"},
         {"mcp-project", "Load workspace/.mcp.json after explicit MCP configuration files."},
         {"mcp-eager", "Publish all configured MCP tools to the agent without ToolSearch."},
         {"apps-dir", "Private registry of running local application MCP endpoints.", "directory"},
@@ -112,7 +114,7 @@ int main(int argc, char** argv) {
                 throw std::runtime_error("Invalid --model-options file: require a private regular JSON object file outside the workspace, at most 65536 bytes");
             }
         }
-        const auto profiles=iiLocalLLMClient::profileConfig(parser.value("agent-profiles"),parser.isSet("no-agent-profiles"));
+        auto profiles=iiLocalLLMClient::profileConfig(parser.value("agent-profiles"),parser.isSet("no-agent-profiles"));
         iiLocalLLM::agent::discoverAgentProfiles(workspace,profiles.profiles);
         auto positive = [&](const char* option, int maximum) { bool ok; const int value = parser.value(option).toInt(&ok);
             if (!ok || value < 1 || value > maximum) throw std::runtime_error(std::string("Invalid --") + option); return value; };
@@ -162,6 +164,7 @@ int main(int argc, char** argv) {
         if(!agent&&parser.isSet("no-file-checkpoints"))throw std::runtime_error("--no-file-checkpoints requires --model");
         if(!agent&&(parser.isSet("worktree-config")||parser.isSet("no-worktrees")))throw std::runtime_error("Worktree options require --model");
         if(!agent&&parser.isSet("lsp-config"))throw std::runtime_error("--lsp-config requires --model");
+        if(!agent&&parser.isSet("plugins"))throw std::runtime_error("--plugins requires --model");
         if(!agent&&(parser.isSet("web-model")||parser.isSet("web-private-origin")))throw std::runtime_error("WebFetch options require --model");
         if(parser.isSet("auto-dream")&&(!agent||parser.isSet("no-memory")||parser.isSet("no-session-history")))
             throw std::runtime_error("--auto-dream requires --model, project memory and session history");
@@ -195,13 +198,20 @@ int main(int argc, char** argv) {
 #endif
         if (parser.isSet("apps-dir")) connectionOptions.localApplicationsDirectory = QFileInfo(parser.value("apps-dir")).absoluteFilePath();
         QStringList privatePaths{privateState.isEmpty()?QDir(workspace).filePath(".iilocal-llm"):privateState};
+        std::shared_ptr<a::PluginRuntime> plugins;
+        if(parser.isSet("plugins")){
+            if(parser.value("plugins").isEmpty())throw std::runtime_error("--plugins requires a store");
+            a::PluginStore store({QFileInfo(parser.value("plugins")).absoluteFilePath()});
+            a::CommandHookOptions hooks;hooks.workingDirectory=workspace;
+            plugins=std::make_shared<a::PluginRuntime>(store.snapshot(),hooks);privatePaths.append(store.directory());
+        }
         for(const auto& key:{"credentials","permission-settings","permission-requests","agent-profiles","model-options","sessions","artifacts","hooks","lsp-config","worktree-config"})
             if(parser.isSet(key))privatePaths.append(parser.value(key));
         for(const auto& file:connectionOptions.configFiles)privatePaths.append(QDir::isAbsolutePath(file)?file:QDir(workspace).filePath(file));
         if(!connectionOptions.localApplicationsDirectory.isEmpty())privatePaths.append(connectionOptions.localApplicationsDirectory);
         auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, workspace, shells,privatePaths);
         std::unique_ptr<a::McpConnections> connections;
-        if (!connectionOptions.configFiles.isEmpty() || !connectionOptions.localApplicationsDirectory.isEmpty())
+        if (!plugins && (!connectionOptions.configFiles.isEmpty() || !connectionOptions.localApplicationsDirectory.isEmpty()))
             connections = std::make_unique<a::McpConnections>(registry, std::move(connectionOptions));
         std::unique_ptr<iiLocalLLM::Service> service;
         a::McpServerOptions options; options.workingDirectory = workspace; options.appId = "com.iisacc.iiLocalLLM";
@@ -249,6 +259,11 @@ int main(int argc, char** argv) {
             engineOptions.sessionsDirectory = !privateState.isEmpty() ? QDir(privateState).filePath("sessions")
                 : parser.isSet("sessions") ? parser.value("sessions") : QDir(workspace).filePath(".iilocal-llm/sessions");
             auto model = std::make_shared<a::ServiceModel>(*service);
+            if(plugins){
+                a::PluginRuntime::attach(engineOptions,profiles.profiles,connectionOptions,plugins);
+                connections=std::make_unique<a::McpConnections>(registry,std::move(connectionOptions));
+                options.tools.hooks=engineOptions.hooks;
+            }
             if (!privateState.isEmpty() && !parser.isSet("no-subagents")) {
                 auto subagents=profiles; subagents.workingDirectory = workspace;
                 subagents.stateDirectory = QDir(privateState).filePath("subagents");

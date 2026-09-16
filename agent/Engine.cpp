@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "Plugins.h"
 #include "HookAgent.h"
 #include "PermissionRules.h"
 #include "SkillsInternal.h"
@@ -1450,6 +1451,9 @@ ToolResult Engine::runPlanTool(const QString& id,const QString& name,const QJson
 }
 SkillCatalog Engine::skills(const QString& id, const CancellationToken& token) const {
     return detail::executableSkills(d->executionSession(id).workingDirectory, d->options.skills, bool(d->options.forkedSkill), token);
+}
+QJsonObject Engine::plugins() const {
+    return d->options.pluginSnapshot ? d->options.pluginSnapshot->toJson() : PluginSnapshot{}.toJson();
 }
 ToolResult Engine::runTaskTool(const QString& id, const QString& name, const QJsonObject& args,
     const CancellationToken& token, const EventCallback& callback, std::shared_ptr<PermissionRequests> requests) const {

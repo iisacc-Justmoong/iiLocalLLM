@@ -1,6 +1,8 @@
 # 에이전트 하네스 구현·검증 대응표
 
-목표는 Claude Code 분석본의 전체 하네스 기능과 iisacc 앱의 양방향 MCP/API 연동이다. C++을 기본 구현 언어로 사용하며 Python은 기존 MLX 런타임처럼 필요가 검증된 경계에서만 사용한다. 이 표는 범위를 줄이기 위한 목록이 아니며 완료 기준은 실제 기능·전송·앱 실행 증거이다.
+이 표는 Claude Code 분석본의 전체 하네스 기능과 iisacc 앱의 양방향 MCP/API 연동을 비교하는 확장 범위 자료이다. C++을 기본 구현 언어로 사용하며 Python은 기존 MLX 런타임처럼 필요가 검증된 경계에서만 사용한다.
+
+0.52.0 MVP의 완료 기준은 로컬 모델 대화·에이전트 도구 실행·C++/IPC/HTTP/MCP 연동·로컬 플러그인과 새 설치본의 실행 검증이다. 결과는 [Verification.md](Verification.md)에 기록한다. 전체 참조 동등성, 마켓플레이스, 실행 중 플러그인 갱신, 원격 하네스와 모든 앱·플랫폼 검증은 이번 완료 기준 밖이다. 이 표의 partial/pending 상태를 MVP 완료 여부와 혼동하지 않는다. 아래 버전별 기록은 각 버전 당시의 결과와 제한을 보존한다.
 
 기준 소스: Exhen/claude-code-2.1.88, 커밋 c8cd253554319f32ff64ff7000636199f720c9bc. 해당 저장소는 동작 분석 자료이며 iiLocalLLM의 구현 소스를 복사하지 않는다. 누락되거나 비활성인 내부 기능은 명칭만 보고 구현 완료로 표시하지 않는다.
 
@@ -27,7 +29,7 @@
 | api | C++ SDK·기존 native IPC·HTTP/SSE 에이전트 API·OpenAI 도구 호환 | partial |
 | discovery | 앱 manifest·MCP/API 자동 인식·기능 협상·tool search·지연 공개 | partial |
 | skills | SKILL.md·메타데이터·인라인/fork 실행·허용 도구·검색·설치 | partial |
-| plugins | manifest·명령/스킬/에이전트/훅/MCP/LSP 등록·버전/캐시·설치/갱신 | pending |
+| plugins | manifest·명령/스킬/에이전트/훅/MCP/LSP 등록·버전/캐시·설치/갱신 | partial |
 | hooks | 전체 생명주기·C++ 콜백·명령·HTTP·모델/에이전트·입력 변경·결과/차단 | partial |
 | tasks | 계획·Todo/Task·작업 의존성·입력 큐·백그라운드 작업/알림 | partial |
 | git | 작업 디렉터리·worktree·브랜치·변경 이력·복구 | partial |
@@ -173,3 +175,5 @@ C++ 세션 분기에 artifact·체크포인트의 독립 복사, 대화 경로 �
 0.50은 SendMessage의 문자열 요약 조건을 C++·API·MCP 공통 입력 스키마에 반영하고, 고정 llama.cpp의 Qwen3.5 전용 XML 파서를 보정한다. 완전한 객체 대안·혼합 타입·인자 순서와 모델용 설명·대화 이력의 인코딩을 맞춘다. 일반 자동 파서를 수정한 것으로 대체하지 않으며, 전체 JSON Schema 검증은 기존 jsoncons가 수행한다. 실제 모델과 설치 패키지의 검증 결과는 [Verification.md](Verification.md)에 별도로 기록한다. teams/providers/tools와 전체 대응표 상태는 partial을 유지한다.
 
 0.51은 SendMessage의 역할·미결 요청별 스키마를 갱신하고, 직접 C++ 팀 호출도 같은 도구 공급자를 사용한다. 종료 응답의 현재 ID·수신자·승인·거부 이유를 검증하며, 거부된 응답의 조회가 상태를 변경하지 않도록 수정했다. 이는 기존 iiLocalLLM 권한 계약을 스키마에 반영한 것으로 참조의 고정 스키마와 차이가 있다. [Teams.md](Teams.md)에 계약을, [Verification.md](Verification.md)에 최종 소스·설치·모델 검증을 기록한다. 전체 대응표 상태는 유지한다.
+
+0.52는 C++ 로컬 플러그인 설치·선택·캐시·데이터 보존과 실행기 연결을 제공한다. HTTP/IPC·MCP HTTP 및 공식 stdio 클라이언트에서 구성 조회와 플러그인 MCP 호출을 검증한다. 상세 계약과 남은 범위는 [Plugins.md](Plugins.md)에 있다. 플러그인은 partial이며 전체 하네스 완료를 뜻하지 않는다.
