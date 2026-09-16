@@ -1,5 +1,34 @@
 # 구현 검증 기록
 
+## 2026-09-16 C++ LSP (0.43.0)
+
+C++ LSP의 9개 코드 탐색 연산, Content-Length stdio 전송·초기화 협상, 소유 세션별 프로세스, 버전이 있는 UTF-16 문서 동기화·진단, 기존 Read/LSP 권한과 인증 API·MCP·CLI를 구현했다. 생산 Python/TypeScript 런타임이나 새 라이브러리 의존성은 추가하지 않았다. 호스트가 설치한 언어 서버를 사용하며 계약·한도·참조 차이는 [Lsp.md](Lsp.md)에 기록한다.
+
+| 검증 | 최종 결과 |
+|---|---|
+| Release, inference 제외 | 91/91 |
+| ASan·UBSan | 88/88, llama OFF·leak detection OFF |
+| 새 설치 소비자 | 54/54 |
+| 실제 clangd 21.0.0 | source·installed 모두 9개 연산의 비어 있지 않은 결과, 정의 위치·호출 계층 확인 |
+| 실제 문서 변경·진단 | 소스 오류의 version 2 진단, 수정 후 version 3의 빈 진단 통과 |
+| 실제 Qwen3-8B Q4 | source·installed LSP 도구로 파일에만 있는 임의 함수 이름을 읽고 답변 |
+| 인증 전송 | source·installed HTTP/IPC·CLI·MCP HTTP·공식 MCP 1.26 stdio 통과 |
+| 수명·격리 | 인증 앱별 서로 다른 clangd PID, MCP 연결 종료·daemon 종료 시 프로세스 소멸 확인 |
+| 설치 동일성 | 공개 헤더 53개, 네 진입점 0.43.0, dylib 해시·UUID·실제 로더 경로와 thin CLI 통과 |
+
+모델 검사는 thinking OFF·native tool grammar ON인 기존 ServiceModel을 사용한다. 요청과 응답을 대체하지 않는다. fixture의 호스트 지시는 main.cpp를 LSP documentSymbol로 조회하고 symbol_로 시작하는 함수 이름만 답하게 하며, UUID에서 만든 실제 식별자는 파일과 clangd 결과에만 있다. 두 경우 모두 모델 대화는 2턴·LSP 호출 1회이다. source는 생성 54토큰, installed는 52토큰을 사용했다. 이후 별도 호스트 hover 조회 1회가 성공하고 주 transcript는 4개 메시지를 유지했다. 증거의 tools 배열에는 모델 조회와 이 호스트 조회가 순서대로 기록된다. 세션 종료 후 언어 서버 목록도 비었다. 이는 해당 모델·시나리오에 대한 실제 관측값이다.
+
+전송 fixture도 가짜 서버가 아닌 실제 clangd로 임의 함수 이름을 조회했다. 모델은 의도적으로 설치하지 않은 식별자를 사용하므로 이 결과를 추론 검증과 합산하지 않는다. 인증 실패, 다른 앱의 세션 접근, 모델 입력을 통한 command 위조, 외부/private 경로 거절, 상태·capability 발견, 직접 호출의 transcript 보존, 연결 종료 시 서버 프로세스 정리를 검사했다. 제품 앱 UI를 실행한 결과는 아니다.
+
+회귀 검사는 쪼개진 UTF-8 프레임, 서버의 역방향 configuration 요청, 초기화 오류 변환, oversized header·잘못된 결과·미지원 위치 인코딩, 기능 협상, 서버 종료, 사용자 정의 정책의 네이티브 정의 보존과 승인 준비 후 링크 대상 변경 거절, ContentModified의 동일 기한 내 재시도, 시간 초과·실행 중/대기 중 취소, 프로세스 재사용·소유자 분리, 문서 버전·전체 범위 교체, UTF-16 surrogate 경계, 입력/크기/인스턴스 한도, Read deny·private path, gitignored 결과, Engine의 실제 도구 루프와 API/MCP를 포함한다. 외부 언어 서버 자체의 OS 샌드박스를 제공하는 것은 아니다.
+
+초기 fixture C++ 표준 누락과 공개 LSP 미연결 실패를 보존했다. 첫 문서 동기화 테스트가 emoji의 UTF-16 쌍 내부를 지정해 거절된 것을 확인하고, 그 거절을 별도 회귀로 유지하면서 정상 위치로 동기화를 검사했다. 초기화의 JSON-RPC 오류가 비표준 예외로 새던 실패를 재현해 SDK Error로 변환했다. 실제 clangd의 복구 검사는 별도 missing-prototypes 경고가 남아 실패했다. 테스트 전용 compile_flags.txt와 --enable-config=false로 입력을 고정한 뒤, 원래 오류 생성·수정·새 버전의 빈 진단 조건을 그대로 통과했다. 추가 검토에서 내부 재검사가 도구 정의의 메타데이터를 누락해 사용자 정의 정책의 정상 호출을 거절하고, prepare 뒤 링크가 바뀌면 새 대상을 열 수 있음을 각각 실패로 재현했다. 공통 도구 정의와 준비된 canonical 경로를 사용하도록 수정했다. 이어 지연 공개를 끈 등록에서도 정책이 같은 정의를 받는지 실패로 재현하고, 실행 시 실제 등록된 정의를 전달하도록 보완한 뒤 전체 검증을 다시 수행했다. 수정 전 전체 결과는 build/lsp-before-policy에 보존했다. 중간 재검사 중단 결과는 build/lsp-before-deferred에 보존했다. 동시 빌드·테스트 중 정상 LSP fixture의 임의 2초 제한이 초과된 실패도 기록했다. 정상 연산에는 생산 기본 요청 기한을 사용하고 별도 150ms timeout 및 취소 검사의 조건은 유지한다. 기존 agent-hook 권한 결과 검사는 기대 조건을 유지하고 실패 시 실제 도구 결과를 출력하도록 보강했다. 초기 독립 훅 검사 3회는 통과했지만 전체 검사에서 다시 재현됐고, 진단을 통해 짧은 허용 경로도 Permission pattern work limit exceeded로 실패함을 확인했다. 100ms 매처 기한이 패턴 준비와 파일 메타데이터 조회 전에 시작되던 것을 고쳤다. 매칭 전에 메타데이터를 한 번 조회한 뒤 기존 500,000 단계·100ms·깊이 128 한도와 취소 검사를 적용한다. 디렉터리→파일→없는 경로 변경 회귀를 추가했으며 권한 기대 조건은 유지한다. 추가 실패 로그는 build/lsp-before-pattern-budget에 보존했다. 수정 전 병렬 실행 기록은 build/lsp-before-load에 남기고 최종 Release·sanitizer·설치 소비자는 순차 실행했다. 실패 로그는 build/lsp-deferred-red-*, lsp-policy-red-*, lsp-path-red-*, lsp-red-*, lsp-contract-red-*, lsp-core-test.log, lsp-init-red-* 및 lsp-native-diagnostic-red.*에 보존한다.
+
+검증 전 401개 소스·테스트·문서 입력의 SHA-256을 고정하고 전체 검사 후 동일함을 확인했다. 마지막에 이 검증 문서만 갱신하고 stage 문서를 다시 대조한다. prefix는 build/lsp-stage, 소비자는 build/lsp-consumer/build이다. Release와 stage dylib SHA-256은 `76d42d6276ed4eb8ad1bb181f8d8ef404290ebd289e06a5b1dd0ba558df7bc40`이다. 실제 clangd 실행 파일 SHA-256도 최종 재검사했다. 구조화 증거는 build/lsp-verification.json, 읽기용 보고서는 build/lsp-REPORT.md이다.
+
+검증 플랫폼은 macOS arm64이다. IDE 미저장 버퍼, 전체 프로젝트 watcher, 동적 등록, TCP, 플러그인 자동 설치/추천과 모든 언어·앱·플랫폼 검증은 남아 있다. 현재 Mac Society/Dreamscapes와 홈 SDK의 0.36 조합을 다시 확인했으며 이번 0.43 stage를 제품 재설치로 보고하지 않는다. iPhone은 사용자 지시로 제외했다. C++ 소비자는 0.43 헤더와 라이브러리로 함께 재빌드해야 한다. 전체 대응표는 25 partial·6 pending·0 complete이며 전체 하네스 목표는 미완료이다.
+
+
 ## 2026-09-16 C++ WebFetch (0.42.0)
 
 C++ WebFetch의 익명 GET, HTML5/인코딩 변환, 소유 세션별 TTL/LRU 캐시, 도메인 권한, 로컬 모델 추출 및 API·MCP·CLI를 구현했다. Lexbor 3.0.0을 해시 고정해 비공개 링크하고 Apache-2.0 LICENSE와 NOTICE를 설치한다. 계약·기본 한도·참조 차이는 [WebFetch.md](WebFetch.md)에 기록했다.

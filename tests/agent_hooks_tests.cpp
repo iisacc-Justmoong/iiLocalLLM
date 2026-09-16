@@ -127,16 +127,17 @@ private slots:
         const auto owner=call("iiLocalLLM.agent.session")["structuredContent"].toObject()["session_id"].toString();
         QVERIFY(!owner.isEmpty()&&owner!=context.sessionId);
         policy->applyUpdates({grant("allow","Write","/granted.txt")},{owner,{},f.work});
-        int turns=0;bool correctBoard=false,correctGrant=false;
+        int turns=0;bool correctBoard=false,correctGrant=false;QJsonArray grantResults;
         f.model->next=[&](const a::ModelRequest& request,const CancellationToken&){
             if(++turns==1)return a::ModelReply{{},{{"list","TaskList",{}}}};
             if(turns==2){correctBoard=request.messages.last().text.contains("OWNER_TASK");
                 return a::ModelReply{{},{{"yes","Write",{{"path","granted.txt"},{"content","GRANTED"}}},{"no","Write",{{"path","implicit.txt"},{"content","DENIED"}}}}};}
+            for(const auto& message:request.messages)if(message.role==a::MessageRole::Tool)grantResults.append(a::toJson(message));
             correctGrant=!request.messages[request.messages.size()-2].isError&&request.messages.last().isError;
             return a::ModelReply{{},{{"decision","StructuredOutput",{{"ok",true}}}}};
         };
         const auto result=call("TaskList");QVERIFY2(!result["isError"].toBool(),qPrintable(QJsonDocument(result).toJson()));
-        QCOMPARE(turns,3);QVERIFY(correctBoard);QVERIFY(correctGrant);
+        QCOMPARE(turns,3);QVERIFY(correctBoard);QVERIFY2(correctGrant,qPrintable(QJsonDocument(grantResults).toJson(QJsonDocument::Compact)));
         QCOMPARE(read(f.work+"/granted.txt"),"GRANTED");QVERIFY(!QFileInfo::exists(f.work+"/implicit.txt"));
         QCOMPARE(policy->describe({owner,{},f.work})["mode"],"bypassPermissions");
         QVERIFY(f.clean());

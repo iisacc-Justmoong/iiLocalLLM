@@ -31,7 +31,7 @@
 | hooks | 전체 생명주기·C++ 콜백·명령·HTTP·모델/에이전트·입력 변경·결과/차단 | partial |
 | tasks | 계획·Todo/Task·작업 의존성·입력 큐·백그라운드 작업/알림 | partial |
 | git | 작업 디렉터리·worktree·브랜치·변경 이력·복구 | pending |
-| editor | LSP·IDE 통신·파일 변경 알림·진단·심볼/정의/참조 | pending |
+| editor | LSP·IDE 통신·파일 변경 알림·진단·심볼/정의/참조 | partial |
 | frontends | CLI interactive/headless·구조화 입출력·앱용 상태/이벤트·LVRS UI 바인딩 | partial |
 | remote | 원격/bridge 실행·인증·연결 복원·메시지 라우팅 | pending |
 | settings | 프로젝트/사용자/관리 설정 우선순위·기능 gate·환경·migration | partial |
@@ -151,3 +151,5 @@ C++ MemoryDream은 기본 OFF인 자동 실행, 24시간·5개 대화·10분 목
 0.42는 WebFetch의 조회·HTML5/인코딩 변환·캐시·도메인 권한·로컬 모델 추출과 API/MCP/CLI를 구현한다. WebSearch, 렌더링·로그인·프록시, 완전한 앱/플랫폼 검증은 남아 있어 web 영역은 partial이다. [WebFetch.md](WebFetch.md).
 
 0.42의 전체 대응표는 24 partial·7 pending·0 complete이다.
+
+0.43은 호스트가 구성한 stdio 언어 서버, LSP 9개 연산, 버전별 문서 동기화·진단, 소유 세션과 읽기 권한, API/MCP/CLI를 구현한다. IDE 미저장 버퍼·전체 프로젝트 watcher·동적 등록·플러그인 자동 설정과 전체 앱/플랫폼 검증은 남아 있다. [Lsp.md](Lsp.md). 전체 대응표는 25 partial·6 pending·0 complete이다.

@@ -221,3 +221,5 @@ agent.tasks.create/get/list/update/claim 및 agent.todos.write/get을 추가한�
 
 
 0.42는 `agent.web.fetch(session_id,url,prompt)`, `agent.info.web_fetch_enabled`와 `agent web fetch SESSION FILE`을 추가한다. 도메인 권한·호스트 옵션·API/MCP 소유권·취소와 한도는 [WebFetch.md](WebFetch.md)를 따른다.
+
+0.43은 `agent.lsp.query(session_id,operation,filePath,line,character[,query])`, `agent.lsp.status(session_id)`와 `agent.info.lsp_enabled`를 추가한다. `agent lsp query/status` CLI, `LSP`·`iiLocalLLM.agent.lsp.status` MCP 및 소유 서버·문서 진단 계약은 [Lsp.md](Lsp.md)를 따른다.

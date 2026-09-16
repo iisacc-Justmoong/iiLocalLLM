@@ -65,6 +65,7 @@ public:
             throw Error(ErrorCode::InvalidArgument, "Invalid agent engine configuration");
         pool.setMaxThreadCount(this->options.maxConcurrentRuns);
         if(this->options.sessionHistoryEnabled)history=std::make_shared<SessionHistory>(this->options.sessionsDirectory,this->options.sessionHistory);
+        if(!this->options.lsp.servers.isEmpty()){auto config=this->options.lsp;config.protectedPaths.append(this->options.sessionsDirectory);lsp=std::make_shared<Lsp>(std::move(config),this->policy);}
         if(this->options.webFetchEnabled)web=std::make_shared<WebFetch>(this->model,this->options.webFetch);
         auto configured = this->registry->snapshot();
         for (const auto& tool : additionalTools()) configured->add(tool);
@@ -106,6 +107,7 @@ public:
     std::shared_ptr<SessionHistory> history;
     std::shared_ptr<MemoryDream> dream;
     std::shared_ptr<WebFetch> web;
+    std::shared_ptr<Lsp> lsp;
     QThreadPool pool;
     std::mutex mutex;
     std::mutex joining;
@@ -184,6 +186,7 @@ public:
         auto result = options.additionalTools;
         if(history)result.append(history->tool());
         if(web)result.append(web->tool(options.webFetch.deferred));
+        if(lsp)result.append(lsp->tool(options.lsp.deferred));
         if (options.additionalToolsProvider) result.append(options.additionalToolsProvider());
         return result;
     }
@@ -793,6 +796,25 @@ ToolResult Engine::runWebFetch(const QString& id,const QJsonObject& arguments,co
         context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks),d->plans};
     return ToolRunner(registry,d->policy,options).run({uuid(),"WebFetch",arguments},context,callback);
 }
+std::optional<Tool> Engine::lspTool(bool deferred)const {if(!d->lsp)return std::nullopt;return d->lsp->tool(deferred);}
+QJsonObject Engine::lspStatus(const QString& id,const CancellationToken& token)const {
+    const auto session=d->store.metadata(id);Impl::NativeOperation operation(*d,id,token);operation.token.throwIfCancelled();
+    if(!d->lsp)return {{"enabled",false},{"servers",QJsonArray{}},{"diagnostics",QJsonArray{}}};
+    auto result=d->lsp->status(ToolContext{id,{},session.workingDirectory,{},operation.token});result["enabled"]=true;return result;
+}
+ToolResult Engine::runLsp(const QString& id,const QJsonObject& arguments,const CancellationToken& token,
+    const EventCallback& callback,std::shared_ptr<PermissionRequests> requests)const {
+    if(!d->lsp)throw Error(ErrorCode::RuntimeUnavailable,"LSP is disabled");
+    const auto session=d->store.metadata(id);Impl::NativeOperation operation(*d,id,token);
+    auto registry=std::make_shared<ToolRegistry>();registry->add(d->lsp->tool());
+    ToolContext context{id,uuid(),session.workingDirectory,QDir(d->options.sessionsDirectory).filePath(id+"/artifacts"),operation.token};
+    context.transcriptPath=transcriptPath(id);context.sessionSnapshot=std::make_shared<Session>(session);
+    if(!d->options.hooks.isEmpty())context.asyncHooks=d->hookScope(id);context.hookCancellation=operation.token;
+    context.permissionRequests=requests?requests:d->options.permissionRequests;
+    ToolRunnerOptions options{d->options.hooks,d->options.permission,24000,d->options.permissionResponse,d->options.permissionUpdates,
+        context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks),d->plans};
+    return ToolRunner(registry,d->policy,options).run({uuid(),"LSP",arguments},context,callback);
+}
 std::optional<Tool> Engine::sessionSearchTool(bool deferred)const {
     if(!d->history)return std::nullopt;return d->history->tool(deferred);
 }
@@ -854,6 +876,7 @@ QJsonObject Engine::endSessionImpl(const QString& id,QString reason,const Cancel
     if(scope)scope->close();
     if(d->extraction)d->extraction->forget(id);
     if(d->dream)d->dream->forget(id);
+    if(d->lsp)d->lsp->closeSession(id);
     QJsonArray diagnostics;
     auto error=[&](const QString& text,const QString& code=QString()) {
         diagnostics.append(QJsonObject{{"hook_event_name","SessionEnd"},{"outcome","non_blocking_error"},{"error",text},{"error_code",code}});
@@ -954,6 +977,7 @@ QJsonArray Engine::close(QString reason) {
     d->pool.waitForDone();
     if(d->extraction)d->extraction->close();
     if(d->dream)d->dream->close();
+    if(d->lsp)d->lsp->close();
     {std::lock_guard lock(d->mutex);sessions=d->touchedSessions.values();}
     sessions.sort();QJsonArray result;
     for(const auto& id:sessions) {

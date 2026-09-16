@@ -118,6 +118,20 @@ private slots:
         a::SettingsPermissionPolicy unsupported(o);QVERIFY(unsupported.snapshot().unsupportedFeatures.contains("permissions.unknownDirectories"));
         QVERIFY_THROWS_EXCEPTION(Error,unsupported.decide(writeTool(),{{"path","file"}},c));
     }
+    void finalComponentDirectoryMetadataIsRefreshedBeforeMatching() {
+        QTemporaryDir root;a::PermissionSettingsOptions o;o.workingDirectory=root.path();
+        o.inlineSettings=permissions("deny",{"Read(target/)"});
+        a::SettingsPermissionPolicy policy(o);a::ToolContext context;context.workingDirectory=root.path();
+        a::ToolDefinition read{"Read","read",{{"type","object"}},{},true};
+        const QJsonObject input{{"path","target"}};
+        QVERIFY(QDir(root.path()).mkdir("target"));
+        QCOMPARE(policy.decide(read,input,context).behavior,a::PermissionBehavior::Deny);
+        QVERIFY(QDir(root.path()).rmdir("target"));
+        QFile file(root.filePath("target"));QVERIFY(file.open(QIODevice::WriteOnly));file.close();
+        QCOMPARE(policy.decide(read,input,context).behavior,a::PermissionBehavior::Allow);
+        QVERIFY(file.remove());
+        QCOMPARE(policy.decide(read,input,context).behavior,a::PermissionBehavior::Allow);
+    }
     void hostilePatternsAreBoundedAndCancellationPropagates() {
         QTemporaryDir root;a::PermissionSettingsOptions o;o.workingDirectory=root.path();
         o.inlineSettings=permissions("deny",{"Read("+QString("*a").repeated(160)+"b)"});

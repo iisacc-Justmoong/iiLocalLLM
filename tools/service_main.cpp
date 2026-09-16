@@ -73,6 +73,7 @@ int main(int argc, char** argv)
         {"agent-no-memory-recall", "Disable model-ranked project memory recall."},
         {"agent-no-memory-extraction", "Disable automatic project memory extraction after main-agent responses."},
         {"agent-no-session-history", "Disable owned session transcript search."},
+        {"agent-lsp-config", "Private host JSON configuring local language servers.", "file"},
         {"agent-no-web-fetch", "Disable anonymous web page fetching and local extraction."},
         {"agent-web-model", "Local WebFetch extraction model (default: session model).", "model"},
         {"agent-web-private-origin", "Trusted exact private web origin; repeat. Still requires WebFetch domain permission.", "origin"},
@@ -122,7 +123,7 @@ int main(int argc, char** argv)
         std::shared_ptr<const a::PermissionPolicy> agentPolicy;
         if (parser.isSet("agent-workspace") || parser.isSet("agent-state") || parser.isSet("agent-credentials") || parser.isSet("agent-allow")
             || parser.isSet("agent-no-auto-compact") || parser.isSet("agent-no-project-context") || parser.isSet("agent-context-exclude") || parser.isSet("agent-no-memory")
-            || parser.isSet("agent-no-memory-recall") || parser.isSet("agent-memory-recall-model") || parser.isSet("agent-no-memory-extraction") || parser.isSet("agent-no-session-history") || parser.isSet("agent-auto-dream") || parser.isSet("agent-no-web-fetch") || parser.isSet("agent-web-model") || parser.isSet("agent-web-private-origin")
+            || parser.isSet("agent-no-memory-recall") || parser.isSet("agent-memory-recall-model") || parser.isSet("agent-no-memory-extraction") || parser.isSet("agent-no-session-history") || parser.isSet("agent-auto-dream") || parser.isSet("agent-no-web-fetch") || parser.isSet("agent-web-model") || parser.isSet("agent-web-private-origin") || parser.isSet("agent-lsp-config")
             || parser.isSet("agent-mcp-config") || parser.isSet("agent-mcp-project") || parser.isSet("agent-mcp-eager")
             || parser.isSet("agent-apps-dir") || parser.isSet("agent-no-apps") || parser.isSet("agent-no-plan-mode") || parser.isSet("agent-no-user-questions") || parser.isSet("agent-question-preview") || parser.isSet("agent-no-tasks") || parser.isSet("agent-no-background")
             || parser.isSet("agent-no-skills") || parser.isSet("agent-skills-dir") || parser.isSet("agent-no-subagents") || parser.isSet("agent-subagent-options")
@@ -155,6 +156,11 @@ int main(int argc, char** argv)
             config.engine.memoryRecall.enabled = !parser.isSet("agent-no-memory-recall");
             config.engine.memoryExtraction.enabled = !parser.isSet("agent-no-memory-extraction");
             config.engine.sessionHistoryEnabled = !parser.isSet("agent-no-session-history");
+            if(parser.isSet("agent-lsp-config")) {
+                QJsonParseError parse;const auto json=QJsonDocument::fromJson(iiLocalLLMClient::readPrivateFile(parser.value("agent-lsp-config")),&parse);
+                if(parse.error!=QJsonParseError::NoError||!json.isObject())throw std::runtime_error("Invalid LSP host configuration");
+                config.engine.lsp=a::lspOptionsFromJson(json.object());
+            }
             config.engine.webFetchEnabled = !parser.isSet("agent-no-web-fetch");
             config.engine.webFetch.model = parser.value("agent-web-model");
             config.engine.webFetch.privateOrigins = parser.values("agent-web-private-origin");
@@ -244,10 +250,11 @@ int main(int argc, char** argv)
 #endif
             if (parser.isSet("agent-apps-dir")) connections.localApplicationsDirectory = QFileInfo(parser.value("agent-apps-dir")).absoluteFilePath();
             QStringList privatePaths{agentConfig->stateDirectory};
-            for(const auto& key:{"agent-credentials","agent-permission-settings","agent-permission-requests","agent-profiles","agent-subagent-options","agent-hooks"})
+            for(const auto& key:{"agent-credentials","agent-permission-settings","agent-permission-requests","agent-profiles","agent-subagent-options","agent-hooks","agent-lsp-config"})
                 if(parser.isSet(key))privatePaths.append(parser.value(key));
             for(const auto& file:connections.configFiles)privatePaths.append(QDir::isAbsolutePath(file)?file:QDir(agentConfig->workingDirectory).filePath(file));
             if(!connections.localApplicationsDirectory.isEmpty())privatePaths.append(connections.localApplicationsDirectory);
+            agentConfig->engine.lsp.protectedPaths=privatePaths;
             auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, agentConfig->workingDirectory, shells,privatePaths);
             if (!connections.configFiles.isEmpty() || !connections.localApplicationsDirectory.isEmpty())
                 agentConfig->mcp = std::make_shared<a::McpConnections>(registry, std::move(connections));

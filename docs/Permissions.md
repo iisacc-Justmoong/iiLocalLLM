@@ -80,3 +80,5 @@ Read/Write/Edit도 canonical 대상을 준비하고 실행 직전에 원래 경�
 
 
 WebFetch는 읽기 전용이어도 기본 Ask이다. `WebFetch(domain:example.com)`은 정확한 정규화 호스트만 매칭하며, 서브도메인 접미사나 와일드카드로 확장하지 않는다. 기존 deny/ask/allow와 Bypass/DontAsk 및 설정 계층을 따른다. 자세한 네트워크 계약은 [WebFetch.md](WebFetch.md)를 참조한다.
+
+LSP는 읽기 전용이며 `LSP(path)` 규칙과 `Read(path)` deny/ask를 함께 적용한다. 호스트가 허용한 작업 디렉터리와 private path 경계를 재검증하고, 다른 파일의 결과·진단에도 현재 읽기 정책을 적용한다. 서버 명령과 환경은 모델 입력으로 받지 않는다. 외부 서버 프로세스는 호스트 신뢰 영역이며 파일 규칙이 OS 샌드박스를 뜻하지 않는다. [Lsp.md](Lsp.md).

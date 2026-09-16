@@ -60,7 +60,7 @@ QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.se
     "agent.plan.get", "agent.plan.enter", "agent.plan.exit", "agent.questions.ask",
     "agent.memory.get", "agent.memory.read", "agent.memory.write", "agent.memory.edit", "agent.memory.glob", "agent.memory.grep", "agent.memory.forget", "agent.memory.recall",
     "agent.memory.extract", "agent.memory.extraction.status", "agent.memory.extraction.cancel", "agent.sessions.search",
-    "agent.memory.dream", "agent.memory.dream.status", "agent.memory.dream.cancel", "agent.web.fetch"}; }
+    "agent.memory.dream", "agent.memory.dream.status", "agent.memory.dream.cancel", "agent.web.fetch", "agent.lsp.query", "agent.lsp.status"}; }
 bool dreamControl(const QString& method){return method=="agent.memory.dream.status"||method=="agent.memory.dream.cancel";}
 bool extractionControl(const QString& method){return method=="agent.memory.extraction.status"||method=="agent.memory.extraction.cancel";}
 bool hookControl(const QString& method) {return method=="agent.hooks.status"||method=="agent.hooks.cancel";}
@@ -187,12 +187,19 @@ public:
                 {"user_questions_enabled",bool(client->engine->userQuestionTool())},{"project_memory_enabled",client->engine->projectMemoryEnabled()},
                 {"memory_recall_enabled",client->engine->memoryRecallEnabled()},{"memory_extraction_enabled",client->engine->memoryExtractionEnabled()},
                 {"session_history_enabled",bool(client->engine->sessionSearchTool())},{"memory_dream_available",client->engine->memoryDreamAvailable()},
-                {"web_fetch_enabled",bool(client->engine->webFetchTool())},{"auto_dream_enabled",client->engine->automaticMemoryDream()}};
+                {"lsp_enabled",bool(client->engine->lspTool())},{"web_fetch_enabled",bool(client->engine->webFetchTool())},{"auto_dream_enabled",client->engine->automaticMemoryDream()}};
         }
-        if(method=="agent.web.fetch") {
+        if(method=="agent.lsp.status") {
+            require(p.size()==1,"LSP status accepts only session_id");
+            const auto id=text(p,"session_id");
+            require(client->engine->sessionMetadata(id).workingDirectory==options.workingDirectory,"Session belongs to a different workspace",ErrorCode::NotFound);
+            return client->engine->lspStatus(id,job->token);
+        }
+        if(method=="agent.web.fetch"||method=="agent.lsp.query") {
             const auto id=text(p,"session_id");auto arguments=p;arguments.remove("session_id");
             require(client->engine->sessionMetadata(id).workingDirectory==options.workingDirectory,"Session belongs to a different workspace",ErrorCode::NotFound);
-            auto future=std::async(std::launch::async,[client,id,arguments,job,callback] {
+            auto future=std::async(std::launch::async,[client,id,arguments,job,callback,method] {
+                if(method=="agent.lsp.query")return client->engine->runLsp(id,arguments,job->token,[callback](const Event& event){if(callback)callback(toJson(event));});
                 return client->engine->runWebFetch(id,arguments,job->token,[callback](const Event& event){if(callback)callback(toJson(event));});
             });
             bool timedOut=false;while(future.wait_for(10ms)!=std::future_status::ready){timedOut|=Clock::now()>=job->deadline;if(timedOut)job->token.cancel();}

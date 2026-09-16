@@ -119,12 +119,7 @@ QPair<QByteArray,QByteArray> patternBytes(QString pattern, QString value) {
     return {encode(pattern),encode(value)};
 }
 bool settingsPathMatch(const QList<Rule>& rules, const QString& name, const QString& path, const ToolContext& context) {
-    struct Budget { const CancellationToken& token; std::chrono::steady_clock::time_point deadline; };
-    Budget budget{context.cancellation,std::chrono::steady_clock::now()+std::chrono::milliseconds(100)};
-    iilocal_wildmatch_limits limits{500000,0,[](void* payload) {
-        const auto& value=*static_cast<Budget*>(payload);
-        return int(value.token.isCancelled()||std::chrono::steady_clock::now()>=value.deadline);
-    },&budget};
+    context.cancellation.throwIfCancelled();
     QMap<QString,QList<FilePattern>> groups;
     for(const auto& rule:rules) {
         if(!rule.settings || !named(rule,name) || rule.whole) continue;
@@ -147,13 +142,22 @@ bool settingsPathMatch(const QList<Rule>& rules, const QString& name, const QStr
             return old.pattern==item.pattern&&old.negative==item.negative&&old.anchored==item.anchored&&old.directory==item.directory;
         })) group.append(item);
     }
+    // Filesystem latency and rule preparation are not wildcard matching work.
+    const bool pathIsDirectory=!groups.isEmpty()&&QFileInfo(path).isDir();
+    context.cancellation.throwIfCancelled();
+    struct Budget { const CancellationToken& token; std::chrono::steady_clock::time_point deadline; };
+    Budget budget{context.cancellation,std::chrono::steady_clock::now()+std::chrono::milliseconds(100)};
+    iilocal_wildmatch_limits limits{500000,0,[](void* payload) {
+        const auto& value=*static_cast<Budget*>(payload);
+        return int(value.token.isCancelled()||std::chrono::steady_clock::now()>=value.deadline);
+    },&budget};
     for(auto group=groups.begin();group!=groups.end();++group) {
         const auto relative=QDir(group.key()).relativeFilePath(path);
         if(relative=="."||relative==".."||relative.startsWith("../")||QDir::isAbsolutePath(relative))continue;
         const auto parts=relative.split('/');QString current;
         for(qsizetype n=0;n<parts.size();++n) {
             context.cancellation.throwIfCancelled();current+=(current.isEmpty()?QString():QString("/"))+parts[n];
-            const bool directory=n+1<parts.size()||QFileInfo(path).isDir();bool ignored=false;
+            const bool directory=n+1<parts.size()||pathIsDirectory;bool ignored=false;
             for(const auto& pattern:group.value()) {
                 if(pattern.directory&&!directory)continue;
                 const auto bytes=patternBytes(pattern.pattern,pattern.anchored?current:parts[n]);
@@ -399,6 +403,8 @@ bool permissionRulesMatch(const QList<PermissionRule>& input, const ToolDefiniti
     QStringList strings;for(const auto& item:input)strings.append(item.toolPattern);parsePermissionRules(strings);
     QList<Rule> rules; for (const auto& item : input) { auto rule=parse(item.toolPattern);rule.root=item.rootDirectory;rule.home=item.homeDirectory;rule.settings=item.settingsSyntax;rules.append(rule); }
     if(tool.name=="Read"||tool.name=="Write"||tool.name=="Edit")return fileRulesMatch(rules,tool.name,args["path"].toString(),context,allow);
+    if(tool.name=="LSP")return fileRulesMatch(rules,"LSP",args["filePath"].toString(),context,allow)
+        ||(!allow&&fileRulesMatch(rules,"Read",args["filePath"].toString(),context,false));
     if (tool.name != "Bash") return std::any_of(rules.begin(), rules.end(), [&](const auto& r) { return valueMatch(r, tool.name, args, context, allow); });
     QList<Rule> bash, files;
     for (const auto& r : rules) {

@@ -159,6 +159,14 @@ public:
         if (!options.engine) return frozen;
         if(auto history=options.engine->sessionSearchTool())frozen->add(std::move(*history));
         if(auto web=options.engine->webFetchTool())frozen->add(std::move(*web));
+        if(auto lsp=options.engine->lspTool()) {
+            frozen->add(std::move(*lsp));
+            Tool status;status.definition.name="iiLocalLLM.agent.lsp.status";status.definition.description="Inspect this connection's language server state and current document diagnostics.";
+            status.definition.inputSchema={{"type","object"},{"properties",QJsonObject{}},{"additionalProperties",false}};
+            status.definition.readOnly=true;status.definition.concurrencySafe=true;status.definition.metadata={{"source","builtin.lsp.control"}};
+            status.execute=[self](const QJsonObject&,const ToolContext& context){auto value=self->options.engine->lspStatus(context.sessionId,context.cancellation);return ToolResult{QString::fromUtf8(QJsonDocument(value).toJson(QJsonDocument::Compact)),value};};
+            frozen->add(std::move(status));
+        }
         options.engine->bindProjectMemoryTools(*frozen,false);
         if(options.engine->projectMemoryEnabled()) {
             Tool memory;memory.definition={"iiLocalLLM.agent.memory.get","Inspect this connection owner's project memory index and search topic metadata/content. query is a case-insensitive literal.",
@@ -401,7 +409,7 @@ public:
         if (!options.artifactsDirectory.isEmpty()) context.artifactsDirectory = QDir(options.artifactsDirectory).filePath(context.sessionId + '/' + context.runId);
         const auto source = frozen->get(name).definition.metadata["source"].toString();
         auto bindContext = [&](bool history=false) {
-            const bool native=source=="builtin.workspace"||source=="builtin.shell"||source=="builtin.shell.control"||source=="builtin.plan"||source=="builtin.user-question"||source=="builtin.memory"||source=="builtin.session-history"||source=="builtin.web";
+            const bool native=source=="builtin.workspace"||source=="builtin.shell"||source=="builtin.shell.control"||source=="builtin.plan"||source=="builtin.user-question"||source=="builtin.memory"||source=="builtin.session-history"||source=="builtin.web"||source=="builtin.lsp"||source=="builtin.lsp.control";
             if(options.engine&&(native||!options.tools.hooks.isEmpty()||options.engine->planning())) {
                 const auto owner=sessionId(conversation(request.sessionId),context.cancellation);
                 context.planningSessionId=owner;
@@ -435,7 +443,8 @@ public:
         // would block independent app actions. WebFetch owns its own admission.
         const bool userQuestion = source == "builtin.user-question" && name == "AskUserQuestion";
         const bool webFetch = source == "builtin.web" && name == "WebFetch";
-        if (shellControl || inputControl || subagentControl || sessionControl || planControl || userQuestion || webFetch || memoryControl) { bindContext(userQuestion||webFetch); return wireResult(runner.run(call, context,observe)); }
+        const bool lsp = source=="builtin.lsp"||source=="builtin.lsp.control";
+        if (shellControl || inputControl || subagentControl || sessionControl || planControl || userQuestion || webFetch || lsp || memoryControl) { bindContext(userQuestion||webFetch||lsp); return wireResult(runner.run(call, context,observe)); }
         std::shared_lock shared(execution, std::defer_lock); std::unique_lock exclusive(execution, std::defer_lock);
         if (runner.concurrencySafe(call)) acquire(shared, context.cancellation); else acquire(exclusive, context.cancellation);
         bindContext(true);
@@ -461,6 +470,8 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
         return result;
     };
     server.handlers["tools/call"] = [state](const auto& params, const auto& request) { return state->call(params, request); };
+    if(state->options.engine&&state->options.engine->lspTool())
+        server.experimentalCapabilities["iisacc/lsp"]=QJsonObject{{"schema","iisacc.lsp/1"},{"tool","LSP"},{"statusTool","iiLocalLLM.agent.lsp.status"},{"positionEncoding","utf-16"}};
     if(state->options.engine&&state->options.engine->webFetchTool())
         server.experimentalCapabilities["iisacc/webFetch"]=QJsonObject{{"schema","iisacc.web-fetch/1"},{"tool","WebFetch"},{"domainPermission",true},{"localModel",true}};
     if(state->options.engine&&state->options.engine->sessionSearchTool())

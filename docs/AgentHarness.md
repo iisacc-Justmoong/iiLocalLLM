@@ -53,7 +53,7 @@ RulePolicy는 Default/AcceptEdits/DontAsk/Bypass/Plan을 제공한다. 명시적
 - Read: UTF-8, 최대 1 MiB, 줄 범위. 완전 읽기 상태와 SHA-256을 기록한다.
 - Write/Edit: 기존 파일의 완전 읽기·내용 일치를 요구한다. 변경 전 백업과 QSaveFile 쓰기를 사용한다.
 - Glob: 파일 패턴, 최대 1,000개. Git ignore·완전한 globstar 호환은 미완료이다.
-- Grep: Qt 정규식, 최대 10,000개 파일·100개 일치, 파일당 1 MiB. rg/LSP 고급 검색은 미완료이다.
+- Grep: Qt 정규식, 최대 10,000개 파일·100개 일치, 파일당 1 MiB. rg 고급 검색은 미완료이며, LSP 코드 탐색은 [Lsp.md](Lsp.md)를 따른다.
 - Bash: 작업 디렉터리에서 별도 프로세스 실행, 시간/출력 제한, Unix 프로세스 그룹 취소. 0.12.0부터 ShellTasks를 등록한 데스크톱 POSIX 호스트에서 명시적 백그라운드 실행·출력·중단을 제공한다. OS 샌드박스, 셸 환경/cwd 지속, Windows 프로세스 트리는 미완료이다.
 
 ## 앱에서 사용하는 예
@@ -133,3 +133,5 @@ C++ MemoryDream은 기본 OFF인 자동 실행, 24시간·5개 대화·10분 목
 
 
 0.42는 C++ WebFetch의 익명 URL 조회, HTML5/문자 인코딩 변환, 소유자별 캐시, 로컬 모델 추출과 도메인 권한을 제공한다. [WebFetch.md](WebFetch.md)에 상한과 참조 차이 및 남은 웹 기능을 기록한다.
+
+0.43은 C++ LSP로 정의·참조·호버·심볼·구현·호출 계층을 조회한다. 문서 동기화·세션별 서버 수명·권한과 API/MCP 노출은 [Lsp.md](Lsp.md)를 따른다. 편집기 연결과 전체 프로젝트 파일 watcher는 남아 있다.
