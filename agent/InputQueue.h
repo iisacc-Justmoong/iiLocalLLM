@@ -13,6 +13,11 @@ class IILOCALLLM_EXPORT InputQueue {
 public:
     explicit InputQueue(QString directory, InputQueueOptions = {});
     QJsonObject enqueue(const QString& sessionId, const QJsonObject& input, const CancellationToken& = {}) const;
+    // Trusted producer identity, not a wire input field. Replays of an identical
+    // pending item return that item; conflicting payloads are rejected. Transcript
+    // delivery continues to deduplicate this identity after acknowledgement.
+    QJsonObject enqueueIdentified(const QString& sessionId, const QString& inputId,
+        const QJsonObject& input, const CancellationToken& = {}) const;
     QJsonObject snapshot(const QString& sessionId, int offset = 0, int limit = 100, const CancellationToken& = {}) const;
     QJsonObject remove(const QString& sessionId, const QString& inputId, const CancellationToken& = {}) const;
     // Trusted lifecycle transfer of selected pending notifications. Preserves

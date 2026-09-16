@@ -23,6 +23,9 @@ public:
     // Lists are host-selected namespaces, never filesystem paths. Independent
     // instances/processes coordinate through one lock and atomic file per list.
     QJsonObject snapshot(const QString& listId, const CancellationToken& = {}) const;
+    // Permanently retires a host-owned namespace under the same board lock.
+    // Removes task contents and prevents stale tools/processes from recreating it.
+    void retire(const QString& listId,const CancellationToken& = {}) const;
     ToolResult execute(const QString& listId, const QString& operation, const QJsonObject& arguments = {},
         const CancellationToken& = {}, const TaskCommitCallback& = {}) const;
 private:

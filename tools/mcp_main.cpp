@@ -2,6 +2,7 @@
 #include "agent/McpConnections.h"
 #include "agent/ShellTasks.h"
 #include "agent/Subagents.h"
+#include "agent/Teams.h"
 #include "mcp/LocalApplications.h"
 #include "mcp/HttpServer.h"
 #include "McpCredentials.h"
@@ -60,6 +61,7 @@ int main(int argc, char** argv) {
         {"no-tasks", "Disable persistent task and todo tools."},
         {"no-skills", "Disable local skill discovery and invocation in the agent."},
         {"no-subagents", "Disable delegated local agent execution."},
+        {"no-teams", "Disable persistent local teammates and team messaging."},
         {"agent-profiles", "Private JSON host configuration for profile directories, overrides and model grants.", "file"},
         {"no-agent-profiles", "Disable agent profile file discovery; retain general-purpose."},
         {"skills-dir", "Additional host-authorized skills directory; repeat in highest-priority-first order.", "directory"},
@@ -251,6 +253,11 @@ int main(int argc, char** argv) {
                 subagents.stateDirectory = QDir(privateState).filePath("subagents");
                 subagents.maxRuntimeMs = timeout; subagents.generation.maxTokens = maxTokens; subagents.generation.temperature = temperature;
                 a::Subagents::attach(engineOptions,std::make_shared<a::Subagents>(model, registry, policy, engineOptions, subagents));
+            }
+            if(!privateState.isEmpty()&&!parser.isSet("no-teams")){
+                a::TeamsOptions config;config.workingDirectory=workspace;config.profiles=profiles.profiles;config.definitions=profiles.definitions;
+                config.allowedModels=profiles.allowedModels;config.modelAliases=profiles.modelAliases;config.maxRuntimeMs=timeout;config.generation.maxTokens=maxTokens;config.generation.temperature=temperature;
+                a::Teams::attach(engineOptions,std::make_shared<a::Teams>(model,registry,policy,engineOptions,config));
             }
             options.engine = std::make_shared<a::Engine>(model, registry, policy, engineOptions);
             options.model = parser.value("model"); options.generation.maxTokens = maxTokens; options.generation.temperature = temperature;

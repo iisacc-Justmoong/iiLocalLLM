@@ -147,3 +147,5 @@ C++ `NotebookEdit`와 `agent.notebooks.read/edit`, CLI `agent notebooks`, MCP `i
 ## 파일 체크포인트 (0.46)
 
 C++ 네이티브 Write·Edit·NotebookEdit의 원본을 사용자 메시지 경계에 기록하고 목록·수동 생성·파일 복원을 제공한다. 인증 API의 `agent.checkpoints.*`, CLI의 `agent checkpoints`, 연결 소유자에 묶인 MCP `iiLocalLLM.agent.checkpoints.*`가 같은 Engine을 사용한다. 저장 한도, 세션 잠금, preview·권한·작업 트리 경계와 남은 참조 기능은 [FileCheckpoints.md](FileCheckpoints.md)에 기록한다. 전체 대응 상태는 27 partial·4 pending·0 complete를 유지한다.
+
+C++ 로컬 팀, 공유 작업 목록, 메일함과 API/MCP/CLI 제어는 [Teams.md](Teams.md)에 설명한다. 일반 Subagents와 함께 사용할 때 Subagents::attach 후 Teams::attach 순서로 구성한다.

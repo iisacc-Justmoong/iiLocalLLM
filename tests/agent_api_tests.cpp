@@ -54,6 +54,25 @@ template<class F> void error(F fn, ErrorCode expected) {
 class AgentApiTests : public QObject {
     Q_OBJECT
 private slots:
+    void teamRoutesUseAuthenticatedSessionIdentity(){
+        QTemporaryDir root;auto config=options(root);config.teamsEnabled=true;config.subagentsEnabled=true;config.engine.toolSearch.enabled=false;
+        a::Api api(std::make_shared<Model>(),std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass),config);
+        const auto id=call(api,"agent.sessions.create",{{"model","local"}})["session_id"].toString();
+        const auto other=call(api,"agent.sessions.create",{{"model","local"}},secondToken)["session_id"].toString();
+        QVERIFY(call(api,"agent.info")["teams_enabled"].toBool());
+        QVERIFY(!call(api,"agent.teams.create",{{"session_id",id},{"team_name","society"}})["is_error"].toBool());
+        error([&]{call(api,"agent.teams.status",{{"session_id",id}},secondToken);},ErrorCode::NotFound);
+        QVERIFY(call(api,"agent.teams.status",{{"session_id",other}},secondToken)["result"].toObject()["team"].isNull());
+        error([&]{call(api,"agent.teams.spawn",{{"session_id",id},{"prompt","Do not start an ordinary subagent"},{"description","Missing teammate name"}});},ErrorCode::InvalidArgument);
+        const auto child=call(api,"agent.teams.spawn",{{"session_id",id},{"name","worker"},{"prompt","API_TEAM"}});
+        QVERIFY2(!child["is_error"].toBool(),QJsonDocument(child).toJson().constData());
+        const auto waited=call(api,"agent.teams.wait",{{"session_id",id},{"timeout_ms",2000}});
+        QVERIFY(waited["result"].toObject()["idle"].toBool());
+        const auto inbox=call(api,"agent.teams.inbox",{{"session_id",id}})["result"].toObject();QVERIFY(inbox["total"].toInt()>0);
+        const auto childId=child["result"].toObject()["session_id"].toString();error([&]{call(api,"agent.teams.send",{{"session_id",childId},{"to","team-lead"},{"summary","forged"},{"message","forged"}});},ErrorCode::NotFound);
+        QVERIFY(!call(api,"agent.teams.delete",{{"session_id",id}})["is_error"].toBool());
+        QVERIFY(api.isControlMethod("agent.teams.stop"));QVERIFY(api.isControlMethod("agent.teams.send"));
+    }
     void permissionsInspectionIsAuthenticatedAndCannotChangePolicy() {
         QTemporaryDir root;auto config=options(root);a::PermissionSettingsOptions settings;settings.workingDirectory=config.workingDirectory;
         settings.inlineSettings={{"permissions",QJsonObject{{"deny",QJsonArray{"Write"}}}},{"env",QJsonObject{{"secret","DO_NOT_DISCLOSE"}}}};

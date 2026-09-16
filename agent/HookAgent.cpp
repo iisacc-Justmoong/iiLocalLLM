@@ -14,7 +14,8 @@ bool allowed(const ToolDefinition& tool) {
     return !QStringList{"Agent","AgentOutput","AgentStop","AgentList","AgentProfiles","TaskOutput","TaskStop",
         "EnterPlanMode","ExitPlanMode","ExitPlanModeV2","AskUserQuestion","Workflow"}.contains(tool.name)
         &&tool.metadata["requires_user_interaction"]!=true
-        &&!tool.name.startsWith("iiLocalLLM.agent.")&&!tool.metadata["source"].toString().startsWith("builtin.subagent");
+        &&!tool.name.startsWith("iiLocalLLM.agent.")&&!tool.metadata["source"].toString().startsWith("builtin.subagent")
+        &&tool.metadata["source"]!="builtin.team";
 }
 class VerificationPolicy final:public PermissionPolicy {
     std::shared_ptr<const PermissionPolicy> parent;
@@ -125,7 +126,7 @@ AgentHookExecutor hookAgentExecutor(EngineOptions host,std::shared_ptr<TaskStore
             auto tool=registry->get(definition.name);tool.completesRun=false;registry->remove(definition.name);
             registry->add(protectPlanningFiles(std::move(tool),context.executionContext.plansDirectory,context.executionContext.planFilePath));
         }
-        if(tasks)for(auto tool:taskTools(tasks,owner,host.taskToolsDeferred)) {
+        if(tasks)for(auto tool:taskTools(tasks,host.taskListId?host.taskListId(owner):owner,host.taskToolsDeferred)) {
             try{tool.definition=registry->get(tool.definition.name).definition;registry->remove(tool.definition.name);}catch(const Error& error){if(error.code()!=ErrorCode::NotFound)throw;}
             registry->add(std::move(tool));
         }

@@ -261,6 +261,26 @@ public:
             };
             frozen->add(std::move(tool));
         }
+        if(options.engine->teamsEnabled())for(auto definition:options.engine->teamToolDefinitions()){
+            const auto nativeName=definition.name;
+            const QMap<QString,QString> names{{"TeamCreate","create"},{"TeamDelete","delete"},{"TeamStatus","status"},
+                {"TeamInbox","inbox"},{"TeamWait","wait"},{"TeamStop","stop"},{"SendMessage","send"},{"Agent","spawn"}};
+            if(!names.contains(nativeName))continue;
+            definition.name="iiLocalLLM.agent.teams."+names[nativeName];definition.metadata={{"source","builtin.team.control"}};
+            if(nativeName=="Agent"){
+                auto properties=definition.inputSchema["properties"].toObject();
+                const QStringList supported{"name","team_name","prompt","description","subagent_type","model","max_turns","mode","run_in_background"};
+                for(const auto& key:properties.keys())if(!supported.contains(key))properties.remove(key);
+                definition.inputSchema["properties"]=properties;definition.inputSchema["required"]=QJsonArray{"name","prompt"};
+            }
+            Tool tool;tool.definition=definition;tool.execute=[self,nativeName](const QJsonObject& args,const ToolContext& context){
+                const auto id=self->sessionId(self->conversation(context.sessionId),context.cancellation);
+                return self->options.engine->runTeamTool(id,nativeName,args,context.cancellation,permissionEvents(context),context.permissionRequests);
+            };
+            if(nativeName=="SendMessage"){const auto execute=tool.execute;tool.prepare=[definition,execute](const QJsonObject& a,const ToolContext& c){
+                auto preview=definition;preview.readOnly=a["message"].isString();return PreparedTool{preview,[execute,a,c]{return execute(a,c);}};};}
+            frozen->add(std::move(tool));
+        }
         if (options.engine->taskToolsEnabled()) for (auto definition : taskToolDefinitions(false)) {
             Tool tool; tool.definition = definition;
             tool.execute = [self, name = definition.name](const QJsonObject& args, const ToolContext& context) {
@@ -475,6 +495,7 @@ public:
         const bool inputControl = options.engine && source == "builtin.input.control"
             && QStringList{"iiLocalLLM.agent.inputs.enqueue", "iiLocalLLM.agent.inputs.list", "iiLocalLLM.agent.inputs.remove"}.contains(name);
         const bool subagentControl = options.engine && source == "builtin.subagent.control";
+        const bool teamControl=options.engine&&source=="builtin.team.control";
         const bool sessionControl=options.engine&&((source=="builtin.session.control"&&name=="iiLocalLLM.agent.clear")
             ||(source=="builtin.session.fork"&&name=="iiLocalLLM.agent.fork"));
         const bool planControl=options.engine&&(source=="builtin.plan.control"||source=="builtin.plan");
@@ -486,7 +507,7 @@ public:
         const bool webFetch = source == "builtin.web" && name == "WebFetch";
         const bool lsp = source=="builtin.lsp"||source=="builtin.lsp.control";
         const bool worktree = source=="builtin.worktree"||source=="builtin.worktree.control";
-        if (shellControl || inputControl || subagentControl || sessionControl || planControl || userQuestion || webFetch || lsp || worktree || memoryControl) { bindContext(userQuestion||webFetch||lsp||worktree); return wireResult(runner.run(call, context,observe)); }
+        if (shellControl || inputControl || subagentControl || teamControl || sessionControl || planControl || userQuestion || webFetch || lsp || worktree || memoryControl) { bindContext(userQuestion||webFetch||lsp||worktree); return wireResult(runner.run(call, context,observe)); }
         std::shared_lock shared(execution, std::defer_lock); std::unique_lock exclusive(execution, std::defer_lock);
         if (runner.concurrencySafe(call)) acquire(shared, context.cancellation); else acquire(exclusive, context.cancellation);
         bindContext(true);
@@ -512,6 +533,15 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
         return result;
     };
     server.handlers["tools/call"] = [state](const auto& params, const auto& request) { return state->call(params, request); };
+    if(state->options.engine&&state->options.engine->teamsEnabled()){
+        server.experimentalCapabilities["iisacc/teams"]=QJsonObject{{"schema","iisacc.teams/1"},{"scope","connection-conversation"},
+            {"statusMethod","iisacc/teams/status"},{"inboxMethod","iisacc/teams/inbox"},{"sendMethod","iisacc/teams/send"},{"stopMethod","iisacc/teams/stop"}};
+        for(const auto& action:QStringList{"status","inbox","send","stop"})server.controlHandlers["iisacc/teams/"+action]=[state,action](QJsonObject args,const mcp::ServerRequestContext& request){
+            const auto metadata=args.take("_meta");QJsonObject parameters{{"name","iiLocalLLM.agent.teams."+action},{"arguments",args}};
+            if(!metadata.isUndefined())parameters["_meta"]=metadata;
+            return state->call(parameters,request);
+        };
+    }
     QSet<QString> notebookTools;
     for(const auto& tool:state->registry->definitions())if(tool.metadata["source"]=="builtin.workspace")notebookTools.insert(tool.name);
     if(notebookTools.contains("Read")&&notebookTools.contains("NotebookEdit"))

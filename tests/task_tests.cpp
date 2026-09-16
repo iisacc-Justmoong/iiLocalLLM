@@ -33,6 +33,17 @@ public:
 class TaskTests : public QObject {
     Q_OBJECT
 private slots:
+    void retiredNamespaceCannotBeRecreatedByStaleOwners() {
+        QTemporaryDir root;a::TaskStore first(root.filePath("tasks")),stale(root.filePath("tasks"));
+        create(first,"team");first.retire("team");
+        QVERIFY(!QFileInfo::exists(root.filePath("tasks/team/board.json")));
+        fails([&]{stale.snapshot("team");},ErrorCode::NotFound);
+        fails([&]{create(stale,"team");},ErrorCode::NotFound);
+        first.retire("team");QVERIFY(stale.snapshot("new-team")["tasks"].toArray().isEmpty());
+        QVERIFY(QFile::remove(root.filePath("tasks/team/retired.json")));
+        QVERIFY(QFile::link(root.filePath("absent"),root.filePath("tasks/team/retired.json")));
+        fails([&]{stale.snapshot("team");},ErrorCode::StorageFailure);
+    }
     void verificationCanReadTheBoardBeforePublication() {
         QTemporaryDir root; a::TaskStoreOptions options; options.lockTimeoutMs=150;
         a::TaskStore store(root.filePath("tasks"),options);create(store,"s","EXISTING");

@@ -2,6 +2,7 @@
 #include <agent/McpServer.h>
 #include <agent/ShellTasks.h>
 #include <agent/Subagents.h>
+#include <agent/Teams.h>
 #include <agent/PermissionSettings.h>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QFile>
@@ -51,7 +52,7 @@ QJsonObject call(m::ServerSession& s, int id, QString name, QJsonObject args = {
 }
 class HistoryModel final : public a::Model {
 public:
-    std::atomic_bool waiting = false, released = false;
+    std::atomic_bool waiting = false, released = false, forceWaiting = false;
     std::optional<ContextBudget> measure(const a::ModelRequest& r, const CancellationToken&) override {
         qint64 count = 100 + r.systemPrompt.size() + r.tools.size() * 40;
         for (const auto& message : r.messages) count += message.text.size() + 10;
@@ -59,7 +60,7 @@ public:
     }
     a::ModelReply generate(const a::ModelRequest& r, const CancellationToken& token, const TextCallback&) override {
         token.throwIfCancelled();
-        if (!r.messages.isEmpty() && r.messages.last().text == "hold") {
+        if (forceWaiting || (!r.messages.isEmpty() && r.messages.last().text == "hold")) {
             waiting = true;
             while (!released && !token.isCancelled()) std::this_thread::sleep_for(1ms);
             token.throwIfCancelled();
@@ -74,6 +75,33 @@ public:
 class McpServerTests : public QObject {
     Q_OBJECT
 private slots:
+    void teamMcpRoutesBindOnlyTheCallingConnection(){
+        QTemporaryDir root;const auto work=root.filePath("work");QVERIFY(QDir().mkpath(work));
+        auto model=std::make_shared<HistoryModel>();auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
+        a::EngineOptions eo;eo.sessionsDirectory=root.filePath("sessions");eo.toolSearch.enabled=false;eo.projectContext.enabled=false;
+        a::TeamsOptions config;config.workingDirectory=work;auto teams=std::make_shared<a::Teams>(model,registry,policy,eo,config);a::Teams::attach(eo,teams);
+        auto engine=std::make_shared<a::Engine>(model,registry,policy,eo);a::McpServerOptions bridge;bridge.workingDirectory=work;bridge.engine=engine;bridge.model="fixture";
+        const auto server=a::mcpServerOptions(registry,policy,bridge);m::ServerSession first(server),second(server);initialize(first);initialize(second);
+        first.receive(request(2,"tools/list"));const auto definitions=next(first)["result"].toObject()["tools"].toArray();int count=0;
+        for(const auto& v:definitions){const auto t=v.toObject();if(t["name"].toString().startsWith("iiLocalLLM.agent.teams.")){
+            ++count;QVERIFY(!t["inputSchema"].toObject()["properties"].toObject().contains("session_id"));
+            if(t["name"]=="iiLocalLLM.agent.teams.spawn")QVERIFY(t["inputSchema"].toObject()["required"].toArray().contains("name"));}}
+        QCOMPARE(count,8);
+        const auto created=call(first,3,"iiLocalLLM.agent.teams.create",{{"team_name","mcp"}});QVERIFY2(!created["isError"].toBool(),QJsonDocument(created).toJson().constData());
+        QVERIFY(call(second,2,"iiLocalLLM.agent.teams.status")["structuredContent"].toObject()["team"].isNull());
+        const auto child=call(first,4,"iiLocalLLM.agent.teams.spawn",{{"name","reader"},{"prompt","MCP_TEAM"}});QVERIFY2(!child["isError"].toBool(),QJsonDocument(child).toJson().constData());
+        QVERIFY(call(first,5,"iiLocalLLM.agent.teams.wait",{{"timeout_ms",1500}})["structuredContent"].toObject()["idle"].toBool());
+        QVERIFY(call(first,6,"iiLocalLLM.agent.teams.inbox")["structuredContent"].toObject()["total"].toInt()>0);
+        QVERIFY(call(second,3,"iiLocalLLM.agent.teams.send",{{"to","reader"},{"summary","forged"},{"message","foreign"}})["isError"].toBool());
+        QVERIFY(call(second,4,"iiLocalLLM.agent.teams.status",{{"session_id",child["structuredContent"].toObject()["session_id"]}})["isError"].toBool());
+        QVERIFY(server.controlHandlers.contains("iisacc/teams/status"));
+        model->forceWaiting=true;
+        first.receive(request(40,"tools/call",{{"name","iiLocalLLM.agent.run"},{"arguments",QJsonObject{{"prompt","hold"}}}}));QTRY_VERIFY(model->waiting.load());
+        first.receive(request(41,"iisacc/teams/status"));const auto control=next(first);QCOMPARE(control["id"],41);
+        QCOMPARE(control["result"].toObject()["structuredContent"].toObject()["team"].toObject()["team_name"],"mcp");
+        model->released=true;QCOMPARE(next(first)["id"],40);
+        QVERIFY(!call(first,7,"iiLocalLLM.agent.teams.delete")["isError"].toBool());first.close();second.close();engine->close();teams->close();
+    }
     void clearControlInterruptsActiveRunAndDoesNotAcceptForeignSessionIds() {
         QTemporaryDir root;auto registry=std::make_shared<a::ToolRegistry>();auto model=std::make_shared<HistoryModel>();
         auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);a::EngineOptions engineConfig;engineConfig.sessionsDirectory=root.filePath("sessions");

@@ -75,7 +75,7 @@ public:
             configured->add(detail::skillTool({}, this->options.skills)); // Reserve the native Skill identity.
         }
         if (this->options.taskToolsEnabled) {
-            tasks = std::make_shared<TaskStore>(QDir(this->options.sessionsDirectory).filePath("tasks"));
+            tasks = this->options.taskStore ? this->options.taskStore : std::make_shared<TaskStore>(QDir(this->options.sessionsDirectory).filePath("tasks"));
             for (auto tool : agent::taskTools(tasks)) configured->add(std::move(tool));
         }
         if(this->options.planToolsEnabled) {
@@ -273,7 +273,7 @@ public:
         auto context=std::make_shared<ModelHookContext>();context->model=model;context->modelName=session.model;
         context->session=std::make_shared<Session>(session);context->registry=registry->snapshot();
         for(auto tool:additionalTools())context->registry->add(std::move(tool));
-        if(tasks)for(auto tool:agent::taskTools(tasks,session.id,options.taskToolsDeferred))context->registry->add(std::move(tool));
+        if(tasks)for(auto tool:agent::taskTools(tasks,taskList(session.id),options.taskToolsDeferred))context->registry->add(std::move(tool));
         context->tools=context->registry->definitions();context->policy=policy;
         context->executionContext=permissionContext({session.id,runId,session.workingDirectory});
         context->executionContext.forceSynchronousHooks=forceSync;
@@ -282,10 +282,11 @@ public:
         context->executionContext.transcriptPath=QDir(options.sessionsDirectory).filePath(session.id+"/transcript.jsonl");
         context->agentExecutor=detail::hookAgentExecutor(options,tasks);return context;
     }
+    QString taskList(const QString& sessionId) const {return options.taskListId?options.taskListId(sessionId):sessionId;}
     QList<Tool> taskToolsFor(const Session& session, const QString& runId, EventCallback send = {},const CancellationToken& token={}) {
         if (!tasks) return {};
         const auto sessionId=session.id;
-        return agent::taskTools(tasks, sessionId, options.taskToolsDeferred,
+        return agent::taskTools(tasks, taskList(sessionId), options.taskToolsDeferred,
             [hooks = options.hooks, sessionId, runId, send, modelContext=hookContext(session,runId,token),
                 transcript=QDir(options.sessionsDirectory).filePath(sessionId+"/transcript.jsonl")](const TaskChange& change, const CancellationToken& token) {
                 std::optional<HookKind> kind;
@@ -307,7 +308,7 @@ public:
     }
     std::optional<Message> taskContext(const QString& id, const CancellationToken& token) const {
         if (!tasks) return {};
-        const auto state = tasks->snapshot(id, token);
+        const auto state = tasks->snapshot(taskList(id), token);
         QJsonArray taskItems, todos;
         for (const auto& v : state["tasks"].toArray()) {
             if (taskItems.size() == 32) break;
@@ -1219,6 +1220,32 @@ ProjectContext Engine::context(const QString& id, const QStringList& targetPaths
     return loadProjectContext(session.workingDirectory, paths, d->options.projectContext, token);
 }
 bool Engine::taskToolsEnabled() const { return bool(d->tasks); }
+bool Engine::teamsEnabled()const {
+    for(const auto& tool:d->options.additionalTools)
+        if(tool.definition.name=="TeamStatus"&&tool.definition.metadata["source"]=="builtin.team")return true;
+    return false;
+}
+QList<ToolDefinition> Engine::teamToolDefinitions()const {
+    QList<ToolDefinition> result;
+    for(const auto& tool:d->additionalTools())if(tool.definition.metadata["source"]=="builtin.team"||tool.definition.metadata["team_capable"]==true)
+        result.append(tool.definition);
+    return result;
+}
+ToolResult Engine::runTeamTool(const QString& id,const QString& name,const QJsonObject& args,
+    const CancellationToken& token,const EventCallback& callback,std::shared_ptr<PermissionRequests> requests)const {
+    if(!teamsEnabled())throw Error(ErrorCode::RuntimeUnavailable,"Teams are disabled by the host");
+    if(!QStringList{"TeamCreate","TeamDelete","TeamStatus","TeamInbox","TeamWait","TeamStop","SendMessage","Agent"}.contains(name))throw Error(ErrorCode::NotFound,"Unknown team tool");
+    if(name=="Agent"&&!args.contains("name"))throw Error(ErrorCode::InvalidArgument,"Team spawn requires a teammate name");
+    token.throwIfCancelled();const auto session=d->store.metadata(id);Impl::NativeOperation operation(*d,id,token);
+    auto registry=std::make_shared<ToolRegistry>();const auto tools=name=="Agent"?d->additionalTools():d->options.additionalTools;
+    for(const auto& tool:tools)if(tool.definition.metadata["source"]=="builtin.team"||tool.definition.metadata["team_capable"]==true)registry->add(tool);
+    ToolContext context{id,uuid(),session.workingDirectory,QDir(d->options.sessionsDirectory).filePath(id+"/artifacts"),operation.token};
+    context.transcriptPath=transcriptPath(id);context.sessionSnapshot=std::make_shared<Session>(session);
+    context.asyncHooks=d->hookScope(id);context.hookCancellation=operation.token;context.permissionRequests=requests?requests:d->options.permissionRequests;
+    const ToolRunner runner(registry,d->policy,{d->options.hooks,d->options.permission,24000,d->options.permissionResponse,d->options.permissionUpdates,context.permissionRequests,
+        d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks),d->plans});
+    return runner.run({uuid(),name,args},d->permissionContext(context),callback);
+}
 bool Engine::backgroundTasksEnabled() const {
     try {
         return d->registry->get("ShellTaskList").definition.metadata["source"] == "builtin.shell.control"
@@ -1241,11 +1268,17 @@ void Engine::stopSubagents(const QString& id) const {
         if (t.definition.name == "AgentList") list = t;
         if (t.definition.name == "AgentStop") stop = t;
     }
-    if (!list.execute || !stop.execute) return;
     const ToolContext context{id, {}, d->store.metadata(id).workingDirectory};
-    for (const auto& value : list.execute({}, context).data["agents"].toArray()) {
+    if(list.execute&&stop.execute)for (const auto& value : list.execute({}, context).data["agents"].toArray()) {
         const auto state = value.toObject();
         if (!state["finished"].toBool()) stop.execute({{"agent_id", state["agentId"]}}, context);
+    }
+    Tool teamStatus,teamStop;
+    for(const auto& tool:d->options.additionalTools)if(tool.definition.metadata["source"]=="builtin.team"){
+        if(tool.definition.name=="TeamStatus")teamStatus=tool;if(tool.definition.name=="TeamStop")teamStop=tool;
+    }
+    if(teamStatus.execute&&teamStop.execute)for(const auto& value:teamStatus.execute({},context).data["team"].toObject()["members"].toArray()){
+        const auto member=value.toObject();if(member["name"]!="team-lead")teamStop.execute({{"name",member["name"]}},context);
     }
 }
 bool Engine::permissionRequestsEnabled() const {return bool(d->options.permissionRequests);}

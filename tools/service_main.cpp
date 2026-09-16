@@ -86,6 +86,7 @@ int main(int argc, char** argv)
         {"agent-no-tasks", "Disable persistent task and todo tools for the agent API."},
         {"agent-no-skills", "Disable local skill discovery and invocation."},
         {"agent-no-subagents", "Disable delegated local agent execution."},
+        {"agent-no-teams", "Disable persistent local teammates and team messaging."},
         {"agent-profiles", "Private JSON host configuration for profile directories, overrides and model grants.", "file"},
         {"no-agent-profiles", "Disable agent profile file discovery; retain general-purpose."},
         {"agent-subagent-options", "Private JSON file of host-owned child GenerationOptions (temperature, max_tokens, etc.).", "file"},
@@ -129,7 +130,7 @@ int main(int argc, char** argv)
             || parser.isSet("agent-no-memory-recall") || parser.isSet("agent-memory-recall-model") || parser.isSet("agent-no-memory-extraction") || parser.isSet("agent-no-session-history") || parser.isSet("agent-no-file-checkpoints") || parser.isSet("agent-auto-dream") || parser.isSet("agent-no-web-fetch") || parser.isSet("agent-web-model") || parser.isSet("agent-web-private-origin") || parser.isSet("agent-lsp-config") || parser.isSet("agent-worktree-config") || parser.isSet("agent-no-worktrees")
             || parser.isSet("agent-mcp-config") || parser.isSet("agent-mcp-project") || parser.isSet("agent-mcp-eager")
             || parser.isSet("agent-apps-dir") || parser.isSet("agent-no-apps") || parser.isSet("agent-no-plan-mode") || parser.isSet("agent-no-user-questions") || parser.isSet("agent-question-preview") || parser.isSet("agent-no-tasks") || parser.isSet("agent-no-background")
-            || parser.isSet("agent-no-skills") || parser.isSet("agent-skills-dir") || parser.isSet("agent-no-subagents") || parser.isSet("agent-subagent-options")
+            || parser.isSet("agent-no-skills") || parser.isSet("agent-skills-dir") || parser.isSet("agent-no-subagents") || parser.isSet("agent-no-teams") || parser.isSet("agent-subagent-options")
             || parser.isSet("agent-profiles") || parser.isSet("no-agent-profiles") || parser.isSet("agent-permission-settings") || parser.isSet("agent-permission-requests") || parser.isSet("agent-add-dir") || parser.isSet("agent-hooks")) {
             if (parser.isSet("agent-apps-dir") && parser.isSet("agent-no-apps"))
                 throw std::runtime_error("--agent-apps-dir and --agent-no-apps cannot be combined");
@@ -190,6 +191,9 @@ int main(int argc, char** argv)
                     throw std::runtime_error("--agent-subagent-options must contain a JSON GenerationOptions object");
                 config.subagents.generation = iiLocalLLM::generationOptionsFromJson(generation.object());
             }
+            config.teamsEnabled=!parser.isSet("agent-no-teams");
+            config.teams.profiles=config.subagents.profiles;config.teams.definitions=config.subagents.definitions;
+            config.teams.allowedModels=config.subagents.allowedModels;config.teams.modelAliases=config.subagents.modelAliases;config.teams.generation=config.subagents.generation;
             config.engine.projectContext.enabled = !parser.isSet("agent-no-project-context");
             config.engine.projectContext.excludes = parser.values("agent-context-exclude");
             // Bound agent dispatch separately from HTTP response admission.

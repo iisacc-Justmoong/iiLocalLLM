@@ -20,6 +20,28 @@ public:
 class InputQueueTests : public QObject {
     Q_OBJECT
 private slots:
+    void identifiedReplayAfterAcknowledgementDoesNotDuplicateTranscriptInput(){
+        QTemporaryDir root;auto model=std::make_shared<QueueModel>();model->action=[](const auto&,const auto&){return a::ModelReply{"done"};};
+        a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");
+        a::Engine engine(model,std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(),options);
+        const auto session=engine.createSession("fixture",root.path()).id;a::InputQueue queue(options.sessionsDirectory+"/inputs");
+        const QJsonObject input{{"text","team notification"},{"kind","notification"},{"priority","next"}};
+        queue.enqueueIdentified(session,"team-message",input);QCOMPARE(engine.runQueued({session,{}}).result.get().status,a::RunStatus::Completed);
+        queue.enqueueIdentified(session,"team-message",input);QCOMPARE(engine.runQueued({session,{}}).result.get().status,a::RunStatus::Completed);
+        int copies=0;for(const auto& message:engine.session(session).messages)if(message.metadata["iilocal.input"].toObject()["id"]=="team-message")++copies;
+        QCOMPARE(copies,1);QCOMPARE(queue.snapshot(session)["count"].toInt(),0);
+    }
+    void trustedProducerRetriesKeepOnePendingIdentity(){
+        QTemporaryDir root; a::InputQueue queue(root.path());
+        const QJsonObject input{{"text","team message"},{"kind","notification"},{"priority","next"}};
+        const auto first=queue.enqueueIdentified("owner","message-one",input);
+        const auto again=queue.enqueueIdentified("owner","message-one",input);
+        QCOMPARE(first,again);QCOMPARE(queue.snapshot("owner")["count"].toInt(),1);
+        QVERIFY_THROWS_EXCEPTION(Error,queue.enqueueIdentified("owner","message-one",{{"text","changed"}}));
+        QVERIFY_THROWS_EXCEPTION(Error,queue.enqueueIdentified("owner","../escape",input));
+        QVERIFY_THROWS_EXCEPTION(Error,queue.enqueue("owner",{{"text","forged"},{"id","message-two"}}));
+        QCOMPARE(queue.snapshot("owner")["count"].toInt(),1);
+    }
     void notificationTransferPreservesIdentityAndNeverMovesPrompts() {
         QTemporaryDir root;a::InputQueue queue(root.path(),{4,128,8192,1000});
         const auto prompt=queue.enqueue("old",{{"text","stay"}})["input"].toObject();

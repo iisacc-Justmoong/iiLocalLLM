@@ -130,6 +130,9 @@ public:
         token.throwIfCancelled();
     }
     Board read(const QString& list, const TaskStoreOptions& options) {
+        const QFileInfo retired(QDir(path).filePath("retired.json"));
+        require(!retired.isSymLink(),"Task retirement marker is a symlink",ErrorCode::StorageFailure);
+        require(!retired.exists(),"Task list has been retired",ErrorCode::NotFound);
         Board b; b.listId = list; const auto filePath = QDir(path).filePath("board.json"); const QFileInfo info(filePath);
         require(!info.isSymLink(), "Task state must not be a symlink", ErrorCode::StorageFailure);
         if (!info.exists()) return b;
@@ -353,6 +356,15 @@ ToolResult TaskStore::execute(const QString& listId, const QString& operation, c
         data["revision"] = double(b.revision);
     }
     return result(data);
+}
+void TaskStore::retire(const QString& list,const CancellationToken& token)const {
+    require(validId(list),"Invalid task list identity");LockedBoard locked(directory_,list,options_,token);
+    const auto marker=QDir(locked.path).filePath("retired.json");
+    require(!QFileInfo(marker).isSymLink(),"Task retirement marker is a symlink",ErrorCode::StorageFailure);
+    QSaveFile file(marker);const auto bytes=QJsonDocument(QJsonObject{{"schema","iisacc.agent.retired-tasks/1"},{"list_id",list}}).toJson();
+    require(file.open(QIODevice::WriteOnly)&&file.setPermissions(ownerFile)&&file.write(bytes)==bytes.size()&&file.commit(),"Cannot retire task namespace",ErrorCode::StorageFailure);
+    const auto board=QDir(locked.path).filePath("board.json");
+    require(!QFileInfo::exists(board)||QFile::remove(board),"Task namespace retired but contents could not be removed",ErrorCode::StorageFailure);
 }
 QList<Tool> taskTools(std::shared_ptr<TaskStore> store, QString listId, bool deferred, TaskCommitCallback callback) {
     require(bool(store) && (listId.isEmpty() || validId(listId)), "Task tools require a store and valid host-selected list ID");

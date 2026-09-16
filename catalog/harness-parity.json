@@ -365,8 +365,22 @@
     {
       "id": "teams",
       "requirement": "동일 프로세스/별도 프로세스 팀·mailbox·작업·권한 전달·worktree",
-      "status": "pending",
-      "evidence": []
+      "status": "partial",
+      "evidence": [
+        "agent/Teams.h",
+        "agent/Teams.cpp",
+        "agent/TaskStore.cpp",
+        "agent/InputQueue.cpp",
+        "agent/Api.cpp",
+        "agent/McpServer.cpp",
+        "tests/team_tests.cpp",
+        "tests/team_runtime_smoke.cpp",
+        "tests/team_wire.py",
+        "tests/agent_api_tests.cpp",
+        "tests/mcp_server_tests.cpp",
+        "docs/Teams.md"
+      ],
+      "remaining": "Version 0.48 implements in-process named teammates, independent conversations, shared Task namespaces, bounded persistent messaging, idle teammate follow-up, authenticated shutdown, session clear transfer, lifecycle cleanup and API/IPC/MCP/CLI controls. Idle leader auto-wake, reference mailbox priorities and idle task claiming, reference idle-notification contents, stopped/restarted teammate resume, full profile setup, team plan approval, separate-process/tmux, remote routing, worktree isolation, and actual Society/Dreamscapes and mobile consumers remain. See Teams.md and Verification.md."
     },
     {
       "id": "mcp_client",

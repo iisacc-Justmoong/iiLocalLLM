@@ -1,5 +1,40 @@
 # 구현 검증 기록
 
+## 0.48 지속되는 로컬 팀과 공유 작업
+
+C++ Teams는 이름 있는 팀원의 독립 Engine 대화·스레드, 공유 Task 목록, 보존 메일함, 유휴 팀원의 후속 실행, 종료 요청·응답과 부모 clear의 소유권 이전을 제공한다. 기존 Qt·표준 C++ 스레드·TaskStore·InputQueue를 사용하며 생산 의존성은 추가하지 않았다. API·MCP·CLI 계약과 참조 하네스의 동작 차이는 [Teams.md](Teams.md)에 기록한다. C++ 소비자는 0.48 헤더와 라이브러리로 함께 재빌드해야 한다.
+
+| 검증 | 결과 |
+|---|---|
+| 최종 Release, inference 제외 | 96/96, failure/skip 0 |
+| ASan·UBSan | 93/93, failure/skip 0 |
+| 새 설치 consumer | 59/59, failure/skip 0 |
+| source·installed 전송 | HTTP·native IPC CLI·MCP HTTP·공식 Python MCP stdio |
+| 설치 공개 헤더 | 57개, 소스와 바이트 일치 |
+| 실제 모델 | source·installed 각각 초기 실행과 동일 대화의 후속 실행 통과 |
+
+sanitizer는 llama OFF, leak detection OFF, ASan abort/UBSan halt ON이다. 실제 네이티브 추론은 별도 Release 실행이다. 설치 경로는 build/team-final-stage이며 consumer는 build/team-final-consumer/build이다. installed native consumer의 dyld 로그와 실행 중 파일 매핑에서 이 stage의 libiiLocalLLM 로딩을 확인했다. 네 entrypoint는 0.48.0이고 thin iillm은 libiiLocalLLM·llama·ggml을 직접 연결하지 않는다. source와 stage 라이브러리 SHA-256은 `22ae6f8021dc845593449b69c11e2f82285edbff72bedd7f239221be3e153f52`이다.
+
+실제 모델은 [ggml-org/Qwen3-1.7B-GGUF](https://huggingface.co/ggml-org/Qwen3-1.7B-GGUF)의 Q4_K_M이다. [원본 Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B)와 해당 GGUF 배포의 라이선스는 Apache-2.0이다. 다운로드 revision `daeb8e2d528a760970442092f6bf1e55c3b659eb`, 크기 1,282,439,264 bytes, SHA-256 `d2387ca2dbfee2ffabce7120d3770dadca0b293052bc2f0e138fdc940d9bc7b5`를 고정하고 Hub 메타데이터와 대조했다. 모델은 검증용 저장소에만 추가했고 설치 패키지에 포함하지 않는다.
+
+조건은 macOS arm64·Metal, context/cache 8,192토큰 한 개, maxTokens 1,024, maxTurns 8, 실행당 180초, thinking OFF·tool grammar ON, temperature 0·topP 0.9·topK 40·minP 0·seed 0이다. 자동 compaction은 끈다. 파일에만 존재하는 임의 표식을 Read로 관찰하고, 같은 subject의 TaskCreate 결과가 리더의 공유 목록에 보이며, SendMessage의 실제 메시지가 리더 메일함에 정확히 도착하는지 검사했다. 파일을 바꾼 뒤 같은 팀원 대화로 후속 지시를 전달하고 새 표식에 대해 같은 조건을 검사한다. 완료 상태와 도구 결과의 짝, 중단·삭제·대기 입력 정리도 확인했다. 모델 요청·응답·도구 인수를 예상값으로 대체하지 않았다.
+
+| 실행 | 단계 | 모델 턴 | 생성 토큰 |
+|---|---|---|---|
+| source | initial | 5 | 187 |
+| source | followup | 4 | 119 |
+| installed | initial | 4 | 172 |
+| installed | followup | 4 | 157 |
+
+8B Qwen3의 16,384 및 4,096 컨텍스트 시도는 추론 전 가용 RAM 보호 조건에서 거절되었다. 기존 Qwen2.5 0.5B는 도구를 호출하지 않아 실패했다. Qwen3 1.7B의 4,096 시도에서는 후속 도구 결과가 맞았지만 마지막 응답이 context_overflow로 실패했다. 8,192의 첫 시도에서도 후속 작업·메시지가 새 표식과 일치하지 않아 실패했다. 파일이 바뀌었고 이전 표식을 쓰면 안 된다는 후속 지시를 명시한 뒤 최종 source·installed 검사가 통과했다. 성공 기준과 서비스 메모리 보호를 완화하지 않았다. 이 조건의 실행 증거이며 다른 모델이나 임의 지시의 품질을 보장하지 않는다.
+
+회귀는 부모·팀원 Task opt-out, 기록 게시 실패의 대화 정리, 메시지 포화 시 미소비 입력 보존, 권한 상속·프로필 범위, 발신자 위조 거절, 종료 승인·거절·재전송, 활성 팀 삭제 거절, 부모 종료 시 작업 취소, clear의 팀·작업·메시지 이전, 재시작 시 자동 작업 재실행 금지를 포함한다. 팀 전용 spawn에서 name 누락을 일반 Subagents로 처리하던 경로를 실패로 재현하고 거부하도록 수정했다. 공용 Agent 도구의 이름 없는 일반 Subagents 호출은 유지한다. API는 인증 클라이언트의 부모 대화, MCP는 연결 대화로 소유 범위를 고정한다. 실제 전송 fixture는 미설치 모델의 작업 실패를 확인하며, 위 실제 모델 추론과 별도이다. 공식 MCP Python SDK는 1.26.0이다.
+
+초기 링크 실패, Task opt-out 회귀, MCP 대기 조건과 비활성 부모 endSession 반환값에 대한 테스트 조건 오류, 팀 spawn의 name 누락 회귀 및 모델 실패 로그를 build/team-*에 보존한다. 마지막 생산 수정 뒤 전체 Release가 통과했다. 그 후 기본 CTest에 등록되지 않은 team_runtime_smoke.cpp의 컨텍스트·후속 지시·실패 진단만 갱신했고, 같은 생산 라이브러리로 source·installed 네이티브 fixture를 재빌드·실행했다. 최종 입력 323개의 해시를 대조하며 이 차이는 build/team-shipping-native-fixture-change.json에 기록한다.
+
+구조화 증거는 build/team-verification.json, build/team-current-release.json, build/team-shipping-sanitizer.json, build/team-final-delivery.json, build/team-final-*-wire.json과 build/team-explicit-native-source.log·team-final-installed-native.log이다. 마지막 문서·카탈로그 설치도 다시 대조한다. 이번 검증은 SDK stage이며 전역 SDK나 Society/Dreamscapes 제품 재설치를 뜻하지 않는다. iPhone 제외 지시를 유지한다. 전체 대응표는 28 partial·3 pending·0 complete이며, 리더 자동 실행·참조 메시지 우선순위·팀 계획 승인·별도 프로세스·원격·worktree·실제 앱·모바일 등의 전체 목표는 진행 중이다.
+
+
 ## 0.47 세션 분기 복제
 
 파일 편집 백업·큰 도구 결과·파일 체크포인트를 가진 세션을 새 소유자로 분기한다. 원시 바이트/권한 보존, 대화 경로 갱신, 포함 메시지 경계, 부모 백업 삭제 뒤 자식 복원, 게시 전 실패 정리와 현재 권한 상속을 C++로 구현했다. 자식 에이전트 문맥 분기 및 API·CLI·MCP 연결 전환도 같은 복사 경로를 사용한다. 전체 계약과 참조 경로별 차이는 [SessionFork.md](SessionFork.md)에 기록한다.

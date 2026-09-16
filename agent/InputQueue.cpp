@@ -129,10 +129,19 @@ InputQueue::InputQueue(QString directory, InputQueueOptions options) : options_(
     require(!directory_.isEmpty() && QFile::setPermissions(directory_, directoryPermissions), "Cannot protect input queue root", ErrorCode::StorageFailure);
 }
 QJsonObject InputQueue::enqueue(const QString& id, const QJsonObject& input, const CancellationToken& token) const {
+    return enqueueIdentified(id,QUuid::createUuid().toString(QUuid::WithoutBraces),input,token);
+}
+QJsonObject InputQueue::enqueueIdentified(const QString& id,const QString& inputId,const QJsonObject& input,const CancellationToken& token)const {
+    require(validId(inputId),"Invalid producer input identity");
     token.throwIfCancelled(); auto item = normalized(input, options_); LockedState file(directory_, id, options_, token); auto state = file.read();
+    for(const auto& existing:state.inputs)if(existing["id"]==inputId) {
+        auto payload=existing;payload.remove("id");payload.remove("sequence");
+        require(payload==item,"Producer input identity has a conflicting payload",ErrorCode::AlreadyExists);
+        return {{"input",existing},{"revision",double(state.revision)}};
+    }
     require(state.inputs.size() < options_.maxPending, "Input queue is full", ErrorCode::QueueFull);
     require(state.nextSequence < maximum, "Input queue sequence exhausted", ErrorCode::ResourceLimit);
-    item["id"] = QUuid::createUuid().toString(QUuid::WithoutBraces); item["sequence"] = double(state.nextSequence++);
+    item["id"] = inputId; item["sequence"] = double(state.nextSequence++);
     state.inputs.append(item); file.write(state, token); return {{"input", item}, {"revision", double(state.revision)}};
 }
 QJsonObject InputQueue::snapshot(const QString& id, int offset, int limit, const CancellationToken& token) const {

@@ -20,7 +20,7 @@
 | memory | 프로젝트 Markdown 메모리·검색·자동 정리·세션 메모리 | partial |
 | sessions | JSONL 영속 기록·resume/fork·압축 경계·파일 rewind | partial |
 | subagents | 전문 에이전트·부모 컨텍스트 fork·모델/도구/권한 범위·백그라운드 알림 | partial |
-| teams | 동일 프로세스/별도 프로세스 팀·mailbox·작업·권한 전달·worktree | pending |
+| teams | 동일 프로세스/별도 프로세스 팀·mailbox·작업·권한 전달·worktree | partial |
 | mcp_client | stdio·Streamable HTTP·legacy SSE·초기화·버전/기능 협상·재연결·인증 | partial |
 | mcp_features | 도구·리소스·프롬프트·roots·sampling·elicitation·진행/취소·구독·tasks | partial |
 | mcp_server | iiLocalLLM 및 앱 기능을 MCP로 제공·세션 격리·권한·동시성·구조화 결과 | partial |
@@ -167,3 +167,5 @@ C++ 네이티브 Write·Edit·NotebookEdit의 원본을 사용자 메시지 경�
 ## 세션 분기 복제 (0.47)
 
 C++ 세션 분기에 artifact·체크포인트의 독립 복사, 대화 경로 갱신, 게시 전 권한/계획 준비와 실패 정리를 추가한다. 자식 문맥 분기도 참조 artifact를 복제한다. API·CLI 및 연결 전환 MCP를 제공한다. [SessionFork.md](SessionFork.md)에 범위와 제한을 기록한다. 대화 rewind UI, 팀 공동 이력과 전체 앱/플랫폼 검증은 남아 있으며 27 partial·4 pending·0 complete를 유지한다.
+
+0.48은 C++ 이름 있는 팀원, 독립 대화, 공유 Task, 유휴 팀원의 후속 메시지 실행, 요청 ID에 묶인 종료, 부모 clear 이전과 API/MCP/CLI 제어를 추가한다. 유휴 리더 자동 실행, 중단 팀원 재개, 별도 프로세스·원격·계획 승인·worktree·실제 앱 소비자는 남아 있다. [Teams.md](Teams.md). 대응표는 28 partial·3 pending·0 complete이며 전체 목표는 완료하지 않았다.

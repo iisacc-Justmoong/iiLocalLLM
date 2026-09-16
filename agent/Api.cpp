@@ -55,6 +55,7 @@ QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.se
     "agent.tasks.create", "agent.tasks.get", "agent.tasks.list", "agent.tasks.update", "agent.tasks.claim", "agent.todos.write", "agent.todos.get",
     "agent.shell.start", "agent.shell.output", "agent.shell.stop", "agent.shell.list",
     "agent.agents.run", "agent.agents.output", "agent.agents.stop", "agent.agents.list", "agent.agents.profiles",
+    "agent.teams.create", "agent.teams.delete", "agent.teams.status", "agent.teams.inbox", "agent.teams.send", "agent.teams.spawn", "agent.teams.wait", "agent.teams.stop",
     "agent.inputs.enqueue", "agent.inputs.list", "agent.inputs.remove", "agent.inputs.run", "agent.sessions.end", "agent.sessions.clear",
     "agent.permissions.pending", "agent.permissions.respond", "agent.hooks.status", "agent.hooks.cancel",
     "agent.plan.get", "agent.plan.enter", "agent.plan.exit", "agent.questions.ask",
@@ -65,6 +66,7 @@ QStringList methods() { return {"agent.info", "agent.sessions.create", "agent.se
 bool dreamControl(const QString& method){return method=="agent.memory.dream.status"||method=="agent.memory.dream.cancel";}
 bool extractionControl(const QString& method){return method=="agent.memory.extraction.status"||method=="agent.memory.extraction.cancel";}
 bool hookControl(const QString& method) {return method=="agent.hooks.status"||method=="agent.hooks.cancel";}
+bool teamControl(const QString& method){return method=="agent.teams.status"||method=="agent.teams.inbox"||method=="agent.teams.send"||method=="agent.teams.stop";}
 bool inputControl(const QString& method) {
     return method == "agent.inputs.enqueue" || method == "agent.inputs.list" || method == "agent.inputs.remove" || method=="agent.plan.get";
 }
@@ -85,7 +87,7 @@ bool nested(const QString& path, const QString& root) { return path == root || p
 }
 class Api::Impl : public std::enable_shared_from_this<Impl> {
 public:
-    struct Client { QString id; QByteArray digest; std::shared_ptr<Engine> engine; std::shared_ptr<Subagents> subagents; std::mutex creation; QSet<QString> ending; int reservedSessions=0; std::shared_ptr<PermissionRequests> permissionRequests; };
+    struct Client { QString id; QByteArray digest; std::shared_ptr<Engine> engine; std::shared_ptr<Subagents> subagents; std::shared_ptr<Teams> teams; std::mutex creation; QSet<QString> ending; int reservedSessions=0; std::shared_ptr<PermissionRequests> permissionRequests; };
     struct Job {
         QString id, method, clientId; QJsonObject params; CancellationToken token;
         Clock::time_point deadline; std::atomic_bool running = false;
@@ -153,6 +155,12 @@ public:
                 client->subagents = std::make_shared<Subagents>(model, registry, policy, engineOptions, so);
                 Subagents::attach(engineOptions,client->subagents);
             }
+            if(options.teamsEnabled){
+                require(options.teams.workingDirectory.isEmpty(),"Agent API assigns team workspace and state");
+                auto config=options.teams;config.workingDirectory=options.workingDirectory;
+                client->teams=std::make_shared<Teams>(model,registry,policy,engineOptions,config);
+                Teams::attach(engineOptions,client->teams);
+            }
             client->engine = std::make_shared<Engine>(model, registry, policy, engineOptions);
             clients.emplace(client->id, std::move(client));
         }
@@ -182,7 +190,7 @@ public:
                 {"working_directory", options.workingDirectory}, {"project_context_enabled", options.engine.projectContext.enabled},
                 {"auto_compact_enabled", options.engine.compaction.automatic}, {"tool_search_enabled", options.engine.toolSearch.enabled},
                 {"task_tools_enabled", client->engine->taskToolsEnabled()}, {"plan_tools_enabled",bool(client->engine->planning())}, {"background_tasks_enabled", client->engine->backgroundTasksEnabled()},
-                {"input_queue_enabled", true}, {"skills_enabled", options.engine.skills.enabled}, {"subagents_enabled", options.subagentsEnabled},
+                {"input_queue_enabled", true}, {"skills_enabled", options.engine.skills.enabled}, {"subagents_enabled", options.subagentsEnabled}, {"teams_enabled",options.teamsEnabled},
                 {"hooks_enabled",!options.engine.hooks.isEmpty()},{"async_hook_controls_enabled",true},
                 {"max_async_hook_wake_runs",options.engine.maxAsyncHookWakeRuns},{"permission_requests_enabled",bool(client->permissionRequests)},
                 {"user_questions_enabled",bool(client->engine->userQuestionTool())},{"project_memory_enabled",client->engine->projectMemoryEnabled()},
@@ -287,6 +295,18 @@ public:
             const auto value = future.get();
             require(!timedOut && Clock::now() < job->deadline, "Agent API request deadline exceeded", ErrorCode::Timeout);
             return QJsonObject{{"text", value.text}, {"result", value.data}, {"is_error", value.isError}};
+        }
+        static const QMap<QString,QString> teamMethods{{"agent.teams.create","TeamCreate"},{"agent.teams.delete","TeamDelete"},
+            {"agent.teams.status","TeamStatus"},{"agent.teams.inbox","TeamInbox"},{"agent.teams.send","SendMessage"},
+            {"agent.teams.spawn","Agent"},{"agent.teams.wait","TeamWait"},{"agent.teams.stop","TeamStop"}};
+        if(teamMethods.contains(method)){
+            const auto id=text(p,"session_id");auto args=p;args.remove("session_id");
+            require(client->engine->sessionMetadata(id).workingDirectory==options.workingDirectory,"Session belongs to a different workspace",ErrorCode::NotFound);
+            auto future=std::async(std::launch::async,[client,id,name=teamMethods[method],args,job,callback]{return client->engine->runTeamTool(id,name,args,job->token,
+                [callback](const Event& event){if(callback)callback(toJson(event));});});
+            bool timedOut=false;while(future.wait_for(10ms)!=std::future_status::ready){timedOut|=Clock::now()>=job->deadline;if(timedOut)job->token.cancel();}
+            const auto value=future.get();require(!timedOut&&Clock::now()<job->deadline,"Agent API request deadline exceeded",ErrorCode::Timeout);
+            return QJsonObject{{"text",value.text},{"result",value.data},{"is_error",value.isError}};
         }
         if(method=="agent.plan.enter"||method=="agent.plan.exit"||method=="agent.questions.ask") {
             const auto id=text(p,"session_id");auto arguments=p;arguments.remove("session_id");
@@ -514,7 +534,7 @@ public:
                 {"state", job->running ? "running" : "queued"}, {"cancel_requested", job->token.isCancelled()}});
             return handle;
         }
-        const bool control = dreamControl(method) || extractionControl(method) || hookControl(method) || inputControl(method) || method == "agent.sessions.end" || method == "agent.sessions.clear" || method == "agent.agents.output" || method == "agent.agents.stop" || method == "agent.agents.list";
+        const bool control = dreamControl(method) || extractionControl(method) || hookControl(method) || inputControl(method) || teamControl(method) || method == "agent.sessions.end" || method == "agent.sessions.clear" || method == "agent.agents.output" || method == "agent.agents.stop" || method == "agent.agents.list";
         const auto used = std::count_if(active.begin(), active.end(), [control](const auto& item) { return item.second->inputControl == control; });
         const auto capacity = control ? options.maxConcurrentInputControls + options.maxQueuedInputControls
             : options.maxConcurrentRequests + options.maxQueuedRequests;
@@ -535,6 +555,7 @@ public:
         workers.waitForDone();
         inputWorkers.waitForDone();
         for (const auto& [id, client] : clients) client->engine->close();
+        for (const auto& [id, client] : clients) if(client->teams)client->teams->close();
         for (const auto& [id, client] : clients) if (client->subagents) client->subagents->close();
         { std::lock_guard lock(mutex); clients.clear(); stateLock.reset(); }
     }
@@ -544,7 +565,7 @@ Api::Api(std::shared_ptr<Model> model, std::shared_ptr<ToolRegistry> registry,
     : d(std::make_shared<Impl>(std::move(model), std::move(registry), std::move(policy), std::move(options))) {}
 Api::~Api() { d->stop(); }
 bool Api::isControlMethod(const QString& method) const {
-    return dreamControl(method)||extractionControl(method)||hookControl(method)||method=="agent.plan.get"||method=="agent.permissions.pending"||method=="agent.permissions.respond"||method=="agent.cancel"||method=="agent.status";
+    return dreamControl(method)||extractionControl(method)||hookControl(method)||teamControl(method)||method=="agent.plan.get"||method=="agent.permissions.pending"||method=="agent.permissions.respond"||method=="agent.cancel"||method=="agent.status";
 }
 RpcHandle Api::dispatch(QString method, QJsonObject params, QString credential, RpcEventCallback callback) {
     return d->dispatch(std::move(method), std::move(params), std::move(credential), std::move(callback));

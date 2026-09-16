@@ -36,6 +36,8 @@ struct EngineOptions {
     ToolSearchOptions toolSearch;
     bool taskToolsEnabled = false; // Opt in for embedded hosts; daemon/MCP CLI enable it by default.
     bool taskToolsDeferred = true;
+    std::shared_ptr<TaskStore> taskStore; // Optional host-owned store, e.g. team boards.
+    std::function<QString(const QString&)> taskListId; // Trusted session -> board namespace.
     InputQueueOptions inputQueue;
     SkillOptions skills;
     QList<Tool> additionalTools; // Host-owned orchestration tools; merged into each live registry snapshot.
@@ -164,6 +166,10 @@ public:
     bool taskToolsEnabled() const;
     bool backgroundTasksEnabled() const;
     bool subagentsEnabled() const;
+    bool teamsEnabled() const;
+    QList<ToolDefinition> teamToolDefinitions() const;
+    ToolResult runTeamTool(const QString& sessionId,const QString& name,const QJsonObject& arguments = {},
+        const CancellationToken& = {},const EventCallback& = {},std::shared_ptr<PermissionRequests> = {}) const;
     QList<ToolDefinition> subagentToolDefinitions() const;
     bool permissionRequestsEnabled() const;
     std::optional<Tool> userQuestionTool(bool deferred = false) const;
@@ -173,7 +179,7 @@ public:
     QJsonObject planStatus(const QString& sessionId,const CancellationToken& = {}) const;
     ToolResult runPlanTool(const QString& sessionId,const QString& name,const QJsonObject& arguments = {},
         const CancellationToken& = {},const EventCallback& = {},std::shared_ptr<PermissionRequests> = {}) const;
-    void stopSubagents(const QString& sessionId) const; // Host lifecycle cleanup, independent of model permissions.
+    void stopSubagents(const QString& sessionId) const; // Host lifecycle cleanup for subagents and teammates, independent of model permissions.
     ToolResult runSubagentTool(const QString& sessionId, const QString& name, const QJsonObject& arguments = {},
         const CancellationToken& = {}, const EventCallback& = {}, std::shared_ptr<PermissionRequests> = {}) const;
     ToolResult runShellTool(const QString& sessionId, const QString& name, const QJsonObject& arguments = {},
