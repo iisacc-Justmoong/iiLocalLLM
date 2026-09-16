@@ -1244,7 +1244,7 @@ ToolResult Engine::runTeamTool(const QString& id,const QString& name,const QJson
     if(!QStringList{"TeamCreate","TeamDelete","TeamStatus","TeamInbox","TeamWait","TeamStop","SendMessage","Agent"}.contains(name))throw Error(ErrorCode::NotFound,"Unknown team tool");
     if(name=="Agent"&&!args.contains("name"))throw Error(ErrorCode::InvalidArgument,"Team spawn requires a teammate name");
     token.throwIfCancelled();const auto session=d->store.metadata(id);Impl::NativeOperation operation(*d,id,token);
-    auto registry=std::make_shared<ToolRegistry>();const auto tools=name=="Agent"?d->additionalTools():d->options.additionalTools;
+    auto registry=std::make_shared<ToolRegistry>();const auto tools=d->additionalTools();
     for(const auto& tool:tools)if(tool.definition.metadata["source"]=="builtin.team"||tool.definition.metadata["team_capable"]==true)registry->add(tool);
     ToolContext context{id,uuid(),session.workingDirectory,QDir(d->options.sessionsDirectory).filePath(id+"/artifacts"),operation.token};
     context.transcriptPath=transcriptPath(id);context.sessionSnapshot=std::make_shared<Session>(session);

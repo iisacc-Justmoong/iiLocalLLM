@@ -1,5 +1,41 @@
 # 구현 검증 기록
 
+## 0.51 역할과 미결 요청에 맞춘 팀 메시지 스키마
+
+리더에게 종료 요청 객체를, 일반 팀원에게 문자열 메시지를 제공한다. 해당 팀원에게 실제 미결 요청이 생기면 현재 request_id·team-lead 수신자·필수 approve와 거부 이유를 제한하는 응답 스키마를 추가한다. 응답 처리 뒤 제거하고 새 요청에는 새 ID를 사용한다. Engine의 직접 팀 호출도 도구 탐색과 같은 추가 도구 공급자를 사용한다. 기존 실행 시 권한·요청 소유권 검사를 유지한다. [Teams.md](Teams.md)에 참조의 고정 합집합과 현재 동적 스키마의 차이를 기록했다. 기존 Qt·jsoncons를 재사용하고 생산 의존성은 추가하지 않았다.
+
+| 검증 | 결과 |
+|---|---|
+| Release 전체, inference 라벨 제외 | 97/97, failure 0 / skip 0 |
+| ASan·UBSan 최종 영향 범위 | 3/3, failure 0 / skip 0 |
+| 새 설치 소비자 전체 | 58/59, failure 1 / skip 0 |
+| 같은 API 소비자, 짧은 작업 경로 | 통과, 동일 실행 파일·라이브러리 |
+| 팀 회귀 검사 | 39/39, Qt init/cleanup 포함 |
+| source·installed 전송 | HTTP·IPC CLI·MCP HTTP·공식 MCP stdio |
+
+설치 소비자 전체에서 installed_agent_api_consumer 한 항목은 종료 코드 3의 IPC listen 실패였다. 진단 사본은 긴 검증 디렉터리 아래 103바이트 소켓 경로와 QLocalServer::listen: Name error를 보고했다. 원래 실행 파일을 소스·바이너리 변경 없이 짧은 build 작업 경로에서 실행해 공개 C++ API와 IPC/HTTP setter 검사를 통과했다. 전체 59개가 한 번에 통과했다고 합산하지 않는다. 원래 실패·동일 경로 재현·짧은 경로 판정은 team-protocol-closure-consumer-path-verification.json과 ipc-path-probe 로그에 남겼다.
+
+회귀 검사에서 리더의 종료 응답·사용자 지정 요청 ID·요청의 approve 필드가 기존 스키마를 통과하던 문제를 먼저 재현했다. 새 검사는 미결 요청 유무, JSON처럼 보이는 일반 문자열, 실제 요청 ID, 수신자, 승인·거부 이유, 다른 팀원의 동시 실행, 거부 후 제거, 새 요청과 이전 ID의 분리, 동적 도구의 직접 호출을 확인한다. 개발 중 도구 조회와 기존 종료 응답 검사에서 빈 JSON 필드가 삽입되는 부작용도 발견해 value 조회로 수정했다. 최종 회귀는 잘못된 응답 거부 뒤에도 정상 종료 요청이 가능함을 확인한다. 실패 기록은 team-protocol-red-tests.log, team-protocol-green-tests.log, team-protocol-runtime-red-tests.log에 보존한다. 최종 Release 전체와 설치 소비자·네이티브 시험은 그 수정 이후의 소스이다. 마지막 한 줄의 상태 조회 수정 전 ASan·UBSan 전체 93/93이 통과했으며, 최종 바이너리는 영향받는 teams·agent_api·mcp_server 3개를 재검사했다. 최종 바이너리로 93개 전체를 재실행했다고 합산하지 않는다. 선행 전체 기록은 build/team-protocol-serial-sanitizer.json이다.
+
+| 설치 범위 | 작업 | 단계 | 모델 턴 | 기록된 생성 토큰 | 판정 |
+|---|---|---|---|---|---|
+| source | explicit | initial | 5 | 573 | 통과 |
+| source | explicit | followup | 5 | 524 | 통과 |
+| source | automatic | startup | 6 | 239 | 통과 |
+| source | automatic | idle | 5 | 210 | 통과 |
+| installed | explicit | initial | 5 | 553 | 통과 |
+| installed | explicit | followup | 5 | 539 | 통과 |
+| installed | automatic | startup | 6 | 233 | 통과 |
+| installed | automatic | idle | 5 | 212 | 통과 |
+
+실행한 최초·후속·자동 시작·자동 유휴 8단계가 모두 통과했다. 이전 0.50의 installed 명시적 메시지 실패 기록은 아래에 그대로 남긴다. Qwen3.5 2B Q4_K_M 파일의 크기 1,280,835,840 bytes·GGUF v3·SHA-256 aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223를 재확인했다. 기존 두 네이티브 시험의 프롬프트·파일 표식 방식·턴·토큰·시간 한도를 바꾸지 않았다. 각 단계의 표식은 파일에만 존재하는 새로운 임의 값이며 예상 답을 모델에 주입하지 않는다. 모델·실행 설정은 0.50과 같으며 최종 source·installed에서 각 시험을 한 번씩 실행했다. 마지막 상태 조회 수정 전 선행 source 4단계도 통과했으며, 그 기록은 build/team-protocol-source-final-native.json과 team-protocol-serial-release.json에 별도로 보존한다. 위 표는 마지막 수정 이후의 바이너리 결과이다. 자동 작업 두 번째 단계에는 새 spawn이나 명시적 메시지를 보내지 않는다.
+
+실제 모델 시험은 일반 메시지와 작업 수행을 검증한다. 종료 승인·거부의 상태 전환은 C++ FunctionModel 회귀에서 검증하며, Qwen의 실제 종료 의사결정은 이번 시험 범위에 포함하지 않았다. 단일 모델·기기·워크플로의 결과를 전체 모델 품질이나 하네스 동등성으로 일반화하지 않는다. sanitizer는 기존 llama OFF·leak detection OFF·ASan abort/UBSan halt 설정을 유지한다.
+
+동결한 코드·빌드 입력 331개는 최종 검증까지 변경되지 않았다. source/stage 라이브러리 SHA-256은 791b4f977de687fbccf58519bfe407bb607de5c148be2913e44589ebc4ed9b53이다. build/team-protocol-closure-final-stage와 build/team-protocol-closure-final-consumer/build에서 새 설치·소비자·실제 라이브러리 로딩을 확인한다. 네 진입점은 0.51.0이며 thin iillm의 직접 iiLocalLLM·llama·ggml 링크는 없다. 최종 문서·헤더·Mach-O UUID 비교는 team-protocol-closure-final-package-closure.json에 별도로 남긴다.
+
+원본 실행 명령·종료 코드·검사별 결과는 build/team-protocol-closure-serial-release.json, team-protocol-closure-serial-sanitizer.json, team-protocol-closure-source-final-native.json, team-protocol-closure-final-delivery.json과 team-protocol-closure-verification.json에 있다. 이번 설치는 SDK 검증용 stage이다. 제품 앱·기기를 재설치하지 않았고 iPhone 제외 조건을 유지한다. 전체 범위는 partial 28 / pending 3 / complete 0이며 목표 완료로 판정하지 않는다.
+
 ## 0.50 조건부 도구 인자와 네이티브 XML 타입 보존
 
 SendMessage의 일반 문자열에는 비어 있지 않은 summary가 필요하고, 구조화된 제어 메시지는 summary 없이 허용하는 계약을 C++·API·MCP 공통 JSON Schema에 표현했다. 고정 llama.cpp의 Qwen3.5 전용 파서에서 완전한 객체 anyOf, 혼합 타입의 JSON 값과 소규모 인자 순서를 처리한다. 모델용 도구 설명·이전 호출도 같은 인코딩으로 렌더링하며 저장된 인자·스키마는 보존한다. 기존 C++·Qt·jsoncons·llama.cpp를 재사용하고 생산 의존성은 추가하지 않았다. 계약과 제한은 [Teams.md](Teams.md), 보정 출처는 third_party/llama-common/PATCHES.md에 있다.

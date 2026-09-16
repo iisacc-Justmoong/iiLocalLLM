@@ -1,6 +1,6 @@
 # 로컬 팀 실행
 
-0.50은 이름 있는 팀원이 독립된 C++ Engine 대화에서 실행되고, 같은 팀의 Task 목록과 메시지를 공유하며 유휴 상태에서 후속 메시지를 처리하는 기능을 제공한다. 기존 일회성 Subagents와 함께 사용할 수 있다. 전체 Claude Code 팀 기능과의 호환성은 아직 partial이다.
+0.51은 이름 있는 팀원이 독립된 C++ Engine 대화에서 실행되고, 같은 팀의 Task 목록과 메시지를 공유하며 유휴 상태에서 후속 메시지를 처리하는 기능을 제공한다. 기존 일회성 Subagents와 함께 사용할 수 있다. 전체 Claude Code 팀 기능과의 호환성은 아직 partial이다.
 
 참조는 분석본 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `TeamCreateTool`, `TeamDeleteTool`, `SendMessageTool`, `AgentTool` 및 `utils/swarm/inProcessRunner.ts`이다. 현재 참조의 SendMessage 입력은 `to`, `message`, 선택 `summary`이며, 과거 예제의 `recipient`/`content` 형식을 수용했다고 주장하지 않는다.
 
@@ -43,13 +43,13 @@ TeamsOptions::autoClaimTasks는 기본 true이며 시작 시점과 유휴 상태
 
 공유 Task는 UUID 기반 전용 namespace를 사용한다. 부모와 팀원, Task lifecycle 검증 에이전트가 같은 목록에 접근한다. 다른 부모·팀·인증 클라이언트의 목록은 분리된다. TeamDelete의 TaskStore::retire는 내용 삭제와 함께 tombstone을 남겨 오래된 도구·다른 프로세스가 목록을 재생성하지 못하게 한다.
 
-팀원의 도구는 선택한 프로필, 부모 필터와 현재 권한 정책을 함께 만족해야 한다. 각 후속 실행 전에 부모의 세션 권한을 상속한다. 팀원의 도구·모델·프로필 본문은 시작 시의 스냅샷이다. 일반 Subagents와 달리 현재 팀원 실행은 프로필의 skills/initialPrompt 등 추가 시작 설정을 거부한다. 팀원이 다시 Agent/TeamCreate/TeamDelete를 호출하여 범위를 넓힐 수 없다. ReadOnly 프로필은 문자열 메시지를 보낼 수 있지만 구조화된 종료 메시지는 읽기 전용 작업으로 취급하지 않는다.
+팀원의 도구는 선택한 프로필, 부모 필터와 현재 권한 정책을 함께 만족해야 한다. 각 후속 실행 전에 부모의 세션 권한을 상속한다. 팀원의 일반 도구·모델·프로필 본문은 시작 시의 스냅샷이며 SendMessage의 프로토콜 스키마는 매 턴 미결 요청에 맞춰 갱신한다. 일반 Subagents와 달리 현재 팀원 실행은 프로필의 skills/initialPrompt 등 추가 시작 설정을 거부한다. 팀원이 다시 Agent/TeamCreate/TeamDelete를 호출하여 범위를 넓힐 수 없다. ReadOnly 프로필은 문자열 메시지를 보낼 수 있지만 구조화된 종료 메시지는 읽기 전용 작업으로 취급하지 않는다.
 
 문자열 message는 비어 있지 않은 summary를 요구하며, 구조화된 제어 메시지는 summary 없이도 허용한다. 0.50은 이 조건을 완전한 객체 두 개의 anyOf로 입력 스키마에 표현한다. 최상위 properties는 도구 탐색을 위해 유지한다. C++·API·MCP가 같은 스키마를 사용하고 실행 전 전체 JSON Schema 검증을 수행한다. 공백만 있는 요약은 실행 시 추가로 거부한다.
 
 고정 llama.cpp의 Qwen3.5 전용 XML 파서는 이 객체 대안을 각각 컴파일한다. 문자열·객체를 함께 허용하는 message 값은 XML 안에서도 JSON으로 인코딩해 실제 객체와 JSON 문자를 담은 문자열을 구분한다. 명시적 문자열 필드인 to·summary는 기존 raw XML 형식을 유지한다. 속성이 여섯 개 이하인 도구는 필수·선택 인자의 모든 순서와 중복 방지를 지원하며, 더 큰 도구는 기존 필수 인자 우선 순서를 유지한다. 임의 JSON Schema 조합과 raw 문자열의 길이 등 모든 제약을 생성 문법에서 보장하는 것은 아니므로 전체 입력 검증이 최종 기준이다. 0.49의 실제 모델 실패와 0.50의 검증 결과는 [Verification.md](Verification.md)에 구분하여 기록한다.
 
-이 형식은 렌더링한 도구 설명에도 안내하고, 이전 도구 호출의 혼합 타입 문자열도 동일한 JSON 인코딩으로 렌더링한다. 입력 스키마·저장된 대화·API 인자는 수정하지 않는다. 예를 들어 message가 문자열 hello라면 모델용 XML 값은 "hello"이며, 파싱 후 전달되는 값은 원래 문자열 hello이다. JSON 객체를 담은 문자열과 실제 제어 객체도 구별한다.
+이 형식은 렌더링한 도구 설명에도 안내하고, 이전 도구 호출의 혼합 타입 문자열도 동일한 JSON 인코딩으로 렌더링한다. 입력 스키마·저장된 대화·API 인자는 수정하지 않는다. 문자열·객체 합집합 스키마에서 message가 문자열 hello라면 모델용 XML 값은 "hello"이며, 파싱 후 전달되는 값은 원래 문자열 hello이다. JSON 객체를 담은 문자열과 실제 제어 객체도 구별한다. 0.51의 미결 요청이 없는 팀원은 message에 문자열만 허용하므로 기존 raw XML 문자열 형식을 사용한다. 스키마가 바뀌면 현재 도구 정의에 따라 이전 호출도 다시 렌더링하며, 보관된 인자의 타입과 값은 유지한다.
 
 도구 결과에 의존하는 후속 호출을 한 응답에 미리 만들지 않도록 호스트가 EngineOptions::maxToolCallsPerTurn=1을 설정할 수 있다. 0.49는 이 한도를 ModelRequest::parallelToolCalls=false로 전달하고, ServiceModel의 문맥 측정과 생성 모두 네이티브 parallel_tool_calls 설정에 연결한다. 실제 반환 개수도 기존 한도로 검사한다. 기본 여러 도구 호출 설정은 유지한다.
 
@@ -68,6 +68,12 @@ TeamWait의 idle은 현재 실행·대기 메시지가 없다는 관측이다. �
 ## 종료·저장·복구
 
 리더의 구조화된 `message: {type: "shutdown_request", reason?: "..."}`에는 호스트가 request_id를 부여한다. 해당 팀원만 team-lead에게 `{type: "shutdown_response", request_id, approve, reason?}`를 보낼 수 있다. 다른 팀원의 요청 ID, 이미 처리한 ID, 이유 없는 거부는 실패한다. 승인은 성공 도구 결과를 대화에 보존하고 이후 모델 호출과 도구 권한을 차단한다. 거부는 실행을 계속 허용한다. 구조화된 브로드캐스트와 아직 구현하지 않은 plan_approval_response는 거부한다.
+
+0.51은 이 실행 권한을 모델에 제공하는 입력 스키마에도 반영한다. 리더 스키마에는 종료 요청만, 일반 팀원 스키마에는 문자열 메시지만 제공한다. 호스트가 해당 팀원에게 종료 요청을 발행하면 다음 도구 목록부터 실제 request_id와 team-lead 수신자로 제한된 응답을 추가한다. approve는 필수이며 false이면 비어 있지 않은 reason도 요구한다. 응답 처리 후 선택지는 제거하고 새 요청에는 새 ID를 사용한다. 일반 문자열에 JSON을 넣거나 다른 팀원의 요청을 관측해도 응답 권한이 생기지 않는다. 도구 목록을 만든 후 상태가 바뀌는 경쟁은 기존 Teams::send의 소유권·미결 요청 검사로 다시 차단한다. 공백만 있는 거부 이유와 수신자의 현재 상태 등은 실행 시 검증한다.
+
+참조 SendMessageTool은 type으로 분기하는 객체 합집합과 미리 정해진 전역 스키마를 사용한다. 현재의 역할·미결 요청별 스키마는 iiLocalLLM이 이미 적용하던 더 엄격한 로컬 권한 계약을 명시한 것이며, 참조가 같은 동적 스키마를 제공한다고 주장하지 않는다. Engine의 직접 팀 호출도 도구 탐색과 같은 additionalToolsProvider를 사용한다. API·MCP는 기존 리더 세션 범위를 유지한다. 생산 의존성은 추가하지 않는다.
+
+요청 ID 조회는 JSON 상태를 변경하지 않는다. 유효하지 않은 종료 응답을 거부할 때 빈 미결 요청 필드를 만들지 않으므로 이후 리더의 정상 종료 요청도 계속 허용한다.
 
 메시지는 팀 outbox를 먼저 저장한 뒤 InputQueue로 전달한다. 큐가 가득 차면 `stored: true`, `success: false`와 개별 `queued: false`/`delivery_error`로 보존 여부와 전달 여부를 구분한다. 전송 재시도는 동일 입력 ID를 사용한다. 이미 소비된 메시지만 메일함에서 밀어내며, 미소비 메시지는 한도에 도달하면 새 메시지를 거부하여 보존한다. Engine의 ID 검사는 중복 transcript 입력을 억제한다. 프로세스 중단 전후의 외부 도구 실행까지 exactly-once로 보장하지 않는다.
 

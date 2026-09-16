@@ -184,7 +184,14 @@ def main():
                                 assert not validator.is_valid({**plain, 'summary': ''})
                                 assert validator.is_valid({**plain, 'summary': 'File observed'})
                                 assert validator.is_valid({'to': 'worker', 'message': {'type': 'shutdown_request'}})
+                                for protocol in (
+                                    {'type': 'shutdown_request', 'request_id': 'invented'},
+                                    {'type': 'shutdown_request', 'approve': True},
+                                    {'type': 'shutdown_response', 'request_id': 'invented', 'approve': True},
+                                ):
+                                    assert not validator.is_valid({'to': 'worker', 'message': protocol})
                                 report['official_conditional_schema'] = True
+                                report['official_leader_protocol_schema'] = True
                                 created = await client.call_tool('iiLocalLLM.agent.teams.create', {'team_name': 'stdio'})
                                 assert not created.isError and created.structuredContent['team_name'] == 'stdio'
                                 status = await client.call_tool('iiLocalLLM.agent.teams.status', {})

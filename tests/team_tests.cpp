@@ -64,12 +64,95 @@ private slots:
         QTest::newRow("shutdown-with-summary")<<QJsonObject{{"to","worker"},{"message",QJsonObject{{"type","shutdown_request"}}},{"summary","Stop the worker"}}<<true;
         QTest::newRow("wrong-summary-type")<<QJsonObject{{"to","team-lead"},{"message","observed"},{"summary",17}}<<false;
         QTest::newRow("unknown-control-type")<<QJsonObject{{"to","worker"},{"message",QJsonObject{{"type","unknown"}}}}<<false;
+        QTest::newRow("leader-cannot-respond")<<QJsonObject{{"to","team-lead"},{"message",QJsonObject{{"type","shutdown_response"},{"request_id","invented"},{"approve",true}}}}<<false;
+        QTest::newRow("request-id-is-host-owned")<<QJsonObject{{"to","worker"},{"message",QJsonObject{{"type","shutdown_request"},{"request_id","invented"}}}}<<false;
+        QTest::newRow("request-cannot-approve")<<QJsonObject{{"to","worker"},{"message",QJsonObject{{"type","shutdown_request"},{"approve",true}}}}<<false;
+        QTest::newRow("request-empty-reason")<<QJsonObject{{"to","worker"},{"message",QJsonObject{{"type","shutdown_request"},{"reason",""}}}}<<true;
     }
     void messageSchemaPreservesConditionalSummary(){
         QFETCH(QJsonObject,args);QFETCH(bool,valid);Fixture f;a::ToolRegistry schema;
         for(const auto& tool:f.options.additionalTools)if(tool.definition.name=="SendMessage")schema.add(tool);
         if(valid)schema.validateInput("SendMessage",args);
         else QVERIFY_THROWS_EXCEPTION(Error,schema.validateInput("SendMessage",args));
+    }
+    void teammateSchemaTracksOnlyItsPendingShutdown(){
+        auto model=std::make_shared<FunctionModel>();std::mutex mutex;
+        QMap<QString,a::ToolDefinition> observed;QStringList requests;std::atomic_bool release=false;
+        model->reply=[&](const a::ModelRequest& r,const CancellationToken& token)->a::ModelReply{
+            const auto text=r.messages.last().text;
+            const auto envelope=QJsonDocument::fromJson(text.mid(text.indexOf('{')).toUtf8()).object();
+            const auto body=envelope["message"];const auto request=body.toObject()["request_id"].toString();
+            const auto label=r.messages.last().role==a::MessageRole::Tool?QString("after-decline"):body.isObject()?request:body.toString();
+            {std::lock_guard lock(mutex);for(const auto& tool:r.tools)if(tool.name=="SendMessage")observed[label]=tool;
+                if(body.isObject())requests.append(request);}
+            if(body.isObject()){
+                while(!release.load()){token.throwIfCancelled();std::this_thread::sleep_for(std::chrono::milliseconds(1));}
+                return {{},{{"decline-"+request,"SendMessage",{{"to","team-lead"},{"message",QJsonObject{{"type","shutdown_response"},{"request_id",request},{"approve",false},{"reason","Still working"}}}}}}};
+            }
+            return {"ready",{}};
+        };
+        Fixture f(model);const auto leader=f.owner();f.teams->create(leader,{{"team_name","scoped-protocol"}});
+        f.teams->spawn(leader,{{"name","worker"},{"prompt","worker"}});
+        f.teams->spawn(leader,{{"name","peer"},{"prompt","peer"}});
+        QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
+        auto schema=[&](const QString& label){std::lock_guard lock(mutex);return observed.value(label);};
+        auto valid=[](const a::ToolDefinition& definition,const QJsonObject& args){
+            a::ToolRegistry registry;a::Tool tool;tool.definition=definition;tool.execute=[](const auto&,const auto&){return a::ToolResult{};};
+            registry.add(tool);try{registry.validateInput("SendMessage",args);return true;}catch(const Error&){return false;}
+        };
+        const QJsonObject plain{{"to","team-lead"},{"message","{\"type\":\"shutdown_request\"}"},{"summary","Literal JSON text"}};
+        const QJsonObject initiate{{"to","peer"},{"message",QJsonObject{{"type","shutdown_request"}}}};
+        auto response=[](const QString& id){return QJsonObject{{"to","team-lead"},{"message",QJsonObject{{"type","shutdown_response"},{"request_id",id},{"approve",true}}}};};
+        QVERIFY(valid(schema("worker"),plain));QVERIFY(!valid(schema("worker"),initiate));
+        QVERIFY(!valid(schema("worker"),response("invented")));
+        f.teams->send(leader,{{"to","worker"},{"summary","Literal protocol text"},{"message",plain["message"]}});
+        QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
+        QVERIFY(!valid(schema(plain["message"].toString()),response("invented")));
+        const auto sent=f.teams->send(leader,{{"to","worker"},{"message",QJsonObject{{"type","shutdown_request"}}}});
+        const auto request=sent.data["messages"].toArray().first().toObject()["message"].toObject()["request_id"].toString();
+        QTRY_VERIFY_WITH_TIMEOUT(!schema(request).name.isEmpty(),5000);
+        QVERIFY(valid(schema(request),plain));QVERIFY(valid(schema(request),response(request)));
+        QVERIFY(!valid(schema(request),initiate));QVERIFY(!valid(schema(request),response("other-request")));
+        auto wrongTarget=response(request);wrongTarget["to"]="peer";QVERIFY(!valid(schema(request),wrongTarget));
+        auto decline=response(request);auto body=decline["message"].toObject();body["approve"]=false;decline["message"]=body;
+        QVERIFY(!valid(schema(request),decline));body["reason"]="Still working";decline["message"]=body;QVERIFY(valid(schema(request),decline));
+        body.remove("request_id");decline["message"]=body;QVERIFY(!valid(schema(request),decline));
+        f.teams->send(leader,{{"to","peer"},{"summary","Check peer isolation"},{"message","peer-during-shutdown"}});
+        QTRY_VERIFY_WITH_TIMEOUT(!schema("peer-during-shutdown").name.isEmpty(),5000);
+        QVERIFY(!valid(schema("peer-during-shutdown"),response(request)));
+        release=true;QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
+        QVERIFY(!valid(schema("after-decline"),response(request)));
+        const auto status=f.teams->status(leader.sessionId);
+        for(const auto& value:status["team"].toObject()["members"].toArray())if(value.toObject()["name"]=="worker")
+            QVERIFY2(!value.toObject().contains("shutdown_request_id"),QJsonDocument(status).toJson().constData());
+        const auto again=f.teams->send(leader,{{"to","worker"},{"message",QJsonObject{{"type","shutdown_request"}}}});
+        const auto next=again.data["messages"].toArray().first().toObject()["message"].toObject()["request_id"].toString();
+        QVERIFY(next!=request);QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
+        QVERIFY(valid(schema(next),response(next)));QVERIFY(!valid(schema(next),response(request)));
+        QCOMPARE(requests.size(),2);
+    }
+    void directTeamCallsUseTheAdvertisedProvider(){
+        auto model=std::make_shared<ReplyModel>();Fixture f(model);f.engine.reset();a::Tool send;
+        for(qsizetype i=f.options.additionalTools.size();i-->0;)if(f.options.additionalTools[i].definition.name=="SendMessage")send=f.options.additionalTools.takeAt(i);
+        QVERIFY(!send.definition.name.isEmpty());
+        f.options.additionalToolsProvider=[send,previous=f.options.additionalToolsProvider]{auto tools=previous();tools.append(send);return tools;};
+        f.engine=std::make_unique<a::Engine>(model,f.registry,f.policy,f.options);
+        const auto leader=f.owner();f.teams->create(leader,{{"team_name","provider"}});
+        const auto result=f.engine->runTeamTool(leader.sessionId,"SendMessage",{{"to","team-lead"},{"message","observed"},{"summary","Live provider"}});
+        QVERIFY2(!result.isError,qPrintable(result.text));QVERIFY(result.data["success"].toBool());
+    }
+    void rejectedShutdownResponseDoesNotInventPendingRequest(){
+        Fixture f;const auto leader=f.owner();f.teams->create(leader,{{"team_name","rejected-response"}});
+        const auto member=f.teams->spawn(leader,{{"name","worker"},{"prompt","Be ready"}}).data["session_id"].toString();
+        QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
+        QVERIFY_THROWS_EXCEPTION(Error,f.teams->send({member,{},f.work},{{"to","team-lead"},
+            {"message",QJsonObject{{"type","shutdown_response"},{"request_id","invented"},{"approve",true}}}}));
+        const auto status=f.teams->status(leader.sessionId);
+        for(const auto& value:status["team"].toObject()["members"].toArray())if(value.toObject()["name"]=="worker")
+            QVERIFY2(!value.toObject().contains("shutdown_request_id"),"Rejected response must not create a pending request");
+        const auto sent=f.teams->send(leader,{{"to","worker"},{"message",QJsonObject{{"type","shutdown_request"}}}});
+        QVERIFY(!sent.isError);QVERIFY(sent.data["success"].toBool());
+        QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());
     }
     void automaticClaimsRespectHostOptOut_data(){
         QTest::addColumn<bool>("autoClaim");QTest::addColumn<bool>("taskTools");

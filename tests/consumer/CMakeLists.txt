@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 project(iiLocalLLMConsumer LANGUAGES CXX)
 
-find_package(iiLocalLLM 0.50.0 CONFIG REQUIRED)
+find_package(iiLocalLLM 0.51.0 CONFIG REQUIRED)
 option(IILOCALLLM_TEST_AGENT_TOOL_GRAMMAR "Constrain catalog qualification tool generation with the upstream schema grammar" ON)
 option(IILOCALLLM_TEST_AGENT_THINKING_CONTROL "Also qualify catalog discovery with thinking explicitly disabled" OFF)
 add_executable(iiLocalLLMConsumer ../hello_world.cpp)

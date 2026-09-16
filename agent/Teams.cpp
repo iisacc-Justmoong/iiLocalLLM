@@ -39,6 +39,42 @@ bool allowed(const ToolDefinition& t,const QJsonObject& p){
         &&(t.metadata["source"]!="builtin.team"||QStringList{"SendMessage","TeamStatus","TeamInbox"}.contains(t.name))
         &&matches(t.name,p["tools"].toArray())&&!matches(t.name,p["disallowed_tools"].toArray())&&(!p["read_only"].toBool()||t.readOnly);
 }
+QJsonObject messageSchema(bool leader,const QString& shutdownRequest={}){
+    const QJsonObject shortText{{"type","string"},{"minLength",1},{"maxLength",128}};
+    const QJsonObject messageText{{"type","string"},{"minLength",1},{"maxLength",65536},
+        {"description","The exact message body delivered to the recipient. The summary is a separate argument."}};
+    const QJsonObject summary{{"type","string"},{"maxLength",512},{"description","A brief summary of the message body. Required for plaintext messages."}};
+    QJsonObject properties{{"to",shortText},{"message",messageText},{"summary",summary}};
+    const QJsonObject root{{"type","object"},{"additionalProperties",false},{"properties",properties},{"required",QJsonArray{"to","message"}}};
+    auto plain=root;auto plainProperties=properties;auto plainSummary=summary;plainSummary["minLength"]=1;
+    plainProperties["summary"]=plainSummary;plain["properties"]=plainProperties;plain["required"]=QJsonArray{"to","message","summary"};
+    if(!leader&&shutdownRequest.isEmpty())return plain;
+    QJsonArray variants{plain},messages{messageText};
+    auto addControl=[&](const QJsonObject& message,const QJsonObject& recipient){
+        auto variant=root;auto fields=properties;fields["message"]=message;fields["to"]=recipient;
+        variant["properties"]=fields;variants.append(variant);messages.append(message);
+    };
+    const QJsonObject reason{{"type","string"},{"maxLength",4096}};
+    if(leader){
+        addControl({{"type","object"},{"additionalProperties",false},{"required",QJsonArray{"type"}},
+            {"properties",QJsonObject{{"type",QJsonObject{{"type","string"},{"const","shutdown_request"}}},{"reason",reason}}}},shortText);
+    }else{
+        for(bool approve:{true,false}){
+            auto responseReason=reason;if(!approve)responseReason["minLength"]=1;
+            QJsonArray required{"type","request_id","approve"};if(!approve)required.append("reason");
+            addControl({{"type","object"},{"additionalProperties",false},{"required",required},
+                {"properties",QJsonObject{{"type",QJsonObject{{"type","string"},{"const","shutdown_response"}}},
+                    {"request_id",QJsonObject{{"type","string"},{"const",shutdownRequest}}},
+                    {"approve",QJsonObject{{"type","boolean"},{"const",approve}}},{"reason",responseReason}}}},
+                {{"type","string"},{"const","team-lead"}});
+        }
+    }
+    auto schema=root;properties["message"]=QJsonObject{{"anyOf",messages}};schema["properties"]=properties;schema["anyOf"]=variants;return schema;
+}
+void prepareMessage(Tool& tool){
+    const auto definition=tool.definition;const auto execute=tool.execute;
+    tool.prepare=[definition,execute](const QJsonObject& a,const ToolContext& c){auto preview=definition;preview.readOnly=a["message"].isString();return PreparedTool{preview,[execute,a,c]{return execute(a,c);}};};
+}
 QString lastPeerSummary(const Session& session){
     for(auto i=session.messages.crbegin();i!=session.messages.crend();++i){
         if(i->role==MessageRole::User)break;
@@ -460,7 +496,14 @@ ToolResult Teams::spawn(const ToolContext& context,const QJsonObject& args){
             if(toolName=="TeamInbox")return result(inbox(c.sessionId,a["offset"].toInt(),a["limit"].toInt(100)));
             return result(status(c.sessionId));
         };
-        if(toolName=="SendMessage"){const auto definition=tool.definition;const auto execute=tool.execute;tool.prepare=[definition,execute](const QJsonObject& a,const ToolContext& c){auto preview=definition;preview.readOnly=a["message"].isString();return PreparedTool{preview,[execute,a,c]{return execute(a,c);}};};}
+        if(toolName=="SendMessage"){
+            options.additionalToolsProvider=[this,weak=std::weak_ptr<Impl::Member>(member),base=std::move(tool)]{
+                QString request;
+                {std::lock_guard lock(d->mutex);if(const auto current=weak.lock())request=current->record.value("shutdown_request_id").toString();}
+                auto message=base;message.definition.inputSchema=messageSchema(false,request);prepareMessage(message);return QList<Tool>{std::move(message)};
+            };
+            continue;
+        }
         options.additionalTools.append(std::move(tool));
     }
     options.toolFilter=[config,filter=d->parent.toolFilter](const ToolDefinition& t){return allowed(t,config)&&(!filter||filter(t));};
@@ -537,7 +580,7 @@ ToolResult Teams::send(const ToolContext& context,const QJsonObject& args){
             previous=shutdownMember->record;const auto id=uuid();protocol["request_id"]=id;shutdownMember->record["shutdown_request_id"]=id;body=protocol;
         }else if(type=="shutdown_response"){
             keys(protocol,{"type","request_id","approve","reason"});const auto request=text(protocol,"request_id",128);const auto reason=text(protocol,"reason",4096,false);
-            require(from!="team-lead"&&recipients.first()=="team-lead"&&protocol["approve"].isBool()&&sender->record["shutdown_request_id"]==request,"Shutdown response does not match this teammate's request");
+            require(from!="team-lead"&&recipients.first()=="team-lead"&&protocol["approve"].isBool()&&sender->record.value("shutdown_request_id")==request,"Shutdown response does not match this teammate's request");
             require(protocol["approve"].toBool()||!reason.trimmed().isEmpty(),"Shutdown rejection requires a reason");shutdownMember=sender;previous=sender->record;
             sender->record.remove("shutdown_request_id");
         }else throw Error(ErrorCode::RuntimeUnavailable,"Unsupported team protocol: "+type);
@@ -604,34 +647,21 @@ QList<Tool> Teams::tools(std::weak_ptr<Teams> owner,bool leader){
         QJsonObject properties;QJsonArray required;
         if(name=="TeamCreate"){properties={{"team_name",shortText},{"description",string},{"agent_type",shortText}};required={"team_name"};tool.definition.description="Create a team owned by this session, with a new shared task list. One team per leader.";}
         else if(name=="SendMessage"){
-            auto messageText=string;messageText["description"]="The exact message body delivered to the recipient. The summary is a separate argument.";
-            properties={{"to",shortText},{"summary",QJsonObject{{"type","string"},{"maxLength",512},{"description","A brief summary of the message body. Required for plaintext messages."}}},{"message",QJsonObject{{"anyOf",QJsonArray{messageText,QJsonObject{{"type","object"},{"additionalProperties",false},{"required",QJsonArray{"type"}},{"properties",QJsonObject{{"type",QJsonObject{{"type","string"},{"enum",QJsonArray{"shutdown_request","shutdown_response"}}}},{"reason",string},{"request_id",shortText},{"approve",QJsonObject{{"type","boolean"}}}}}}}}}}};required={"to","message"};
-            tool.definition.description="Send a message to a teammate by name, or plaintext to * for broadcast. Plaintext requires summary. Structured shutdown_request is leader-only; shutdown_response must match your request_id and target team-lead. Sender identity is host-owned.";
+            tool.definition.description="Send a message to a teammate by name, or plaintext to * for broadcast. Plaintext requires summary. Structured controls are limited by your role and current pending request. Sender identity is host-owned.";
         }else if(name=="TeamInbox"){properties={{"offset",QJsonObject{{"type","integer"},{"minimum",0}}},{"limit",QJsonObject{{"type","integer"},{"minimum",1},{"maximum",100}}}};tool.definition.description="Read this member's bounded team mailbox.";}
         else if(name=="TeamWait"){properties={{"timeout_ms",QJsonObject{{"type","integer"},{"minimum",0},{"maximum",300000}}}};tool.definition.description="Wait for owned teammates to become idle, with cancellation and a bounded timeout.";}
         else if(name=="TeamStop"){properties={{"name",shortText}};required={"name"};tool.definition.description="Leader: cancel and join the named teammate.";}
         else if(name=="TeamDelete")tool.definition.description="Leader: delete an idle team and its task contents. Active teammates must finish or be stopped first. Conversation history is retained.";
         else tool.definition.description="Inspect this session's team and member execution states.";
         tool.definition.inputSchema={{"type","object"},{"additionalProperties",false},{"properties",properties},{"required",required}};
-        if(name=="SendMessage"){
-            // Complete object alternatives also let native tool grammars enforce
-            // the conditional requirement without changing structured messages.
-            auto plain=tool.definition.inputSchema,structured=plain;
-            auto plainProperties=properties,structuredProperties=properties;
-            const auto messages=properties["message"].toObject()["anyOf"].toArray();
-            plainProperties["message"]=messages[0];structuredProperties["message"]=messages[1];
-            auto summary=plainProperties["summary"].toObject();summary["minLength"]=1;plainProperties["summary"]=summary;
-            plain["properties"]=plainProperties;plain["required"]=QJsonArray{"to","message","summary"};
-            structured["properties"]=structuredProperties;
-            tool.definition.inputSchema["anyOf"]=QJsonArray{plain,structured};
-        }
+        if(name=="SendMessage")tool.definition.inputSchema=messageSchema(leader);
         tool.execute=[owner,name](const QJsonObject& args,const ToolContext& context){const auto self=owner.lock();require(bool(self),"Team owner is unavailable",ErrorCode::RuntimeUnavailable);
             if(name=="TeamCreate")return self->create(context,args);if(name=="TeamDelete")return self->remove(context);if(name=="SendMessage")return self->send(context,args);
             if(name=="TeamInbox")return result(self->inbox(context.sessionId,args["offset"].toInt(),args["limit"].toInt(100)));
             if(name=="TeamWait")return result(self->wait(context.sessionId,args["timeout_ms"].toInt(30000),context.cancellation));
             if(name=="TeamStop")return result(self->stop(context.sessionId,args["name"].toString()));return result(self->status(context.sessionId));
         };
-        if(name=="SendMessage"){const auto definition=tool.definition;const auto execute=tool.execute;tool.prepare=[definition,execute](const QJsonObject& a,const ToolContext& c){auto preview=definition;preview.readOnly=a["message"].isString();return PreparedTool{preview,[execute,a,c]{return execute(a,c);}};};}
+        if(name=="SendMessage")prepareMessage(tool);
         if(name=="SendMessage")tool.canRunConcurrently=[](const QJsonObject& args){return args["message"].isString();};
         out.append(std::move(tool));
     }
