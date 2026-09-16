@@ -2,6 +2,7 @@
 #include "ShellTasks.h"
 #include "ShellProcess.h"
 #include "PermissionRulesInternal.h"
+#include "Notebook.h"
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
 #include <QtCore/QDirIterator>
@@ -142,17 +143,19 @@ public:
         require(QCryptographicHash::hash(bytes, QCryptographicHash::Sha256) == found->digest, "File changed after it was read; read it again");
         return bytes;
     }
+    QString artifact(const ToolContext& c,const QByteArray& bytes,const QString& extension) const {
+        if(c.artifactsDirectory.isEmpty())return {};
+        require(QDir().mkpath(c.artifactsDirectory),"Cannot create backup directory");
+        const auto path=QDir(c.artifactsDirectory).filePath(uuid()+'.'+extension);QSaveFile file(path);
+        if(!file.open(QIODevice::WriteOnly)||file.write(bytes)!=bytes.size()||!file.commit())
+            throw Error(ErrorCode::StorageFailure,"Cannot save file edit artifact");
+        return path;
+    }
     QString write(const ToolContext& c, const QString& path, const QByteArray& bytes, const std::optional<QByteArray>& before) {
         require(bytes.size() <= maxFileBytes, "Text output exceeds 1 MiB");
         if(path==c.planFilePath)require(bytes.size()<=c.maxPlanBytes&&!bytes.contains('\0'),"Plan text exceeds its byte limit or contains NUL");
         QString backup;
-        if (before && !c.artifactsDirectory.isEmpty()) {
-            require(QDir().mkpath(c.artifactsDirectory), "Cannot create backup directory");
-            backup = QDir(c.artifactsDirectory).filePath(uuid() + ".before");
-            QSaveFile old(backup);
-            if (!old.open(QIODevice::WriteOnly) || old.write(*before) != before->size() || !old.commit())
-                throw Error(ErrorCode::StorageFailure, "Cannot save pre-edit backup");
-        }
+        if(before)backup=artifact(c,*before,"before");
         require(QDir().mkpath(QFileInfo(path).absolutePath()), "Cannot create parent directory");
         require(resolve(path, c, true) == path, "File path changed before writing");
         if (before) require(readFile(path) == *before, "File changed before writing");
@@ -164,18 +167,18 @@ public:
     }
     static QString uuid() { return QUuid::createUuid().toString(QUuid::WithoutBraces); }
 };
-void preparePath(Tool& tool, const std::shared_ptr<Workspace>& workspace, bool write,QString defaultPath={}) {
-    tool.prepare = [workspace, write, defaultPath, definition = tool.definition, execute = tool.execute](const QJsonObject& args, const ToolContext& context) {
+void preparePath(Tool& tool, const std::shared_ptr<Workspace>& workspace, bool write,QString defaultPath={},QString pathKey="path") {
+    tool.prepare = [workspace, write, defaultPath, pathKey, definition = tool.definition, execute = tool.execute](const QJsonObject& args, const ToolContext& context) {
         QString path;
-        { std::lock_guard lock(workspace->mutex); path = workspace->resolve(args["path"].toString(defaultPath), context, write); }
+        { std::lock_guard lock(workspace->mutex); path = workspace->resolve(args[pathKey].toString(defaultPath), context, write); }
         auto preview = definition; preview.metadata["canonical_path"] = path;
-        return PreparedTool{std::move(preview), [workspace, write, defaultPath, execute, args, context, path] {
+        return PreparedTool{std::move(preview), [workspace, write, defaultPath, pathKey, execute, args, context, path] {
             {
                 std::lock_guard lock(workspace->mutex);
-                require(workspace->resolve(args["path"].toString(defaultPath), context, write) == path
+                require(workspace->resolve(args[pathKey].toString(defaultPath), context, write) == path
                     && workspace->resolve(path, context, write) == path, "File permission target changed before execution");
             }
-            auto frozen = args; frozen["path"] = path;
+            auto frozen = args; frozen[pathKey] = path;
             return execute(frozen, context);
         }};
     };
@@ -274,6 +277,30 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         return ToolResult{"Edited " + path, {{"path", path}, {"replacements", matches}, {"backup_path", backup},
             {"sha256",QString::fromLatin1(QCryptographicHash::hash(text.toUtf8(),QCryptographicHash::Sha256).toHex())}}, false, {}, workspace->contextPaths(path,c)};
     }; edit.definition.metadata = {{"source", "builtin.workspace"}}; preparePath(edit, workspace, true); registry.add(std::move(edit));
+    Tool notebook;
+    notebook.definition={"NotebookEdit","Edit an observed Jupyter notebook cell. Read the complete notebook first. Actual cell IDs take precedence over zero-based cell-N selectors. Insert after cell_id, or at the beginning if omitted. Replacing code clears execution results; cells are never executed. Paths resolve in the current working directory.",
+        inputSchema({{"notebook_path",stringSchema()},
+            {"new_source",QJsonObject{{"type","string"},{"description","The actual decoded cell source, not a JSON string literal. When Read returns notebook JSON, decode the source field before editing. Do not copy the notebook JSON's escaping into the source characters. The tool stores this string exactly as supplied."}}},
+            {"cell_id",stringSchema()},
+            {"cell_type",QJsonObject{{"type","string"},{"enum",QJsonArray{"code","markdown"}}}},
+            {"edit_mode",QJsonObject{{"type","string"},{"enum",QJsonArray{"replace","insert","delete"}}}}},{"notebook_path","new_source"}),{},false,false,true,true};
+    notebook.validate=[](const QJsonObject& args,const ToolContext&){validateNotebookEditArguments(args);};
+    notebook.execute=[workspace](const QJsonObject& args,const ToolContext& context) {
+        context.cancellation.throwIfCancelled();std::lock_guard lock(workspace->mutex);
+        const auto path=workspace->resolve(args["notebook_path"].toString(),context,true);const auto before=workspace->writable(context,path);
+        const auto edited=editNotebook(before,args,context.cancellation);auto data=edited.metadata;
+        const bool inlineFiles=before.size()+edited.content.size()<=32768;
+        const auto snapshot=inlineFiles?QString():workspace->artifact(context,edited.content,"ipynb");
+        const auto backup=workspace->write(context,path,edited.content,before);
+        data["notebook_path"]=path;data["backup_path"]=backup;
+        data["original_sha256"]=QString::fromLatin1(QCryptographicHash::hash(before,QCryptographicHash::Sha256).toHex());
+        data["sha256"]=QString::fromLatin1(QCryptographicHash::hash(edited.content,QCryptographicHash::Sha256).toHex());
+        data["files_inlined"]=inlineFiles;data["updated_file_path"]=snapshot;
+        if(inlineFiles){data["original_file"]=decode(before);data["updated_file"]=decode(edited.content);}
+        return ToolResult{"Notebook cell "+data["cell_id"].toString()+": "+data["edit_mode"].toString()+" completed.",data,false,{},workspace->contextPaths(path,context)};
+    };
+    notebook.definition.metadata={{"source","builtin.workspace"},{"search_hint","edit Jupyter notebook cells ipynb"}};
+    preparePath(notebook,workspace,true,{},"notebook_path");registry.add(std::move(notebook));
     Tool glob;
     glob.definition = {"Glob", "List matching file paths relative to path (default: workspace). A ** path component matches zero or more directory levels; * and ? stay within one component. path must be an authorized working directory. Up to 1000 results and 10000 scanned files.",
         inputSchema({{"pattern", stringSchema()},{"path",stringSchema()}}, {"pattern"}), {}, true, true};

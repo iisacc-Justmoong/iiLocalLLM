@@ -15,7 +15,7 @@
 | files | Read/Write/Edit/Glob/Grep·동시 변경 감지·백업·되돌리기 | partial |
 | shell | Bash/PowerShell·환경·cwd·프로세스 트리 취소·백그라운드 작업 | partial |
 | web | WebFetch/WebSearch·컨텐츠 변환·캐시·네트워크 정책 | partial |
-| multimodal | 이미지·PDF·노트북·음성 입력과 모델별 지원 협상 | pending |
+| multimodal | 이미지·PDF·노트북·음성 입력과 모델별 지원 협상 | partial |
 | context | 프롬프트 조합·CLAUDE/AGENTS 규칙·첨부·요약·microcompact·cache 관리 | partial |
 | memory | 프로젝트 Markdown 메모리·검색·자동 정리·세션 메모리 | partial |
 | sessions | JSONL 영속 기록·resume/fork·압축 경계·파일 rewind | partial |
@@ -156,3 +156,6 @@ C++ MemoryDream은 기본 OFF인 자동 실행, 24시간·5개 대화·10분 목
 
 
 0.44는 C++ 소유 작업 트리와 같은 대화의 파일·셸·권한 경로 전환, 생성·보존·재개·삭제 및 인증 API/MCP/CLI를 연결한다. [Worktrees.md](Worktrees.md)에 활성 clear 제한, 팀/서브에이전트·설정 훅·자동 복구와 실제 앱/플랫폼의 남은 범위를 명시한다. 대응표는 26 partial·5 pending·0 complete이며 전체 목표는 미완료이다.
+
+
+0.45는 nbformat 4 셀 편집과 C++/인증 API/CLI/MCP 전송을 추가한다. [노트북 계약](Notebooks.md)과 [검증 기록](Verification.md)을 기준으로 files·permissions·multimodal·api·mcp_server·packaging의 근거를 보강한다. 현재 합계는 27 partial·4 pending·0 complete이다. 셀 이미지 출력·PDF/이미지/음성 입력과 전체 앱/플랫폼 검증이 남아 있으므로 multimodal은 partial이다.

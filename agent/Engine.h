@@ -114,14 +114,21 @@ public:
     ToolResult runLsp(const QString& sessionId,const QJsonObject&,const CancellationToken& = {},
         const EventCallback& = {},std::shared_ptr<PermissionRequests> = {}) const;
     QJsonObject lspStatus(const QString& sessionId,const CancellationToken& = {}) const;
+    bool notebookToolsEnabled() const;
+    // Read accepts notebook_path plus optional offset/limit; NotebookEdit uses
+    // its native arguments. A session lease binds observations to compaction.
+    ToolResult runNotebookTool(const QString& sessionId,const QString& name,const QJsonObject&,
+        const CancellationToken& = {},const EventCallback& = {},std::shared_ptr<PermissionRequests> = {}) const;
     bool worktreesEnabled() const;
     std::optional<Tool> worktreeTool(const QString& name,bool deferred=false) const;
     QJsonObject worktreeStatus(const QString& sessionId,const CancellationToken& = {}) const;
     ToolResult runWorktreeTool(const QString& sessionId,const QString& name,const QJsonObject&,
         const CancellationToken& = {},const EventCallback& = {},std::shared_ptr<PermissionRequests> = {}) const;
-    // Trusted direct-tool/MCP scope. With worktrees enabled, retains admission and
-    // a transcript lease until the returned guard is released. Rejects a busy run.
+    // Trusted direct-tool/MCP scope. With worktrees enabled or leaseSession set,
+    // retains admission and a transcript lease. Rejects a busy run and binds the
+    // context revision so file observations expire after compaction.
     std::shared_ptr<void> bindWorkspaceContext(ToolContext&) const;
+    std::shared_ptr<void> bindWorkspaceContext(ToolContext&,bool leaseSession) const;
     QStringList sessions() const;
     std::optional<Tool> sessionSearchTool(bool deferred = false) const;
     ToolResult runSessionSearch(const QString& ownerSessionId,const QJsonObject& arguments,

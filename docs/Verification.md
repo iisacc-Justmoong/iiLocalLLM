@@ -1,5 +1,33 @@
 # 구현 검증 기록
 
+## 2026-09-16 C++ Jupyter 노트북 셀 편집 (0.45.0)
+
+C++ NotebookEdit의 셀 교체·삽입·삭제, 실제 ID 우선 선택과 cell-N 인덱스, 구형 minor 호환, 형식 전환과 코드 실행 결과 초기화를 추가했다. 기존 파일 도구의 권한·관찰 해시·원자적 저장·백업을 사용하며 C++ 직접 호출, 인증 HTTP/IPC·CLI와 MCP로 제공한다. 계약·참조 구현과의 차이는 [Notebooks.md](Notebooks.md)를 따른다. 생산 의존성은 기존 Qt Core이며 공식 nbformat 5.11.1은 검증용으로만 사용한다.
+
+| 검증 | 결과 |
+|---|---|
+| Release, inference 제외 | 최초 91/93, MCP 기대 목록 갱신 후 2/2; 누적 93/93. 이후 인자 설명 변경의 영향 검사 6/6 |
+| ASan·UBSan | 최초 89/90, 동일 바이너리 Worktree 단독 재실행 1/1; 누적 90/90. 이후 인자 설명 변경의 영향 검사 4/4 |
+| 새 설치 소비자 | 56/56 |
+| 실제 모델 source | 통과; 3턴·생성 1505토큰 |
+| 실제 모델 installed | 통과; 3턴·생성 1534토큰 |
+| 인증 전송 | source·installed HTTP·IPC CLI·MCP HTTP·공식 MCP 1.26 stdio |
+| 독립 형식 검사 | nbformat 5.11.1 iter_validate, 4.4·4.5 저장 결과; 입력 자동 보정 없음 |
+| 설치 동일성 | 헤더 55개, 네 진입점 0.45.0, dylib SHA-256·UUID·실제 로드 경로, thin CLI |
+
+최종 source와 installed 모두 Read → NotebookEdit를 각각 한 번 수행하여 질문에 없는 임의 문자열을 관찰하고, 정확한 코드와 답변·백업·다른 셀 보존을 확인했다. 조건은 Qwen3-8B Q4, macOS arm64, 컨텍스트 4,096 토큰 한 개, 캐시 한 개, 모델 턴당 출력 한도 1,024 토큰, thinking ON, tool grammar OFF, temperature 0.6, top-p 0.95, top-k 20, min-p 0, seed 0이다. 모델 요청·응답은 기존 ServiceModel을 통과하며 값을 수정하거나 예상 코드로 대체하지 않았다. 이 조건의 관측값이며 모든 모델·플랫폼에 대한 보장은 아니다.
+
+실패 기록도 보존한다. 8,192-token 시도 두 건은 RAM 보호 조건에서 로딩이 거절되었고, 기존 Qwen2.5-0.5B Q4는 구조화 응답의 출력 한도에서 실패했다. Qwen3-8B의 비추론 모드는 지시문의 예시 복사, 따옴표 추가, JSON 이스케이프를 코드에 복사하는 실패가 있었다. 지시를 명확히 하고 grammar ON/OFF 및 [공식 권장 샘플링](https://huggingface.co/Qwen/Qwen3-8B#best-practices)을 비교했지만 비추론 모드의 소스 불일치는 남았다. new_source가 JSON을 해석한 실제 코드라는 인자 설명도 추가했다. 별도의 전달 전용 진단 런타임으로 생성 원문과 native 파서의 인수를 대조하여 두 도구의 인수가 일치함을 확인했다. 잘못된 이스케이프는 생성 원문에 이미 있었으며 파서가 추가한 것이 아니었다. 진단 실행은 정상 source/installed 검증과 별도로 기록한다. 성공 조건과 서비스 RAM 보호를 완화하지 않았다.
+
+전송 검사는 미설치 모델 식별자로 추론 없이 실행했다. 읽기 선행, 오래된 내용 해시 거절, 토큰별 소유권, 범위 밖 경로 거절, 직접 API의 transcript 보존, 코드↔Markdown 변환, 셀 삽입·삭제, 실제 ID 우선과 4.4 ID 미생성을 확인했다. source와 installed에서 각각 9개·9개 문서를 검사했다. 공식 iter_validate가 입력을 변경하지 않았음과 ID 유일성도 확인했다. 이 형식 검사는 셀 코드의 실행·문법·의미 검증이 아니다.
+
+C++ 회귀는 잘못된 인수/구조/UTF-8, 크기 한도, 사전 취소와 artifact 실패 시 원본 유지, raw·미래 셀·첨부·소스 배열 보존, 부분 읽기·소유자·압축/worktree revision, Edit 설정 alias와 NotebookEdit 경로 규칙, symlink/private 경로, 불변 전후 artifact, 모델 도구 배치, C++ 세션 lease와 API/MCP 등록을 포함한다. ASan/UBSan은 llama OFF·leak detection OFF이다. 최초 Worktree 실패는 fixture Git 호출 중 예외였고 sanitizer 진단은 없었다. 일시적 실패의 정확한 원인은 확정하지 못했으며 같은 바이너리의 전체 Worktree 항목을 단독 재실행해 통과했다. 최초 로그/XML과 재검증 로그/XML을 모두 보존한다.
+
+413개 소스·테스트·문서 입력을 해시로 기록했다. 최초 전체 검사 뒤 생산 변경은 new_source의 인자 설명뿐이다. 저장·파싱 알고리즘은 유지하고 새 라이브러리에서 관련 Release 6개와 sanitizer 4개를 재검증했다. 실제 모델 fixture의 지시·설정·진단 변경은 CTest 입력과 구분하고 마지막 fixture로 source/installed 모델 검사를 실행했다. 설치 prefix는 build/notebook-stage, 소비자는 build/notebook-consumer/build이다. 현재 라이브러리 SHA-256은 `8b4966c032b36fbbbc52980b4300470e9d8d8103bace261aa0e62430b0cd5b35`이다. 최종 문서 갱신 후 stage 문서와 코드 동일성을 다시 대조했다. 구조화 근거는 build/notebook-verification.json, 읽기용 보고서는 build/notebook-REPORT.md이다. 세부 실패는 build/notebook-native-*.log·json, 원문 대조는 build/notebook-native-raw.jsonl과 notebook-native-parser-audit.json에 있다.
+
+셀 단위 읽기·이미지 출력·대형 노트북 부분 편집·kernel·PDF/이미지/음성 입력·실제 제품의 노트북 UI와 전체 모델/플랫폼은 남아 있다. 이번 범위는 SDK stage이며 iPhone 재설치는 사용자 지시로 제외한다. 대응표는 27 partial·4 pending·0 complete이며 전체 하네스 목표는 진행 중이다.
+
+
 ## 2026-09-16 C++ 세션별 작업 트리 (0.44.0)
 
 C++ `EnterWorktree`·`ExitWorktree`, 소유 상태의 원자적 저장, 보존·재개·삭제와 같은 응답 안의 파일·셸 실행 경로 전환을 구현했다. 세션의 원래 작업 공간은 인증 식별자로 유지한다. 프로젝트 권한·지침·메모리와 수명 훅은 현재 실행 경로를 사용한다. 기존 Qt Core와 외부 Git 명령을 사용하며 새 생산 Python/TypeScript 런타임은 추가하지 않았다. 계약·한도·참조 차이는 [Worktrees.md](Worktrees.md)에 기록한다.

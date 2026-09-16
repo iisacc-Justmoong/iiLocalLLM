@@ -138,3 +138,8 @@ C++ MemoryDream은 기본 OFF인 자동 실행, 24시간·5개 대화·10분 목
 
 
 0.44의 `EnterWorktree`·`ExitWorktree`와 소유 상태 조회는 [Worktrees.md](Worktrees.md)에 정의한다. `agent.worktrees.enter/exit/status`, CLI `agent worktrees`, MCP `iiLocalLLM.agent.worktrees.status`가 같은 실행 경로·권한·보존 계약을 사용한다. 활성 worktree의 clear와 팀/서브에이전트 전체 격리는 남아 있다.
+
+
+## Jupyter 노트북 셀 편집 (0.45)
+
+C++ `NotebookEdit`와 `agent.notebooks.read/edit`, CLI `agent notebooks`, MCP `iisacc/notebooks`는 [Notebooks.md](Notebooks.md)의 읽기 선행·경로 권한·세션/revision·원자적 저장·백업 계약을 공유한다. API의 노트북 읽기는 raw UTF-8 JSON이며 kernel 실행과 셀 이미지 렌더링은 포함하지 않는다. 생산 의존성은 기존 Qt Core이며 공식 nbformat은 독립 검증에만 사용한다.

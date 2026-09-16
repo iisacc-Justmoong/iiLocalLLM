@@ -85,7 +85,7 @@ bool fileMatch(const QString& content, const QString& path, const ToolContext& c
     return pathGlob(pattern, lexical) || (!canonical.isEmpty() && pathGlob(pattern, canonical));
 }
 bool named(const Rule& rule, const QString& name) {
-    return toolMatch(rule.tool,name) || (rule.settings && rule.tool=="Edit" && name=="Write");
+    return toolMatch(rule.tool,name) || (rule.settings && rule.tool=="Edit" && (name=="Write"||name=="NotebookEdit"));
 }
 struct FilePattern { QString pattern; bool negative=false, anchored=false, directory=false; };
 // wildmatch is byte based. Map the sorted non-ASCII UTF-16 units to a private
@@ -403,6 +403,7 @@ bool permissionRulesMatch(const QList<PermissionRule>& input, const ToolDefiniti
     QStringList strings;for(const auto& item:input)strings.append(item.toolPattern);parsePermissionRules(strings);
     QList<Rule> rules; for (const auto& item : input) { auto rule=parse(item.toolPattern);rule.root=item.rootDirectory;rule.home=item.homeDirectory;rule.settings=item.settingsSyntax;rules.append(rule); }
     if(tool.name=="Read"||tool.name=="Write"||tool.name=="Edit")return fileRulesMatch(rules,tool.name,args["path"].toString(),context,allow);
+    if(tool.name=="NotebookEdit")return fileRulesMatch(rules,tool.name,args["notebook_path"].toString(),context,allow);
     if(tool.name=="LSP")return fileRulesMatch(rules,"LSP",args["filePath"].toString(),context,allow)
         ||(!allow&&fileRulesMatch(rules,"Read",args["filePath"].toString(),context,false));
     if (tool.name != "Bash") return std::any_of(rules.begin(), rules.end(), [&](const auto& r) { return valueMatch(r, tool.name, args, context, allow); });

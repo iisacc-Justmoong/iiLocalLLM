@@ -4,6 +4,7 @@
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QUuid>
+#include <QtCore/QSet>
 #include <chrono>
 #include <cmath>
 #include <map>
@@ -433,7 +434,7 @@ public:
                         catch(const Error& error){if(error.code()!=ErrorCode::ModelInUse)throw;}
                     if(!context.sessionSnapshot)context.sessionSnapshot=std::make_shared<Session>(options.engine->sessionMetadata(owner));
                 }
-                if(native)workspaceScope=options.engine->bindWorkspaceContext(context);
+                if(native)workspaceScope=options.engine->bindWorkspaceContext(context,source=="builtin.workspace");
             }
         };
         int hookProgress=0;
@@ -481,6 +482,10 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
         return result;
     };
     server.handlers["tools/call"] = [state](const auto& params, const auto& request) { return state->call(params, request); };
+    QSet<QString> notebookTools;
+    for(const auto& tool:state->registry->definitions())if(tool.metadata["source"]=="builtin.workspace")notebookTools.insert(tool.name);
+    if(notebookTools.contains("Read")&&notebookTools.contains("NotebookEdit"))
+        server.experimentalCapabilities["iisacc/notebooks"]=QJsonObject{{"schema","iisacc.notebooks/1"},{"readTool","Read"},{"editTool","NotebookEdit"},{"readFormat","utf8-json"},{"nbformat",4},{"maxBytes",1024*1024}};
     if(state->options.engine&&state->options.engine->worktreesEnabled())
         server.experimentalCapabilities["iisacc/worktrees"]=QJsonObject{{"schema","iisacc.worktrees/1"},{"enterTool","EnterWorktree"},{"exitTool","ExitWorktree"},{"statusTool","iiLocalLLM.agent.worktrees.status"},{"scope","connection-owner"}};
     if(state->options.engine&&state->options.engine->lspTool())

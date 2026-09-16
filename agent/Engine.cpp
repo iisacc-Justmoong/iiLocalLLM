@@ -863,14 +863,47 @@ QJsonObject Engine::worktreeStatus(const QString& id,const CancellationToken& to
     if(!d->worktrees)return {{"enabled",false},{"active",false},{"workingDirectory",session.workingDirectory}};
     auto value=d->worktrees->status({id,{},session.workingDirectory,{},operation.token});value["enabled"]=true;return value;
 }
-std::shared_ptr<void> Engine::bindWorkspaceContext(ToolContext& context) const {
-    if(!d->worktrees)return {};
+std::shared_ptr<void> Engine::bindWorkspaceContext(ToolContext& context) const {return bindWorkspaceContext(context,false);}
+std::shared_ptr<void> Engine::bindWorkspaceContext(ToolContext& context,bool leaseSession) const {
+    if(!d->worktrees&&!leaseSession)return {};
     struct Scope {
         std::shared_ptr<Impl> state;Impl::NativeOperation operation;std::unique_ptr<SessionLease> lease;
         Scope(std::shared_ptr<Impl> state,const ToolContext& context):state(std::move(state)),operation(*this->state,context.sessionId,context.cancellation),lease(this->state->store.acquire(context.sessionId)){}
     };
     auto guard=std::make_shared<Scope>(d,context);context.runId=guard->operation.id;context.cancellation=guard->operation.token;
-    context=d->executionContext(std::move(context));return guard;
+    context.contextRevision=guard->lease->session().compactions.size();
+    context=d->executionContext(std::move(context));
+    auto snapshot=std::make_shared<Session>(guard->lease->session());snapshot->workingDirectory=context.workingDirectory;context.sessionSnapshot=std::move(snapshot);
+    return guard;
+}
+bool Engine::notebookToolsEnabled() const {
+    QSet<QString> names;
+    for(const auto& tool:d->registry->definitions())if(tool.metadata["source"]=="builtin.workspace")names.insert(tool.name);
+    return names.contains("Read")&&names.contains("NotebookEdit");
+}
+ToolResult Engine::runNotebookTool(const QString& id,const QString& name,const QJsonObject& input,const CancellationToken& token,
+    const EventCallback& callback,std::shared_ptr<PermissionRequests> requests) const {
+    if(name!="Read"&&name!="NotebookEdit")throw Error(ErrorCode::InvalidArgument,"Unknown notebook operation");
+    auto frozen=d->registry->snapshot();auto registry=std::make_shared<ToolRegistry>();
+    if(!notebookToolsEnabled())throw Error(ErrorCode::RuntimeUnavailable,"Native notebook tools are unavailable");
+    for(const auto& key:{"Read","NotebookEdit"}){
+        auto tool=frozen->get(key);if(tool.definition.metadata["source"]!="builtin.workspace")throw Error(ErrorCode::RuntimeUnavailable,"Native notebook tools are unavailable");registry->add(std::move(tool));}
+    auto args=input;
+    if(name=="Read") {
+        for(auto it=input.begin();it!=input.end();++it)if(!QStringList{"notebook_path","offset","limit"}.contains(it.key()))
+            throw Error(ErrorCode::InvalidArgument,"Unknown notebook read argument: "+it.key());
+        const auto path=input["notebook_path"].toString();
+        if(!input["notebook_path"].isString()||path.size()>4096||path.contains(QChar::Null)||!path.endsWith(".ipynb"))
+            throw Error(ErrorCode::InvalidArgument,"Notebook path must end in .ipynb");
+        args.remove("notebook_path");args["path"]=path;if(!args.contains("limit"))args["limit"]=20000;
+    }
+    const auto session=d->store.metadata(id);ToolContext context{id,uuid(),session.workingDirectory,QDir(d->options.sessionsDirectory).filePath(id+"/artifacts"),token};
+    auto scope=bindWorkspaceContext(context,true);context.transcriptPath=transcriptPath(id);
+    if(!d->options.hooks.isEmpty())context.asyncHooks=d->hookScope(id);context.hookCancellation=context.cancellation;
+    context.permissionRequests=requests?requests:d->options.permissionRequests;
+    ToolRunnerOptions options{d->options.hooks,d->options.permission,24000,d->options.permissionResponse,d->options.permissionUpdates,
+        context.permissionRequests,d->model,session.model,detail::hookAgentExecutor(d->options,d->tasks),d->plans};
+    return ToolRunner(registry,d->policy,options).run({uuid(),name,args},d->permissionContext(context),callback);
 }
 ToolResult Engine::runWorktreeTool(const QString& id,const QString& name,const QJsonObject& args,const CancellationToken& token,
     const EventCallback& callback,std::shared_ptr<PermissionRequests> requests) const {
