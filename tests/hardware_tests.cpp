@@ -1,5 +1,5 @@
 #include <iiLocalLLM.h>
-#include "../service/Managers.h"
+#include "../src/service/Managers.h"
 #include <QtTest/QtTest>
 #include <QtCore/QJsonArray>
 

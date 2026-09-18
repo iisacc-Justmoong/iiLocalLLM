@@ -26,8 +26,8 @@ GENERATION_BINDINGS = {
 
 
 def native_group():
-    source={'provider':'iiLocalLLM','revision':'0.3.0','path':'Types.h','url':'iiLocalLLM:Types.h',
-        'sha256':hashlib.sha256(Path('Types.h').read_bytes()).hexdigest()}
+    source={'provider':'iiLocalLLM','revision':'0.3.0','path':'src/Types.h','url':'iiLocalLLM:src/Types.h',
+        'sha256':hashlib.sha256(Path('src/Types.h').read_bytes()).hexdigest()}
     fields=[]
     def add(name,typ,default,description,**constraints):
         fields.append({'name':name,'native_type':typ,'description':description,'schema':dict(type=typ,**constraints),
@@ -52,7 +52,7 @@ def native_group():
     for field in fields:
         if field['name']=='typical_p': field['native_bindings']=['llama.cpp']
         native = re.sub(r'_([a-z])',lambda m:m[1].upper(),field['name'])
-        text = Path('Types.h').read_text()
+        text = Path('src/Types.h').read_text()
         start = text.index('struct GenerationOptions')
         declaration = re.search(r'^\s*(\w+)\s+'+native+r'\b',text[start:],re.M)
         if not declaration: raise ValueError('Native generation binding has no C++ declaration: '+native)

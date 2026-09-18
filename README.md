@@ -250,7 +250,7 @@ MLX는 Apple Silicon용 선택 의존성이다. 별도 Python 환경과 로컬 �
 
 ```sh
 python3 -m venv build/mlx-env
-build/mlx-env/bin/python -m pip install -r runtimes/mlx-requirements.txt
+build/mlx-env/bin/python -m pip install -r src/runtimes/mlx-requirements.txt
 ./build/iilocal-llm-service --socket "$PWD/build/llm.sock" \
   --mlx-python "$PWD/build/mlx-env/bin/python" \
   --mlx-worker "$PWD/runtimes/mlx_worker.py"
@@ -357,3 +357,7 @@ GGUF smoke는 chatml을 명시하여 경량 테스트 모델도 사용한다. �
 0.34.0은 EnterPlanMode·ExitPlanMode, 세션별 계획 파일과 검토 해시, 호스트 수정, 실행 전환의 동시성 제어를 추가한다. 재시작·분기·초기화와 인증 API/IPC/MCP를 같은 상태에 연결한다. 공개 구조체와 ABI 0.34에 맞춰 소비자를 다시 빌드한다. 팀 리더 검토·인터뷰 UI·자동 권한 분류·전체 앱 검증은 계속 partial이다. [계획 모드](docs/PlanMode.md)를 따른다.
 
 0.42의 C++ [WebFetch](docs/WebFetch.md)는 URL 조회·HTML 변환·캐시·도메인 권한과 로컬 모델 추출을 Engine/API/MCP/CLI에 제공한다. WebSearch와 전체 플랫폼 검증은 별도 진행 중이다.
+
+## Source layout
+
+Implementation files and their headers live together under `src/`. Existing feature and platform subdirectories retain their responsibilities. Build configuration, tests, documentation, resources, and maintenance scripts remain at the project root. Configure and build using the repository-local `build/` directory.

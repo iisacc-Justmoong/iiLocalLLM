@@ -59,7 +59,7 @@ llama.cpp 정적 링크 시 원본 MIT 고지를 설치 패키지의 share/iiLoc
 
 2026-09-13 공식 선언을 커밋·SHA-256으로 잠갔으며 [ParameterSources.md](docs/ParameterSources.md)에 13개 프로젝트의 버전·라이선스·규모를 기록했다. 변환한 주석·타입 선언의 고지는 docs/parameter-licenses에 보관하고 설치한다. Transformers/PEFT/TRL/Accelerate/DeepSpeed/vLLM/SGLang은 Apache-2.0, llama.cpp/Ollama/LM Studio/MLX/mlx-lm은 MIT, PyTorch는 원본 BSD 계열 고지와 포함된 NOTICE를 따른다. 학습 프레임워크는 링크·실행 의존성으로 추가하지 않았다. 정적 추출에는 Python 표준 AST를, 객체 처리에는 기존 Qt JSON을 재사용한다.
 
-MLX 0.32.2 + mlx-lm 0.31.3의 min-p 최소 후보 수 실행 오류를 실제 테스트에서 재현했다. 공식 커밋 `dcbcf786c0cf56f9a12fabe9468c887781431ae2`의 수정된 `sample_utils.py`를 변경 없이 `runtimes/mlx_sample_utils.py`에 포함하여 재사용한다. 파일 SHA-256은 `c93c1eef794725f9f7ce77b6212f61eb6d0fe17b9cd87c06cec6470ee12b07f2`이며 CMake에서 확인한다. 유지 중인 MIT 구현의 작은 단일 파일을 사용하며 샘플러 알고리즘을 별도로 재작성하지 않았다. 모델 로딩·생성·캐시는 검증된 기존 mlx-lm 0.31.3 의존성을 유지한다.
+MLX 0.32.2 + mlx-lm 0.31.3의 min-p 최소 후보 수 실행 오류를 실제 테스트에서 재현했다. 공식 커밋 `dcbcf786c0cf56f9a12fabe9468c887781431ae2`의 수정된 `sample_utils.py`를 변경 없이 `src/runtimes/mlx_sample_utils.py`에 포함하여 재사용한다. 파일 SHA-256은 `c93c1eef794725f9f7ce77b6212f61eb6d0fe17b9cd87c06cec6470ee12b07f2`이며 CMake에서 확인한다. 유지 중인 MIT 구현의 작은 단일 파일을 사용하며 샘플러 알고리즘을 별도로 재작성하지 않았다. 모델 로딩·생성·캐시는 검증된 기존 mlx-lm 0.31.3 의존성을 유지한다.
 
 ## llama.cpp common conversation support
 

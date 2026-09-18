@@ -1,4 +1,4 @@
-#include "third_party/cpp-httplib/httplib.h"
+#include "../third_party/cpp-httplib/httplib.h"
 #include "HttpApiServer.h"
 #include "Parameters.h"
 #include <QtCore/QDateTime>

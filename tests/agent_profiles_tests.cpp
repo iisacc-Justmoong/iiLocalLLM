@@ -1,6 +1,6 @@
 #include "agent/AgentProfiles.h"
 #include "agent/Subagents.h"
-#include "tools/AgentProfileConfig.h"
+#include "../tools/AgentProfileConfig.h"
 #include <QtTest/QtTest>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QDir>

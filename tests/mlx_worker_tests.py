@@ -3,7 +3,7 @@ from pathlib import Path
 from types import SimpleNamespace
 import unittest
 
-spec = importlib.util.spec_from_file_location("mlx_worker", Path(__file__).parents[1] / "runtimes/mlx_worker.py")
+spec = importlib.util.spec_from_file_location("mlx_worker", Path(__file__).parents[1] / "src/runtimes/mlx_worker.py")
 worker = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(worker)
 

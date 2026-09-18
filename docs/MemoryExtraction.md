@@ -1,6 +1,6 @@
 # 대화 종료 메모리 추출
 
-0.39의 `agent/MemoryExtraction.h`는 주 에이전트의 답변 뒤에 대화에서 장기적으로 유용한 정보를 골라 프로젝트 메모리로 저장한다. C++·Qt와 기존 Model, ProjectMemory, ToolRunner, tree-sitter Bash 파서를 사용한다. 새 생산 의존성은 없다. 기준은 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `services/extractMemories/extractMemories.ts`, `prompts.ts`, `query/stopHooks.ts`, `utils/forkedAgent.ts`이며 구현과 프롬프트는 독립적으로 작성한다.
+0.39의 `src/agent/MemoryExtraction.h`는 주 에이전트의 답변 뒤에 대화에서 장기적으로 유용한 정보를 골라 프로젝트 메모리로 저장한다. C++·Qt와 기존 Model, ProjectMemory, ToolRunner, tree-sitter Bash 파서를 사용한다. 새 생산 의존성은 없다. 기준은 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `services/extractMemories/extractMemories.ts`, `prompts.ts`, `query/stopHooks.ts`, `utils/forkedAgent.ts`이며 구현과 프롬프트는 독립적으로 작성한다.
 
 ## 실행 계약
 

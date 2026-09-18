@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 import unittest
 
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'runtimes'))
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src/runtimes'))
 import mlx.core as mx
 from mlx_sample_utils import apply_min_p, make_logits_processors
 from mlx_worker import full_history_processor

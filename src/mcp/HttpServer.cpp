@@ -1,4 +1,4 @@
-#include "../third_party/cpp-httplib/httplib.h"
+#include "../../third_party/cpp-httplib/httplib.h"
 #include "HttpServer.h"
 #include "Protocol.h"
 #include <QtCore/QStringDecoder>

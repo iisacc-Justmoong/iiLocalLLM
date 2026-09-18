@@ -10,7 +10,7 @@
 
 `agent::Engine` → `agent::Model` / `agent::ToolRunner` / `agent::SessionStore`로 나뉜다. ToolRunner는 ToolRegistry와 PermissionPolicy를 사용한다. 기본 도구와 앱 도구는 같은 계약을 사용하며 UI·HTTP·MCP를 참조하지 않는다. `ServiceModel`만 기존 추론 Service를 참조하는 어댑터이다. 하위 추론 런타임은 에이전트 계층을 참조하지 않는다.
 
-공개 헤더는 `agent/Types.h`, `agent/Tools.h`, `agent/SessionStore.h`, `agent/Engine.h`이며 헤더와 구현은 같은 디렉터리에 둔다. 설치 후에도 `<agent/Engine.h>`로 사용한다. JSON Schema의 jsoncons 타입은 외부 ABI에 노출하지 않는다.
+공개 헤더는 `src/agent/Types.h`, `src/agent/Tools.h`, `src/agent/SessionStore.h`, `src/agent/Engine.h`이며 헤더와 구현은 같은 디렉터리에 둔다. 설치 후에도 `<src/agent/Engine.h>`로 사용한다. JSON Schema의 jsoncons 타입은 외부 ABI에 노출하지 않는다.
 
 ## 모델과 도구
 

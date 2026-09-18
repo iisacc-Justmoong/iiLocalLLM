@@ -1,6 +1,6 @@
 # 모델 기반 메모리 회상
 
-`agent/MemoryRecall.h`는 프로젝트 메모리 주제를 로컬 모델로 선택하고 대화에 연결한다. 기존 Model·Service·ProjectMemory와 Qt를 사용하며 외부 서비스나 새로운 생산 의존성은 추가하지 않는다. 참조는 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `memdir/findRelevantMemories.ts`, `memoryScan.ts`, `memoryAge.ts`, `utils/attachments.ts`와 `query.ts`이다. 원본 소스나 프롬프트를 복사하지 않고 실행 계약을 구현한다.
+`src/agent/MemoryRecall.h`는 프로젝트 메모리 주제를 로컬 모델로 선택하고 대화에 연결한다. 기존 Model·Service·ProjectMemory와 Qt를 사용하며 외부 서비스나 새로운 생산 의존성은 추가하지 않는다. 참조는 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `memdir/findRelevantMemories.ts`, `memoryScan.ts`, `memoryAge.ts`, `utils/attachments.ts`와 `query.ts`이다. 원본 소스나 프롬프트를 복사하지 않고 실행 계약을 구현한다.
 
 ## 선택과 전달
 

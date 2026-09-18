@@ -1,6 +1,6 @@
 # 프로젝트 메모리
 
-`agent/ProjectMemory.h`는 프로젝트별 Markdown 메모리의 저장 위치, 자동 문맥, 목록·검색과 기존 파일 도구 연결을 제공한다. C++ 및 기존 Qt Core/Network를 사용한다. YAML 메타데이터는 이미 사용 중인 libyaml 기반 Frontmatter 파서를 재사용한다. 외부 서비스와 새 런타임 의존성은 추가하지 않는다.
+`src/agent/ProjectMemory.h`는 프로젝트별 Markdown 메모리의 저장 위치, 자동 문맥, 목록·검색과 기존 파일 도구 연결을 제공한다. C++ 및 기존 Qt Core/Network를 사용한다. YAML 메타데이터는 이미 사용 중인 libyaml 기반 Frontmatter 파서를 재사용한다. 외부 서비스와 새 런타임 의존성은 추가하지 않는다.
 
 참조는 고정된 분석본 `c8cd253554319f32ff64ff7000636199f720c9bc`의 `source/src/memdir/paths.ts`, `memdir.ts`, `memoryScan.ts`, `memoryTypes.ts`, `findRelevantMemories.ts`이다. 참조의 저장·검색 계약을 분석했으며 소스나 프롬프트를 복사하지 않는다. 참조에 있는 조건부 추출·dream 정리 기능을 기본 파일 저장 기능과 구분한다.
 

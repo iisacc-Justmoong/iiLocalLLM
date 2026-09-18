@@ -88,7 +88,7 @@ class CatalogTests(unittest.TestCase):
     def test_vendored_sampler_is_the_locked_official_source(self):
         lock=json.loads((ROOT/'catalog/parameter-sources.json').read_text())
         source=next(s for s in lock if s['provider']=='mlx-lm' and s['path']=='mlx_lm/sample_utils.py')
-        self.assertEqual(hashlib.sha256((ROOT/'runtimes/mlx_sample_utils.py').read_bytes()).hexdigest(),source['sha256'])
+        self.assertEqual(hashlib.sha256((ROOT/'src/runtimes/mlx_sample_utils.py').read_bytes()).hexdigest(),source['sha256'])
 
 
 if __name__=='__main__':

@@ -1,6 +1,6 @@
 #include <iiLocalLLM.h>
 #include <agent/Engine.h>
-#include "../runtimes/Utf8Stream.h"
+#include "../src/runtimes/Utf8Stream.h"
 #include <QtTest/QtTest>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonArray>

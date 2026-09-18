@@ -2,7 +2,7 @@
 
 에이전트 실행 계층은 기존 Service 위에 `agent::Model` 어댑터로 연결한다. 추론 Service와 런타임은 하네스를 참조하지 않는다. 현재 구현 계약은 [AgentHarness.md](AgentHarness.md), 전체 기능 대응 및 미완료 항목은 [HarnessParity.md](HarnessParity.md)에 있다.
 
-Service는 future/stream callback façade이다. 시작 시 읽기 전용 HardwareInfo를 확보하고 내장 런타임을 등록한다. Service::Impl::State가 ModelManager, SessionManager, ContextCacheManager를 소유한다. ModelManager는 ModelRegistry와 ModelResidencyManager를 조합한다. Scheduler worker가 상태 변경을 직렬화한다. 도메인 managers는 UI·IPC·HTTP를 참조하지 않는다. LocalIpcServer와 HttpApiServer는 같은 객체의 공개 Service API만 호출한다. 런타임은 Runtime.h / Hardware.h / Types.h와 하드웨어 탐지 계약에 의존하며 서비스 내부를 참조하지 않는다.
+Service는 future/stream callback façade이다. 시작 시 읽기 전용 HardwareInfo를 확보하고 내장 런타임을 등록한다. Service::Impl::State가 ModelManager, SessionManager, ContextCacheManager를 소유한다. ModelManager는 ModelRegistry와 ModelResidencyManager를 조합한다. Scheduler worker가 상태 변경을 직렬화한다. 도메인 managers는 UI·IPC·HTTP를 참조하지 않는다. LocalIpcServer와 HttpApiServer는 같은 객체의 공개 Service API만 호출한다. 런타임은 src/Runtime.h / src/Hardware.h / Types.h와 하드웨어 탐지 계약에 의존하며 서비스 내부를 참조하지 않는다.
 
 ```text
 iillm (tools/IpcClient.cpp; Qt Core/Network만 링크)
