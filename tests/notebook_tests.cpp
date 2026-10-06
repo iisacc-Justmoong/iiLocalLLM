@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include <agent/Tools.h>
 #include <agent/PermissionSettings.h>
 #include <agent/Notebook.h>
@@ -120,9 +121,9 @@ private slots:
     QVERIFY2(!allowed.isError,qPrintable(allowed.text+QString::fromUtf8(QJsonDocument(allowed.data).toJson())));
     auto plan=std::make_shared<a::RulePolicy>(a::PermissionMode::Plan);QVERIFY(a::ToolRunner(f.registry,plan).run(call,f.context).isError);
     auto accept=std::make_shared<a::RulePolicy>(a::PermissionMode::AcceptEdits);QVERIFY(!a::ToolRunner(f.registry,accept).run(call,f.context).isError);
-    const auto second=f.root.filePath("second.ipynb"),link=f.root.filePath("alias.ipynb");write(second,read(f.path));QVERIFY(QFile::link(f.path,link));
+    const auto second=f.root.filePath("second.ipynb"),link=f.root.filePath("alias.ipynb");write(second,read(f.path));QVERIFY(createNativeTestLink(f.path,link));
     auto args=call.arguments;args["notebook_path"]=link;const auto prepared=f.registry->get("NotebookEdit").prepare(args,f.context);
-    QVERIFY(QFile::remove(link));QVERIFY(QFile::link(second,link));QVERIFY_THROWS_EXCEPTION(Error,prepared.execute());
+    QVERIFY(removeNativeTestLink(link));QVERIFY(createNativeTestLink(second,link));QVERIFY_THROWS_EXCEPTION(Error,prepared.execute());
     f.context.protectedPaths.append(f.path);QVERIFY(f.edit({{"cell_id","first"},{"new_source","private"}}).isError);
  }
  void boundsCancellationAndFailedArtifactsLeaveOriginalIntact(){

@@ -1,5 +1,8 @@
 #include <iiLocalLLM.h>
 #include <QtTest/QtTest>
+#ifdef Q_OS_WIN
+#include <winsock2.h>
+#endif
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
@@ -213,7 +216,8 @@ private slots:
             bool isControlMethod(const QString& method) const override {return method.startsWith("control/");}
             RpcHandle dispatch(QString method,QJsonObject,QString,RpcEventCallback) override {
                 std::promise<QJsonValue> value;auto future=value.get_future().share();
-                value.set_value(QJsonObject{{"data",method.endsWith("large")?QString(16*1024*1024,'x'):QString("ok")}});
+                constexpr int largeBytes = 16*1024*1024;
+                value.set_value(QJsonObject{{"data",method.endsWith("large")?QString(largeBytes,'x'):QString("ok")}});
                 return {"response",{},future};
             }
         };
@@ -221,7 +225,22 @@ private slots:
         limits.maxBufferedOutputBytes=24*1024*1024;limits.writeTimeoutMs=10000;
         HttpApiServer server(*fixture.service,limits);server.setRpcHandler(std::make_shared<Handler>());QVERIFY(server.listen());
         const auto prefix=control?QString("control/"):QString("work/");
-        QTcpSocket stalled;stalled.setReadBufferSize(1);stalled.connectToHost("127.0.0.1",server.port());QVERIFY(stalled.waitForConnected());
+        QTcpSocket stalled;stalled.setReadBufferSize(1);
+#ifdef Q_OS_WIN
+        // Apply SO_RCVBUF before the handshake so TCP window scaling cannot
+        // absorb the whole response before the deliberate slow reader starts.
+        const auto socket = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
+        QVERIFY(socket != INVALID_SOCKET);
+        const int receiveBytes = 1024;
+        QCOMPARE(setsockopt(socket, SOL_SOCKET, SO_RCVBUF,
+            reinterpret_cast<const char *>(&receiveBytes), sizeof(receiveBytes)), 0);
+        sockaddr_in address{}; address.sin_family = AF_INET;
+        address.sin_addr.s_addr = htonl(INADDR_LOOPBACK); address.sin_port = htons(server.port());
+        QCOMPARE(::connect(socket, reinterpret_cast<const sockaddr *>(&address), sizeof(address)), 0);
+        QVERIFY(stalled.setSocketDescriptor(qintptr(socket), QAbstractSocket::ConnectedState));
+#else
+        stalled.connectToHost("127.0.0.1",server.port());QVERIFY(stalled.waitForConnected());
+#endif
         stalled.setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption,1024);
         const auto body=QJsonDocument(QJsonObject{{"id","slow"},{"method",prefix+"large"},{"stream",streaming}}).toJson(QJsonDocument::Compact);
         const QByteArray headers="POST /v1/rpc HTTP/1.1\r\nHost: 127.0.0.1:"+QByteArray::number(server.port())

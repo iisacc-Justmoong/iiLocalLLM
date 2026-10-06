@@ -123,7 +123,7 @@ public:
             require(options.permissionRequests->maxRequestBytes<=options.maxResultBytes-256,"Permission requests must fit the API result limit");
         }
         options.workingDirectory = QFileInfo(options.workingDirectory).canonicalFilePath();
-        require(!options.workingDirectory.isEmpty() && QFileInfo(options.workingDirectory).isDir(), "Agent API workspace must exist");
+        require(!options.workingDirectory.isEmpty() && !QDir(options.workingDirectory).isRoot() && QFileInfo(options.workingDirectory).isDir(), "Agent API workspace must exist");
         require(options.engine.projectContext.rootDirectory.isEmpty()
             || QFileInfo(options.engine.projectContext.rootDirectory).canonicalFilePath() == options.workingDirectory,
             "Agent API instruction root must equal its workspace");

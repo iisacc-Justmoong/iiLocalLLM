@@ -149,9 +149,15 @@ void SessionLease::compact(Compaction c) {
         QSaveFile replacement(d->file.fileName());
         storage(replacement.open(QIODevice::WriteOnly), "Cannot migrate legacy transcript");
         const auto first = line(header);
-        storage(replacement.write(first) == first.size() && replacement.write(remaining) == remaining.size()
-            && replacement.commit(), "Cannot atomically migrate legacy transcript");
-        d->file.close(); storage(d->file.open(QIODevice::ReadWrite), "Cannot reopen migrated transcript"); d->version = 2;
+        storage(replacement.write(first) == first.size() && replacement.write(remaining) == remaining.size(),
+            "Cannot write migrated transcript");
+        // Windows denies replacement while this lease still holds the old file.
+        d->file.close();
+        if (!replacement.commit()) {
+            (void)d->file.open(QIODevice::ReadWrite);
+            throw Error(ErrorCode::StorageFailure, "Cannot atomically migrate legacy transcript");
+        }
+        storage(d->file.open(QIODevice::ReadWrite), "Cannot reopen migrated transcript"); d->version = 2;
     }
     storage(d->file.seek(d->file.size()), "Cannot seek compaction transcript");
     const auto originalSize = d->file.size();

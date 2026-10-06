@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include <agent/InputQueue.h>
 #include <agent/Engine.h>
 #include <QtTest/QtTest>
@@ -336,7 +337,7 @@ private slots:
         QVERIFY(file.open(QIODevice::ReadOnly)); QCOMPARE(file.readAll(), "{broken"); file.close();
         const auto outside = root.filePath("outside.json"); QFile target(outside);
         QVERIFY(target.open(QIODevice::WriteOnly)); target.write("untouched"); target.close();
-        QVERIFY(file.remove()); QVERIFY(QFile::link(outside, fileName));
+        QVERIFY(file.remove()); QVERIFY(createNativeTestLink(outside, fileName));
         QVERIFY_THROWS_EXCEPTION(Error, queue.snapshot("one"));
         QVERIFY_THROWS_EXCEPTION(Error, queue.remove("one", "unknown"));
         QVERIFY(target.open(QIODevice::ReadOnly)); QCOMPARE(target.readAll(), "untouched");

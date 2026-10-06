@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include <agent/FileCheckpoints.h>
 #include <agent/Engine.h>
 #include <agent/Api.h>
@@ -71,7 +72,7 @@ private slots:
     Fixture f;const auto first=f.checkpoint();f.edit(f.path,"new");
     auto denied=f.context;denied.protectedPaths={f.path};QVERIFY_THROWS_EXCEPTION(Error,f.history.rewind(first,false,denied));
     auto revision=f.context;revision.workspaceRevision=1;QVERIFY_THROWS_EXCEPTION(Error,f.history.rewind(first,false,revision));
-    const auto outside=f.root.filePath("outside");write(outside,"outside");QVERIFY(QFile::remove(f.path));QVERIFY(QFile::link(outside,f.path));
+    const auto outside=f.root.filePath("outside");write(outside,"outside");QVERIFY(QFile::remove(f.path));QVERIFY(createNativeTestLink(outside,f.path));
     QVERIFY_THROWS_EXCEPTION(Error,f.history.rewind(first,false,f.context));QCOMPARE(read(outside),"outside");
     const auto journal=f.state+'/'+f.context.sessionId+"/state.json";auto data=QJsonDocument::fromJson(read(journal)).object();data["snapshots"]=42;write(journal,QJsonDocument(data).toJson());
     QVERIFY_THROWS_EXCEPTION(Error,f.history.list(f.context));
@@ -90,9 +91,18 @@ private slots:
  void partialIoFailureReportsRestoredFilesPrecisely(){
     Fixture f;const auto nested=f.work+"/z";QVERIFY(QDir().mkpath(nested));const auto path=nested+"/file";write(path,"second original");
     const auto first=f.checkpoint();f.edit(f.path,"new");f.edit(path,"second new");const auto mode=QFileInfo(nested).permissions();
+    #ifdef Q_OS_WIN
+    HANDLE blocked=CreateFileW(reinterpret_cast<LPCWSTR>(path.utf16()),GENERIC_READ,FILE_SHARE_READ,nullptr,OPEN_EXISTING,0,nullptr);
+    QVERIFY(blocked!=INVALID_HANDLE_VALUE);
+#else
     QVERIFY(QFile::setPermissions(nested,QFileDevice::ReadOwner|QFileDevice::ExeOwner));
+#endif
     const auto result=f.history.rewind(first,false,f.context);const auto readable=read(path);
+    #ifdef Q_OS_WIN
+    CloseHandle(blocked);
+#else
     const bool permissionsRestored=QFile::setPermissions(nested,mode);QVERIFY(permissionsRestored);
+#endif
     QVERIFY(!result["complete"].toBool());QCOMPARE(result["filesRestored"].toArray(),QJsonArray{f.path});QCOMPARE(result["errors"].toArray().size(),1);
     QCOMPARE(read(f.path),"original\r\n");QCOMPARE(readable,"second new");
  }

@@ -96,7 +96,7 @@ void bindTranscriptRead(ToolRegistry& registry,const QString& transcript,int max
         auto preview=definition;preview.metadata["canonical_path"]=transcript;
         return PreparedTool{preview,[transcript,args,context,maxBytes] {
             require(QFileInfo(transcript).canonicalFilePath()==transcript&&!QFileInfo(transcript).isSymLink(),"Parent transcript path changed",ErrorCode::StorageFailure);
-            const auto bytes=readContextFile(QDir::rootPath(),transcript,qMin(maxBytes,1024*1024),context.cancellation);
+            const auto bytes=readContextFile(QFileInfo(transcript).absolutePath(),transcript,qMin(maxBytes,1024*1024),context.cancellation);
             QStringDecoder decoder(QStringDecoder::Utf8);const QString text=decoder(bytes);
             require(!decoder.hasError(),"Parent transcript is not UTF-8",ErrorCode::ProtocolError);
             const auto lines=text.split('\n');const int offset=args["offset"].toInt(1),limit=args["limit"].toInt(2000);QStringList output;

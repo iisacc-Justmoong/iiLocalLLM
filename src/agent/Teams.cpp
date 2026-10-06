@@ -183,6 +183,7 @@ public:
             QFile file(QDir(root).filePath(fileName));require(!QFileInfo(file.fileName()).isSymLink()&&QFileInfo(file.fileName()).isFile()&&file.open(QIODevice::ReadOnly),"Cannot read team record",ErrorCode::StorageFailure);
             const auto bytes=file.read(16*1024*1024+1);require(bytes.size()<=16*1024*1024&&file.atEnd(),"Team record exceeds limit",ErrorCode::ResourceLimit);
             QJsonParseError error;const auto doc=QJsonDocument::fromJson(bytes,&error);const auto state=doc.object();
+            file.close(); // Windows atomic replacement requires releasing the old record handle.
             require(error.error==QJsonParseError::NoError&&doc.isObject()&&state["schema"]=="iisacc.agent.team/1"
                 &&fileName==state["id"].toString()+".json"&&safeId(state["id"].toString())&&memberName(state["team_name"].toString())
                 &&safeId(state["lead_session_id"].toString())&&state["members"].isArray()&&state["messages"].isArray()

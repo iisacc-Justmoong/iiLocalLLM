@@ -1,3 +1,8 @@
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#endif
 #include "../third_party/cpp-httplib/httplib.h"
 #include "HttpApiServer.h"
 #include "Parameters.h"
@@ -38,7 +43,20 @@ QByteArray json(const QJsonObject& object) { return QJsonDocument(object).toJson
 void respond(httplib::Response& response, const QJsonObject& value, int status = 200)
 {
     response.status = status;
-    response.set_content(json(value).toStdString(), "application/json; charset=utf-8");
+    auto data = json(value);
+    if (data.size() <= 65536) {
+        response.set_content(data.toStdString(), "application/json; charset=utf-8");
+        return;
+    }
+    // Send headers before a large body and avoid copying it into httplib's
+    // combined header buffer. Response still owns its admission lease.
+    auto body = std::make_shared<QByteArray>(std::move(data));
+    response.set_content_provider(size_t(body->size()), "application/json; charset=utf-8",
+        [body](size_t offset, size_t length, httplib::DataSink& sink) {
+            if (offset > size_t(body->size())) return false;
+            const auto count = std::min({length, size_t(body->size()) - offset, size_t(65536)});
+            return count && sink.write(body->constData() + offset, count);
+        });
 }
 void fail(httplib::Response& response, const Error& error)
 {

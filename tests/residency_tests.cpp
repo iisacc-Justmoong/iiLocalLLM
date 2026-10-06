@@ -46,6 +46,9 @@ private slots:
             QVERIFY_THROWS_EXCEPTION(Error, parseKeepAlive(value));
         QVERIFY_THROWS_EXCEPTION(Error, (MemoryEstimate{std::numeric_limits<quint64>::max(), 1}.totalBytes()));
         const auto available = availableRamBytes();
+#ifdef Q_OS_WIN
+        QVERIFY(available.has_value());
+#endif
         QVERIFY(!available || *available > 0);
     }
 };

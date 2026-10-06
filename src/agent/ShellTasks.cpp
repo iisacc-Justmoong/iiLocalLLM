@@ -107,8 +107,8 @@ public:
         return found->second;
     }
     Impl(QString root, QString state, ShellTaskOptions o) : options(o) {
-#if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
-        throw Error(ErrorCode::RuntimeUnavailable, "Background shell tasks currently require a desktop POSIX host");
+#if (!defined(Q_OS_UNIX) && !defined(Q_OS_WIN)) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+        throw Error(ErrorCode::RuntimeUnavailable, "Background shell tasks currently require a desktop host");
 #endif
         require(o.maxConcurrent > 0 && o.maxConcurrent <= 64 && o.maxRecords > 0 && o.maxRecords <= 10000
             && o.maxOutputBytes >= 1024 && o.maxOutputBytes <= 64 * 1024 * 1024 && o.maxRuntimeMs > 0 && o.maxRuntimeMs <= 86400000,
@@ -142,6 +142,7 @@ public:
                 && m["description"].toString().size() <= 4096 && m["created_at"].isDouble()
                 && QStringList{"pending", "running", "completed", "failed", "killed", "interrupted"}.contains(m["status"].toString()),
                 "Corrupt shell task state", ErrorCode::ProtocolError);
+            file.close();
             const auto output = outputPath(*job); const QFileInfo outputInfo(output);
             require(outputInfo.isFile() && !outputInfo.isSymLink() && outputInfo.size() <= 64 * 1024 * 1024,
                 "Invalid shell output file", ErrorCode::StorageFailure);

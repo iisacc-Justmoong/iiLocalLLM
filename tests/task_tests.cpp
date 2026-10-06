@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include "agent/TaskStore.h"
 #include "agent/Engine.h"
 #include <QtTest/QtTest>
@@ -41,7 +42,7 @@ private slots:
         fails([&]{create(stale,"team");},ErrorCode::NotFound);
         first.retire("team");QVERIFY(stale.snapshot("new-team")["tasks"].toArray().isEmpty());
         QVERIFY(QFile::remove(root.filePath("tasks/team/retired.json")));
-        QVERIFY(QFile::link(root.filePath("absent"),root.filePath("tasks/team/retired.json")));
+        QVERIFY(createNativeTestLink(root.filePath("absent"),root.filePath("tasks/team/retired.json")));
         fails([&]{stale.snapshot("team");},ErrorCode::StorageFailure);
     }
     void verificationCanReadTheBoardBeforePublication() {
@@ -128,10 +129,12 @@ private slots:
         QCOMPARE(store.snapshot("a"), before);
     }
     void concurrentCreationAndAtomicClaim() {
-        QTemporaryDir root; auto store = std::make_shared<a::TaskStore>(root.filePath("tasks"));
+        QTemporaryDir root;
+        a::TaskStoreOptions options; options.lockTimeoutMs = 15000;
+        auto store = std::make_shared<a::TaskStore>(root.filePath("tasks"), options);
         std::vector<std::future<QString>> creates;
         for (int n = 0; n < 16; ++n) creates.emplace_back(std::async(std::launch::async, [&, n] {
-            a::TaskStore independent(root.filePath("tasks"));
+            a::TaskStore independent(root.filePath("tasks"), options);
             return create(independent, "shared", QString::number(n))["task"].toObject()["id"].toString();
         }));
         std::set<QString> ids; for (auto& result : creates) ids.insert(result.get());
@@ -199,7 +202,7 @@ private slots:
         lock.unlock();
 #ifdef Q_OS_UNIX
         QVERIFY(QFile::rename(root.filePath("tasks/shared/board.json"), root.filePath("saved.json")));
-        QVERIFY(QFile::link(root.filePath("saved.json"), root.filePath("tasks/shared/board.json")));
+        QVERIFY(createNativeTestLink(root.filePath("saved.json"), root.filePath("tasks/shared/board.json")));
         fails([&] { store.snapshot("shared"); }, ErrorCode::StorageFailure);
 #endif
     }

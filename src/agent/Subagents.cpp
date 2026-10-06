@@ -179,6 +179,7 @@ public:
                 }
             }
             auto job=std::make_shared<Job>();job->state=state;
+            file.close(); // Release the previous Windows record before atomic recovery writes.
             if(!terminal(state["status"].toString())) {job->state["status"]="interrupted";job->state["error"]="Previous host ended without a final outcome; execution was not repeated.";write(*job);}
             jobs.emplace(id,std::move(job));
         }

@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include <agent/Engine.h>
 #include <agent/Api.h>
 #include <agent/McpServer.h>
@@ -248,7 +249,7 @@ private slots:
         QVERIFY_THROWS_EXCEPTION(Error,f.plans->status("owner"));
         QVERIFY(f.run("Write",{{"path","project.txt"},{"content","blocked"}}).isError);
         Fixture other;other.draft();const auto target=other.workspace+"/private.txt";write(target,"SECRET");const auto planPath=other.plan();QVERIFY(QFile::remove(planPath));
-        QVERIFY(QFile::link(target,planPath));QVERIFY_THROWS_EXCEPTION(Error,other.plans->status("owner"));
+        QVERIFY(createNativeTestLink(target,planPath));QVERIFY_THROWS_EXCEPTION(Error,other.plans->status("owner"));
         QVERIFY(other.run("Read",{{"path",planPath}}).isError);QCOMPARE(read(target),QByteArray("SECRET"));
     }
     void planStateAndForeignFilesAreNotSearchable() {

@@ -189,7 +189,7 @@ void DiscoveryTests::configuredStdioReloadAndRecovery() {
     auto registry = std::make_shared<a::ToolRegistry>(); a::McpConnections connections(registry, o);
     auto client = connections.client("app"); auto state = client->request("test/state");
     QCOMPARE(state["configuredValue"], "literal $(not-executed)");
-    QCOMPARE(state["cwd"].toString(), QFileInfo(root.filePath("work")).canonicalFilePath());
+    QCOMPARE(QDir::fromNativeSeparators(state["cwd"].toString()), QFileInfo(root.filePath("work")).canonicalFilePath());
     QCOMPARE(client->listResources().size(), 1); QCOMPARE(client->listPrompts().size(), 1);
     QCOMPARE(client->request("test/reverse", {{"method", "roots/list"}})["response"].toObject()["result"].toObject()["roots"].toArray().size(), 1);
     const auto old = registry->get("mcp__app__echo");

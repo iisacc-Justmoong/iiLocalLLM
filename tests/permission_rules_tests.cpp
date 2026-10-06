@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include "agent/PermissionRules.h"
 #include "agent/Tools.h"
 #include <QtCore/QTemporaryDir>
@@ -51,8 +52,8 @@ private slots:
         QCOMPARE(policy.decide({"mcp__societyOther__store","store",{{"type","object"}}},{},context).behavior,a::PermissionBehavior::Ask);
     }
     void bashChecksEveryCommandAndFindsNestedDenials() {
-#ifndef Q_OS_UNIX
-        QSKIP("The non-POSIX executor uses cmd.exe; Bash content rules cannot authorize it");
+#if !defined(Q_OS_UNIX) && !defined(Q_OS_WIN)
+        QSKIP("Bash executor required");
 #endif
         a::ToolDefinition bash{"Bash","shell",{{"type","object"}}};a::ToolContext context;
         context.allowedTools={"Bash(git status:*)","Bash(printf:*)"};a::RulePolicy policy;
@@ -71,12 +72,12 @@ private slots:
             .decide(bash,{{"command","printf [x]; printf done"}},context).behavior,a::PermissionBehavior::Deny);
     }
     void redirectsSymlinksAndUnanalysedShellDoNotExpandGrants() {
-#ifndef Q_OS_UNIX
-        QSKIP("Requires the POSIX Bash executor and filesystem symlinks");
+#if !defined(Q_OS_UNIX) && !defined(Q_OS_WIN)
+        QSKIP("Requires the Bash executor and filesystem symlinks");
 #endif
         QTemporaryDir root,outside;QDir().mkpath(root.filePath("src"));QDir().mkpath(root.filePath("private"));
         a::ToolContext context;context.workingDirectory=root.path();context.allowedTools={"Write(src/**)","Bash(printf:*)"};
-        QVERIFY(QFile::link(root.filePath("private"),root.filePath("src/link")));
+        QVERIFY(createNativeTestLink(root.filePath("private"),root.filePath("src/link")));
         a::ToolDefinition write{"Write","write",{{"type","object"}}},bash{"Bash","shell",{{"type","object"}}};
         QCOMPARE(a::RulePolicy().decide(write,{{"path","src/link/secret"}},context).behavior,a::PermissionBehavior::Ask);
         QCOMPARE(a::RulePolicy(a::PermissionMode::Bypass,{{"Write(private/**)",a::PermissionBehavior::Deny}}).decide(write,{{"path","src/link/secret"}},context).behavior,a::PermissionBehavior::Deny);
@@ -97,8 +98,8 @@ private slots:
         QVERIFY_THROWS_EXCEPTION(Error,a::parsePermissionRules(excessive));
     }
     void whitespaceCommandNameDoesNotBecomeCommandAndArgument() {
-#ifndef Q_OS_UNIX
-        QSKIP("Requires the POSIX Bash executor");
+#if !defined(Q_OS_UNIX) && !defined(Q_OS_WIN)
+        QSKIP("Requires the Bash executor");
 #endif
         a::ToolDefinition bash{"Bash","shell",{{"type","object"}}};a::ToolContext context;
         context.allowedTools={"Bash(git status:*)"};
@@ -107,8 +108,8 @@ private slots:
         QCOMPARE(a::RulePolicy().decide(bash,{{"command","'git' 'status' --short"}},context).behavior,a::PermissionBehavior::Allow);
     }
     void readWriteRedirectChecksBothAccessRules() {
-#ifndef Q_OS_UNIX
-        QSKIP("Requires the POSIX Bash executor");
+#if !defined(Q_OS_UNIX) && !defined(Q_OS_WIN)
+        QSKIP("Requires the Bash executor");
 #endif
         QTemporaryDir root;QVERIFY(QDir().mkpath(root.filePath("private")));
         a::ToolDefinition bash{"Bash","shell",{{"type","object"}}};a::ToolContext context;
@@ -119,8 +120,8 @@ private slots:
                     .decide(bash,{{"command","cat <> private/secret"}},context).behavior,behavior);
     }
     void trailingArgumentDoesNotReplaceRedirectTarget() {
-#ifndef Q_OS_UNIX
-        QSKIP("Requires the POSIX Bash executor");
+#if !defined(Q_OS_UNIX) && !defined(Q_OS_WIN)
+        QSKIP("Requires the Bash executor");
 #endif
         QTemporaryDir root;QVERIFY(QDir().mkpath(root.filePath("private")));
         a::ToolDefinition bash{"Bash","shell",{{"type","object"}}};a::ToolContext context;
@@ -130,7 +131,7 @@ private slots:
                 .decide(bash,{{"command",command}},context).behavior,a::PermissionBehavior::Deny);
     }
     void filePermissionSnapshotRejectsPathReplacementBeforeExecution() {
-#ifndef Q_OS_UNIX
+#if !defined(Q_OS_UNIX) && !defined(Q_OS_WIN)
         QSKIP("Requires filesystem symlinks");
 #endif
         for(bool ask:{false,true}) {
@@ -139,7 +140,7 @@ private slots:
             auto registry=std::make_shared<a::ToolRegistry>();a::registerWorkspaceTools(*registry,workspace);
             auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Default,QList<a::PermissionRule>{
                 {"Write(src/**)",ask?a::PermissionBehavior::Ask:a::PermissionBehavior::Allow},{"Write(private/**)",a::PermissionBehavior::Deny}});
-            auto replace=[&]{if(!QDir().rename(workspace+"/src",workspace+"/original-src")||!QFile::link(workspace+"/private",workspace+"/src"))throw std::runtime_error("replace test path");};
+            auto replace=[&]{if(!QDir().rename(workspace+"/src",workspace+"/original-src")||!createNativeTestLink(workspace+"/private",workspace+"/src"))throw std::runtime_error("replace test path");};
             a::ToolRunnerOptions options;if(ask)options.permission=[&](const auto&,const auto&,const auto&){replace();return true;};
             a::ToolRunner runner(registry,policy,options);a::ToolContext context{"session","run",workspace};
             const auto result=runner.run({"write","Write",{{"path","src/output"},{"content","FORBIDDEN"}}},context,[&](const a::Event& e){if(!ask&&e.kind==a::EventKind::ToolStarted)replace();});

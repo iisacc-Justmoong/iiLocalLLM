@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include <agent/Lsp.h>
 #include <agent/Api.h>
 #include <agent/McpServer.h>
@@ -71,9 +72,9 @@ private slots:
     Fixture f;auto policy=std::make_shared<Policy>();a::Lsp lsp(f.options,policy);auto registry=std::make_shared<a::ToolRegistry>();registry->add(lsp.tool(false));
     const auto result=a::ToolRunner(registry,policy).run({"native","LSP",f.args()},f.context);QVERIFY2(!result.isError,qPrintable(result.text));
  }
- void preparedPathCannotBeRedirectedAfterPermissionPreview(){Fixture f;f.write("secret.cpp","int private_value;\n");QVERIFY(QFile::link(f.root.filePath("main.cpp"),f.root.filePath("alias.cpp")));
+ void preparedPathCannotBeRedirectedAfterPermissionPreview(){Fixture f;f.write("secret.cpp","int private_value;\n");QVERIFY(createNativeTestLink(f.root.filePath("main.cpp"),f.root.filePath("alias.cpp")));
     a::Lsp lsp(f.options);const auto prepared=lsp.tool().prepare(f.args("hover","alias.cpp"),f.context);
-    QCOMPARE(prepared.definition.metadata["canonical_path"].toString(),f.root.filePath("main.cpp"));QVERIFY(QFile::remove(f.root.filePath("alias.cpp")));QVERIFY(QFile::link(f.root.filePath("secret.cpp"),f.root.filePath("alias.cpp")));
+    QCOMPARE(prepared.definition.metadata["canonical_path"].toString(),f.root.filePath("main.cpp"));QVERIFY(QFile::remove(f.root.filePath("alias.cpp")));QVERIFY(createNativeTestLink(f.root.filePath("secret.cpp"),f.root.filePath("alias.cpp")));
     QVERIFY_THROWS_EXCEPTION(Error,prepared.execute());QVERIFY(f.messages().isEmpty());
  }
  void initializationErrorsArePublicErrors(){Fixture f("init-error");a::Lsp lsp(f.options);QVERIFY_THROWS_EXCEPTION(Error,lsp.query(f.args(),f.context));}

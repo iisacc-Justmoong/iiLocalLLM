@@ -225,3 +225,6 @@ private slots:
 };
 QTEST_GUILESS_MAIN(HardwareTests)
 #include "hardware_tests.moc"
+#ifdef _WIN32
+#include <dxgi1_2.h>
+#endif

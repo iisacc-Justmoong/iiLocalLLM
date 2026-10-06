@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include <iiLocalLLM.h>
 #include <QtTest/QtTest>
 #include <QtCore/QCryptographicHash>
@@ -160,13 +161,13 @@ private slots:
         QTemporaryDir root(QDir::current().filePath("catalog-XXXXXX")); QVERIFY(root.isValid());
         const auto source = package(root.filePath("source"));
         write(root.filePath("outside/keep.txt"), "keep");
-        QVERIFY(QFile::link(root.filePath("outside"), source + "/linked"));
+        QVERIFY(createNativeTestLink(root.filePath("outside"), source + "/linked"));
         ModelCatalog catalog(root.filePath("Models"));
         QVERIFY_THROWS_EXCEPTION(Error, catalog.install(source));
         QVERIFY(QFileInfo(root.filePath("outside/keep.txt")).exists());
         QVERIFY(QFile::remove(source + "/linked"));
         const auto installed = catalog.install(source);
-        QVERIFY(QFile::link(root.filePath("outside"), catalog.resolve(installed.uri).directory + "/linked"));
+        QVERIFY(createNativeTestLink(root.filePath("outside"), catalog.resolve(installed.uri).directory + "/linked"));
         QVERIFY(!catalog.verify(installed.uri).valid);
         catalog.remove(installed.uri);
         QVERIFY(QFileInfo(root.filePath("outside/keep.txt")).exists());

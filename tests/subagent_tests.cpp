@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include "agent/Subagents.h"
 #include "agent/ShellTasks.h"
 #include "agent/PermissionSettings.h"
@@ -262,8 +263,8 @@ private slots:
         QVERIFY(!result.isError);QCOMPARE(writes,0);
     }
     void childBackgroundShellsReachTerminalState() {
-#if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
-        QSKIP("Background shell execution requires a desktop POSIX host");
+#if (!defined(Q_OS_UNIX) && !defined(Q_OS_WIN)) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+        QSKIP("Background shell execution requires a desktop host");
 #endif
         Host h;auto shells=std::make_shared<a::ShellTasks>(h.workspace,h.root.filePath("shells"));
         a::registerWorkspaceTools(*h.registry,h.workspace,shells);
@@ -278,9 +279,9 @@ private slots:
     }
     void childStorageRejectsSymlinksAndInvalidRequestsLeaveNoRecord() {
         Host h;QDir().mkpath(h.options.stateDirectory);
-        QVERIFY(QFile::link(h.workspace,QDir(h.options.stateDirectory).filePath("sessions")));
+        QVERIFY(createNativeTestLink(h.workspace,QDir(h.options.stateDirectory).filePath("sessions")));
         QVERIFY_THROWS_EXCEPTION(Error,h.start());
-        QVERIFY(QFile::remove(QDir(h.options.stateDirectory).filePath("sessions")));
+        QVERIFY(removeNativeTestLink(QDir(h.options.stateDirectory).filePath("sessions")));
         auto agents=h.start();const auto p=h.parent();auto c=h.context(p);
         QVERIFY_THROWS_EXCEPTION(Error,agents->run(c,{{"prompt","do work"},{"unknown",true}}));
         QVERIFY_THROWS_EXCEPTION(Error,agents->run(c,{{"prompt","do work"},{"model","forbidden"}}));
@@ -302,7 +303,7 @@ private slots:
         const auto first=agents->run(c,{{"prompt","first"}});QVERIFY(!first.isError);
         const auto id=first.data["agentId"].toString();const auto before=agents->output(p.id,id);
         const auto path=QDir(h.options.stateDirectory).filePath(id+".json"),backup=path+".saved";
-        QVERIFY(QFile::rename(path,backup));QVERIFY(QFile::link(backup,path));
+        QVERIFY(QFile::rename(path,backup));QVERIFY(createNativeTestLink(backup,path));
         QVERIFY_THROWS_EXCEPTION(Error,agents->run(c,{{"prompt","resume"},{"resume",id}}));
         QCOMPARE(agents->output(p.id,id),before);
         QVERIFY(QFile::remove(path));QVERIFY(QFile::rename(backup,path));

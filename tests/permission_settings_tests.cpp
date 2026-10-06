@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include "agent/PermissionSettings.h"
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QDir>
@@ -107,7 +108,7 @@ private slots:
         QCOMPARE(p.decide(writeTool(),{{"path","ordinary.txt"}},c).behavior,a::PermissionBehavior::Allow);
         QCOMPARE(p.decide(writeTool(),{{"path",".claude/./settings.json"}},c).behavior,a::PermissionBehavior::Deny);
         QCOMPARE(p.decide(writeTool(),{{"path","nested/.claude/settings.local.json"}},c).behavior,a::PermissionBehavior::Deny);
-        QVERIFY(QFile::remove(path));QVERIFY(QFile::link(root.filePath("missing.json"),path));QVERIFY_THROWS_EXCEPTION(Error,p.snapshot());
+        QVERIFY(QFile::remove(path));QVERIFY(createNativeTestLink(root.filePath("missing.json"),path));QVERIFY_THROWS_EXCEPTION(Error,p.snapshot());
         QVERIFY(QFile::remove(path));QVERIFY(QDir().mkdir(path));QVERIFY_THROWS_EXCEPTION(Error,p.snapshot());QVERIFY(QDir().rmdir(path));
         save(path,permissions("deny",{"Write"}));
 #ifdef Q_OS_UNIX

@@ -121,6 +121,7 @@ private slots:
         QCOMPARE(engine->endSession(id)["ended"],false);
     }
     void commandReasonMatchersAndCommonBudgetStopQueuedProcesses() {
+        try {
         Host host;host.options.sessionEndTimeoutMs=180;a::CommandHookOptions options;options.workingDirectory=host.workspace;options.maxConcurrentProcesses=1;
         auto settings=config("cat > matched.json; sleep 5; touch TOO_LATE","logout|clear");
         auto groups=settings["hooks"].toObject()["SessionEnd"].toArray();
@@ -135,6 +136,7 @@ private slots:
         a::HookInput input{a::HookKind::SessionEnd,id,{}, {},{},{},{{"reason","other"}}};
         QVERIFY(matcher.callback()(input,{}).diagnostics.isEmpty());input.context["reason"]="clear";matcher.callback()(input,{});
         QFile f(host.workspace+"/reason.json");QVERIFY(f.open(QIODevice::ReadOnly));QCOMPARE(QJsonDocument::fromJson(f.readAll()).object()["reason"],"clear");
+        } catch (const std::exception &error) { QFAIL(error.what()); }
     }
     void invalidOrPreCancelledRequestsLeaveTheSessionOpen() {
         Host host;auto engine=host.engine();const auto id=engine->createSession("local",host.workspace).id;

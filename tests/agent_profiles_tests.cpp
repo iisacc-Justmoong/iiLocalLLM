@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include "agent/AgentProfiles.h"
 #include "agent/Subagents.h"
 #include "../tools/AgentProfileConfig.h"
@@ -38,6 +39,7 @@ private slots:
         options.overrides={{"reviewer",false}};QCOMPARE(a::discoverAgentProfiles(root.path(),options).find("reviewer").source,"managed");
     }
     void missingPreloadLeavesNoChildAndProfileBackgroundIsHonored() {
+        try {
         QTemporaryDir root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
         class Model final:public a::Model { a::ModelReply generate(const a::ModelRequest&,const CancellationToken&,const TextCallback&) override{return {"done",{}};} };
         auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
@@ -53,8 +55,9 @@ private slots:
         const auto id=result.data["agentId"].toString();QCOMPARE(agents->output(p.id,id,true,2000)["status"],"completed");
         // A fatal catalog error cannot prevent lifecycle cleanup or inspection.
         QVERIFY(QFile::remove(path));QDir(workspace+"/.claude/agents").removeRecursively();
-        QVERIFY(QFile::link(root.path(),workspace+"/.claude/agents"));
+        QVERIFY(createNativeTestLink(root.path(),workspace+"/.claude/agents"));
         engine.stopSubagents(p.id);QVERIFY(!engine.runSubagentTool(p.id,"AgentOutput",{{"agent_id",id}}).isError);
+        } catch (const std::exception &error) { QFAIL(error.what()); }
     }
     void actualExecutionFreezesPromptAndIntersectsCurrentScope() {
         QTemporaryDir root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
@@ -163,7 +166,7 @@ private slots:
     void scanConfinementCancellationAndFileLimits() {
         QTemporaryDir root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace+"/.claude/agents");
         a::AgentProfileOptions options;options.projectBoundary=workspace;
-        put(root.filePath("outside.md"),profile("external"));QVERIFY(QFile::link(root.filePath("outside.md"),workspace+"/.claude/agents/link.md"));
+        put(root.filePath("outside.md"),profile("external"));QVERIFY(createNativeTestLink(root.filePath("outside.md"),workspace+"/.claude/agents/link.md"));
         auto catalog=a::discoverAgentProfiles(workspace,options);QVERIFY(!catalog.failedFiles.isEmpty());
         QVERIFY_THROWS_EXCEPTION(Error,catalog.find("reviewer"));
         CancellationToken cancelled;cancelled.cancel();QVERIFY_THROWS_EXCEPTION(Error,a::discoverAgentProfiles(workspace,options,{},cancelled));

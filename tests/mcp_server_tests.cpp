@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include <mcp/Server.h>
 #include <agent/McpServer.h>
 #include <agent/ShellTasks.h>
@@ -201,7 +202,7 @@ private slots:
         QJsonObject state;for(const auto& value:listed["structuredContent"].toObject()["agents"].toArray())if(value.toObject()["agentId"]==id)state=value.toObject();
         QVERIFY(!state.isEmpty());
         QVERIFY(QDir().rename(workspace+"/.claude/agents",workspace+"/.claude/saved-agents"));
-        QVERIFY(QFile::link(root.path(),workspace+"/.claude/agents"));
+        QVERIFY(createNativeTestLink(root.path(),workspace+"/.claude/agents"));
         QVERIFY(call(first,23,"iiLocalLLM.agent.agents.profiles")["isError"].toBool());
         QVERIFY(!call(first,24,"iiLocalLLM.agent.agents.output",{{"agent_id",id}})["isError"].toBool());
         // Use the connection's actual parent identity instead of depending on UUID sort order.
@@ -270,8 +271,8 @@ private slots:
         QCOMPARE(call(first, 14, "iiLocalLLM.agent.inputs.list")["structuredContent"].toObject()["count"].toInt(), 0);
     }
     void newConversationPreservesPreviousBackgroundShells() {
-#if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
-        QSKIP("Background shell execution requires a desktop POSIX host");
+#if (!defined(Q_OS_UNIX) && !defined(Q_OS_WIN)) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+        QSKIP("Background shell execution requires a desktop host");
 #endif
         QTemporaryDir root; auto registry = std::make_shared<a::ToolRegistry>();
         auto shells = std::make_shared<a::ShellTasks>(root.path(), root.filePath("shells"));
@@ -294,8 +295,8 @@ private slots:
         session.close();QCOMPARE(shells->output(fresh,taskId,false)["task"].toObject()["status"],"killed");
     }
     void shellControlsShareAgentIdentityAndInterruptDuringRun() {
-#if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
-        QSKIP("Background shell execution requires a desktop POSIX host");
+#if (!defined(Q_OS_UNIX) && !defined(Q_OS_WIN)) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+        QSKIP("Background shell execution requires a desktop host");
 #endif
         QTemporaryDir root; auto registry = std::make_shared<a::ToolRegistry>();
         auto shells = std::make_shared<a::ShellTasks>(root.path(), root.filePath("shells"));

@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include <agent/SessionHistory.h>
 #include <agent/SessionStore.h>
 #include <QtTest/QTest>
@@ -67,10 +68,10 @@ private slots:
         QVERIFY_THROWS_EXCEPTION(Error,history.search(f.viewer,f.work,{{"query","needle"},{"session_ids",QJsonArray{other}}}));
         QVERIFY_THROWS_EXCEPTION(Error,history.search(f.viewer,f.work,{{"query","needle"},{"session_ids",QJsonArray{"../other"}}}));
         QVERIFY_THROWS_EXCEPTION(Error,history.search(f.viewer,f.work,{{"query","needle"},{"path",f.path(other)}}));
-        const auto linked=QUuid::createUuid().toString(QUuid::WithoutBraces);QVERIFY(QFile::link(QDir(f.directory).filePath(other),QDir(f.directory).filePath(linked)));
+        const auto linked=QUuid::createUuid().toString(QUuid::WithoutBraces);QVERIFY(createNativeTestLink(QDir(f.directory).filePath(other),QDir(f.directory).filePath(linked)));
         QCOMPARE(matches(history.search(f.viewer,f.work,{{"query","needle"}})).size(),1);
         QVERIFY_THROWS_EXCEPTION(Error,history.search(f.viewer,f.work,{{"query","needle"},{"session_ids",QJsonArray{linked}}}));
-        const auto ownOther=f.session("linked needle");QVERIFY(QFile::remove(f.path(ownOther)));QVERIFY(QFile::link(f.path(other),f.path(ownOther)));
+        const auto ownOther=f.session("linked needle");QVERIFY(QFile::remove(f.path(ownOther)));QVERIFY(createNativeTestLink(f.path(other),f.path(ownOther)));
         QCOMPARE(matches(history.search(f.viewer,f.work,{{"query","needle"}})).size(),1);
     }
     void partialTailRemainsUntouchedAndMalformedRecordsFail() {

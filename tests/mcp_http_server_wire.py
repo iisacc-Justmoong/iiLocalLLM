@@ -2,7 +2,8 @@
 import contextlib
 import http.client
 import json
-import select
+import queue
+import threading
 import subprocess
 import sys
 import time
@@ -48,9 +49,13 @@ def fixture(**options):
     process = subprocess.Popen([EXECUTABLE, json.dumps(options)], stdin=subprocess.PIPE,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     try:
-        if not select.select([process.stdout], [], [], 10)[0]:
+        lines = queue.Queue()
+        threading.Thread(target=lambda: lines.put(process.stdout.readline()), daemon=True).start()
+        try:
+            line = lines.get(timeout=10)
+        except queue.Empty:
             raise AssertionError("HTTP fixture startup timed out")
-        endpoint = json.loads(process.stdout.readline())["endpoint"]
+        endpoint = json.loads(line)["endpoint"]
         yield Peer(endpoint)
     finally:
         try:

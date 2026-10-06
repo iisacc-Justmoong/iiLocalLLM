@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include "agent/PermissionSettings.h"
 #include <QtCore/QFile>
 #include <QtCore/QDir>
@@ -117,14 +118,14 @@ private slots:
         QSKIP("Requires POSIX symlink behavior");
 #endif
         QTemporaryDir base;const auto work=base.path()+"/work",first=base.path()+"/first",second=base.path()+"/second",link=base.path()+"/link";
-        put(first+"/data.txt","FIRST");put(second+"/data.txt","SECOND");QVERIFY(QFile::link(first,link));settings(work,{"../link"});
+        put(first+"/data.txt","FIRST");put(second+"/data.txt","SECOND");QVERIFY(createNativeTestLink(first,link));settings(work,{"../link"});
         a::PermissionSettingsOptions options;options.workingDirectory=work;
         auto policy=std::make_shared<a::SettingsPermissionPolicy>(options);
         auto registry=std::make_shared<a::ToolRegistry>();a::registerWorkspaceTools(*registry,work);
         a::ToolRunner runner(registry,policy);a::ToolContext context{"session","run",work};
         auto result=runner.run({"first","Read",{{"path",link+"/data.txt"}}},context);
         QVERIFY2(!result.isError,qPrintable(result.text));QCOMPARE(result.text,QString("FIRST"));
-        QVERIFY(QFile::remove(link));QVERIFY(QFile::link(second,link));
+        QVERIFY(removeNativeTestLink(link));QVERIFY(createNativeTestLink(second,link));
         QVERIFY(runner.run({"changed","Read",{{"path",link+"/data.txt"}}},context).isError);
         result=runner.run({"bound","Read",{{"path",first+"/data.txt"}}},context);
         QVERIFY2(!result.isError,qPrintable(result.text));QCOMPARE(result.text,QString("FIRST"));
@@ -137,14 +138,14 @@ private slots:
         QSKIP("Requires POSIX symlink behavior");
 #endif
         QTemporaryDir base;const auto work=base.path()+"/work",first=base.path()+"/first",second=base.path()+"/second",link=base.path()+"/shared";
-        put(first+"/data.txt","FIRST");put(second+"/data.txt","SECOND");QVERIFY(QFile::link(first,link));
+        put(first+"/data.txt","FIRST");put(second+"/data.txt","SECOND");QVERIFY(createNativeTestLink(first,link));
         settings(work,{"../shared"});a::PermissionSettingsOptions options;options.workingDirectory=work;options.additionalDirectories={"../shared"};
         auto policy=std::make_shared<a::SettingsPermissionPolicy>(options);
         auto registry=std::make_shared<a::ToolRegistry>();a::registerWorkspaceTools(*registry,work);
         a::ToolRunner runner(registry,policy);a::ToolContext context{"session","run",work};
         auto result=runner.run({"original","Read",{{"path","../shared/data.txt"}}},context);
         QVERIFY2(!result.isError,qPrintable(result.text));QCOMPARE(result.text,QString("FIRST"));
-        QVERIFY(QFile::remove(link));QVERIFY(QFile::link(second,link));
+        QVERIFY(removeNativeTestLink(link));QVERIFY(createNativeTestLink(second,link));
         QFile file(work+"/.claude/settings.json");QVERIFY(file.open(QIODevice::Append));QCOMPARE(file.write("\n"),qint64(1));file.close();
         result=runner.run({"changed-settings","Read",{{"path","../shared/data.txt"}}},context);
         QVERIFY2(!result.isError,qPrintable(result.text));QCOMPARE(result.text,QString("SECOND"));
@@ -169,7 +170,7 @@ private slots:
         a::ToolRunner runner(registry,std::make_shared<a::SettingsPermissionPolicy>(options));a::ToolContext context{"session","run",work};
         const auto result=runner.run({"write","Write",{{"path","../shared/target.txt"},{"content","forbidden"}}},context,[&](const a::Event& event) {
             if(event.kind==a::EventKind::ToolStarted) {
-                if(!QDir().rename(extra,base.path()+"/original")||!QFile::link(other,extra))throw std::runtime_error("replace fixture path");
+                if(!QDir().rename(extra,base.path()+"/original")||!createNativeTestLink(other,extra))throw std::runtime_error("replace fixture path");
             }
         });
         QVERIFY(result.isError);QVERIFY(!QFileInfo::exists(other+"/target.txt"));QVERIFY(!QFileInfo::exists(base.path()+"/original/target.txt"));

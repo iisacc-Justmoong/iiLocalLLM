@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include "agent/ProjectMemory.h"
 #include "agent/Engine.h"
 #include <QtTest/QtTest>
@@ -111,7 +112,7 @@ private slots:
         f.policy=std::make_shared<a::RulePolicy>();a::ToolRunnerOptions options;
         options.permission=[&](const auto&,const auto&,const auto&) {
             const auto moved=directory+"-moved";
-            if(!QDir().rename(directory,moved)||!QFile::link(outside,directory))throw std::runtime_error("Cannot set up root replacement");
+            if(!QDir().rename(directory,moved)||!createNativeTestLink(outside,directory))throw std::runtime_error("Cannot set up root replacement");
             return true;
         };
         auto result=a::ToolRunner(f.registry,f.policy,options).run({"write","Write",{{"path",QDir(directory).filePath("new.md")},{"content","unsafe"}}},f.context);
@@ -128,13 +129,13 @@ private slots:
         auto result=runner.run({"search","Grep",{{"path","."},{"pattern","FOREIGN_NOTE_943"}}},context);
         QVERIFY(!result.text.contains("FOREIGN_NOTE_943"));
         QVERIFY(runner.run({"read","Read",{{"path",QDir(foreign).filePath("MEMORY.md")}}},context).isError);
-        QVERIFY(QFile::link(QDir(foreign).filePath("MEMORY.md"),QDir(workspace).filePath("alias.md")));
+        QVERIFY(createNativeTestLink(QDir(foreign).filePath("MEMORY.md"),QDir(workspace).filePath("alias.md")));
         QVERIFY(runner.run({"alias","Read",{{"path","alias.md"}}},context).isError);
         QCOMPARE(runner.run({"own","Read",{{"path",QDir(own).filePath("MEMORY.md")}}},context).text,"OWN_NOTE");
     }
     void symlinksCancellationLimitsAndExplicitPolicyDenialsApply() {
         Fixture f;put(f.root.filePath("outside.md"),"private");
-        QVERIFY(QFile::link(f.root.filePath("outside.md"),f.path("link.md")));
+        QVERIFY(createNativeTestLink(f.root.filePath("outside.md"),f.path("link.md")));
         QVERIFY(f.run("Read",{{"path",f.path("link.md")}}).isError);
         QVERIFY(f.run("Write",{{"path",f.path("link.md")},{"content","overwrite"}}).isError);
         QVERIFY(!f.memory->snapshot(f.workspace)["diagnostics"].toArray().isEmpty());

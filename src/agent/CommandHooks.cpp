@@ -190,8 +190,8 @@ public:
                         :QStringList{"type","command","if","shell","timeout","statusMessage","once","async","asyncRewake"});
                     for(const auto& flag:{"once","async","asyncRewake"})if(object.contains(flag))require(object[flag].isBool(),"Hook flag must be boolean");
                     require(!object.contains("shell")||object["shell"]=="bash","Only POSIX command hook shells are implemented",ErrorCode::RuntimeUnavailable);
-#if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID) || defined(Q_OS_WASM)
-                    if(!http&&!prompt)throw Error(ErrorCode::RuntimeUnavailable,"Command hooks require a desktop POSIX host");
+#if (!defined(Q_OS_UNIX) && !defined(Q_OS_WIN)) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID) || defined(Q_OS_WASM)
+                    if(!http&&!prompt)throw Error(ErrorCode::RuntimeUnavailable,"Command hooks require a desktop host with Bash");
 #endif
                     Entry entry;entry.event=i.key();entry.matcher=matcher;entry.literal=literal;entry.regex=regex;
                     entry.async=object["async"].toBool();entry.rewake=object["asyncRewake"].toBool();
@@ -295,7 +295,13 @@ public:
                                 job->acknowledgementBytes=newline<0?first.size():newline+1;
                                 if(!job->background)job->asyncTimeout=ack["asyncTimeout"].toInt(15000)?ack["asyncTimeout"].toInt(15000):15000;
                                 promote();
-                            },payload,&environment,"/bin/sh",{"-c",entry.command},[&]{if(entry.async||entry.rewake)promote();});
+                            },payload,&environment,
+#ifdef Q_OS_WIN
+                            {},{},
+#else
+                            "/bin/sh",{"-c",entry.command},
+#endif
+                            [&]{if(entry.async||entry.rewake)promote();});
                     }catch(...){job->failure=std::current_exception();}
                     QJsonObject completion;
                     try {if(job->background)completion=asyncCompletion(job,entry,event);}

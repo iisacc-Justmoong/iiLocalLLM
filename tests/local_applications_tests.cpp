@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include "mcp/LocalApplications.h"
 #include "mcp/HttpClient.h"
 #include "agent/McpConnections.h"
@@ -93,7 +94,7 @@ void LocalApplicationTests::privateDirectoryAndRecords() {
     QVERIFY(server.listen());
     struct stat info{}; QVERIFY(!stat(QFile::encodeName(directory).constData(), &info)); QCOMPARE(info.st_mode & 0777, mode_t(0700));
     QVERIFY(!stat(QFile::encodeName(server.registrationPath()).constData(), &info)); QCOMPARE(info.st_mode & 0777, mode_t(0600));
-    const auto alias = root.filePath("alias"); QVERIFY(QFile::link(directory, alias));
+    const auto alias = root.filePath("alias"); QVERIFY(createNativeTestLink(directory, alias));
     QVERIFY(m::discoverLocalApplications(alias).applications.isEmpty());
     QVERIFY(QFile::setPermissions(server.registrationPath(), QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ReadOther));
     QCOMPARE(m::discoverLocalApplications(directory).rejectedRecords, 1);

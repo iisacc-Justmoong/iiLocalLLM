@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include "agent/PermissionSettings.h"
 #include "agent/Engine.h"
 #include <QtCore/QDir>
@@ -93,14 +94,14 @@ private slots:
     }
     void directoriesRetainBindingsAcrossSessionsAndCanBeRemovedPerSession() {
         Fixture f;const auto outside=f.root.filePath("outside"),other=f.root.filePath("other"),link=f.root.filePath("link");QDir().mkpath(outside);QDir().mkpath(other);
-        QVERIFY(QFile::link(outside,link));f.options.additionalDirectories={link};
+        QVERIFY(createNativeTestLink(outside,link));f.options.additionalDirectories={link};
         a::SettingsPermissionPolicy policy(f.options);auto one=f.context(),two=f.context("two");
         QVERIFY(policy.workingDirectories(one).contains(outside));
         policy.applyUpdates({dirs("removeDirectories","session",link)},one);
         QVERIFY(!policy.workingDirectories(one).contains(outside));QVERIFY(policy.workingDirectories(two).contains(outside));
         policy.applyUpdates({dirs("addDirectories","session",link)},one);QVERIFY(policy.workingDirectories(one).contains(outside));
         policy.inheritSession(one,f.context("child"));
-        QVERIFY(QFile::remove(link));QVERIFY(QFile::link(other,link));
+        QVERIFY(removeNativeTestLink(link));QVERIFY(createNativeTestLink(other,link));
         QVERIFY(!policy.workingDirectories(f.context("child")).contains(other));QVERIFY(!policy.workingDirectories(two).contains(other));
         policy.applyUpdates({dirs("addDirectories","session",link)},one);QVERIFY(policy.workingDirectories(one).contains(other));
         QVERIFY(!policy.workingDirectories(f.context("child")).contains(other));
@@ -139,7 +140,7 @@ private slots:
             p.applyUpdates({rules("addRules","localSettings","allow","Write","/path"+QString::number(i)+"/**")},f.context());}));
         for(auto& job:jobs)job.get();const auto path=f.work+"/.claude/settings.local.json";
         QCOMPARE(read(path)["permissions"].toObject()["allow"].toArray().size(),8);
-        const auto external=f.root.filePath("protected.json");save(external,{{"untouched",true}});QVERIFY(QFile::remove(path));QVERIFY(QFile::link(external,path));
+        const auto external=f.root.filePath("protected.json");save(external,{{"untouched",true}});QVERIFY(QFile::remove(path));QVERIFY(createNativeTestLink(external,path));
         a::SettingsPermissionPolicy p(f.options);QVERIFY_THROWS_EXCEPTION(Error,p.applyUpdates({mode("localSettings","plan")},f.context()));
         QCOMPARE(read(external),(QJsonObject{{"untouched",true}}));
     }

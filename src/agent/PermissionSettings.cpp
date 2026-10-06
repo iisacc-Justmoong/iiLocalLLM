@@ -97,6 +97,7 @@ QStringList fragments(const QString& root,int maximum,const CancellationToken& t
     const QDir directory(path);
     require(!directory.exists()||directory.isReadable(),"Cannot enumerate managed settings fragments",ErrorCode::StorageFailure);
     for(const auto& name:directory.entryList({"*.json"},QDir::Files|QDir::System|QDir::NoDotAndDotDot)) {
+        if (name.startsWith('.')) continue;
         require(paths.size()<maximum,"Too many managed settings fragments",ErrorCode::ResourceLimit);paths.append(directory.filePath(name));
     }
 #endif

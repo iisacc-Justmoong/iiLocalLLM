@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include <agent/MemoryDream.h>
 #include <agent/SessionStore.h>
 #include <QtTest/QTest>
@@ -115,9 +116,9 @@ private slots:
         QVERIFY(file.remove());QFile outside(f.root.filePath("other.json"));QVERIFY(outside.open(QIODevice::WriteOnly));
         const QByteArray bytes="{\"version\":1,\"last_consolidated_ms\":0}";outside.write(bytes);outside.close();
 #ifdef Q_OS_UNIX
-        QVERIFY(QFile::link(outside.fileName(),state));dream.request(f.owner);QVERIFY(dream.drain(5000));
+        QVERIFY(createNativeTestLink(outside.fileName(),state));dream.request(f.owner);QVERIFY(dream.drain(5000));
         QCOMPARE(f.latest(dream)["status"].toString(),"failed");QCOMPARE(f.model->calls.load(),0);QVERIFY(QFile::remove(state));
-        QVERIFY(QFile::link(outside.fileName(),directory+"/.dream.lock"));dream.request(f.owner);QVERIFY(dream.drain(5000));
+        QVERIFY(createNativeTestLink(outside.fileName(),directory+"/.dream.lock"));dream.request(f.owner);QVERIFY(dream.drain(5000));
         QCOMPARE(f.latest(dream)["status"].toString(),"failed");QCOMPARE(f.model->calls.load(),0);QVERIFY(QFile::remove(directory+"/.dream.lock"));
 #endif
         QVERIFY(outside.open(QIODevice::ReadOnly));QCOMPARE(outside.readAll(),bytes);outside.close();

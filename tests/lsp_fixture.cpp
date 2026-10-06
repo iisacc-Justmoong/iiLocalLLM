@@ -5,7 +5,15 @@
 #include <QtCore/QJsonObject>
 #include <QtCore/QThread>
 #include <iostream>
+#ifdef Q_OS_WIN
+#include <fcntl.h>
+#include <io.h>
+#endif
 int main(int argc,char** argv) {
+#ifdef Q_OS_WIN
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+#endif
     QCoreApplication app(argc,argv);const auto args=app.arguments();const auto mode=args.value(1);QFile log(args.value(2));
     if(!log.open(QIODevice::WriteOnly|QIODevice::Append))return 2;
     auto send=[](const QJsonObject& value){const auto bytes=QJsonDocument(value).toJson(QJsonDocument::Compact);std::cout<<"Content-Length: "<<bytes.size()<<"\r\n\r\n";

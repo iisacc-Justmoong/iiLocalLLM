@@ -44,6 +44,10 @@ function(iilocal_add_llama)
     endif()
     include("${CMAKE_CURRENT_LIST_DIR}/LlamaToolCalls.cmake")
     iilocal_fix_llama_tool_grammars()
+    if(WIN32 AND MINGW)
+        target_compile_options(ggml-cpu PRIVATE
+            "-include" "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/WindowsThreadPower.h")
+    endif()
     # The upstream common library includes its own compiled HTTP implementation.
     # Isolate its symbols from our independently pinned header-only HTTP server.
     target_compile_definitions(llama-common PRIVATE httplib=iillm_llama_httplib)

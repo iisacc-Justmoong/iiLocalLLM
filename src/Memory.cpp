@@ -9,7 +9,12 @@
 #ifdef Q_OS_MACOS
 #include <mach/mach.h>
 #elif defined(Q_OS_WIN)
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 #endif
 

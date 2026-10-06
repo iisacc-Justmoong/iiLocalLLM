@@ -129,8 +129,20 @@ bool settingsPathMatch(const QList<Rule>& rules, const QString& name, const QStr
         if(pattern.startsWith('#')||pattern.isEmpty())continue;
         while(pattern.endsWith(' ')&&!pattern.endsWith("\\ "))pattern.chop(1);
         QString root=context.workingDirectory;
-        if(!item.negative&&pattern.startsWith("//")){root="/";pattern.remove(0,2);item.anchored=true;}
+        if(!item.negative&&pattern.startsWith("//")){
+#ifdef Q_OS_WIN
+            root=QFileInfo(path).absoluteFilePath().left(3);
+#else
+            root="/";
+#endif
+            pattern.remove(0,2);item.anchored=true;
+        }
         else if(!item.negative&&pattern.startsWith("~/")){require(!rule.home.isEmpty(),"Permission home directory must be supplied by the host");root=rule.home;pattern.remove(0,2);item.anchored=true;}
+        #ifdef Q_OS_WIN
+        else if(pattern.size()>3 && pattern[0]=='/' && pattern[2]==':' && pattern[3]=='/') {
+            root=pattern.mid(1,3);pattern.remove(0,4);item.anchored=true;
+        }
+#endif
         else if(pattern.startsWith('/')){if(!item.negative)root=rule.root;pattern.remove(0,1);item.anchored=true;}
         if(pattern.startsWith("./"))pattern.remove(0,2);
         if(pattern.endsWith("/**"))pattern.chop(3);
@@ -320,8 +332,8 @@ bool commandMatch(const QString& pattern, const QString& value) {
 }
 }
 bool detail::readOnlyShell(const QJsonObject& args,const ToolContext& context) {
-#ifndef Q_OS_UNIX
-    Q_UNUSED(args);Q_UNUSED(context);return false; // cmd.exe has different parsing and command semantics.
+#if !defined(Q_OS_UNIX) && !defined(Q_OS_WIN)
+    Q_UNUSED(args);Q_UNUSED(context);return false;
 #else
     if(args["run_in_background"].toBool())return false;
     const auto shell=inspectShell(args["command"].toString(),context);
@@ -416,9 +428,8 @@ bool permissionRulesMatch(const QList<PermissionRule>& input, const ToolDefiniti
         if (!allow && (named(r, "Read") || named(r, "Write"))) files.append(r);
     }
     if (bash.isEmpty() && files.isEmpty()) return false;
-#ifndef Q_OS_UNIX
-    // The current non-POSIX executor runs cmd.exe, whose syntax is not Bash.
-    // Content rules cannot authorize it or prove absence of deny/ask operations.
+#if !defined(Q_OS_UNIX) && !defined(Q_OS_WIN)
+    // Unsupported executors cannot prove Bash command semantics.
     return !allow;
 #else
     const auto command = args["command"].toString().trimmed(); const auto shell = inspectShell(command, context);

@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include "agent/PluginRuntime.h"
 #include "agent/Api.h"
 #include "agent/McpServer.h"
@@ -79,7 +80,7 @@ private slots:
         Fixture f;const auto first=f.install();const auto selected=f.store.list();
         f.manifest({{"commands","../outside.md"}});QVERIFY_THROWS_EXCEPTION(Error,f.store.install(f.package));QCOMPARE(f.store.list(),selected);
         f.manifest({{"skills",QJsonArray{QJsonArray{true}}}});QVERIFY_THROWS_EXCEPTION(Error,f.store.install(f.package));
-        f.manifest();QVERIFY(QFile::link(first.skills[0].path,f.package+"/escape"));QVERIFY_THROWS_EXCEPTION(Error,f.store.install(f.package));
+        f.manifest();QVERIFY(createNativeTestLink(first.skills[0].path,f.package+"/escape"));QVERIFY_THROWS_EXCEPTION(Error,f.store.install(f.package));
         QVERIFY(QFile::remove(f.package+"/escape"));a::PluginStoreOptions limited;limited.directory=f.root.filePath("limited");limited.maxFileBytes=8;
         a::PluginStore small(limited);QVERIFY_THROWS_EXCEPTION(Error,small.install(f.package));QVERIFY(small.list().isEmpty());
         CancellationToken cancelled;cancelled.cancel();QVERIFY_THROWS_EXCEPTION(Error,f.store.install(f.package,true,cancelled));QCOMPARE(f.store.list(),selected);

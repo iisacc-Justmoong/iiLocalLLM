@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include "agent/Skills.h"
 #include "agent/Engine.h"
 #include <QtTest/QtTest>
@@ -192,7 +193,7 @@ private slots:
         QTemporaryDir d; put(skillPath(d), "Parent"); QDir().mkpath(d.filePath("child"));
         QVERIFY(a::discoverSkills(d.filePath("child")).skills.isEmpty());
         put(d.filePath("outside.md"), "Outside");
-        QVERIFY(QFile::remove(skillPath(d))); QVERIFY(QFile::link(d.filePath("outside.md"), skillPath(d)));
+        QVERIFY(QFile::remove(skillPath(d))); QVERIFY(createNativeTestLink(d.filePath("outside.md"), skillPath(d)));
         error([&] { a::discoverSkills(d.path()); }, ErrorCode::InvalidArgument);
         error([&] { a::loadSkill(d.path(), "../outside", "", "s", a::SkillInvocationSource::User); }, ErrorCode::InvalidArgument);
     }

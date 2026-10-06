@@ -6,6 +6,7 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QProcess>
 #include <future>
+#include <QtCore/QStandardPaths>
 #include <thread>
 using namespace iiLocalLLM;
 namespace a = iiLocalLLM::agent;
@@ -41,9 +42,20 @@ struct Fixture {
 QByteArray read(const QString& path) { QFile f(path); if (!f.open(QIODevice::ReadOnly)) return {}; return f.readAll(); }
 bool executing(const QByteArray& pid) {
     if (pid.toLongLong() < 2) throw std::runtime_error("Invalid process fixture PID");
-    QProcess process; process.start("/bin/ps", {"-o", "stat=", "-p", QString::fromLatin1(pid)});
+    QProcess process;
+#ifdef Q_OS_WIN
+    process.start(QStandardPaths::findExecutable("ps"), {"-p", QString::fromLatin1(pid)});
+#else
+    process.start(QStandardPaths::findExecutable("ps"), {"-o", "stat=", "-p", QString::fromLatin1(pid)});
+#endif
     if (!process.waitForFinished(1000)) throw std::runtime_error("Cannot inspect fixture process");
-    const auto state = process.readAllStandardOutput().trimmed(); return !state.isEmpty() && !state.startsWith('Z');
+    const auto state = process.readAllStandardOutput().trimmed();
+#ifdef Q_OS_WIN
+    return QRegularExpression("(?:^|\\n)\\s*" + QString::fromLatin1(pid) + "\\s+")
+        .match(QString::fromLatin1(state)).hasMatch();
+#else
+    return !state.isEmpty() && !state.startsWith('Z');
+#endif
 }
 }
 class ShellTaskTests : public QObject {
@@ -64,8 +76,8 @@ private slots:
         QCOMPARE(reopened.output("session-b",id,false)["task"].toObject()["output"],"beforeafter");
     }
     void initTestCase() {
-#if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
-        QSKIP("Background shell execution requires a desktop POSIX host");
+#if (!defined(Q_OS_UNIX) && !defined(Q_OS_WIN)) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+        QSKIP("Background shell execution requires a desktop host");
 #endif
     }
     void lifecycleOutputAndPersistentHistory() {
@@ -115,6 +127,9 @@ private slots:
         QVERIFY(f.call("Bash", {{"command", "printf bad"}, {"run_in_background", true}}).isError);
     }
     void preservesOutputWrittenDuringTermination() {
+#ifdef Q_OS_WIN
+        QSKIP("Windows job termination is immediate and does not deliver POSIX TERM traps; subtree cleanup is verified separately");
+#endif
         Fixture f;
         const auto id = f.start("trap 'printf stopped-log; exit 0' TERM; printf ready > trap.ready; while :; do sleep 30 & wait $!; done");
         QTRY_COMPARE_WITH_TIMEOUT(read(f.root.filePath("workspace/trap.ready")), QByteArray("ready"), 3000);

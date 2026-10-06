@@ -50,7 +50,13 @@ QString decode(const QByteArray& bytes) {
     require(!utf8.hasError(), "File is not valid UTF-8 text"); return text;
 }
 bool inside(const QString& path, const QString& root) {
-    return !root.isEmpty() && (path == root || path.startsWith(root.endsWith('/') ? root : root + '/'));
+    #ifdef Q_OS_WIN
+    constexpr auto comparison = Qt::CaseInsensitive;
+#else
+    constexpr auto comparison = Qt::CaseSensitive;
+#endif
+    return !root.isEmpty() && (path.compare(root, comparison) == 0
+        || path.startsWith(root.endsWith('/') ? root : root + '/', comparison));
 }
 class Workspace {
 public:

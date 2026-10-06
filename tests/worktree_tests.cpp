@@ -11,6 +11,14 @@
 using namespace iiLocalLLM;
 namespace a=iiLocalLLM::agent;
 namespace {
+QString shellWorkspacePath(QString path) {
+#ifdef Q_OS_WIN
+    path = QDir::fromNativeSeparators(path);
+    if (path.size() >= 3 && path[1] == ':') return "/" + path.left(1).toLower() + path.mid(2);
+#endif
+    return path;
+}
+
 QByteArray git(const QString& root,QStringList args) {
     QProcess p;p.setWorkingDirectory(root);p.start("git",args);
     if(!p.waitForStarted(5000)||!p.waitForFinished(30000)||p.exitCode()!=0)
@@ -88,7 +96,13 @@ private slots:
     QCOMPARE(worktrees.view(f.context).directory,f.repo);QVERIFY(QFileInfo(path).isDir());
  }
  void sparseCheckoutAndWhitespacePathsRetainTheOriginalChanges(){
-    Fixture f;const auto renamed=f.root.filePath("repo with space ");QVERIFY(QDir().rename(f.repo,renamed));f.repo=renamed;f.context.workingDirectory=f.repo;
+    Fixture f;const auto renamed=f.root.filePath(
+#ifdef Q_OS_WIN
+        "repo with space"
+#else
+        "repo with space "
+#endif
+    );QVERIFY(QDir().rename(f.repo,renamed));f.repo=renamed;f.context.workingDirectory=f.repo;
     QDir().mkpath(f.repo+"/one");QDir().mkpath(f.repo+"/two");write(f.repo+"/one/a.txt","selected");write(f.repo+"/two/b.txt","excluded");
     git(f.repo,{"add","."});git(f.repo,{"commit","-qm","folders"});write(f.repo+"/main.cpp","original uncommitted work");write(f.repo+"/untracked.txt","original untracked work");
     f.options.sparsePaths={"one"};a::Worktrees worktrees(f.state,f.options);const auto path=worktrees.enter({{"name","sparse"}},f.context).data["worktreePath"].toString();
@@ -142,7 +156,7 @@ private slots:
     const auto history=engine.session(session.id);for(const auto& message:history.messages)if(message.role==a::MessageRole::Tool)QVERIFY2(!message.isError,qPrintable(message.text));
     QFile original(f.repo+"/main.cpp");QVERIFY(original.open(QIODevice::ReadOnly));QCOMPARE(original.readAll(),QByteArray("int original=1;\n"));
     const auto path=f.options.directory+"/batch";QFile changed(path+"/main.cpp");QVERIFY(changed.open(QIODevice::ReadOnly));QCOMPARE(changed.readAll(),QByteArray("isolated change"));
-    bool shell=false;for(const auto& message:history.messages)if(message.toolCallId=="shell"){shell=true;QVERIFY(message.text.contains(path));QVERIFY(message.text.contains("isolated change"));}QVERIFY(shell);
+    bool shell=false;for(const auto& message:history.messages)if(message.toolCallId=="shell"){shell=true;QVERIFY(message.text.contains(shellWorkspacePath(path)));QVERIFY(message.text.contains("isolated change"));}QVERIFY(shell);
     QVERIFY(QFileInfo(f.repo+"/original-only.txt").exists());QVERIFY(!QFileInfo(path+"/original-only.txt").exists());QCOMPARE(engine.sessionMetadata(session.id).workingDirectory,f.repo);
  }
  void sessionEndHooksObserveTheCurrentWorktree(){
@@ -164,7 +178,7 @@ private slots:
      QCOMPARE(engine.session(id).workingDirectory,path);QCOMPARE(engine.sessionMetadata(id).workingDirectory,f.repo);QVERIFY_THROWS_EXCEPTION(Error,engine.clearSession(id));
      auto child=engine.forkSession(id);QCOMPARE(child.workingDirectory,f.repo);QVERIFY(!engine.worktreeStatus(child.id)["active"].toBool());
      a::ToolContext context{id,{},f.repo};auto scope=engine.bindWorkspaceContext(context);auto task=shells->start(context,"pwd",{},10000);scope.reset();
-     const auto output=shells->output(id,task["task_id"].toString());QVERIFY2(QJsonDocument(output).toJson().contains(path.toUtf8()),QJsonDocument(output).toJson().constData());
+     const auto output=shells->output(id,task["task_id"].toString());QVERIFY2(QJsonDocument(output).toJson().contains(shellWorkspacePath(path).toUtf8()),QJsonDocument(output).toJson().constData());
      auto running=engine.runShellTool(id,"Bash",{{"command","sleep 30"},{"run_in_background",true}});QVERIFY2(!running.isError,qPrintable(running.text));
      auto removal=engine.runWorktreeTool(id,"ExitWorktree",{{"action","remove"}});QVERIFY(removal.isError);QVERIFY(QFileInfo(path).exists());
      QVERIFY(!engine.runShellTool(id,"TaskStop",{{"task_id",running.data["task_id"]}}).isError);}

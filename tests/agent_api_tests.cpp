@@ -191,8 +191,8 @@ private slots:
         error([&] { call(restored, "agent.inputs.remove", {{"session_id", id}, {"input_id", queued["id"]}}); }, ErrorCode::NotFound);
     }
     void shellOutputHonorsApiDeadlineWithoutStoppingCommand() {
-#if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
-        QSKIP("Background shell execution requires a desktop POSIX host");
+#if (!defined(Q_OS_UNIX) && !defined(Q_OS_WIN)) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+        QSKIP("Background shell execution requires a desktop host");
 #endif
         QTemporaryDir root; auto o = options(root); o.requestTimeoutMs = 200;
         auto shells = std::make_shared<a::ShellTasks>(o.workingDirectory, root.filePath("shell-state"));
@@ -205,8 +205,8 @@ private slots:
         shells->stop(id.toString(), task.toString());
     }
     void backgroundShellsAreAuthenticatedAndControlledDuringRuns() {
-#if !defined(Q_OS_UNIX) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
-        QSKIP("Background shell execution requires a desktop POSIX host");
+#if (!defined(Q_OS_UNIX) && !defined(Q_OS_WIN)) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)
+        QSKIP("Background shell execution requires a desktop host");
 #endif
         QTemporaryDir root; auto o = options(root); auto model = std::make_shared<Model>();
         auto shells = std::make_shared<a::ShellTasks>(o.workingDirectory, root.filePath("shell-state"));

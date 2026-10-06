@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include <QtTest/QtTest>
 #include "agent/ProjectContext.h"
 #include "agent/Engine.h"
@@ -77,7 +78,7 @@ private slots:
     void internalSymlinkDedupAndInvalidRunDoesNotPersist() {
         QTemporaryDir dir;
         put(dir.filePath("CLAUDE.md"), "@./alias.md\n@./import.md"); put(dir.filePath("import.md"), "Shared");
-        QVERIFY(QFile::link(dir.filePath("import.md"), dir.filePath("alias.md")));
+        QVERIFY(createNativeTestLink(dir.filePath("import.md"), dir.filePath("alias.md")));
         QCOMPARE(names(a::loadProjectContext(dir.path())), (QStringList{"CLAUDE.md", "import.md"}));
         auto model = std::make_shared<ObservingModel>(); auto registry = std::make_shared<a::ToolRegistry>();
         a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = dir.filePath("sessions");
@@ -195,7 +196,7 @@ private slots:
         put(dir.filePath("workspace/CLAUDE.md"), "@../outside.md");
         QVERIFY_THROWS_EXCEPTION(Error, a::loadProjectContext(dir.filePath("workspace")));
         put(dir.filePath("workspace/CLAUDE.md"), "@./link.md");
-        QVERIFY(QFile::link(dir.filePath("outside.md"), dir.filePath("workspace/link.md")));
+        QVERIFY(createNativeTestLink(dir.filePath("outside.md"), dir.filePath("workspace/link.md")));
         QVERIFY_THROWS_EXCEPTION(Error, a::loadProjectContext(dir.filePath("workspace")));
         put(dir.filePath("workspace/CLAUDE.md"), "Safe");
         QVERIFY_THROWS_EXCEPTION(Error, a::loadProjectContext(dir.filePath("workspace"), {"../outside.md"}));

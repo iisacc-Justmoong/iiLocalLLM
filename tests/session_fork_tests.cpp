@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include <agent/Engine.h>
 #include <agent/SessionStore.h>
 #include <agent/McpServer.h>
@@ -60,17 +61,25 @@ private slots:
  }
  void unsafeArtifactsLeaveNoPublishedOrPartialFork(){
     Fixture f;const auto parent=f.store.create("fixture",{},f.work);const auto from=f.artifacts(parent.id);
-    write(from+"/a","safe");write(f.root.filePath("outside"),"private");QVERIFY(QFile::link(f.root.filePath("outside"),from+"/z"));
+    write(from+"/a","safe");write(f.root.filePath("outside"),"private");QVERIFY(createNativeTestLink(f.root.filePath("outside"),from+"/z"));
     QVERIFY_THROWS_EXCEPTION(Error,f.store.fork(parent.id));QCOMPARE(f.store.list(),QStringList{parent.id});
     QCOMPARE(QDir(f.state).entryList(QDir::Dirs|QDir::NoDotAndDotDot),QStringList{parent.id});QCOMPARE(read(f.root.filePath("outside")),"private");
  }
  void unreadableArtifactDirectoryCannotSilentlyLoseFiles(){
     Fixture f;const auto parent=f.store.create("fixture",{},f.work);const auto from=f.artifacts(parent.id);write(from+"/nested/result","evidence");
+#ifdef Q_OS_WIN
+    const auto artifact=from+"/nested/result";
+    HANDLE blocked=CreateFileW(reinterpret_cast<LPCWSTR>(artifact.utf16()),GENERIC_READ,0,nullptr,OPEN_EXISTING,0,nullptr);
+    QVERIFY(blocked!=INVALID_HANDLE_VALUE);
+    bool failed=false;try{(void)f.store.fork(parent.id);}catch(const Error&){failed=true;}
+    CloseHandle(blocked);QVERIFY(failed);QCOMPARE(f.store.list(),QStringList{parent.id});
+#else
     for(const auto& directory:QStringList{from,from+"/nested"}){
         const auto permissions=QFileInfo(directory).permissions();QVERIFY(QFile::setPermissions(directory,{}));bool failed=false;
         try{(void)f.store.fork(parent.id);}catch(const Error&){failed=true;}
         const bool restored=QFile::setPermissions(directory,permissions);QVERIFY(restored);QVERIFY(failed);QCOMPARE(f.store.list(),QStringList{parent.id});
     }
+#endif
  }
  void compactionAndToolReferencesUseCopiedArtifacts(){
     Fixture f;const auto parent=f.store.create("fixture",{},f.work);const auto from=f.artifacts(parent.id);write(from+"/result","evidence");

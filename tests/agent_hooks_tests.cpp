@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include <agent/CommandHooks.h>
 #include <agent/Engine.h>
 #include <agent/McpServer.h>
@@ -178,7 +179,7 @@ private slots:
             return a::ModelReply{{},{{"decision","StructuredOutput",{{"ok",true}}}}};
         };
         a::Engine engine(f.model,f.registry,policy,f.options);const auto session=engine.createSession("fixture",f.work);transcript=engine.transcriptPath(session.id);
-        save(QFileInfo(transcript).dir().filePath("neighbor.txt"),"PRIVATE_NEIGHBOR");QVERIFY(QFile::link(transcript,f.work+"/alias.txt"));
+        save(QFileInfo(transcript).dir().filePath("neighbor.txt"),"PRIVATE_NEIGHBOR");QVERIFY(createNativeTestLink(transcript,f.work+"/alias.txt"));
         QCOMPARE(engine.run({session.id,"PARENT_PRIVATE"}).result.get().status,a::RunStatus::Completed);
         QCOMPARE(turns,2);QVERIFY(checked);QVERIFY(read(transcript).contains("PARENT_PRIVATE"));QVERIFY(!read(transcript).contains("CORRUPT"));
         QVERIFY(f.clean());

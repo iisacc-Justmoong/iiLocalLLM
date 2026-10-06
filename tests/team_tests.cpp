@@ -1,3 +1,4 @@
+#include "native_link.h"
 #include <agent/Teams.h>
 #include <agent/Subagents.h>
 #include <QtCore/QFile>
@@ -327,7 +328,7 @@ private slots:
     void failedMemberPublicationLeavesNoUnownedConversation(){
         Fixture f;const auto leader=f.owner();const auto created=f.teams->create(leader,{{"team_name","publication"}});
         const auto path=created.data["team_file_path"].toString(),backup=path+".saved";
-        QVERIFY(QFile::rename(path,backup));QVERIFY(QFile::link(backup,path));
+        QVERIFY(QFile::rename(path,backup));QVERIFY(createNativeTestLink(backup,path));
         QVERIFY_THROWS_EXCEPTION(Error,f.teams->spawn(leader,{{"name","unpublished"},{"prompt","Must not execute"}}));
         QVERIFY(a::SessionStore(f.state+"/teams/sessions").list().isEmpty());
         QCOMPARE(f.teams->status(leader.sessionId)["team"].toObject()["members"].toArray().size(),1);
@@ -425,6 +426,7 @@ private slots:
         QVERIFY(!f.teams->remove(leader).isError);QCOMPARE(f.engine->queuedInputs(next)["count"].toInt(),0);
     }
     void restartRetainsIdentityButDoesNotRepeatMemberWork(){
+        try {
         auto model=std::make_shared<FunctionModel>();std::atomic_int calls=0;model->reply=[&](const auto&,const auto&)->a::ModelReply{++calls;return {"finished",{}};};
         Fixture f(model);const auto leader=f.owner();f.teams->create(leader,{{"team_name","persistent"}});f.teams->spawn(leader,{{"name","worker"},{"prompt","Once"}});
         QVERIFY(f.teams->wait(leader.sessionId,10000)["idle"].toBool());const auto count=calls.load();const auto board=f.teams->taskList(leader.sessionId);
@@ -433,6 +435,7 @@ private slots:
         QCOMPARE(reopened.taskList(leader.sessionId),board);QCOMPARE(calls.load(),count);QCOMPARE(reopened.status(leader.sessionId)["team"].toObject()["members"].toArray().size(),2);
         QVERIFY_THROWS_EXCEPTION(Error,reopened.send(leader,{{"to","worker"},{"summary","explicit restart is not yet supported"},{"message","do not silently replay"}}));
         QVERIFY(!reopened.remove(leader).isError);
+        } catch (const std::exception &error) { QFAIL(error.what()); }
     }
     void teamIdentityIsolationAndFreshTaskNamespaces(){
         Fixture f;const auto leader=f.owner(),other=f.owner();
