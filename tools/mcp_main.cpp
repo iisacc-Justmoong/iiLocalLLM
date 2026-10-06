@@ -10,6 +10,8 @@
 #include "AgentProfileConfig.h"
 #include "PermissionSettingsConfig.h"
 #include "PermissionRequestsConfig.h"
+#include "ProceduresConfig.h"
+#include "DecisionConfig.h"
 #include "CommandHookConfig.h"
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QCoreApplication>
@@ -36,6 +38,8 @@ int main(int argc, char** argv) {
         {"allow", "Allow a tool permission rule, e.g. Write(src/**), Bash(git status:*) or Skill(review); repeat for more rules. Read-only tools are allowed by default.", "pattern"},
         {"permission-settings", "Private host configuration outside the workspace for layered permission settings.", "file"},
         {"permission-requests", "Private host JSON outside the workspace enabling app permission requests.", "file"},
+        {"procedures", "Private host JSON selecting procedure returns for app intervention.", "file"},
+        {"decision", "Private host JSON with quantitative success, gain, loss and cost profiles.", "file"},
         {"add-dir", "Additional file working directory; repeat. Does not enable disk settings without --permission-settings.", "directory"},
         {"hooks", "Private command/HTTP/prompt/agent hook JSON configuration outside the workspace.", "file"},
         {"mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
@@ -181,6 +185,13 @@ int main(int argc, char** argv) {
         if(parser.isSet("permission-settings")&&parser.value("permission-settings").isEmpty())throw std::runtime_error("--permission-settings requires a file");
         if(parser.isSet("permission-requests")&&parser.value("permission-requests").isEmpty())throw std::runtime_error("--permission-requests requires a file");
         const auto permissionRequests=iiLocalLLMClient::permissionRequestsConfig(parser.value("permission-requests"),workspace);
+        if(parser.isSet("procedures")&&parser.value("procedures").isEmpty())throw std::runtime_error("--procedures requires a file");
+        auto procedureOptions=iiLocalLLMClient::proceduresConfig(parser.value("procedures"),workspace);
+        procedureOptions.maxRecordBytes=std::min(procedureOptions.maxRecordBytes,4*1024*1024);
+        if(parser.isSet("procedures")&&!parser.isSet("model"))throw std::runtime_error("--procedures requires --model");
+        if(parser.isSet("decision")&&parser.value("decision").isEmpty())throw std::runtime_error("--decision requires a file");
+        if(parser.isSet("decision")&&!parser.isSet("model"))throw std::runtime_error("--decision requires --model");
+        const auto decisionOptions=iiLocalLLMClient::decisionConfig(parser.value("decision"),workspace);
         auto policy=iiLocalLLMClient::permissionConfig(parser.value("permission-settings"),workspace,rules,hostRules,parser.values("add-dir"),permissionRequests?a::PermissionMode::Default:a::PermissionMode::DontAsk);
         if(parser.isSet("hooks")&&parser.value("hooks").isEmpty())throw std::runtime_error("--hooks requires a file");
         const auto hooks=iiLocalLLMClient::commandHookConfig(parser.value("hooks"),workspace,agent);
@@ -205,7 +216,7 @@ int main(int argc, char** argv) {
             a::CommandHookOptions hooks;hooks.workingDirectory=workspace;
             plugins=std::make_shared<a::PluginRuntime>(store.snapshot(),hooks);privatePaths.append(store.directory());
         }
-        for(const auto& key:{"credentials","permission-settings","permission-requests","agent-profiles","model-options","sessions","artifacts","hooks","lsp-config","worktree-config"})
+        for(const auto& key:{"credentials","permission-settings","permission-requests","procedures","decision","agent-profiles","model-options","sessions","artifacts","hooks","lsp-config","worktree-config"})
             if(parser.isSet(key))privatePaths.append(parser.value(key));
         for(const auto& file:connectionOptions.configFiles)privatePaths.append(QDir::isAbsolutePath(file)?file:QDir(workspace).filePath(file));
         if(!connectionOptions.localApplicationsDirectory.isEmpty())privatePaths.append(connectionOptions.localApplicationsDirectory);
@@ -226,6 +237,8 @@ int main(int argc, char** argv) {
             if (parser.isSet("model-options"))
                 (void)service->loadModel({parser.value("model"), contextTokens, modelOptions}).get();
             a::EngineOptions engineOptions;
+            engineOptions.decision=decisionOptions;
+            engineOptions.procedures=std::make_shared<a::Procedures>(procedureOptions);
             engineOptions.hooks=hooks;
             engineOptions.taskToolsEnabled = !parser.isSet("no-tasks");
             engineOptions.planToolsEnabled = !parser.isSet("no-plan-mode");

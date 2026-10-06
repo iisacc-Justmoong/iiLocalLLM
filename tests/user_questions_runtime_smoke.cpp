@@ -76,7 +76,7 @@ int main(int argc,char** argv) {
             require(found,"App did not advertise its question tool");
             std::cout<<QJsonDocument(QJsonObject{{"question_ui_ready",true},{"app_id",appId},{"code",code}}).toJson(QJsonDocument::Compact).constData()<<std::endl;
         }
-        auto model=std::make_shared<Guided>(service,toolName);a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");
+        auto model=std::make_shared<Guided>(service,toolName);a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");
         options.userQuestionsEnabled=!appUi;options.userQuestions.deferred=false;options.skills.enabled=false;options.toolSearch.enabled=false;options.projectContext.enabled=false;options.compaction.automatic=false;
         options.permissionRequests=std::make_shared<a::PermissionRequests>();int reviews=0;
         a::Engine engine(model,registry,std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass),options);

@@ -1,5 +1,9 @@
 # 에이전트 HTTP·native IPC API
 
+0.54의 agent.info.decision은 정책 활성화·스키마·입력/평가 절차 이름을 알린다. agent.run은 평가 부족이나 기준 미달 시 status:deferred와 decision 보고서를 반환한다. 호스트 정량 입력은 agent.procedures.respond의 decision_input 교체에서 제공하며 모델/wire run 인자로 받지 않는다. [DecisionGate.md](DecisionGate.md)를 따른다.
+
+0.53.0은 `agent.procedures.list`와 `agent.procedures.respond`를 추가한다. `ApiOptions.procedures`는 호스트가 반환 대기 경계를 선택하며 client ID마다 채널을 분리한다. 두 제어 메서드는 실행 worker가 대기하거나 포화되어도 별도 제어 경로에서 처리한다. 실제 자식 절차의 부모 조회, 반환 스키마와 재시도 계약은 [Procedures.md](Procedures.md)를 따른다.
+
 0.25.0은 ApiOptions.engine의 PermissionRequest 훅·permissionResponse·permissionUpdates를 모델 호출과 native 제어 도구에 적용한다. API 요청 본문으로 승인 콜백이나 갱신 권한을 등록하지 않는다. [PermissionRequest.md](PermissionRequest.md)를 따른다.
 
 
@@ -45,7 +49,7 @@ iiLocalLLMD --models-root Models --context-tokens 4096 \
 
 모든 메서드는 알 수 없는 매개변수와 잘못된 타입을 거부한다. 세션 생성은 모델 식별자를 저장하며 실제 모델 지원 여부·로딩은 실행 시 기존 Service가 확인한다.
 
-| 메서드 | params | 결과 |
+| 메서드 |매개변수| 결과 |
 |---|---|---|
 | `agent.info` | `{}` | protocol, client_id, 지원 methods, max_turns, working_directory, project_context_enabled |
 | `agent.sessions.create` | 필수 `model`, 선택 `system` | 새 session_id와 세션 메타데이터 |
@@ -54,8 +58,8 @@ iiLocalLLMD --models-root Models --context-tokens 4096 \
 | `agent.sessions.fork` | 필수 `session_id`, 선택 `through_message_id` | 새 session_id, 복사한 message_count, parent_session_id |
 | `agent.context.get` | 필수 `session_id`; 선택 `context_paths` | 현재 지침 파일·본문·SHA-256·적용 경로·fingerprint |
 | `agent.run` | 필수 `session_id`, `prompt`; 선택 `options`, `max_turns`, `context_paths` | RunResult: run_id, session_id, status, text, usage, 필요한 경우 error |
-| `agent.cancel` | `request_id` | cancel_requested: true |
-| `agent.status` | `request_id` | method, session_id, queued/running, cancel_requested |
+| `agent.cancel` | `request_id` |cancel_requested: 참|
+| `agent.status` | `request_id` |메서드, session_id, 대기 중/실행 중, cancel_requested|
 
 `options`는 기존 `GenerationOptions` JSON 계약이다. `max_turns`는 호스트 최대값 이하이다. 목록 cursor는 정렬된 UUID이며 동시에 세션을 만들 때의 스냅샷을 보장하지 않는다. `get(limit=0)`은 메시지 본문을 제외한 메타데이터를 읽는다. 실행 중에는 transcript 잠금을 유지하므로 같은 세션의 get/fork는 `model_in_use`가 될 수 있다. 진행 정보는 이벤트나 `agent.status`로 읽는다.
 
@@ -172,11 +176,11 @@ agent.tasks.create/get/list/update/claim 및 agent.todos.write/get을 추가한�
 
 `agent.info`의 `input_queue_enabled`와 methods로 확인한다. 모든 호출은 기존 앱 인증·workspace·세션 소유권을 적용한다.
 
-| 메서드 | params | 결과 |
+| 메서드 |매개변수| 결과 |
 |---|---|---|
 | `agent.inputs.enqueue` | session_id, text; 선택 kind·priority·context_paths | input, revision, 실행이 있으면 active_run_id |
 | `agent.inputs.list` | session_id; 선택 offset(0 이상), limit(1~100, 기본 32) | count, inputs, revision, 선택 next_offset |
-| `agent.inputs.remove` | session_id, input_id | removed, input_id, revision |
+| `agent.inputs.remove` | session_id, input_id |제거됨, input_id, 개정판|
 | `agent.inputs.run` | session_id; 선택 options·max_turns·context_paths | 기존 RunResult와 실행 이벤트 |
 
 등록·조회·삭제는 실행 중 transcript 잠금을 요청하지 않고 불변 세션 메타데이터로 소유권을 확인한다. 별도 제어 풀은 기본 동시 2개·대기 16개이며 C++ `ApiOptions.maxConcurrentInputControls/maxQueuedInputControls`로 지정한다. 풀 포화는 QueueFull이다. HTTP/native 전송 슬롯도 별도로 확보해야 한다. run은 일반 API 실행 풀을 사용한다.

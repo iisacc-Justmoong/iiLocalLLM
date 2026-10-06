@@ -57,7 +57,7 @@ QStringList methods() { return {"agent.info", "agent.plugins.list", "agent.sessi
     "agent.agents.run", "agent.agents.output", "agent.agents.stop", "agent.agents.list", "agent.agents.profiles",
     "agent.teams.create", "agent.teams.delete", "agent.teams.status", "agent.teams.inbox", "agent.teams.send", "agent.teams.spawn", "agent.teams.wait", "agent.teams.stop",
     "agent.inputs.enqueue", "agent.inputs.list", "agent.inputs.remove", "agent.inputs.run", "agent.sessions.end", "agent.sessions.clear",
-    "agent.permissions.pending", "agent.permissions.respond", "agent.hooks.status", "agent.hooks.cancel",
+    "agent.permissions.pending", "agent.permissions.respond", "agent.procedures.list", "agent.procedures.respond", "agent.hooks.status", "agent.hooks.cancel",
     "agent.plan.get", "agent.plan.enter", "agent.plan.exit", "agent.questions.ask",
     "agent.memory.get", "agent.memory.read", "agent.memory.write", "agent.memory.edit", "agent.memory.glob", "agent.memory.grep", "agent.memory.forget", "agent.memory.recall",
     "agent.memory.extract", "agent.memory.extraction.status", "agent.memory.extraction.cancel", "agent.sessions.search",
@@ -113,6 +113,8 @@ public:
             && options.maxConcurrentInputControls >= 1 && options.maxConcurrentInputControls <= 16
             && options.maxQueuedInputControls >= 0 && options.maxQueuedInputControls <= 10000, "Invalid agent API configuration");
         require(!options.engine.permissionRequests,"Agent API assigns private permission channels; configure ApiOptions.permissionRequests");
+        require(!options.engine.procedures&&options.engine.procedureOwnerSessionId.isEmpty()&&options.engine.parentProcedureId.isEmpty()&&options.engine.procedureAgentId.isEmpty(),
+            "Agent API assigns private procedure channels and lineage; configure ApiOptions.procedures");
         require(options.engine.projectMemory.directory.isEmpty(),"Agent API assigns private project memory per client");
         require(!options.engine.memoryDream.automatic||(options.engine.projectMemoryEnabled&&options.engine.sessionHistoryEnabled),
             "Automatic memory consolidation requires project memory and session history");
@@ -142,6 +144,8 @@ public:
             client->digest = QCryptographicHash::hash(it.value().toUtf8(), QCryptographicHash::Sha256);
             require(!digests.contains(client->digest), "Agent API tokens must be distinct"); digests.insert(client->digest);
             auto engineOptions = options.engine;
+            auto procedureOptions=options.procedures;procedureOptions.maxRecordBytes=std::min(procedureOptions.maxRecordBytes,options.maxResultBytes);
+            engineOptions.procedures=std::make_shared<Procedures>(procedureOptions);
             if(options.permissionRequests) {
                 client->permissionRequests=std::make_shared<PermissionRequests>(*options.permissionRequests);
                 engineOptions.permissionRequests=client->permissionRequests;
@@ -193,6 +197,9 @@ public:
                 {"task_tools_enabled", client->engine->taskToolsEnabled()}, {"plan_tools_enabled",bool(client->engine->planning())}, {"background_tasks_enabled", client->engine->backgroundTasksEnabled()},
                 {"input_queue_enabled", true}, {"skills_enabled", options.engine.skills.enabled}, {"subagents_enabled", options.subagentsEnabled}, {"teams_enabled",options.teamsEnabled},
                 {"team_auto_task_claim_enabled",options.teamsEnabled&&options.teams.autoClaimTasks&&options.engine.taskToolsEnabled},
+                {"procedures",QJsonObject{{"schema","iisacc.procedure/1"},{"intercept",QJsonArray::fromStringList(options.procedures.intercept)},
+                    {"replaceable_kinds",QJsonArray{"input","decision_input","model","tool","completion"}},{"timeout_ms",options.procedures.timeoutMs}}},
+                {"decision",QJsonObject{{"enabled",options.engine.decision.enabled},{"schema","iisacc.decision/1"},{"input_kind","decision_input"},{"result_kind","decision"},{"missing_input_action","defer"},{"engine","iiDecision.ExactDecisionMaker"}}},
                 {"hooks_enabled",!options.engine.hooks.isEmpty()},{"async_hook_controls_enabled",true},
                 {"max_async_hook_wake_runs",options.engine.maxAsyncHookWakeRuns},{"permission_requests_enabled",bool(client->permissionRequests)},
                 {"user_questions_enabled",bool(client->engine->userQuestionTool())},{"project_memory_enabled",client->engine->projectMemoryEnabled()},
@@ -515,6 +522,17 @@ public:
         auto promise = std::make_shared<std::promise<QJsonValue>>(); RpcHandle handle{uuid(), {}, promise->get_future().share()};
         // These bounded broker operations never acquire an Engine/session lease or
         // enter the worker pools that may already be waiting for this answer.
+        if(method=="agent.procedures.list"||method=="agent.procedures.respond") {
+            if(method.endsWith(".list")) {
+                fields(params,{"session_id","after","limit"});const auto cursor=params.value("after");const auto after=cursor.toDouble();
+                require(cursor.isUndefined()||(cursor.isDouble()&&after>=0&&after<=9007199254740991.0&&std::floor(after)==after),"Invalid procedure cursor");
+                promise->set_value(client->engine->procedures(text(params,"session_id"),qint64(after),integer(params,"limit",128,1,128)));
+            }else {
+                fields(params,{"procedure_id","response"});require(params["response"].isObject(),"Procedure response must be an object");
+                promise->set_value(client->engine->respondProcedure(text(params,"procedure_id"),params["response"].toObject()));
+            }
+            return handle;
+        }
         if(method=="agent.permissions.pending"||method=="agent.permissions.respond") {
             require(bool(client->permissionRequests),"Remote permission requests are disabled",ErrorCode::RuntimeUnavailable);
             if(method.endsWith(".pending")) {
@@ -567,7 +585,7 @@ Api::Api(std::shared_ptr<Model> model, std::shared_ptr<ToolRegistry> registry,
     : d(std::make_shared<Impl>(std::move(model), std::move(registry), std::move(policy), std::move(options))) {}
 Api::~Api() { d->stop(); }
 bool Api::isControlMethod(const QString& method) const {
-    return dreamControl(method)||extractionControl(method)||hookControl(method)||teamControl(method)||method=="agent.plan.get"||method=="agent.permissions.pending"||method=="agent.permissions.respond"||method=="agent.cancel"||method=="agent.status";
+    return method=="agent.procedures.list"||method=="agent.procedures.respond"||dreamControl(method)||extractionControl(method)||hookControl(method)||teamControl(method)||method=="agent.plan.get"||method=="agent.permissions.pending"||method=="agent.permissions.respond"||method=="agent.cancel"||method=="agent.status";
 }
 RpcHandle Api::dispatch(QString method, QJsonObject params, QString credential, RpcEventCallback callback) {
     return d->dispatch(std::move(method), std::move(params), std::move(credential), std::move(callback));

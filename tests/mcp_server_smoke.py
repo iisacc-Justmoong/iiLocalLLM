@@ -1,3 +1,4 @@
+from legacy_decision import legacy_decision_command
 """Official SDK client against the installed or built, unmodified C++ server."""
 import argparse
 import asyncio
@@ -22,6 +23,7 @@ from mcp.shared.exceptions import McpError
 
 @asynccontextmanager
 async def transport(command, root, http):
+    command.args = legacy_decision_command(command.args)
     # The official stdio client inherits only a small environment allowlist.
     # Explicitly isolate both child transports from running user applications.
     temporary = root / "tmp"
@@ -36,7 +38,7 @@ async def transport(command, root, http):
     credentials = root / "credentials.json"
     credentials.write_text(json.dumps({"com.iisacc.fixture": credential}))
     credentials.chmod(0o600)
-    arguments = list(command.args)
+    arguments = legacy_decision_command(command.args)
     for flag in ("--sessions", "--state"):
         if flag in arguments:
             index = arguments.index(flag)

@@ -24,11 +24,11 @@ QString enumName(MessageRole v) {
 }
 QString enumName(RunStatus v) {
     switch(v) { case RunStatus::Completed: return "completed"; case RunStatus::Cancelled: return "cancelled";
-        case RunStatus::TurnLimit: return "turn_limit"; case RunStatus::Failed: return "failed"; }
+        case RunStatus::TurnLimit: return "turn_limit"; case RunStatus::Failed: return "failed"; case RunStatus::Deferred: return "deferred"; }
     return "unknown";
 }
 QString enumName(EventKind v) {
-    switch(v) { case EventKind::Started: return "started"; case EventKind::ModelDelta: return "model_delta";
+    switch(v) { case EventKind::Procedure: return "procedure"; case EventKind::Started: return "started"; case EventKind::ModelDelta: return "model_delta";
         case EventKind::Message: return "message"; case EventKind::ToolStarted: return "tool_started";
         case EventKind::ToolProgress: return "tool_progress"; case EventKind::ToolFinished: return "tool_finished";
         case EventKind::PermissionRequested: return "permission_requested"; case EventKind::Hook: return "hook";
@@ -64,7 +64,7 @@ QJsonObject toJson(const RunResult& r) {
             {"summary_generated_tokens", r.usage.summaryGeneratedTokens}, {"compactions", r.usage.compactions},
             {"memory_recall_prompt_tokens",r.usage.memoryRecallPromptTokens},{"memory_recall_generated_tokens",r.usage.memoryRecallGeneratedTokens},
             {"memory_recall_cached_tokens",r.usage.memoryRecallCachedTokens}}},
-        {"error_code", iiLocalLLM::enumName(r.errorCode)}, {"error_message", r.errorMessage}};
+        {"error_code", iiLocalLLM::enumName(r.errorCode)}, {"error_message", r.errorMessage},{"decision",r.decision}};
 }
 QJsonObject toJson(const Event& e) {
     return {{"event", enumName(e.kind)}, {"run_id", e.runId}, {"session_id", e.sessionId},

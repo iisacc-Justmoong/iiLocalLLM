@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+from legacy_decision import legacy_decision_command
 import subprocess
 import tempfile
 import time
@@ -105,7 +106,7 @@ def main():
         def server(name, command, pattern):
             log_path = root / (name + ".log")
             with log_path.open("w") as log:
-                process = subprocess.Popen(command, env=env, stdout=log, stderr=log)
+                process = subprocess.Popen(legacy_decision_command(command), env=env, stdout=log, stderr=log)
                 if args.report:
                     args.report.with_suffix(".active.json").write_text(json.dumps({"pid": process.pid, "log": str(log_path), "phase": name}))
                 try:

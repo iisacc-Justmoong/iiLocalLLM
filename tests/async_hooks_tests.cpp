@@ -8,6 +8,7 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QTemporaryDir>
 #include <QtTest/QtTest>
+#include <thread>
 #include <future>
 #include <mutex>
 using namespace iiLocalLLM;
@@ -36,7 +37,7 @@ public:
     QString lastText(){std::lock_guard lock(mutex);QString result;for(const auto& m:requests.last().messages)result+=m.text+'\n';return result;}
 };
 struct Host {
-    QTemporaryDir root;std::shared_ptr<Model> model=std::make_shared<Model>();a::EngineOptions config;
+    QTemporaryDir root;std::shared_ptr<Model> model=std::make_shared<Model>();a::EngineOptions config{.decision={.enabled=false}};
     Host(){config.sessionsDirectory=root.filePath("sessions");config.compaction.automatic=false;config.projectContext.enabled=false;}
     std::unique_ptr<a::Engine> engine(){return std::make_unique<a::Engine>(model,std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(),config);}
 };
@@ -116,7 +117,7 @@ private slots:
         QVERIFY(!QFileInfo::exists(host.root.filePath("forbidden.txt")));QCOMPARE(asks.load(),1);
     }
     void apiControlsAreAuthenticatedAndUseReservedCapacity() {
-        Host host;const QString first(48,'a'),second(48,'b');a::ApiOptions config;
+        Host host;const QString first(48,'a'),second(48,'b');a::ApiOptions config{.engine={.decision={.enabled=false}}};
         config.workingDirectory=host.root.filePath("work");QDir().mkpath(config.workingDirectory);
         config.stateDirectory=host.root.filePath("private");config.clientTokens={{"society",first},{"dreamscapes",second}};
         config.engine=host.config;config.engine.sessionsDirectory.clear();config.maxConcurrentRequests=1;config.maxQueuedRequests=0;

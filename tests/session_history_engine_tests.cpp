@@ -24,7 +24,7 @@ public:
 struct Fixture {
     QTemporaryDir root{QDir::current().filePath("history-engine-XXXXXX")};QString work=root.filePath("work");
     std::shared_ptr<Model> model=std::make_shared<Model>();std::shared_ptr<a::ToolRegistry> tools=std::make_shared<a::ToolRegistry>();
-    std::shared_ptr<a::RulePolicy> policy=std::make_shared<a::RulePolicy>();a::EngineOptions options;
+    std::shared_ptr<a::RulePolicy> policy=std::make_shared<a::RulePolicy>();a::EngineOptions options{.decision={.enabled=false}};
     Fixture(){QDir().mkpath(work);a::registerWorkspaceTools(*tools,work);options.sessionsDirectory=root.filePath("sessions");
         options.sessionHistoryEnabled=true;options.skills.enabled=false;options.projectContext.enabled=false;options.toolSearch.enabled=false;options.compaction.automatic=false;}
 };
@@ -60,7 +60,7 @@ private slots:
         QVERIFY_THROWS_EXCEPTION(Error,disabled.runSessionSearch(id,{{"query","needle"}}));
     }
     void apiSeparatesClientsAndRejectsHostScopeArguments() {
-        Fixture f;a::ApiOptions options;options.stateDirectory=f.root.filePath("api");options.workingDirectory=f.work;
+        Fixture f;a::ApiOptions options{.engine={.decision={.enabled=false}}};options.stateDirectory=f.root.filePath("api");options.workingDirectory=f.work;
         options.engine=f.options;options.engine.sessionsDirectory.clear();options.clientTokens={{"society",QString(48,'a')},{"dreamscapes",QString(48,'b')}};
         a::Api host(f.model,f.tools,f.policy,options);QVERIFY(api(host,"agent.info")["session_history_enabled"].toBool());
         const auto id=api(host,"agent.sessions.create",{{"model","fixture"}})["session_id"].toString();

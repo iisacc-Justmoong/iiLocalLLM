@@ -8,6 +8,7 @@ import os
 import re
 import secrets
 import shlex
+from legacy_decision import legacy_decision_command
 import subprocess
 import tempfile
 import time
@@ -72,7 +73,7 @@ print(json.dumps({"continue": False, "systemMessage": "ASYNC_WIRE_CONTEXT"}))
         def server(name, invocation, pattern):
             log_path = root / (name + ".log")
             with log_path.open("w") as log:
-                process = subprocess.Popen(invocation, stdout=log, stderr=subprocess.STDOUT, env=env)
+                process = subprocess.Popen(legacy_decision_command(invocation), stdout=log, stderr=subprocess.STDOUT, env=env)
                 try:
                     def ready():
                         contents = log_path.read_text()

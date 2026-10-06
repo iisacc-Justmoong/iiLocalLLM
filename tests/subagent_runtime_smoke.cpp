@@ -43,7 +43,7 @@ int main(int argc,char** argv){
         auto model=std::make_shared<a::ServiceModel>(service);auto registry=std::make_shared<a::ToolRegistry>();a::registerWorkspaceTools(*registry,workspace);
         for(const auto& t:registry->definitions())if(t.name!="Read")registry->remove(t.name);
         auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Default,QList<a::PermissionRule>{{"Agent",a::PermissionBehavior::Allow}});
-        a::EngineOptions eo;eo.sessionsDirectory=root.filePath("parents");eo.maxConcurrentRuns=1;eo.projectContext.enabled=false;eo.compaction.automatic=false;
+        a::EngineOptions eo{.decision={.enabled=false}};eo.sessionsDirectory=root.filePath("parents");eo.maxConcurrentRuns=1;eo.projectContext.enabled=false;eo.compaction.automatic=false;
         a::SubagentOptions so;so.workingDirectory=workspace;so.stateDirectory=root.filePath("children");so.maxTurns=6;so.maxRuntimeMs=180000;so.generation.temperature=0;so.generation.maxTokens=2048;
         so.profiles.enabled=true;so.profiles.includeBuiltins=false;so.profiles.projectBoundary=workspace;
         put(workspace+"/.claude/agents/reader.md","---\nname: general-purpose\ndescription: Read a local file and report its exact observed contents.\ntools: Read\nskills: [read-evidence]\n---\nUse Read to inspect the requested file, then report its exact contents. Do not guess.\n");

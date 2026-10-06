@@ -218,7 +218,7 @@ private slots:
                 return {result.data["value"].toString(), {}, {}};
             }
         };
-        agent::EngineOptions engineOptions; engineOptions.sessionsDirectory = directory.path() + "/sessions";
+        agent::EngineOptions engineOptions{.decision={.enabled=false}}; engineOptions.sessionsDirectory = directory.path() + "/sessions";
         agent::Engine engine(std::make_shared<Model>(), registry,
             std::make_shared<agent::RulePolicy>(agent::PermissionMode::Bypass), engineOptions);
         const auto session = engine.createSession("fixture", directory.path());

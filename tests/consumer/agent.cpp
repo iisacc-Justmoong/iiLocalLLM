@@ -24,7 +24,7 @@ int main(int argc, char** argv) {
         tool.definition.metadata = {{"app_id", "iisacc.installed-consumer"}};
         tool.execute = [](const QJsonObject&, const a::ToolContext&) { return a::ToolResult{"installed document", {}}; };
         registry->add(std::move(tool));
-        a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         a::Engine engine(std::make_shared<AppModel>(), registry, std::make_shared<a::RulePolicy>(), options);
         QFile instructions(root.filePath("AGENTS.md"));
         if (!instructions.open(QIODevice::WriteOnly) || instructions.write("Installed project instructions") < 0) return 4;

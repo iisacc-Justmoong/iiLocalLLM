@@ -48,7 +48,7 @@ int main(int argc, char** argv) {
         ModelLoadRequest load{args[3], 8192}; load.options = {{"tool_grammar", false}, {"enable_thinking", false}};
         service.loadModel(load).get();
         auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, workspace);
-        a::EngineOptions eo; eo.sessionsDirectory = root.filePath("sessions"); eo.projectContext.enabled = false; eo.compaction.automatic = false;
+        a::EngineOptions eo{.decision={.enabled=false}}; eo.sessionsDirectory = root.filePath("sessions"); eo.projectContext.enabled = false; eo.compaction.automatic = false;
         auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Default, QList<a::PermissionRule>{{"Bash", a::PermissionBehavior::Allow}});
         a::Engine engine(std::make_shared<a::ServiceModel>(service), registry, policy, eo);
         auto request = [&](const QString& id, const QString& prompt) {

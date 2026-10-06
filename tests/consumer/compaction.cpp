@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     try {
         QTemporaryDir root;
-        a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         a::Engine engine(std::make_shared<AppModel>(), std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), options);
         const auto session = engine.createSession("app-model", root.path());
         { a::SessionStore store(options.sessionsDirectory); auto lease = store.acquire(session.id);

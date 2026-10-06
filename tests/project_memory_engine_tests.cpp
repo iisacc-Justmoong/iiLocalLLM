@@ -35,7 +35,7 @@ struct Fixture {
     std::shared_ptr<Model> model=std::make_shared<Model>();
     std::shared_ptr<a::ToolRegistry> registry=std::make_shared<a::ToolRegistry>();
     std::shared_ptr<const a::PermissionPolicy> policy=std::make_shared<a::RulePolicy>(a::PermissionMode::AcceptEdits);
-    a::EngineOptions options;
+    a::EngineOptions options{.decision={.enabled=false}};
     Fixture() {
         QDir().mkpath(workspace);a::registerWorkspaceTools(*registry,workspace,{},QStringList{root.filePath("state")});
         options.sessionsDirectory=root.filePath("state/sessions");options.projectMemoryEnabled=true;
@@ -132,7 +132,7 @@ private slots:
         QVERIFY(std::none_of(f.model->requests.last().tools.begin(),f.model->requests.last().tools.end(),[](const auto& tool){return tool.name=="Write"||tool.name=="MemoryForget";}));
     }
     void authenticatedApiKeepsTwoAppMemoriesSeparateAndBoundsToolPaths() {
-        Fixture f;a::ApiOptions options;options.workingDirectory=f.workspace;options.stateDirectory=f.root.filePath("api-state");
+        Fixture f;a::ApiOptions options{.engine={.decision={.enabled=false}}};options.workingDirectory=f.workspace;options.stateDirectory=f.root.filePath("api-state");
         options.engine=f.options;options.engine.sessionsDirectory.clear();options.clientTokens={{"society",QString(48,'a')},{"dreamscapes",QString(48,'b')}};
         a::Api api(f.model,f.registry,f.policy,options);
         const auto first=call(api,"agent.sessions.create",{{"model","fixture"}})["session_id"].toString();

@@ -123,6 +123,11 @@ int main(int argc, char** argv)
             return document.object();
         };
         if (command == "agent") {
+            if(args.size()>=3&&args[1]=="procedures"){
+                if(!parser.isSet("auth-file")||args.size()!=4||!QStringList{"list","respond"}.contains(args[2]))throw std::runtime_error("Usage: iillm --auth-file FILE agent procedures list/respond PARAMS_JSON_FILE");
+                const auto token=QString::fromUtf8(iiLocalLLMClient::readPrivateFile(parser.value("auth-file"),512)).trimmed();
+                printJson(client.call("agent.procedures."+args[2],readObject(args[3]),{},300000,token));return 0;
+            }
             const bool mcp = args.size() == 2 && args[1] == "mcp";
             const bool plugins = args.size() == 2 && args[1] == "plugins";
             const bool permissions=args.size()>=3&&args.size()<=4&&args[1]=="permissions"

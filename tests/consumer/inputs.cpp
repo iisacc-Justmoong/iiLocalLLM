@@ -13,7 +13,7 @@ int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     try {
         QTemporaryDir root(QDir::current().filePath("installed-inputs-XXXXXX"));
-        a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         a::Engine engine(std::make_shared<Echo>(), std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), options);
         const auto id = engine.createSession("consumer", root.path()).id;
         const auto published = engine.enqueueInput(id, {{"text", "installed queue ABI"}})["input"].toObject();

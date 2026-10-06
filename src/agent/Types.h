@@ -9,10 +9,10 @@ class PermissionRequests;
 enum class PermissionMode { Default, AcceptEdits, DontAsk, Bypass, Plan };
 
 enum class MessageRole { User, Assistant, Tool };
-enum class RunStatus { Completed, Cancelled, TurnLimit, Failed };
+enum class RunStatus { Completed, Cancelled, TurnLimit, Failed, Deferred };
 enum class EventKind { Started, ModelDelta, Message, ToolStarted, ToolProgress, ToolFinished,
     PermissionRequested, Hook, Finished, InstructionsLoaded, CompactionStarted, CompactionProgress, Compacted,
-    InputDelivered, Interrupted, PermissionResolved, MemoryRecall, MemoryExtraction, MemoryDream };
+    InputDelivered, Interrupted, PermissionResolved, MemoryRecall, MemoryExtraction, MemoryDream, Procedure };
 struct ToolCall {
     QString id;
     QString name;
@@ -82,6 +82,11 @@ struct ToolContext {
     quint64 workspaceRevision = 0;
     QString fileCheckpointId; // Accepted user-message ID; empty direct edits get a fresh checkpoint.
     std::function<void(const QString&,const std::optional<QByteArray>&,const ToolContext&)> beforeFileWrite;
+    std::shared_ptr<class Procedures> procedures; // Trusted host return channel; never decoded from wire/model input.
+    QString procedureOwnerSessionId, procedureId, procedureToolCallId, procedureAgentId;
+    int procedureTurn = 0;
+    std::shared_ptr<const class DecisionGate> decisionGate;
+    std::shared_ptr<const struct DecisionReceipt> decisionReceipt; // Exact host-evaluated call, not model authority.
 };
 struct ModelRequest {
     QString model;
@@ -171,6 +176,7 @@ struct RunResult {
     RunUsage usage;
     ErrorCode errorCode = ErrorCode::None;
     QString errorMessage;
+    QJsonObject decision; // Last probability/value assessment; Deferred is a deliberate no-op.
 };
 struct Event {
     EventKind kind = EventKind::Started;

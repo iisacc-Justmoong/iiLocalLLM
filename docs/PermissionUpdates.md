@@ -30,25 +30,25 @@ CLI 호스트는 설정 파일을 지정하지 않아도 SettingsPermissionPolic
 
 모든 갱신에는 type과 destination이 필요하다. 배열 안의 연산을 순서대로 적용한다.
 
-| type | 추가 필드 | 동작 |
+|type| 추가 필드 | 동작 |
 |---|---|---|
-| addRules | behavior, rules | 해당 출처·behavior에 규칙 추가, 정규화한 중복 제거 |
-| replaceRules | behavior, rules | 해당 출처의 해당 behavior 목록만 교체 |
-| removeRules | behavior, rules | 해당 출처·behavior에서 정규화한 규칙 제거 |
-| setMode | mode | 현재 세션 모드 변경; 파일 목적지이면 defaultMode도 저장 |
-| addDirectories | directories | 정규화한 절대 경로를 해당 출처에 추가 |
-| removeDirectories | directories | 해당 출처에서 삭제하고 현재 세션의 같은 입력 경로를 억제 |
+| addRules |행동, 규칙| 해당 출처·behavior에 규칙 추가, 정규화한 중복 제거 |
+| replaceRules |행동, 규칙| 해당 출처의 해당 behavior 목록만 교체 |
+| removeRules |행동, 규칙| 해당 출처·behavior에서 정규화한 규칙 제거 |
+| setMode |모드| 현재 세션 모드 변경; 파일 목적지이면 defaultMode도 저장 |
+| addDirectories |디렉토리| 정규화한 절대 경로를 해당 출처에 추가 |
+| removeDirectories |디렉토리| 해당 출처에서 삭제하고 현재 세션의 같은 입력 경로를 억제 |
 
 behavior는 allow/deny/ask, rule은 `{toolName, ruleContent?}`이다. 규칙의 괄호·역슬래시를 escape하여 저장하며 빈 내용 또는 `*`인 전체 도구 규칙을 bare 이름으로 정규화한다. 예를 들어 Bash(*)와 Bash는 제거·중복 검사에서 같다. 파일·session의 새 규칙은 출처 기준 설정 문법이다. cliArg의 기존 네이티브 규칙은 원래 문법·경로 메타데이터를 보존하고 새로 추가한 규칙만 설정 문법을 사용한다.
 
 mode는 default/acceptEdits/bypassPermissions/plan/dontAsk이다. 승인된 세션 모드 → 호스트 modeOverride → 병합 defaultMode → fallback 순서로 선택한다. setMode의 현재 세션 변경은 destination과 관계없이 즉시 반영된다. 관리 출처의 bypass 금지는 갱신 전후에 확인한다. managed-only가 켜져 있으면 session·cliArg·일반 파일 규칙도 판단에서 제외한다. 고정 호스트 Deny와 자식 프로파일의 도구 범위·Plan/DontAsk 제한은 유지한다. auto 분류 모드는 아직 지원하지 않는다.
 
-| destination | 저장 위치와 수명 |
+|목적지| 저장 위치와 수명 |
 |---|---|
 | userSettings | 명시한 userDirectory/settings.json; user 출처가 켜져 있어야 함 |
 | projectSettings | workspace/.claude/settings.json; project 출처 필요 |
 | localSettings | workspace/.claude/settings.local.json; local 출처 필요 |
-| session | 같은 정책 객체의 sessionId별 메모리 |
+|세션| 같은 정책 객체의 sessionId별 메모리 |
 | cliArg | 같은 세션의 CLI 규칙·디렉터리 재정의; argv나 파일을 변경하지 않음 |
 
 flagSettings·policySettings는 갱신 목적지가 아니다. 비활성 출처에 대한 저장은 오류이며 다른 출처로 대신 저장하지 않는다. 파일에 있던 비권한 필드와 수정하지 않은 behavior는 보존한다. JSON의 공백·순서는 재직렬화된다. 영속 파일을 함께 읽는 다른 세션·앱도 다음 조회/판단부터 그 변경을 받는다. 반대로 session/cliArg 갱신은 다른 세션이나 정책 객체·프로세스로 전파되지 않는다. 임베디드 호스트는 신뢰 주체를 분리할 sessionId와 정책 객체를 선택해야 한다.

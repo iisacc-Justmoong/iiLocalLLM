@@ -14,6 +14,7 @@ struct SubagentOptions {
     int maxTurns = 32;
     int maxRuntimeMs = 300000;
     bool completionNotifications = true;
+    bool deduplicateRequests = true; // Same new-child request in one parent run reuses its execution.
     AgentProfileOptions profiles{false}; // Embedded hosts opt in to file discovery.
     QMap<QString, QString> modelAliases; // Host-authorized alias -> actual local model URI.
 };

@@ -37,11 +37,13 @@ struct Fixture {
     std::shared_ptr<a::Api> api;
     std::unique_ptr<LocalIpcServer> ipc;
     std::unique_ptr<HttpApiServer> http;
-    explicit Fixture(int timeout = 3000, int buffer = 65536) {
+    explicit Fixture(int timeout = 3000, int buffer = 65536,QStringList intercept = {},bool decision = false) {
         ServiceOptions serviceOptions; serviceOptions.modelsDirectory = root.filePath("Models");
         service = std::make_unique<Service>(serviceOptions);
-        a::ApiOptions options; options.workingDirectory = root.filePath("work"); QDir().mkpath(options.workingDirectory);
+        a::ApiOptions options{.engine={.decision={.enabled=false}}}; options.workingDirectory = root.filePath("work"); QDir().mkpath(options.workingDirectory);
+        options.engine.decision.enabled=decision;
         options.stateDirectory = root.filePath("private"); options.clientTokens = {{"society", credential}, {"dreamscapes", otherCredential}};
+        options.procedures.intercept=std::move(intercept);
         api = std::make_shared<a::Api>(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), options);
         ipc = std::make_unique<LocalIpcServer>(*service); ipc->setRpcHandler(api);
         if (!ipc->listen(root.filePath("s"))) throw std::runtime_error(ipc->errorString().toStdString());
@@ -97,6 +99,40 @@ public:
 class AgentTransportTests : public QObject {
     Q_OBJECT
 private slots:
+    void hostQuantitiesCrossHttpAndDecisionResultCrossesIpc() {
+        Fixture f(5000,1024*1024,{"decision_input"},true);Native client(f);
+        const auto sid=object(post(f,request("agent.sessions.create",{{"model","fixture"}})))["result"].toObject().value("session_id");
+        client.send("run","agent.run",{{"session_id",sid},{"prompt","work"}});
+        for(int pass=0;pass<2;++pass){
+            QJsonObject pending;QTRY_VERIFY_WITH_TIMEOUT(([&]{const auto records=object(post(f,request("agent.procedures.list",{{"session_id",sid}})))["result"].toObject()["procedures"].toArray();for(const auto& r:records)if(r.toObject()["kind"]=="decision_input"&&r.toObject()["phase"]=="waiting"){pending=r.toObject();return true;}return false;})(),3000);
+            QJsonObject output{{"value_unit","USD"},{"estimates",QJsonArray{QJsonObject{{"candidate_id","run"},{"success_gain","100"},{"failure_loss","10"},{"cost","1"},{"success_probability","0.9"}}}},{"evidence",QJsonArray{}}};
+            const auto response=post(f,request("agent.procedures.respond",{{"procedure_id",pending["procedure_id"]},{"response",QJsonObject{{"action","replace"},{"output",output}}}}));QCOMPARE(response.status,200);
+        }
+        const auto result=client.until("run","result")["result"].toObject();QCOMPARE(result["status"],"completed");QCOMPARE(result["decision"].toObject()["action"],"execute");QCOMPARE(f.model->entered.load(),1);
+    }
+    void procedureReturnsCrossIpcAndHttpWithoutBlockingControls() {
+        Fixture f(5000,1024*1024,{"model"});Native client(f);
+        const auto id=object(post(f,request("agent.sessions.create",{{"model","fixture"}})))["result"].toObject().value("session_id");
+        client.send("run","agent.run",{{"session_id",id},{"prompt","original"}});
+        QJsonObject waiting;
+        QTRY_VERIFY_WITH_TIMEOUT(([&]{client.receive();for(const auto& frame:client.frames){const auto event=frame["data"].toObject();if(event["event"]=="procedure"&&event["data"].toObject()["phase"]=="waiting"){waiting=event["data"].toObject();return true;}}return false;})(),3000);
+        const auto listing=post(f,request("agent.procedures.list",{{"session_id",id}}));QCOMPARE(listing.status,200);
+        QVERIFY(!object(listing)["result"].toObject()["procedures"].toArray().isEmpty());
+        QCOMPARE(post(f,request("agent.procedures.respond",{{"procedure_id",waiting["procedure_id"]},{"response",QJsonObject{{"action","continue"}}}}),otherCredential).status,404);
+        const QJsonObject response{{"action","replace"},{"output",QJsonObject{{"text","host via HTTP"},{"tool_calls",QJsonArray{}}}}};
+        QCOMPARE(post(f,request("agent.procedures.respond",{{"procedure_id",waiting["procedure_id"]},{"response",response}})).status,200);
+        QCOMPARE(client.until("run","result")["result"].toObject()["text"],"host via HTTP");
+        bool responded=false;
+        auto stream=post(f,request("agent.run",{{"session_id",id},{"prompt","next"}},true),credential,[&](QNetworkReply*,const QByteArray& chunk){
+            if(responded||!chunk.contains("waiting"))return;
+            const auto list=object(post(f,request("agent.procedures.list",{{"session_id",id}})))["result"].toObject()["procedures"].toArray();
+            for(const auto& value:list)if(value.toObject()["phase"]=="waiting"){
+                responded=true;client.send("resume","agent.procedures.respond",{{"procedure_id",value.toObject()["procedure_id"]},{"response",QJsonObject{{"action","continue"}}}});
+                QVERIFY(client.until("resume","result")["result"].toObject()["accepted"].toBool());break;
+            }
+        });
+        QCOMPARE(stream.status,200);QVERIFY(responded);QVERIFY(stream.body.contains("procedure"));QVERIFY(stream.body.contains("data: [DONE]"));
+    }
     void authSessionsForkAndEventOrder() {
         Fixture f;
         const auto unauth = post(f, request("agent.info"), {}); QCOMPARE(unauth.status, 401); QVERIFY(unauth.authenticate.startsWith("Bearer"));

@@ -38,7 +38,7 @@ int main(int argc,char** argv) {
             lease->append({{},a::MessageRole::User,"The release alias is "+marker+". Keep this exact spelling."});
         }
         auto model=std::make_shared<a::ServiceModel>(service);auto tools=std::make_shared<a::ToolRegistry>();
-        auto policy=std::make_shared<a::RulePolicy>();a::EngineOptions options;options.sessionsDirectory=sessions;options.sessionHistoryEnabled=true;
+        auto policy=std::make_shared<a::RulePolicy>();a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=sessions;options.sessionHistoryEnabled=true;
         options.projectContext.enabled=false;options.skills.enabled=false;options.toolSearch.enabled=false;options.compaction.automatic=false;
         a::Engine engine(model,tools,policy,options);const auto id=engine.createSession(uri,work).id;
         a::RunRequest request{id,"Find the release alias in our previous conversations. Use SessionSearch with the literal query release alias. Reply with the exact alias from the matching message."};

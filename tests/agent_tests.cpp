@@ -43,7 +43,7 @@ void AgentTests::singleToolLimitIsPassedToModels(){
     for(const int limit:{1,8}){
         QTemporaryDir root;auto model=std::make_shared<ScriptModel>();auto registry=std::make_shared<a::ToolRegistry>();registry->add(echoTool());
         model->replies={{{},{{"first","echo",{{"value",1}}}}},{"done",{}}};
-        a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");options.maxToolCallsPerTurn=limit;
+        a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");options.maxToolCallsPerTurn=limit;
         a::Engine engine(model,registry,std::make_shared<a::RulePolicy>(),options);const auto session=engine.createSession("fixture",root.path());
         QCOMPARE(engine.run({session.id,"Observe and finish"}).result.get().status,a::RunStatus::Completed);
         QCOMPARE(model->requests.size(),2);for(const auto& request:model->requests)QCOMPARE(request.parallelToolCalls,limit>1);
@@ -58,7 +58,7 @@ void AgentTests::completionToolStopsBeforeLaterTools() {
     a::ToolRunner runner(registry,std::make_shared<a::RulePolicy>());
     QVERIFY(!runner.concurrencySafe({"done","StructuredOutput",{{"value",2}}}));
     model->replies={{{},{{"before","echo",{{"value",1}}},{"done","StructuredOutput",{{"value",2}}},{"after","echo",{{"value",3}}}}}};
-    a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");options.skills.enabled=false;options.projectContext.enabled=false;
+    a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");options.skills.enabled=false;options.projectContext.enabled=false;
     a::Engine engine(model,registry,std::make_shared<a::RulePolicy>(),options);auto session=engine.createSession("model://test",root.path());
     const auto result=engine.run({session.id,"Return the verified result"}).result.get();
     QCOMPARE(result.status,a::RunStatus::Completed);QCOMPARE(result.text,"2");QCOMPARE(model->requests.size(),1);QCOMPARE(executed,QList<int>{1});
@@ -102,7 +102,7 @@ void AgentTests::registrySnapshotDuringExecution() {
         }
     };
     QTemporaryDir root;
-    a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
+    a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
     a::Engine engine(model, registry, std::make_shared<a::RulePolicy>(), options);
     const auto session = engine.createSession("model://test", root.path());
     QCOMPARE(engine.run({session.id, "call the registered tool"}).result.get().status, a::RunStatus::Completed);
@@ -172,7 +172,7 @@ void AgentTests::toolLoopAndPersistentResume() {
         auto registry = std::make_shared<a::ToolRegistry>(); registry->add(echoTool());
         auto model = std::make_shared<ScriptModel>();
         model->replies = {{"", {{"c1", "echo", {{"value", 7}}}}}, {"seven", {}}};
-        a::EngineOptions options; options.sessionsDirectory = dir.path();
+        a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = dir.path();
         auto engine = std::make_unique<a::Engine>(model, registry, std::make_shared<a::RulePolicy>(), options);
         auto session = engine->createSession("model://test", dir.path());
         QList<a::EventKind> events;
@@ -202,7 +202,7 @@ void AgentTests::interruptedToolIsNotExecutedAgain() {
         }
         auto registry = std::make_shared<a::ToolRegistry>(); registry->add(echoTool());
         auto model = std::make_shared<ScriptModel>(); model->replies = {{"resumed", {}}};
-        a::EngineOptions options; options.sessionsDirectory = dir.path();
+        a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = dir.path();
         a::Engine engine(model, registry, std::make_shared<a::RulePolicy>(), options);
         const auto result = engine.run({session.id, "continue"}).result.get();
         QVERIFY(result.status == a::RunStatus::Completed);
@@ -216,7 +216,7 @@ void AgentTests::schemaFailureBecomesToolResult() {
         auto registry = std::make_shared<a::ToolRegistry>(); registry->add(echoTool());
         auto model = std::make_shared<ScriptModel>();
         model->replies = {{"", {{"bad", "echo", {{"value", "wrong"}}}}}, {"handled", {}}};
-        a::EngineOptions options; options.sessionsDirectory = dir.path();
+        a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = dir.path();
         a::Engine engine(model, registry, std::make_shared<a::RulePolicy>(), options);
         auto session = engine.createSession("model://test", dir.path());
         QVERIFY(engine.run({session.id, "test"}).result.get().status == a::RunStatus::Completed);
@@ -235,7 +235,7 @@ void AgentTests::cancellationAndConsumerFailure() {
         QTemporaryDir dir;
         auto model = std::make_shared<WaitingModel>();
         auto registry = std::make_shared<a::ToolRegistry>();
-        a::EngineOptions options; options.sessionsDirectory = dir.path();
+        a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = dir.path();
         a::Engine engine(model, registry, std::make_shared<a::RulePolicy>(), options);
         auto session = engine.createSession("model://test", dir.path());
         auto handle = engine.run({session.id, "wait"});
@@ -286,7 +286,7 @@ void AgentTests::parallelToolsAndExclusiveBarrier() {
     }
     auto model = std::make_shared<ScriptModel>();
     model->replies = {{"", {{"one", "first", {{"value", 1}}}, {"two", "second", {{"value", 2}}}, {"three", "exclusive", {{"value", 3}}}}}, {"done", {}}};
-    a::EngineOptions options; options.sessionsDirectory = dir.path();
+    a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = dir.path();
     a::Engine engine(model, registry, std::make_shared<a::RulePolicy>(), options);
     auto session = engine.createSession("model://test", dir.path());
     QVERIFY(engine.run({session.id, "parallel"}).result.get().status == a::RunStatus::Completed);
@@ -297,7 +297,7 @@ void AgentTests::stopHookAndTurnLimit() {
     QTemporaryDir dir;
     auto registry = std::make_shared<a::ToolRegistry>(); registry->add(echoTool());
     auto model = std::make_shared<ScriptModel>(); model->replies = {{"first", {}}, {"revised", {}}};
-    a::EngineOptions options; options.sessionsDirectory = dir.path(); int stops = 0;
+    a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = dir.path(); int stops = 0;
     options.hooks.append([&](const a::HookInput& input, const CancellationToken&) {
         a::HookResult r;
         if (input.kind == a::HookKind::Stop && ++stops == 1) { r.block = true; r.feedback = "Revise the answer"; }

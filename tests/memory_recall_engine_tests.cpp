@@ -37,7 +37,7 @@ public:
 struct Fixture {
     QTemporaryDir root;QString work=root.filePath("work");std::shared_ptr<Model> model=std::make_shared<Model>();
     std::shared_ptr<a::ToolRegistry> tools=std::make_shared<a::ToolRegistry>();
-    std::shared_ptr<a::RulePolicy> policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);a::EngineOptions options;
+    std::shared_ptr<a::RulePolicy> policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);a::EngineOptions options{.decision={.enabled=false}};
     Fixture() {
         QDir().mkpath(work);a::registerWorkspaceTools(*tools,work);a::Tool wait;
         wait.definition={"Yield","Wait briefly for external work",{{"type","object"},{"properties",QJsonObject{}}},{},true,true};
@@ -118,7 +118,7 @@ private slots:
         QVERIFY(oldCancelled);QVERIFY(result.text.contains("NEW_NOTE_853"));QVERIFY(!result.text.contains("OLD_NOTE_412"));
     }
     void explicitRecallUsesPrivateApiOwnerAndMcpConnection() {
-        Fixture f;a::ApiOptions options;options.stateDirectory=f.root.filePath("api");options.workingDirectory=f.work;
+        Fixture f;a::ApiOptions options{.engine={.decision={.enabled=false}}};options.stateDirectory=f.root.filePath("api");options.workingDirectory=f.work;
         options.engine=f.options;options.engine.sessionsDirectory.clear();options.clientTokens={{"society",QString(48,'a')},{"dreamscapes",QString(48,'b')}};
         a::Api host(f.model,f.tools,f.policy,options);
         const auto first=api(host,"agent.sessions.create",{{"model","fixture"}})["session_id"].toString();

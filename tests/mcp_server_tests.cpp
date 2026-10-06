@@ -75,10 +75,28 @@ public:
 class McpServerTests : public QObject {
     Q_OBJECT
 private slots:
+    void procedureControlIsConnectionBoundAndAvailableDuringAgentRun() {
+        QTemporaryDir root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
+        auto model=std::make_shared<HistoryModel>();auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
+        a::EngineOptions eo{.decision={.enabled=false}};eo.sessionsDirectory=root.filePath("sessions");eo.compaction.automatic=false;
+        a::ProcedureOptions config;config.intercept={"model"};eo.procedures=std::make_shared<a::Procedures>(config);
+        auto engine=std::make_shared<a::Engine>(model,registry,policy,eo);a::McpServerOptions options;options.workingDirectory=workspace;options.engine=engine;options.model="local";
+        auto bridge=a::mcpServerOptions(registry,policy,options);m::ServerSession first(bridge),second(bridge);initialize(first);initialize(second);
+        QVERIFY(bridge.experimentalCapabilities.contains("iisacc/procedures"));
+        first.receive(request(2,"tools/call",{{"name","iiLocalLLM.agent.run"},{"arguments",QJsonObject{{"prompt","candidate"}}}}));
+        QString procedureId;int sequence=3;
+        QTRY_VERIFY_WITH_TIMEOUT(([&]{first.receive(request(sequence++,"iisacc/procedures/list"));const auto page=next(first)["result"].toObject();for(const auto& value:page["procedures"].toArray())if(value.toObject()["phase"]=="waiting"){procedureId=value.toObject()["procedure_id"].toString();return true;}return false;})(),3000);
+        const QJsonObject response{{"action","replace"},{"output",QJsonObject{{"text","MCP host return"},{"tool_calls",QJsonArray{}}}}};
+        second.receive(request(2,"iisacc/procedures/respond",{{"procedure_id",procedureId},{"response",response}}));QVERIFY(next(second).contains("error"));
+        first.receive(request(sequence,"iisacc/procedures/respond",{{"procedure_id",procedureId},{"response",response}}));
+        bool acknowledged=false,finished=false;
+        QTRY_VERIFY_WITH_TIMEOUT(([&]{for(const auto& frame:first.takeMessages(100)){const auto message=frame.toObject();if(message["id"]==sequence)acknowledged=message["result"].toObject()["accepted"].toBool();if(message["id"]==2)finished=message["result"].toObject()["structuredContent"].toObject()["text"]=="MCP host return";}return acknowledged&&finished;})(),3000);
+        first.close();second.close();
+    }
     void teamMcpRoutesBindOnlyTheCallingConnection(){
         QTemporaryDir root;const auto work=root.filePath("work");QVERIFY(QDir().mkpath(work));
         auto model=std::make_shared<HistoryModel>();auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
-        a::EngineOptions eo;eo.sessionsDirectory=root.filePath("sessions");eo.toolSearch.enabled=false;eo.projectContext.enabled=false;
+        a::EngineOptions eo{.decision={.enabled=false}};eo.sessionsDirectory=root.filePath("sessions");eo.toolSearch.enabled=false;eo.projectContext.enabled=false;
         a::TeamsOptions config;config.workingDirectory=work;auto teams=std::make_shared<a::Teams>(model,registry,policy,eo,config);a::Teams::attach(eo,teams);
         auto engine=std::make_shared<a::Engine>(model,registry,policy,eo);a::McpServerOptions bridge;bridge.workingDirectory=work;bridge.engine=engine;bridge.model="fixture";
         const auto server=a::mcpServerOptions(registry,policy,bridge);m::ServerSession first(server),second(server);initialize(first);initialize(second);
@@ -104,7 +122,7 @@ private slots:
     }
     void clearControlInterruptsActiveRunAndDoesNotAcceptForeignSessionIds() {
         QTemporaryDir root;auto registry=std::make_shared<a::ToolRegistry>();auto model=std::make_shared<HistoryModel>();
-        auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);a::EngineOptions engineConfig;engineConfig.sessionsDirectory=root.filePath("sessions");
+        auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);a::EngineOptions engineConfig{.decision={.enabled=false}};engineConfig.sessionsDirectory=root.filePath("sessions");
         QStringList starts;engineConfig.hooks.append([&](const a::HookInput& input,const CancellationToken&){
             if(input.kind==a::HookKind::SessionStart)starts.append(input.context["source"].toString());return a::HookResult{};});
         auto engine=std::make_shared<a::Engine>(model,registry,policy,engineConfig);
@@ -130,7 +148,7 @@ private slots:
     void sessionEndFollowsConversationReplacementAndConnectionClose() {
         QTemporaryDir root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
         auto model=std::make_shared<HistoryModel>();auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
-        a::EngineOptions eo;eo.sessionsDirectory=root.filePath("sessions");eo.compaction.automatic=false;
+        a::EngineOptions eo{.decision={.enabled=false}};eo.sessionsDirectory=root.filePath("sessions");eo.compaction.automatic=false;
         QJsonArray ended;eo.hooks.append([&](const a::HookInput& input,const CancellationToken&){
             if(input.kind==a::HookKind::SessionEnd)ended.append(QJsonObject{{"id",input.sessionId},{"reason",input.context["reason"]}});
             return a::HookResult{};});
@@ -162,7 +180,7 @@ private slots:
         QTemporaryDir root; const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
         auto model=std::make_shared<HistoryModel>();auto registry=std::make_shared<a::ToolRegistry>();
         auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
-        a::EngineOptions eo;eo.sessionsDirectory=root.filePath("sessions");eo.compaction.automatic=false;
+        a::EngineOptions eo{.decision={.enabled=false}};eo.sessionsDirectory=root.filePath("sessions");eo.compaction.automatic=false;
         a::SubagentOptions so;so.workingDirectory=workspace;so.stateDirectory=root.filePath("subagents");
         so.profiles.enabled=true;so.profiles.projectBoundary=workspace;
         auto agents=std::make_shared<a::Subagents>(model,registry,policy,eo,so);a::Subagents::attach(eo,agents);
@@ -199,7 +217,7 @@ private slots:
         QFile file(path + "/SKILL.md"); QVERIFY(file.open(QIODevice::WriteOnly));
         file.write(QByteArray("---\ndescription: Inspect\ndisable-model-invocation: true\n")+(fork?"context: fork\n":"")+"---\nMCP_SKILL $ARGUMENTS"); file.close();
         auto registry = std::make_shared<a::ToolRegistry>(); auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
-        a::EngineOptions eo; eo.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions eo{.decision={.enabled=false}}; eo.sessionsDirectory = root.filePath("sessions");
         auto model=std::make_shared<HistoryModel>();std::shared_ptr<a::Subagents> agents;QTemporaryDir children;
         if(fork) {
             a::SubagentOptions so;so.workingDirectory=root.path();so.stateDirectory=children.filePath("state");
@@ -227,7 +245,7 @@ private slots:
     void urgentInputBypassesTheRunningConversationLock() {
         QTemporaryDir root; auto registry = std::make_shared<a::ToolRegistry>();
         auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass); auto model = std::make_shared<HistoryModel>();
-        a::EngineOptions eo; eo.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions eo{.decision={.enabled=false}}; eo.sessionsDirectory = root.filePath("sessions");
         auto engine = std::make_shared<a::Engine>(model, registry, policy, eo);
         a::McpServerOptions config; config.workingDirectory = root.path(); config.engine = engine; config.model = "fixture";
         const auto options = a::mcpServerOptions(registry, policy, config);
@@ -259,7 +277,7 @@ private slots:
         auto shells = std::make_shared<a::ShellTasks>(root.path(), root.filePath("shells"));
         a::registerWorkspaceTools(*registry, root.path(), shells);
         auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
-        a::EngineOptions eo; eo.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions eo{.decision={.enabled=false}}; eo.sessionsDirectory = root.filePath("sessions");
         auto engine = std::make_shared<a::Engine>(std::make_shared<HistoryModel>(), registry, policy, eo);
         a::McpServerOptions config; config.workingDirectory = root.path(); config.engine = engine; config.model = "fixture";
         m::ServerSession session(a::mcpServerOptions(registry, policy, config)); initialize(session);
@@ -283,7 +301,7 @@ private slots:
         auto shells = std::make_shared<a::ShellTasks>(root.path(), root.filePath("shells"));
         a::registerWorkspaceTools(*registry, root.path(), shells);
         auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass); auto model = std::make_shared<HistoryModel>();
-        a::EngineOptions eo; eo.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions eo{.decision={.enabled=false}}; eo.sessionsDirectory = root.filePath("sessions");
         auto engine = std::make_shared<a::Engine>(model, registry, policy, eo);
         a::McpServerOptions config; config.workingDirectory = root.path(); config.engine = engine; config.model = "fixture";
         const auto options = a::mcpServerOptions(registry, policy, config);
@@ -328,7 +346,7 @@ private slots:
         m::ServerSession replacement(serverOptions); initialize(replacement);
         QVERIFY(call(replacement, 2, "TaskList")["structuredContent"].toObject()["tasks"].toArray().isEmpty());
 
-        a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions"); options.taskToolsEnabled = true;
+        a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions"); options.taskToolsEnabled = true;
         auto enginePolicy = std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
         config.taskStore.reset(); config.engine = std::make_shared<a::Engine>(std::make_shared<HistoryModel>(), registry, enginePolicy, options);
         config.model = "fixture";
@@ -484,7 +502,7 @@ private slots:
     }
     void manualCompactionIsConnectionBound() {
         QTemporaryDir root; auto registry = std::make_shared<a::ToolRegistry>();
-        a::EngineOptions engineConfig; engineConfig.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions engineConfig{.decision={.enabled=false}}; engineConfig.sessionsDirectory = root.filePath("sessions");
         auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
         auto engine = std::make_shared<a::Engine>(std::make_shared<HistoryModel>(), registry, policy, engineConfig);
         a::McpServerOptions config; config.workingDirectory = root.path(); config.engine = engine; config.model = "fixture";
@@ -504,7 +522,7 @@ private slots:
     void localAgentConversationsAreIsolated() {
         QTemporaryDir root;
         auto registry = std::make_shared<a::ToolRegistry>();
-        a::EngineOptions engineConfig; engineConfig.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions engineConfig{.decision={.enabled=false}}; engineConfig.sessionsDirectory = root.filePath("sessions");
         auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
         auto engine = std::make_shared<a::Engine>(std::make_shared<HistoryModel>(), registry, policy, engineConfig);
         a::McpServerOptions config; config.workingDirectory = root.path(); config.engine = engine; config.model = "fixture";

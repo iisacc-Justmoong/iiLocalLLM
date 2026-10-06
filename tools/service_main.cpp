@@ -4,6 +4,8 @@
 #include "AgentProfileConfig.h"
 #include "PermissionSettingsConfig.h"
 #include "PermissionRequestsConfig.h"
+#include "ProceduresConfig.h"
+#include "DecisionConfig.h"
 #include "CommandHookConfig.h"
 #include <agent/Api.h>
 #include <agent/McpConnections.h>
@@ -61,6 +63,8 @@ int main(int argc, char** argv)
         {"agent-allow", "Allow a tool permission rule, e.g. Write(src/**), Bash(git status:*) or Skill(review); repeat for more rules. Read-only tools except WebFetch are allowed by default.", "pattern"},
         {"agent-permission-settings", "Private host configuration outside the workspace for layered permission settings.", "file"},
         {"agent-permission-requests", "Private host JSON outside the workspace enabling app permission requests.", "file"},
+        {"agent-procedures", "Private host JSON selecting procedure returns for app intervention.", "file"},
+        {"agent-decision", "Private host JSON with quantitative success, gain, loss and cost profiles.", "file"},
         {"agent-add-dir", "Additional file working directory; repeat. Does not enable disk settings without --agent-permission-settings.", "directory"},
         {"agent-hooks", "Private command/HTTP/prompt/agent hook JSON configuration outside the workspace.", "file"},
         {"agent-mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
@@ -134,7 +138,7 @@ int main(int argc, char** argv)
             || parser.isSet("agent-plugins") || parser.isSet("agent-mcp-config") || parser.isSet("agent-mcp-project") || parser.isSet("agent-mcp-eager")
             || parser.isSet("agent-apps-dir") || parser.isSet("agent-no-apps") || parser.isSet("agent-no-plan-mode") || parser.isSet("agent-no-user-questions") || parser.isSet("agent-question-preview") || parser.isSet("agent-no-tasks") || parser.isSet("agent-no-background")
             || parser.isSet("agent-no-skills") || parser.isSet("agent-skills-dir") || parser.isSet("agent-no-subagents") || parser.isSet("agent-no-teams") || parser.isSet("agent-no-team-task-claim") || parser.isSet("agent-subagent-options")
-            || parser.isSet("agent-profiles") || parser.isSet("no-agent-profiles") || parser.isSet("agent-permission-settings") || parser.isSet("agent-permission-requests") || parser.isSet("agent-add-dir") || parser.isSet("agent-hooks")) {
+            || parser.isSet("agent-profiles") || parser.isSet("no-agent-profiles") || parser.isSet("agent-permission-settings") || parser.isSet("agent-permission-requests") || parser.isSet("agent-procedures") || parser.isSet("agent-decision") || parser.isSet("agent-add-dir") || parser.isSet("agent-hooks")) {
             if (parser.isSet("agent-apps-dir") && parser.isSet("agent-no-apps"))
                 throw std::runtime_error("--agent-apps-dir and --agent-no-apps cannot be combined");
             if (parser.isSet("agent-apps-dir") && parser.value("agent-apps-dir").isEmpty())
@@ -208,6 +212,10 @@ int main(int argc, char** argv)
             for(const auto& value:parser.values("agent-allow"))rules.append({value,a::PermissionBehavior::Allow});
             if(parser.isSet("agent-permission-requests")&&parser.value("agent-permission-requests").isEmpty())throw std::runtime_error("--agent-permission-requests requires a file");
             config.permissionRequests=iiLocalLLMClient::permissionRequestsConfig(parser.value("agent-permission-requests"),config.workingDirectory);
+            if(parser.isSet("agent-procedures")&&parser.value("agent-procedures").isEmpty())throw std::runtime_error("--agent-procedures requires a file");
+            config.procedures=iiLocalLLMClient::proceduresConfig(parser.value("agent-procedures"),config.workingDirectory);
+            if(parser.isSet("agent-decision")&&parser.value("agent-decision").isEmpty())throw std::runtime_error("--agent-decision requires a file");
+            config.engine.decision=iiLocalLLMClient::decisionConfig(parser.value("agent-decision"),config.workingDirectory);
             agentPolicy=iiLocalLLMClient::permissionConfig(parser.value("agent-permission-settings"),config.workingDirectory,rules,{},parser.values("agent-add-dir"),config.permissionRequests?a::PermissionMode::Default:a::PermissionMode::DontAsk);
             if(parser.isSet("agent-hooks")&&parser.value("agent-hooks").isEmpty())throw std::runtime_error("--agent-hooks requires a file");
             config.engine.hooks=iiLocalLLMClient::commandHookConfig(parser.value("agent-hooks"),config.workingDirectory);
@@ -277,7 +285,7 @@ int main(int argc, char** argv)
                 a::PluginRuntime::attach(agentConfig->engine,agentConfig->subagents.profiles,connections,runtime);
                 agentConfig->teams.profiles=agentConfig->subagents.profiles;privatePaths.append(store.directory());
             }
-            for(const auto& key:{"agent-credentials","agent-permission-settings","agent-permission-requests","agent-profiles","agent-subagent-options","agent-hooks","agent-lsp-config","agent-worktree-config"})
+            for(const auto& key:{"agent-credentials","agent-permission-settings","agent-permission-requests","agent-procedures","agent-decision","agent-profiles","agent-subagent-options","agent-hooks","agent-lsp-config","agent-worktree-config"})
                 if(parser.isSet(key))privatePaths.append(parser.value(key));
             for(const auto& file:connections.configFiles)privatePaths.append(QDir::isAbsolutePath(file)?file:QDir(agentConfig->workingDirectory).filePath(file));
             if(!connections.localApplicationsDirectory.isEmpty())privatePaths.append(connections.localApplicationsDirectory);

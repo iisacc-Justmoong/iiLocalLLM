@@ -12,7 +12,7 @@
 |---|---|---|
 | C++ | `Engine::runQuestionTool` 또는 모델의 `AskUserQuestion` | `PermissionResponse.updatedArguments` |
 | API·IPC | `agent.questions.ask`, `agent.info.user_questions_enabled` | `agent.permissions.pending/respond` |
-| MCP stdio·HTTP | `AskUserQuestion`, `capabilities.experimental["iisacc/userQuestions"]` | `iisacc/permissions/pending`, `iisacc/permissions/respond` |
+|MCP stdio·HTTP| `AskUserQuestion`, `capabilities.experimental["iisacc/userQuestions"]` | `iisacc/permissions/pending`, `iisacc/permissions/respond` |
 
 API 호출은 질문 객체에 `session_id`를 추가한다. MCP 호출에서는 소유자를 연결의 실제 Engine 세션으로 결정한다. 질문은 일반 실행 용량을 사용하며 답변·취소에는 기존 예약 제어 경로를 사용한다. MCP 표준 elicitation과 이 확장 채널은 별도 계약이다.
 
@@ -54,7 +54,7 @@ API 호출은 질문 객체에 `session_id`를 추가한다. MCP 호출에서는
 |---|---|
 | 전체 입력 | compact JSON UTF-8 262,144바이트 |
 | 질문·선택지 설명 | 각 8,192문자 |
-| header / label / metadata.source | 128 / 512 / 512문자 |
+|헤더/레이블/메타데이터.source| 128 / 512 / 512문자 |
 | 미리보기·답·메모 | 각각 32,768문자 |
 | 요청 수·대기 시간·페이지·응답 크기 | 기존 PermissionRequests 호스트 설정 |
 

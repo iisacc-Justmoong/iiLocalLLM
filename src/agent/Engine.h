@@ -19,6 +19,8 @@
 #include "Lsp.h"
 #include "Worktrees.h"
 #include "FileCheckpoints.h"
+#include "Procedures.h"
+#include "DecisionGate.h"
 #include "../Service.h"
 
 namespace iiLocalLLM::agent {
@@ -72,6 +74,9 @@ struct EngineOptions {
     LspOptions lsp; // Explicit trusted server configuration; empty disables LSP.
     MemoryDreamOptions memoryDream; // Available with memory + history; automatic scheduling is opt-in.
     bool fileCheckpointsEnabled = false; // Embedded opt-in; daemon and agent MCP enable by default.
+    std::shared_ptr<Procedures> procedures; // Empty creates an observation-only channel.
+    QString procedureOwnerSessionId, parentProcedureId, procedureAgentId; // Host child lineage, never caller parameters.
+    DecisionOptions decision; // Trusted host economics; enabled by default, missing input defers.
 };
 class IILOCALLLM_EXPORT Engine {
 public:
@@ -95,6 +100,8 @@ public:
     SkillCatalog skills(const QString& sessionId, const CancellationToken& = {}) const;
     QJsonObject plugins() const;
     QJsonObject permissions(const QString& sessionId, const CancellationToken& = {}) const;
+    QJsonObject procedures(const QString& sessionId,qint64 after=0,int limit=128) const;
+    QJsonObject respondProcedure(const QString& procedureId,const QJsonObject& response,const QString& ownerSessionId = {}) const;
     bool projectMemoryEnabled() const;
     QJsonObject memory(const QString& sessionId,const QString& query = {},const CancellationToken& = {}) const;
     bool memoryRecallEnabled() const;
@@ -142,6 +149,7 @@ public:
     // context revision so file observations expire after compaction.
     std::shared_ptr<void> bindWorkspaceContext(ToolContext&) const;
     std::shared_ptr<void> bindWorkspaceContext(ToolContext&,bool leaseSession) const;
+    void bindDecisionContext(ToolContext&,const QString& ownerSessionId = {}) const;
     QStringList sessions() const;
     std::optional<Tool> sessionSearchTool(bool deferred = false) const;
     ToolResult runSessionSearch(const QString& ownerSessionId,const QJsonObject& arguments,

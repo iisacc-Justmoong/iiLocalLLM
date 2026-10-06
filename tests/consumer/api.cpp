@@ -19,7 +19,7 @@ int main(int argc, char** argv) {
         QTemporaryDir root(QDir::current().filePath("api-XXXXXX"));
         iiLocalLLM::ServiceOptions serviceOptions; serviceOptions.modelsDirectory = root.filePath("Models");
         iiLocalLLM::Service service(serviceOptions);
-        a::ApiOptions options; options.workingDirectory = root.filePath("work"); QDir().mkpath(options.workingDirectory);
+        a::ApiOptions options{.engine={.decision={.enabled=false}}}; options.workingDirectory = root.filePath("work"); QDir().mkpath(options.workingDirectory);
         options.stateDirectory = root.filePath("private"); const QString token(48, 'a'); options.clientTokens = {{"consumer", token}};
         auto api = std::make_shared<a::Api>(std::make_shared<Model>(), std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), options);
         auto call = [&](const QString& method, QJsonObject params = {}) { return api->dispatch(method, params, token).result.get().toObject(); };

@@ -34,7 +34,7 @@ iillm-plugins --store /private/host/plugins uninstall my-plugin
 | `.mcp.json` | 기존 `McpConnections`의 stdio·Streamable HTTP |
 | `.lsp.json` | 기존 `Lsp`의 stdio 서버 |
 | manifest의 추가 경로·배열 | 표준 디렉터리와 함께 등록, 같은 파일 중복 제외 |
-| inline hooks/MCP/LSP | 파일 설정과 같은 실행기에 전달 |
+|인라인 후크/MCP/LSP| 파일 설정과 같은 실행기에 전달 |
 | `dependencies` | 활성 로컬 이름 참조 검사, 누락·비활성·순환이면 해당 플러그인 구성 차단 |
 
 명령·스킬·에이전트 이름은 `plugin:nested:name` 형태이다. 에이전트는 frontmatter `name`을 우선하고 없으면 파일 이름을 사용한다. 플러그인 내부의 skill `agent`와 agent `skills` 참조는 같은 플러그인의 발견된 이름에 연결한다. 호스트/프로젝트의 기존 우선순위와 하위 에이전트의 도구·모델·권한 제한은 유지한다.

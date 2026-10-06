@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import secrets
 import socket
+from legacy_decision import legacy_decision_command
 import subprocess
 import sys
 import tempfile
@@ -79,7 +80,7 @@ def main():
         def daemon(extra=()):
             log_path = root / f"daemon-{time.monotonic_ns()}.log"
             with log_path.open("w") as log:
-                proc = subprocess.Popen(base + list(extra), stdout=log, stderr=subprocess.STDOUT, env=environment)
+                proc = subprocess.Popen(legacy_decision_command(base + list(extra)), stdout=log, stderr=subprocess.STDOUT, env=environment)
                 try:
                     started = time.monotonic()
                     deadline = started + args.startup_timeout

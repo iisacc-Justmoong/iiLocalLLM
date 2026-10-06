@@ -105,7 +105,7 @@ private slots:
         QTemporaryDir work;auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();a::registerWorkspaceTools(*registry,work.path());
         QJsonObject events;for(const QString& event:{"SessionStart","UserPromptSubmit","BeforeModel","AfterModel","PreToolUse","PostToolUse","Stop","SessionEnd"})
             events[event]=settings(event,prompt("$ARGUMENTS"))["hooks"].toObject()[event];
-        a::CommandHookOptions hookOptions;hookOptions.workingDirectory=work.path();a::EngineOptions options;options.sessionsDirectory=work.filePath("sessions");
+        a::CommandHookOptions hookOptions;hookOptions.workingDirectory=work.path();a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=work.filePath("sessions");
         options.skills.enabled=false;options.projectContext.enabled=false;options.hooks={a::CommandHooks({{"hooks",events}},hookOptions).callback()};
         QHash<QString,QList<a::ModelRequest>> observed;int turns=0;
         model->next=[&](const a::ModelRequest& request,const auto&,const auto&){
@@ -133,7 +133,7 @@ private slots:
         auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
         QJsonObject events;for(const QString& event:{"TaskCreated","TaskCompleted","SubagentStart","SubagentStop"})
             events[event]=settings(event,prompt("$ARGUMENTS"))["hooks"].toObject()[event];
-        a::CommandHookOptions limits;limits.workingDirectory=work;a::EngineOptions options;options.sessionsDirectory=root.filePath("parents");
+        a::CommandHookOptions limits;limits.workingDirectory=work;a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("parents");
         options.taskToolsEnabled=true;options.skills.enabled=false;options.projectContext.enabled=false;
         options.hooks={a::CommandHooks({{"hooks",events}},limits).callback()};
         a::SubagentOptions children;children.workingDirectory=work;children.stateDirectory=root.filePath("children");

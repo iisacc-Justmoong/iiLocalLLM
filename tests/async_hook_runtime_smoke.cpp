@@ -44,7 +44,7 @@ int main(int argc,char** argv) {
             const QJsonObject settings{{"hooks",QJsonObject{{"Stop",QJsonArray{QJsonObject{{"hooks",QJsonArray{QJsonObject{
                 {"type","command"},{"command",command},{rewake?"asyncRewake":"async",true},{"once",true},{"timeout",120}}}}}}}}}};
             a::CommandHookOptions hookOptions;hookOptions.workingDirectory=workspace;a::CommandHooks hooks(settings,hookOptions);
-            a::EngineOptions options;options.sessionsDirectory=root.filePath(mode+"-sessions");options.projectContext.enabled=false;
+            a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath(mode+"-sessions");options.projectContext.enabled=false;
             options.compaction.automatic=false;options.hooks={hooks.callback()};
             a::Engine engine(std::make_shared<a::ServiceModel>(service),std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(),options);
             const auto id=engine.createSession(uri,workspace,"When the background validation code arrives, output that code exactly. Never invent a code.").id;

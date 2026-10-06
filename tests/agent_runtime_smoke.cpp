@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
             a::registerWorkspaceTools(*registry, workspace);
             for (const auto& tool : registry->definitions()) if (tool.name != toolName) registry->remove(tool.name);
         }
-        a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         QString expectedOriginal;
         int replacedObservations=0;
         if(outputHook) {

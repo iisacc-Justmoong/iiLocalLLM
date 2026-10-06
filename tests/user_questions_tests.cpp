@@ -42,7 +42,7 @@ class UserQuestionsTests final:public QObject {
     Q_OBJECT
 private slots:
     void deferredQuestionsAreDiscoveredAndResumeWithTheAnswer() {
-        QTemporaryDir root;auto model=std::make_shared<Model>();a::EngineOptions config;config.sessionsDirectory=root.filePath("sessions");
+        QTemporaryDir root;auto model=std::make_shared<Model>();a::EngineOptions config{.decision={.enabled=false}};config.sessionsDirectory=root.filePath("sessions");
         config.userQuestionsEnabled=true;config.projectContext.enabled=false;config.compaction.automatic=false;config.skills.enabled=false;
         config.permissionResponse=[](const auto& call,const auto&,const auto&){auto args=call.arguments;args["answers"]=QJsonObject{{"Which renderer?","discovered"}};return a::PermissionResponse{a::PermissionBehavior::Allow,{},args};};
         model->reply=[raw=model.get()](const auto& r)->a::ModelReply {
@@ -163,14 +163,14 @@ private slots:
         QVERIFY(channel->pending()["requests"].toArray().isEmpty());QVERIFY(!channel->respond(id,{{"behavior","allow"}})["accepted"].toBool());
     }
     void disabledEngineAndReservedIdentity() {
-        QTemporaryDir root;a::EngineOptions config;config.sessionsDirectory=root.filePath("sessions");
+        QTemporaryDir root;a::EngineOptions config{.decision={.enabled=false}};config.sessionsDirectory=root.filePath("sessions");
         auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>();
         a::Engine disabled(model,registry,policy,config);QVERIFY(!disabled.userQuestionTool());const auto id=disabled.createSession("fixture",root.path()).id;
         QVERIFY_THROWS_EXCEPTION(Error,disabled.runQuestionTool(id,question()));
         config.userQuestionsEnabled=true;registry->add(a::userQuestionTool());QVERIFY_THROWS_EXCEPTION(Error,a::Engine(model,registry,policy,config));
     }
     void endingSessionCancelsAQuestionAndPlanCanContinueAfterAnswer() {
-        QTemporaryDir root;a::EngineOptions config;config.sessionsDirectory=root.filePath("sessions");config.userQuestionsEnabled=true;config.planToolsEnabled=true;
+        QTemporaryDir root;a::EngineOptions config{.decision={.enabled=false}};config.sessionsDirectory=root.filePath("sessions");config.userQuestionsEnabled=true;config.planToolsEnabled=true;
         config.permissionRequests=std::make_shared<a::PermissionRequests>();config.projectContext.enabled=false;config.skills.enabled=false;
         a::Engine engine(std::make_shared<Model>(),std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass),config);
         const auto id=engine.createSession("fixture",root.path()).id;QVERIFY(!engine.runPlanTool(id,"EnterPlanMode").isError);
@@ -183,7 +183,7 @@ private slots:
         (void)engine.endSession(id);QVERIFY_THROWS_EXCEPTION(Error,(void)pending.get());QVERIFY(config.permissionRequests->pending()["requests"].toArray().isEmpty());
     }
     void modelConsumesTrustedHostAnswer() {
-        QTemporaryDir root;auto model=std::make_shared<Model>();a::EngineOptions config;config.sessionsDirectory=root.filePath("sessions");
+        QTemporaryDir root;auto model=std::make_shared<Model>();a::EngineOptions config{.decision={.enabled=false}};config.sessionsDirectory=root.filePath("sessions");
         config.projectContext.enabled=false;config.compaction.automatic=false;config.skills.enabled=false;
         config.userQuestionsEnabled=true;config.userQuestions.deferred=false;
         int reviews=0;config.permissionResponse=[&](const auto& call,const auto&,const auto&) {

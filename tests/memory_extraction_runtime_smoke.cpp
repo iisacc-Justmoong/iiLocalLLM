@@ -31,7 +31,7 @@ int main(int argc,char** argv) {
         const auto work=root.filePath("work");QDir().mkpath(work);
         const auto marker="LABEL_"+QUuid::createUuid().toString(QUuid::WithoutBraces).remove('-').left(10);
         auto model=std::make_shared<a::ServiceModel>(service);auto tools=std::make_shared<a::ToolRegistry>();a::registerWorkspaceTools(*tools,work);
-        auto policy=std::make_shared<a::RulePolicy>();a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");
+        auto policy=std::make_shared<a::RulePolicy>();a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");
         options.projectMemoryEnabled=true;options.memoryRecall.enabled=false;options.memoryExtraction.enabled=true;options.memoryExtraction.timeoutMs=180000;
         options.projectContext.enabled=false;options.skills.enabled=false;options.toolSearch.enabled=false;options.compaction.automatic=false;
         a::Engine engine(model,tools,policy,options);const auto id=engine.createSession(uri,work,

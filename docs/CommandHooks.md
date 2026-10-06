@@ -42,7 +42,7 @@ stdin은 UTF-8 JSON 객체 한 개와 마지막 줄바꿈이며 채널을 닫아
 | PreToolUse | tool_name, tool_input, tool_use_id; 실행 전 입력 변경·권한 판단 |
 | PostToolUse | 도구 정보와 tool_response(text/data/content); 이미 실행한 효과를 되돌리지 않음 |
 | PostToolUseFailure | error, is_interrupt:false; 검증·정책·도구 실패 뒤 호출. 취소 예외는 전파하며 취소 전용 실패 이벤트는 없음 |
-| Stop | last_assistant_message, stop_hook_active; block이면 다음 모델 턴 요청 |
+|정지| last_assistant_message, stop_hook_active; block이면 다음 모델 턴 요청 |
 | PreCompact / PostCompact | trigger(manual/auto), custom_instructions / compact_summary; 기존 압축 콜백 계약 |
 | TaskCreated / TaskCompleted | task_id, task_subject, task_description와 SDK 전체 task 객체; 게시 전 거부면 트랜잭션을 저장하지 않음 |
 | SubagentStart / SubagentStop | agent_id, agent_type, parent_session_id, 자식 transcript 경로. Stop에는 마지막 응답·stop_hook_active 포함 |

@@ -67,7 +67,7 @@ int main(int argc,char** argv) {
         write(sourceFile,("Validation code: "+code).toUtf8());
         auto registry=std::make_shared<a::ToolRegistry>();a::registerWorkspaceTools(*registry,workspace,{},QStringList{root.filePath("sessions")});
         auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::AcceptEdits);
-        a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");options.projectMemoryEnabled=true;
+        a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");options.projectMemoryEnabled=true;
         options.projectContext.enabled=false;options.skills.enabled=false;options.compaction.automatic=false;options.toolSearch.enabled=false;
         auto writer=std::make_shared<Guided>(service,true);a::RunResult saved,recalled,control;QString indexPath;
         {

@@ -28,7 +28,9 @@ MemoryForget은 현재 SHA-256과 일치하는 메모만 삭제한다. 삭제 �
 
 검증 기록은 기능 구현과 설치 소비자·API·MCP·실제 모델 실행을 구분해 `Verification.md`에 추가한다.
 
-## Engine·API·MCP·CLI
+<a id="engineapimcpcli"></a>
+
+## 엔진·API·MCP·CLI
 
 내장 호스트는 `EngineOptions.projectMemoryEnabled=true`로 활성화한다. `projectMemory.directory`가 비어 있으면 해당 Engine의 sessionsDirectory/memory가 base이다. Engine은 모델을 호출할 때마다 새 인덱스를 읽으며 이 자료는 자동 압축의 예산 측정에도 포함한다. 인덱스를 transcript 메시지로 중복 저장하지 않는다. 같은 workspace의 fork·clear·새 세션은 같은 메모리를 사용하고, 기본 자식 에이전트도 부모의 메모리 base를 상속한다.
 

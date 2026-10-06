@@ -1,5 +1,9 @@
 # C++ MCP 서버와 앱 도구 제공
 
+0.54의 agent-enabled MCP는 --decision FILE로 정량 정책을 구성하고 iisacc/procedures 반환 제어로 decision_input의 호스트 사실을 교체한다. 실행 보류는 status:deferred 및 decision으로 반환한다. 조회·취소 제어는 유지한다. [DecisionGate.md](DecisionGate.md)를 따른다.
+
+0.53.0의 `iisacc/procedures/list`·`iisacc/procedures/respond`는 현재 MCP 연결이 소유한 부모 대화와 자식 절차를 조회·제어한다. `iisacc/procedures` experimental capability로 발견하며 모델 도구로 등록하지 않는다. `--procedures FILE`은 모델 사용 시 호스트의 비공개 반환 대기 설정을 읽는다. [Procedures.md](Procedures.md)에 세부 계약을 기록한다.
+
 0.24.0은 `iiLocalLLM.agent.clear {}`로 해당 연결의 진행·대기 호출을 취소하고, 백그라운드 작업을 보존한 새 대화를 즉시 시작한다. 모델 실행은 하지 않는다. `agent.run`의 `new_session`도 같은 초기화를 사용하며 결과에 `clear`를 포함한다. [SessionClear.md](SessionClear.md)를 따른다.
 
 0.23.0은 연결 종료·HTTP DELETE·stdio EOF/SIGINT/SIGTERM에서 SessionEnd(other), new_session 교체에서 SessionEnd(clear)를 실행한다. 종료 정리는 연결 소유 세션만 대상으로 한다. HTTP DELETE 수락과 실제 정리 완료는 별개이며, 재개·시간 예산·진단 보존 한계는 [SessionEnd.md](SessionEnd.md)를 따른다.
@@ -36,8 +40,8 @@ build/iillm-mcp --workspace /absolute/project \
 
 | 도구 | 입력 | 동작 |
 |---|---|---|
-| iiLocalLLM.agent.run | prompt, 선택 new_session·max_turns·context_paths | 해당 MCP 연결의 로컬 대화에서 에이전트 실행. 상태·텍스트·턴·사용량·실행/세션 ID를 structuredContent로 반환 |
-| iiLocalLLM.agent.session | 선택 include_messages | 해당 연결의 대화 ID·모델·메시지 수, 선택 transcript 반환. 다른 세션 ID를 입력받지 않음 |
+|iiLocalLLM.agent.run| prompt, 선택 new_session·max_turns·context_paths | 해당 MCP 연결의 로컬 대화에서 에이전트 실행. 상태·텍스트·턴·사용량·실행/세션 ID를 structuredContent로 반환 |
+|iiLocalLLM.agent.session| 선택 include_messages | 해당 연결의 대화 ID·모델·메시지 수, 선택 transcript 반환. 다른 세션 ID를 입력받지 않음 |
 
 에이전트 이벤트는 요청의 progressToken이 있을 때 증가하는 progress와 `_meta["iisacc/agentEvent"]`로 전달한다. 클라이언트 취소는 MCP 요청 → Engine RunHandle → 실제 추론·도구로 전파한다. 완료·실패 후 도구 결과는 기존 JSONL 복구 계약을 따른다. 연결 종료 시 연결과 대화 사이의 메모리 매핑을 제거하고 영속 transcript는 보존한다. 다른 연결의 기존 대화를 자동으로 재개하지 않는다. 0.47은 연결 소유 대화의 분기와 새 대화 전환을 제공한다. 과거 대화의 선택·재개는 아직 남아 있다. [SessionFork.md](SessionFork.md)를 따른다.
 

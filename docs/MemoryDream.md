@@ -40,7 +40,7 @@
 options.projectMemoryEnabled = true;
 options.sessionHistoryEnabled = true;
 options.memoryDream.automatic = true;
-// The main run returns independently of consolidation.
+// 주 실행은 통합 작업과 독립적으로 반환된다.
 auto receipt = engine.consolidateMemory(sessionId);
 auto status = engine.memoryDreamStatus(sessionId, 0, 8);
 engine.cancelMemoryDream(sessionId);
@@ -49,9 +49,9 @@ engine.drainMemoryDreams(60000, sessionId);
 
 | 인증 API 메서드 | 입력 | 결과 |
 |---|---|---|
-| agent.memory.dream | session_id | queued 또는 unavailable/no_context 접수 |
-| agent.memory.dream.status | session_id, 선택 offset/limit | active/pending/has_context, count/records/next_offset |
-| agent.memory.dream.cancel | session_id | 취소 요청 뒤 현재 상태 |
+|Agent.memory.dream| session_id | queued 또는 unavailable/no_context 접수 |
+|Agent.memory.dream.status| session_id, 선택 offset/limit |활성/보류/has_context, 개수/기록/next_offset|
+|Agent.memory.dream.cancel| session_id | 취소 요청 뒤 현재 상태 |
 
 데몬은 `--agent-auto-dream`, agent MCP는 `--auto-dream`으로 켠다. 필요한 메모리·대화 검색을 끄거나 MCP 모델을 지정하지 않으면 자동 활성화 요청을 거절한다. API의 `agent.info.memory_dream_available`과 `auto_dream_enabled`를 구분한다. 데몬의 앱별 상태는 격리되며 MCP는 [SessionHistory.md](SessionHistory.md)에 명시한 호스트 작업공간을 공유한다.
 

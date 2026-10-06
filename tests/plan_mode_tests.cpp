@@ -8,6 +8,7 @@
 #include <QtCore/QFile>
 #include <QtCore/QTemporaryDir>
 #include <QtTest/QtTest>
+#include <thread>
 #include <future>
 using namespace iiLocalLLM;
 namespace a=iiLocalLLM::agent;
@@ -56,7 +57,7 @@ private slots:
         QTemporaryDir root;auto registry=std::make_shared<a::ToolRegistry>();auto model=std::make_shared<Model>();
         a::registerWorkspaceTools(*registry,root.path());
         auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
-        a::EngineOptions options;options.sessionsDirectory=root.filePath("state");options.planToolsEnabled=true;
+        a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("state");options.planToolsEnabled=true;
         options.skills.enabled=false;options.projectContext.enabled=false;options.compaction.automatic=false;
         a::CommandHookOptions limits;limits.workingDirectory=root.path();
         options.hooks={a::CommandHooks({{"hooks",QJsonObject{{"Stop",QJsonArray{QJsonObject{{"hooks",QJsonArray{
@@ -91,7 +92,7 @@ private slots:
         QTemporaryDir root;auto registry=std::make_shared<a::ToolRegistry>();auto model=std::make_shared<Model>();
         const auto work=root.filePath("work");QVERIFY(QDir().mkpath(work));
         a::registerWorkspaceTools(*registry,work);auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
-        a::EngineOptions options;options.sessionsDirectory=work+"/state";options.planToolsEnabled=true;
+        a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=work+"/state";options.planToolsEnabled=true;
         options.permission=[](const auto&,const auto&,const auto&){return true;};
         options.skills.enabled=false;options.projectContext.enabled=false;options.compaction.automatic=false;
         a::Engine engine(model,registry,policy,options);const auto parent=engine.createSession("fixture",work);
@@ -129,7 +130,7 @@ private slots:
     void mcpEngineWrapperCanEnterPlanningAndKeepTaskControlsUsable() {
         QTemporaryDir root;auto registry=std::make_shared<a::ToolRegistry>();auto model=std::make_shared<Model>();
         auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
-        a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");options.planToolsEnabled=true;options.planToolsDeferred=false;
+        a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");options.planToolsEnabled=true;options.planToolsDeferred=false;
         options.taskToolsEnabled=true;options.projectContext.enabled=false;options.compaction.automatic=false;
         auto engine=std::make_shared<a::Engine>(model,registry,policy,options);
         a::McpServerOptions config;config.engine=engine;config.model="fixture";config.workingDirectory=root.path();
@@ -162,7 +163,7 @@ private slots:
             if(raw->turn==1)return {{},{{"search","ToolSearch",{{"query","select:EnterPlanMode"}}}}};
             if(raw->turn==2)return {{},{{"enter","EnterPlanMode",{}}}};return {"DONE",{}};
         };
-        a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");options.planToolsEnabled=true;options.compaction.automatic=false;options.projectContext.enabled=false;
+        a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");options.planToolsEnabled=true;options.compaction.automatic=false;options.projectContext.enabled=false;
         a::Engine engine(model,std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(),options);
         const auto id=engine.createSession("fixture",root.path()).id;const auto result=engine.run({id,"Plan"}).result.get();
         QCOMPARE(result.status,a::RunStatus::Completed);QCOMPARE(engine.planStatus(id)["phase"],"planning");
@@ -170,7 +171,7 @@ private slots:
         model->generateReply={};
     }
     void modelCanEnterPlanningAndReceivesCurrentState() {
-        QTemporaryDir root;a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");
+        QTemporaryDir root;a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");
         options.compaction.automatic=false;options.projectContext.enabled=false;options.planToolsEnabled=true;options.planToolsDeferred=false;
         auto model=std::make_shared<Model>();a::Engine engine(model,std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(),options);
         const auto id=engine.createSession("fixture",root.path()).id;
@@ -305,7 +306,7 @@ private slots:
     }
     void engineEndRetainsPlanClearStartsFreshAndDisabledHostsReject() {
         QTemporaryDir root;auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>();
-        a::EngineOptions config;config.sessionsDirectory=root.filePath("sessions");config.planToolsEnabled=true;
+        a::EngineOptions config{.decision={.enabled=false}};config.sessionsDirectory=root.filePath("sessions");config.planToolsEnabled=true;
         a::Engine engine(model,registry,policy,config);const auto id=engine.createSession("fixture",root.path()).id;
         QVERIFY(!engine.runPlanTool(id,"EnterPlanMode").isError);(void)engine.endSession(id);QCOMPARE(engine.planStatus(id)["phase"],"planning");
         const auto fork=engine.forkSession(id).id;QCOMPARE(engine.planStatus(fork)["phase"],"planning");

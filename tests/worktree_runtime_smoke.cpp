@@ -30,7 +30,7 @@ int main(int argc,char** argv){QCoreApplication app(argc,argv);if(argc!=3)return
         ServiceOptions so;so.modelsDirectory=models;Service service(so);ModelLoadRequest load{uri,8192};load.options={{"tool_grammar",true},{"enable_thinking",false}};service.loadModel(load).get();
         auto model=std::make_shared<a::ServiceModel>(service);auto registry=std::make_shared<a::ToolRegistry>();a::registerWorkspaceTools(*registry,work);
         auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::DontAsk,QList<a::PermissionRule>{{"EnterWorktree",a::PermissionBehavior::Allow},{"ExitWorktree",a::PermissionBehavior::Allow}});
-        a::EngineOptions eo;eo.sessionsDirectory=root.filePath("sessions");eo.worktrees.enabled=true;eo.worktrees.deferred=false;eo.worktrees.fetchMissingBase=false;eo.worktrees.directory=root.filePath("worktrees");
+        a::EngineOptions eo{.decision={.enabled=false}};eo.sessionsDirectory=root.filePath("sessions");eo.worktrees.enabled=true;eo.worktrees.deferred=false;eo.worktrees.fetchMissingBase=false;eo.worktrees.directory=root.filePath("worktrees");
         eo.projectContext.enabled=false;eo.skills.enabled=false;eo.compaction.automatic=false;eo.toolSearch.enabled=false;
         eo.toolFilter=[](const a::ToolDefinition& tool){return QStringList{"EnterWorktree","ExitWorktree","Read"}.contains(tool.name);};
         QJsonArray calls;eo.hooks.append([&](const a::HookInput& input,const auto&){if(input.kind==a::HookKind::AfterTool)

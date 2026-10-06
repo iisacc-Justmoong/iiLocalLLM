@@ -1,5 +1,52 @@
 # 구현 검증 기록
 
+## 0.54 호스트 정량 판단과 iiDecision 실행
+
+호스트의 정량 수익·손실·비용을 기준으로 초기 실행과 도구 선택을 평가한다. 성공/실패 확률은 iiDecision ExactDecisionMaker로 계산한다. 기본 평가 부재, 낮은 확률, 낮은 순기대가치는 deferred이고 적격 후보 중 최대 EV 하나를 실행한다. [DecisionGate.md](DecisionGate.md)에 실제 계약과 예외를 기록한다.
+
+- `build/decision-red.log`: 판단 구현 이전 미정의 심볼로 실패한 TDD 증거이다.
+- `build/decision-final-build.log`: 0.54 전체 Release 빌드 성공이다. 설치된 외부 SDK 설정의 존재하지 않는 검색 경로에 대한 링커 경고가 남아 있다.
+- `build/decision-final-focused-tests.log`: 판단 코어·Engine·IPC/HTTP 반환값·세션 분기·MCP·입력 제어·소스 카탈로그 검사의 **7/7 통과, 12.26초**이다.
+- 판단 검사에는 최대 EV 선택, 낮은 확률/가치 보류, 조건부 증거, 희귀 실패 손실 보존, 누락·잘못된 호스트 값, 초기 모델/훅 미실행, 인자 변경 재평가, private 반환 제어와 자식 정책 상속을 포함한다.
+- `build/decision-native.json`과 `decision-native.log`: Qwen2.5 GGUF 실제 모델 반환 2회·생성 토큰 20개, 가치 73인 도구 실행 1회 및 파일 흔적 확인이다. 가치 7.89인 도구 실행은 0회이고 낮은 확률의 초기 요청은 생성 없이 deferred이다. 시험은 호스트 반환 채널로 도구 후보를 고정하여 하네스의 평가·선택·실행을 검사한다. 모델 자체의 수익 예측 정확도 검증은 별개이다.
+- `build/decision-consumer-tests.log`: 새 설치본의 별도 소비자 **3/3 통과, 31.40초**이다. 설치된 실제 모델 실행에도 생성 20토큰·단일 도구 실행·파일 흔적을 확인했다. `build/decision-installed-native.json`에 원래 결과를 보존한다.
+- `build/decision-consumer-loaded.log`: 실제 로딩한 SDK는 `build/decision-stage/lib/libiiLocalLLM.0.54.0.dylib`이다. 설치 소비자에서 소스 빌드의 라이브러리를 쓰지 않는 것을 확인했다.
+- `build/decision-final-serial-tests.log`: 최종 비추론 전체 순차 회귀 **102/102 통과, 257.48초**이다.
+- `build/decision-final-regression-tests.log`: 비추론 전체 병렬 회귀 **101/102 통과, 146.23초**이다. 공식 MCP 한 건은 프로세스 시작 중 dyld 할당자 단언으로 종료되었다. `build/decision-mcp-official-recheck.log`의 단독 재검사는 **1/1 통과, 1.43초**이다. 간헐 실패의 원인은 확정하지 않았다.
+
+검증용 설치 prefix는 `build/decision-stage`, 별도 소비자는 `build/decision-consumer/build`이다. iiDecision은 CPU 증거 일치와 호스트 확률 계산으로 실행했고 모델은 Metal 경로를 사용했다. 제품 앱의 실제 정량 평가 저장소 연결, 호스트 확률의 경험적 보정, 다른 OS 실행·장치 검증, 사용자 기본 SDK 설치 갱신·원격 게시를 이번 검증 범위에 포함하지 않았다.
+
+## 2026-10-03 절차 반환 제어와 중복 자식 요청 (0.53.0)
+
+C++23의 `Procedures` 반환 채널, Engine·ToolRunner의 실제 절차 경계, API·IPC·HTTP·연결별 MCP 제어와 새 자식 요청 중복 방지를 추가했다. 공개 구조체 변경에 따라 0.53 소비자를 재빌드한다. 상세 계약은 [Procedures.md](Procedures.md)를 따른다.
+
+| 검증 | 결과 |
+|---|---|
+| 최종 Release 빌드 | 전체 target 및 새 실제 모델 검사 target 빌드 통과 |
+| 새 절차 단위 검사 | 9개 시나리오 통과, CTest 1/1 |
+| 실제 전송 | loopback IPC·HTTP/SSE 교차 반환 제어와 인증 격리 통과 |
+| MCP 제어 | 연결별 권한 격리와 실행 중 반환값 교체 통과 |
+| 새 설치 소비자 | 절차·MCP 서버 CTest 2/2, 21.77초 |
+| 실제 로컬 모델 소스 실행 | 부모 모델 반환 두 번·자식 한 번, 자식 1개·중복 재사용·최종 APP_CONFIRMED 확인 |
+| 실제 로컬 모델 설치 소비자 | CTest 1/1, 124.17초; 같은 계약 확인 |
+| 최종 전체 회귀, inference 라벨 제외 | 98/100, 781.11초; 두 항목 실패 |
+| 실패한 MCP 두 항목 최종 재검사 | 2/2, 5.23초 |
+
+실제 모델은 기존 Qwen2.5 0.5B GGUF이며 소스 실행에서 부모 generated_tokens 32, 자식 generated_tokens 2를 기록했다. 실제 ServiceModel 반환을 호스트가 교체하여 동일 Agent 요청 두 개를 제출한다. 병렬 Agent 요청의 접수 순서는 고정하지 않고, 같은 자식 ID와 정확히 한 개의 reused 응답을 검사한다. 모델이 스스로 작업을 분해하거나 중복을 인지한다는 검증은 아니다.
+
+첫 전체 병렬 회귀는 96/100이었다. working_directories의 Permission pattern work limit 초과, 공식 MCP 초기화 기한 실패와 native_schema/reasoning_template의 시간 초과가 있었다. 최종 순차 실행에서는 native_schema/reasoning_template와 working_directories가 통과했지만 mcp_server의 기존 설정 권한 단언과 mcp_official 초기화 기한이 실패했다. 단독 권한 검사 및 최종 두 MCP 항목 재검사는 통과했다. 간헐 실패의 원인을 확정하지 않으며 전체 회귀 한 번으로 100/100 통과했다고 주장하지 않는다.
+
+검증용 설치 prefix는 `build/procedures-stage`, 소비자는 `build/procedures-consumer/build`이다. 로더에서 실제 `build/procedures-stage/lib/libiiLocalLLM.0.53.0.dylib`를 확인했다. 0.53의 sanitizer·다른 OS·제품 앱 UI·자동 작업 분해 품질·사용자 기본 설치 경로 갱신·원격 게시를 이번 검증에 포함하지 않았다.
+
+- `build/procedures-red.log`: 공개 API 추가 이전의 컴파일 실패 증거.
+- `build/procedures-final-build.log`, `procedures-native-build.log`, `procedures-unit-build.log`: 빌드 기록.
+- `build/procedures-final-unit-tests.log`: 최종 절차 검사.
+- `build/procedures-full-tests.log`, `procedures-final-serial-tests.log`: 전체 회귀 원본.
+- `build/procedures-mcp-permission-recheck.log`, `procedures-mcp-final-recheck.log`: 실패 항목 재검사.
+- `build/procedures-consumer-tests.log`, `procedures-consumer-native-tests.log`, `procedures-consumer-loaded.log`: 설치 소비자와 실제 로딩 경로.
+- `build/procedures-native.json`, `procedures-installed-native.json`: 실제 모델 결과와 자식 접수 반환값.
+- `build/procedures-acceptance.json`: 범위별 결과·설치 파일 해시와 증거 경로.
+
 ## 0.52 MVP 완료와 로컬 플러그인
 
 로컬 모델 대화·에이전트 도구 실행·C++/native IPC/HTTP/MCP 연동을 MVP 완료 범위로 검증했다. 이번 변경은 C++ PluginStore·PluginSnapshot·PluginRuntime, 호스트 CLI와 인증 상태 조회를 추가한다. 스킬·명령·에이전트·훅·MCP·LSP는 기존 실행기에 연결하며 생산 의존성은 추가하지 않았다. 설치·갱신·비활성화·제거, 캐시 무결성, 데이터 보존, 의존성 차단과 이름 공간 계약은 [Plugins.md](Plugins.md)를 따른다.
@@ -22,8 +69,8 @@
 
 | 플러그인 실제 모델 | 모델 턴 | 성공한 MCP 호출 | 생성 토큰 |
 |---|---|---|---|
-| source | 2 | 1 | 59 |
-| installed | 2 | 1 | 65 |
+|소스| 2 | 1 | 59 |
+|가 설치되었습니다.| 2 | 1 | 65 |
 
 모델은 Qwen3.5 2B Q4_K_M이며 크기 1,280,835,840 bytes·SHA-256 aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223를 확인했다. macOS arm64·Metal, context/cache 8,192토큰 한 개, maxTokens 1,024·maxTurns 4, temperature 0·topP 0.9·topK 40·minP 0·seed 0, thinking OFF·tool grammar ON, 자동 compaction OFF, 실행 대기 120초 조건이다. 최종 fixture를 source·installed에서 각각 한 번 실행했으며 요청·성공 조건을 변경하지 않았다.
 
@@ -41,9 +88,9 @@
 
 | 검증 | 결과 |
 |---|---|
-| Release 전체, inference 라벨 제외 | 97/97, failure 0 / skip 0 |
-| ASan·UBSan 최종 영향 범위 | 3/3, failure 0 / skip 0 |
-| 새 설치 소비자 전체 | 58/59, failure 1 / skip 0 |
+| Release 전체, inference 라벨 제외 |97/97, failure 0 / Skip 0|
+| ASan·UBSan 최종 영향 범위 |3/3, failure 0 / Skip 0|
+| 새 설치 소비자 전체 |58/59, failure 1 / Skip 0|
 | 같은 API 소비자, 짧은 작업 경로 | 통과, 동일 실행 파일·라이브러리 |
 | 팀 회귀 검사 | 39/39, Qt init/cleanup 포함 |
 | source·installed 전송 | HTTP·IPC CLI·MCP HTTP·공식 MCP stdio |
@@ -54,14 +101,14 @@
 
 | 설치 범위 | 작업 | 단계 | 모델 턴 | 기록된 생성 토큰 | 판정 |
 |---|---|---|---|---|---|
-| source | explicit | initial | 5 | 573 | 통과 |
-| source | explicit | followup | 5 | 524 | 통과 |
-| source | automatic | startup | 6 | 239 | 통과 |
-| source | automatic | idle | 5 | 210 | 통과 |
-| installed | explicit | initial | 5 | 553 | 통과 |
-| installed | explicit | followup | 5 | 539 | 통과 |
-| installed | automatic | startup | 6 | 233 | 통과 |
-| installed | automatic | idle | 5 | 212 | 통과 |
+|소스|명시적|초기| 5 | 573 | 통과 |
+|소스|명시적|후속 조치| 5 | 524 | 통과 |
+|소스|자동|시작| 6 | 239 | 통과 |
+|소스|자동|유휴| 5 | 210 | 통과 |
+|가 설치되었습니다.|명시적|초기| 5 | 553 | 통과 |
+|가 설치되었습니다.|명시적|후속 조치| 5 | 539 | 통과 |
+|가 설치되었습니다.|자동|시작| 6 | 233 | 통과 |
+|가 설치되었습니다.|자동|유휴| 5 | 212 | 통과 |
 
 실행한 최초·후속·자동 시작·자동 유휴 8단계가 모두 통과했다. 이전 0.50의 installed 명시적 메시지 실패 기록은 아래에 그대로 남긴다. Qwen3.5 2B Q4_K_M 파일의 크기 1,280,835,840 bytes·GGUF v3·SHA-256 aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223를 재확인했다. 기존 두 네이티브 시험의 프롬프트·파일 표식 방식·턴·토큰·시간 한도를 바꾸지 않았다. 각 단계의 표식은 파일에만 존재하는 새로운 임의 값이며 예상 답을 모델에 주입하지 않는다. 모델·실행 설정은 0.50과 같으며 최종 source·installed에서 각 시험을 한 번씩 실행했다. 마지막 상태 조회 수정 전 선행 source 4단계도 통과했으며, 그 기록은 build/team-protocol-source-final-native.json과 team-protocol-serial-release.json에 별도로 보존한다. 위 표는 마지막 수정 이후의 바이너리 결과이다. 자동 작업 두 번째 단계에는 새 spawn이나 명시적 메시지를 보내지 않는다.
 
@@ -77,9 +124,9 @@ SendMessage의 일반 문자열에는 비어 있지 않은 summary가 필요하�
 
 | 검증 | 결과 |
 |---|---|
-| 최종 Release, CTest inference 라벨 제외 | 97/97, failure/skip 0 |
-| ASan·UBSan | 92/93; 같은 바이너리의 실패 항목 단독 재검사 1/1, skip 0 |
-| 새 설치 consumer | 59/59, failure/skip 0 |
+| 최종 Release, CTest inference 라벨 제외 |97/97, 실패/건너뛰기 0|
+|ASan·UBSan| 92/93; 같은 바이너리의 실패 항목 단독 재검사 1/1, skip 0 |
+| 새 설치 consumer |59/59, 실패/건너뛰기 0|
 | 네이티브 문법 | 13가지 데이터/검사 조합, Qt init/cleanup 포함 15/15 |
 | CMake 보정 구성 | 원본·이미 보정됨·지원하지 않는 소스의 3가지 판정 통과, 입력 파일 불변 |
 | source·installed 전송 | HTTP·native IPC CLI·MCP HTTP·공식 Python MCP stdio |
@@ -99,14 +146,14 @@ Release는 한 번의 전체 실행에서 모두 통과했다. sanitizer 전체�
 
 | 실행 | 경로 | 단계 | 모델 턴 | 기록된 생성 토큰 | 판정 |
 |---|---|---|---|---|---|
-| source | explicit | initial | 4 | 319 | 통과 |
-| source | explicit | followup | 4 | 367 | 통과 |
-| source | automatic | startup | 6 | 244 | 통과 |
-| source | automatic | idle | 5 | 215 | 통과 |
-| installed | explicit | initial | 5 | 436 | 실패 |
-| installed | automatic | startup | 6 | 242 | 통과 |
-| installed | automatic | idle | 5 | 216 | 통과 |
-| installed | explicit | followup | — | — | 최초 단계 실패로 미실행 |
+|소스|명시적|초기| 4 | 319 | 통과 |
+|소스|명시적|후속 조치| 4 | 367 | 통과 |
+|소스|자동|시작| 6 | 244 | 통과 |
+|소스|자동|유휴| 5 | 215 | 통과 |
+|가 설치되었습니다.|명시적|초기| 5 | 436 | 실패 |
+|가 설치되었습니다.|자동|시작| 6 | 242 | 통과 |
+|가 설치되었습니다.|자동|유휴| 5 | 216 | 통과 |
+|가 설치되었습니다.|명시적|후속 조치| — | — | 최초 단계 실패로 미실행 |
 
 설치본의 명시적 최초 단계는 Read와 TaskCreate를 완료했지만, 일반 문자열 대신 shutdown_request 객체를 전송했다. 첫 객체에 표식을 request_id로 넣어 거부됐고, 다음 객체도 리더 전용 권한 검사에서 거부됐다. 이어 Structured response reached the output limit before a complete turn 오류로 5번째 턴에서 실패했다. 436토큰은 RunResult에 누적된 사용량이며 오류로 끝난 마지막 생성까지 포함하는 전체 시도 사용량으로 해석하지 않는다. 후속 단계는 실행하지 않았고 중단·삭제 정리는 성공했다. 소스와 설치본의 동일 라이브러리를 확인했으므로 오래된 라이브러리로 설명할 수 없다. 명시적 메시지의 최종 모델 검증과 전체 모델 품질 검증은 미완료로 유지하며, 자동 작업 통과로 대체하지 않는다.
 
@@ -121,8 +168,8 @@ Release는 한 번의 전체 실행에서 모두 통과했다. sanitizer 전체�
 | 검증 | 결과 |
 |---|---|
 | 최종 Release, inference 제외 | 96/97; 같은 바이너리의 실패 항목 단독 재검사 1/1, skip 0 |
-| ASan·UBSan | 92/93; 같은 바이너리의 실패 항목 단독 재검사 1/1, skip 0 |
-| 새 설치 consumer | 59/59, failure/skip 0 |
+|ASan·UBSan| 92/93; 같은 바이너리의 실패 항목 단독 재검사 1/1, skip 0 |
+| 새 설치 consumer |59/59, 실패/건너뛰기 0|
 | source·installed 전송 | HTTP·native IPC CLI·MCP HTTP·공식 Python MCP stdio |
 | 설치 공개 헤더 | 57개, 소스와 바이트 일치 |
 | 실제 자동 작업 실행 | source startup·idle 통과; installed startup 통과·idle 실패 |
@@ -138,10 +185,10 @@ Release 전체에서 iiLocalLLM.mcp_official이 초기화 30초 제한을 넘어
 
 | 실행 | 단계 | 모델 턴 | 생성 토큰 | 판정 |
 |---|---|---|---|---|
-| source | startup | 6 | 234 | 통과 |
-| source | idle | 6 | 258 | 통과 |
-| installed | startup | 6 | 236 | 통과 |
-| installed | idle | 10 | 466 | 실패 |
+|소스|시작| 6 | 234 | 통과 |
+|소스|유휴| 6 | 258 | 통과 |
+|가 설치되었습니다.|시작| 6 | 236 | 통과 |
+|가 설치되었습니다.|유휴| 10 | 466 | 실패 |
 
 설치본의 자동 작업에서는 첫 작업을 완료했지만 두 번째 작업에서 summary 없이 SendMessage를 반복해 전송과 TaskUpdate 완료가 실패했다. 시작·유휴 선점과 새 Read는 확인됐지만 source의 전체 성공이 설치본에서 재현되지 않았으므로 자동 작업의 최종 모델 검증도 미완료이다.
 
@@ -158,9 +205,9 @@ C++ Teams는 이름 있는 팀원의 독립 Engine 대화·스레드, 공유 Tas
 
 | 검증 | 결과 |
 |---|---|
-| 최종 Release, inference 제외 | 96/96, failure/skip 0 |
-| ASan·UBSan | 93/93, failure/skip 0 |
-| 새 설치 consumer | 59/59, failure/skip 0 |
+| 최종 Release, inference 제외 |96/96, 실패/건너뛰기 0|
+|ASan·UBSan|93/93, 실패/건너뛰기 0|
+| 새 설치 consumer |59/59, 실패/건너뛰기 0|
 | source·installed 전송 | HTTP·native IPC CLI·MCP HTTP·공식 Python MCP stdio |
 | 설치 공개 헤더 | 57개, 소스와 바이트 일치 |
 | 실제 모델 | source·installed 각각 초기 실행과 동일 대화의 후속 실행 통과 |
@@ -173,10 +220,10 @@ sanitizer는 llama OFF, leak detection OFF, ASan abort/UBSan halt ON이다. 실�
 
 | 실행 | 단계 | 모델 턴 | 생성 토큰 |
 |---|---|---|---|
-| source | initial | 5 | 187 |
-| source | followup | 4 | 119 |
-| installed | initial | 4 | 172 |
-| installed | followup | 4 | 157 |
+|소스|초기| 5 | 187 |
+|소스|후속 조치| 4 | 119 |
+|가 설치되었습니다.|초기| 4 | 172 |
+|가 설치되었습니다.|후속 조치| 4 | 157 |
 
 8B Qwen3의 16,384 및 4,096 컨텍스트 시도는 추론 전 가용 RAM 보호 조건에서 거절되었다. 기존 Qwen2.5 0.5B는 도구를 호출하지 않아 실패했다. Qwen3 1.7B의 4,096 시도에서는 후속 도구 결과가 맞았지만 마지막 응답이 context_overflow로 실패했다. 8,192의 첫 시도에서도 후속 작업·메시지가 새 표식과 일치하지 않아 실패했다. 파일이 바뀌었고 이전 표식을 쓰면 안 된다는 후속 지시를 명시한 뒤 최종 source·installed 검사가 통과했다. 성공 기준과 서비스 메모리 보호를 완화하지 않았다. 이 조건의 실행 증거이며 다른 모델이나 임의 지시의 품질을 보장하지 않는다.
 
@@ -194,7 +241,7 @@ sanitizer는 llama OFF, leak detection OFF, ASan abort/UBSan halt ON이다. 실�
 | 검증 | 결과 |
 |---|---|
 | 최종 Release | 95/95, 실패·skip 0 |
-| ASan/UBSan | 전체 91/92; 실패한 worktree 전체를 같은 바이너리로 단독 재검사 1/1, skip 0 |
+|ASan/UBSan| 전체 91/92; 실패한 worktree 전체를 같은 바이너리로 단독 재검사 1/1, skip 0 |
 | 새 설치 consumer | 58/58, 실패·skip 0 |
 | 소스·설치 전송 | HTTP, native IPC CLI, MCP HTTP, 공식 Python MCP stdio 통과 |
 | 설치 헤더 | 56개 소스와 바이트 일치 |
@@ -240,7 +287,7 @@ C++ NotebookEdit의 셀 교체·삽입·삭제, 실제 ID 우선 선택과 cell-
 | 검증 | 결과 |
 |---|---|
 | Release, inference 제외 | 최초 91/93, MCP 기대 목록 갱신 후 2/2; 누적 93/93. 이후 인자 설명 변경의 영향 검사 6/6 |
-| ASan·UBSan | 최초 89/90, 동일 바이너리 Worktree 단독 재실행 1/1; 누적 90/90. 이후 인자 설명 변경의 영향 검사 4/4 |
+|ASan·UBSan| 최초 89/90, 동일 바이너리 Worktree 단독 재실행 1/1; 누적 90/90. 이후 인자 설명 변경의 영향 검사 4/4 |
 | 새 설치 소비자 | 56/56 |
 | 실제 모델 source | 통과; 3턴·생성 1505토큰 |
 | 실제 모델 installed | 통과; 3턴·생성 1534토큰 |
@@ -268,7 +315,7 @@ C++ `EnterWorktree`·`ExitWorktree`, 소유 상태의 원자적 저장, 보존·
 | 검증 | 최종 결과 |
 |---|---|
 | Release, inference 제외 | 92/92 |
-| ASan·UBSan | 89/89, llama OFF·leak detection OFF |
+|ASan·UBSan|89/89, 라마 OFF·누출 감지 OFF|
 | 새 설치 소비자 | 55/55 |
 | 실제 Qwen3-8B Q4 | source·installed 모두 EnterWorktree → Read → ExitWorktree keep, 파일에만 있는 임의 표식 답변 |
 | 인증 전송 | source·installed HTTP·IPC CLI·MCP HTTP·공식 MCP 1.26 stdio 통과 |
@@ -295,7 +342,7 @@ C++ LSP의 9개 코드 탐색 연산, Content-Length stdio 전송·초기화 협
 | 검증 | 최종 결과 |
 |---|---|
 | Release, inference 제외 | 91/91 |
-| ASan·UBSan | 88/88, llama OFF·leak detection OFF |
+|ASan·UBSan|88/88, 라마 OFF·누출 감지 OFF|
 | 새 설치 소비자 | 54/54 |
 | 실제 clangd 21.0.0 | source·installed 모두 9개 연산의 비어 있지 않은 결과, 정의 위치·호출 계층 확인 |
 | 실제 문서 변경·진단 | 소스 오류의 version 2 진단, 수정 후 version 3의 빈 진단 통과 |
@@ -324,7 +371,7 @@ C++ WebFetch의 익명 GET, HTML5/인코딩 변환, 소유 세션별 TTL/LRU 캐
 | 검증 | 최종 결과 |
 |---|---|
 | Release, inference 제외 | 90/90 |
-| ASan·UBSan | 87/87, llama OFF·leak detection OFF |
+|ASan·UBSan|87/87, 라마 OFF·누출 감지 OFF|
 | 새 설치 소비자 | 53/53 |
 | 실제 Qwen3-8B Q4 | source·installed 페이지에만 있는 임의 코드 추출·답변, 캐시를 사용한 새 모델 추출 통과 |
 | 인증 전송 | source·installed HTTP/IPC·CLI·MCP HTTP·공식 MCP 1.26 stdio 통과 |
@@ -351,7 +398,7 @@ C++ MemoryDream, 기본 OFF인 자동 실행, 24시간·5개 다른 대화·10�
 | 검증 | 최종 결과 |
 |---|---|
 | Release, inference 제외 | 88/88 |
-| ASan·UBSan | 85/85, llama OFF·leak detection OFF |
+|ASan·UBSan|85/85, 라마 OFF·누출 감지 OFF|
 | 새 설치 소비자 | 53/53 |
 | Qwen3-8B Q4 실제 정리 | source·installed 오래된 선호 교체, 임의 표식 저장, 중복 인덱스 제거, 새 대화 조회 통과 |
 | 실제 추출 회귀 | source·installed 자동 추출과 비활성 대조 통과 |
@@ -375,7 +422,7 @@ C++ SessionHistory/SessionSearch, 원문 위치가 포함된 리터럴 검색, �
 | 검증 | 최종 결과 |
 |---|---|
 | Release, inference 제외 | 86/86 |
-| ASan·UBSan | 83/83, llama OFF·leak detection OFF |
+|ASan·UBSan|83/83, 라마 OFF·누출 감지 OFF|
 | 새 설치 소비자 | 51/51 |
 | Qwen3-8B Q4 실제 실행 | source·installed 과거 기록 검색, 임의 표식 답변, 비활성 대조 통과 |
 | 인증 전송 | source·installed HTTP/IPC·MCP HTTP·공식 MCP 1.26 stdio 통과 |
@@ -395,8 +442,8 @@ C++ SessionHistory/SessionSearch, 원문 위치가 포함된 리터럴 검색, �
 
 | 검증 | 최종 결과 |
 |---|---|
-| Release | 84/84 |
-| ASan·UBSan | 81/81, llama OFF·leak detection OFF |
+|출시| 84/84 |
+|ASan·UBSan|81/81, 라마 OFF·누출 감지 OFF|
 | 새 설치 소비자 | 49/49 |
 | Qwen3-8B Q4 실제 실행 | source·installed 자동 저장, 새 세션 검색, 비활성 대조군 통과 |
 | 인증 전송 | source·installed HTTP/IPC·MCP HTTP·공식 MCP 1.26 stdio 통과 |
@@ -416,7 +463,7 @@ C++ SessionHistory/SessionSearch, 원문 위치가 포함된 리터럴 검색, �
 
 | 검증 | 최종 결과 |
 |---|---|
-| Release CTest | 82/82, 실패·건너뜀 0 |
+|Release CTest| 82/82, 실패·건너뜀 0 |
 | ASAN + UBSAN CTest | 79/79, 실패·건너뜀 0; llama.cpp 제외, leak detection 비활성 |
 | 새 설치 소비자 CTest | 47/47, 실패·건너뜀 0 |
 | 실제 모델 | 소스·설치본 각각 Qwen3 8B의 자동 회상·새 대화 명시적 회상·비활성 대조 통과 |
@@ -533,7 +580,7 @@ C++ AskUserQuestion을 Engine·인증 API·IPC·MCP에 연결했다. 질문·선
 | 실행 전환 | 오래된 검토와 호스트 수정 거부, ToolStarted 이후 변경 감지, 동시 승인 중 단일 전환, 준비된 프로젝트 Write 무효화 |
 | 파일·수명 | 손상된 상태·심볼릭 링크·NUL·바이트 상한, 다른 계획의 Read/Glob/Grep 차단, 승인 뒤 변경 감지, 재시작·분기·초기화 |
 | 권한 | 기본 bypass와 PreToolUse 단순 allow에도 Exit 검토 요구, 명시적 Deny·Ask 유지, 커스텀 Allow 정책에도 계획 제한, allowedPrompts의 비자동 권한화 |
-| MCP Engine | 계획 안에서 내부 작업·대화 계속 실행·clear, 중첩 실행 잠금 분리와 기존 호스트 래퍼 권한 유지 |
+|MCP 엔진| 계획 안에서 내부 작업·대화 계속 실행·clear, 중첩 실행 잠금 분리와 기존 호스트 래퍼 권한 유지 |
 
 기존 구현에 대한 첫 모델 테스트에서 `Unknown tool: EnterPlanMode`를 관측했다. 최초 테스트의 도구 지연 공개 설정 누락, 의도적으로 거부한 심볼릭 링크를 테스트 인자 작성 중 다시 읽은 문제, wire 미리보기의 request 중첩과 MCP initialized 통지 누락은 검사 구성 오류로 수정했다. MCP 대화 래퍼가 계획 진입 뒤 기존 bypass 권한을 잃는 실패도 재현했다. 래퍼는 원래 호스트 권한을 사용하고 내부 Engine 도구에는 계획 경계를 적용하도록 수정했다.
 
@@ -620,9 +667,9 @@ TDD의 기존 구현에서 결과 교체 실패 5건을 먼저 관찰했다(mcp-
 | 권한·파일 | bypass/acceptEdits 암묵적 쓰기 차단, 명시적 허용/거부/Ask, 세션 허용 유지, 정확한 transcript Read와 인접 상태/링크/쓰기 거부 |
 | 실행 통합 | MCP 소유 대화의 TaskList, 게시 전 보드 읽기와 동시 변경 충돌, 스킬·지연 도구 검색·Plan 프로필과 추가 호스트 도구 |
 | 정리 | 부모 취소·자체 기한·입출력 한도 뒤 임시 대화 제거, 검증기가 시작한 background Bash 종료 |
-| Qwen3 8B API | 소스·설치 각각 파일 허용, 파일 차단 후 대화 지속, Stop 차단 후 FIXED 응답, UserPromptSubmit 차단 |
-| Qwen3 8B CLI·Task | 양쪽에서 IPC 입력 차단과 Task 생성 허용/게시 전 거부 |
-| Qwen3 8B MCP | 양쪽에서 HTTP Write 3건(허용·훅 거부·호스트 거부), 공식 Python SDK stdio Write 2건 |
+|Qwen3 8B API| 소스·설치 각각 파일 허용, 파일 차단 후 대화 지속, Stop 차단 후 FIXED 응답, UserPromptSubmit 차단 |
+|Qwen3 8B CLI·Task| 양쪽에서 IPC 입력 차단과 Task 생성 허용/게시 전 거부 |
+|Qwen3 8B MCP| 양쪽에서 HTTP Write 3건(허용·훅 거부·호스트 거부), 공식 Python SDK stdio Write 2건 |
 
 모델은 model://qwen3-8b-q4, 5,027,783,488바이트, SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`이다. 파일을 다시 해시했다. 진단을 수집한 실제 훅은 소스 15개, 설치본 15개이다. 모든 수집된 훅에서 실제 Read 또는 TaskList와 StructuredOutput, 두 번 이상의 assistant 응답, 생성 토큰, 새 agent ID와 부모 이력 0개를 확인했다. CLI·stdio 호출은 별도 검사했으며 이 진단 개수에는 포함하지 않는다.
 
@@ -648,9 +695,9 @@ TDD의 기존 구현에서 결과 교체 실패 5건을 먼저 관찰했다(mcp-
 | 권한 | true가 호스트 Deny를 우회하지 않음; PermissionRequest false의 중단을 직접/앱 요청 경로에서 확인 |
 | 네이티브 문법 | 실제 Qwen2.5 0.5B에 비-JSON 출력 지시를 주어도 tool_grammar=false 상태에서 고정 ok:true JSON 생성; 소스·설치 소비자 |
 | 네이티브 추론 모드 | 실제 llama 템플릿의 요청별 true/false와 원래 로딩 기본값 복원; ServiceModel 측정/생성 전달 일치 |
-| Qwen3 8B API | 소스·설치본 각각 파일 허용/차단, Stop 중단, UserPromptSubmit 차단의 4개 실행 |
-| Qwen3 8B CLI·Task | 양쪽에서 native IPC 입력 차단 및 Task 생성 허용·게시 전 차단 |
-| Qwen3 8B MCP | 양쪽에서 HTTP 직접 Write 3건(허용·모델 차단·호스트 거부), 공식 Python SDK stdio Write 2건 |
+|Qwen3 8B API| 소스·설치본 각각 파일 허용/차단, Stop 중단, UserPromptSubmit 차단의 4개 실행 |
+|Qwen3 8B CLI·Task| 양쪽에서 native IPC 입력 차단 및 Task 생성 허용·게시 전 차단 |
+|Qwen3 8B MCP| 양쪽에서 HTTP 직접 Write 3건(허용·모델 차단·호스트 거부), 공식 Python SDK stdio Write 2건 |
 | SSE 오류 | 연결된 훅 취소/백엔드 종료 오류에 done·[DONE]·정상 chunk 종료; 실제 Task 차단 교차 검사 |
 
 큰 모델은 model://qwen3-8b-q4, 5,027,783,488바이트, SHA-256 `d98cdcbd03e17ce47681435b5150e34c1417f50b5c0019dd560e4882c5745785`이다. 파일을 이번 검증에서 다시 해시했다. 실제 모델 질의에서 기록한 훅 진단은 소스 13개, 설치본 13개이며 UserPromptSubmit·PreToolUse·Stop·TaskCreated를 포함한다. CLI/stdio의 판단도 별도 교차 검사했지만 이 개수에는 진단을 수집한 SSE 호출만 센다. 훅 토큰은 메인 RunResult 토큰과 별도이다.
@@ -728,8 +775,8 @@ C++ PermissionRequests와 ToolRunner의 훅/앱 경쟁을 구현했다. 첫 결�
 | ASan·UBSan, llama 비활성 Debug | 56/56, 121.84초; 계측 오류 보고 없음 |
 | 별도 설치 소비자 | 29/29, 26.20초 |
 | C++ 실제 파일·동시성 | 앱/훅 승자, 늦은 입력 무시, 8개 동시 응답의 단일 승자, 중복·채널 격리, 기한·취소·이력 제한 통과 |
-| API/MCP dispatcher | 일반 큐 포화 중 조회·응답, 다른 클라이언트/연결 거부, 모델/자식 실행의 채널 전달 통과 |
-| API·native IPC CLI | HTTP TaskCreate를 IPC 응답으로 변경, 거부 시 미게시, 잘못된 응답과 재전송 통과 |
+|API/MCP 디스패처| 일반 큐 포화 중 조회·응답, 다른 클라이언트/연결 거부, 모델/자식 실행의 채널 전달 통과 |
+|API·네이티브 IPC CLI| HTTP TaskCreate를 IPC 응답으로 변경, 거부 시 미게시, 잘못된 응답과 재전송 통과 |
 | MCP HTTP·공식 Python stdio | 앱 입력 변경으로 실제 파일 생성, 변경 대상의 호스트 deny 재검사, 연결 격리와 비도구 제어 경로 통과 |
 | 실제 Qwen3 8B, 소스/설치본 | API 모델 Write의 승인 입력을 native IPC로 변경해 정확한 임의 바이트 생성, 앱 interrupt로 run cancelled 통과 |
 | 설치/ABI | 공개 헤더 41개·문서·카탈로그·라이선스 일치, 실제 stage 라이브러리 로딩 |
@@ -755,7 +802,7 @@ C++ SettingsPermissionPolicy에 규칙 추가/교체/삭제, 모드 변경, 디�
 | 별도 설치 소비자 | 28/28, 26.28초 |
 | C++ 실제 파일과 세션 | 영속 규칙/모드/디렉터리, 비권한 JSON 보존, session/cli 격리, 관리 정책, fork/clear/자식 상속과 재개 통과 |
 | 저장 실패·동시 갱신 | 사전 검증 실패 시 JSON/메모리 미게시, 잠금 취소/시간 초과, 링크 거부, 8개 작성자 30회 반복 통과 |
-| API·native IPC CLI | 기존 TaskCreate 승인 입력 변경·거부 시 미게시·인증 검사 통과 |
+|API·네이티브 IPC CLI| 기존 TaskCreate 승인 입력 변경·거부 시 미게시·인증 검사 통과 |
 | MCP HTTP·공식 Python stdio | 다음 호출 승인 생략, clear 후 세션 grant 유지, 다른 클라이언트 격리, 새 프로세스의 파일 grant 복원과 세션 grant 미복원 통과 |
 | 실제 Qwen3 8B, 소스/설치본 | 승인으로 규칙 저장 후 재시작한 daemon의 다른 클라이언트에서 재질문 없이 새 파일 생성 통과 |
 | 설치/ABI | 0.26 공개 헤더 40개·문서·카탈로그·라이선스 일치, 실제 stage 라이브러리 로딩 |
@@ -781,7 +828,7 @@ C++ ToolRunner/Engine에 Ask 전용 PermissionRequest, 구조화 응답, 입력 
 | Release 전체, inference 라벨 제외 | 55/55, 108.50초 |
 | ASan·UBSan, llama 비활성 Debug | 53/53, 114.97초; 계측 오류 보고 없음 |
 | 별도 설치 소비자 | 27/27, 48.13초 |
-| API·native IPC CLI | TaskCreate 승인 입력 변경, 거부 시 미게시, 인증과 임베디드 구조화 응답 통과 |
+|API·네이티브 IPC CLI| TaskCreate 승인 입력 변경, 거부 시 미게시, 인증과 임베디드 구조화 응답 통과 |
 | MCP HTTP·공식 stdio | 실제 파일 변경, 거부, 수정 입력의 스키마/명시적 거부 재검사, 갱신 처리기 없는 요청 실패 통과 |
 | 실제 Qwen3 8B, 소스/설치본 | 권한 훅에서 입력을 변경하여 정확한 파일 생성, interrupt로 cancelled 종료 통과 |
 | 설치/ABI | 0.25 공개 헤더 40개·문서·카탈로그·라이선스 일치, 실제 설치 라이브러리 로딩 |
@@ -805,7 +852,7 @@ C++ Engine::clearSession, 인증 API agent.sessions.clear, MCP iiLocalLLM.agent.
 | Release 전체, inference 라벨 제외 | 54/54, 107.40초 |
 | ASan·UBSan, llama 비활성 Debug | 52/52, 108.63초; 계측 오류 보고 없음 |
 | 별도 설치 소비자 | 26/26, 23.17초 |
-| API·native IPC CLI | 소유권·새 ID·부모 기록·원본 보존·즉시 clear 시작 문맥 통과 |
+|API·네이티브 IPC CLI| 소유권·새 ID·부모 기록·원본 보존·즉시 clear 시작 문맥 통과 |
 | MCP HTTP·공식 stdio | 명시적 clear와 new_session 교체, 진행 호출 취소, 연결 종료/신호 정리 통과 |
 | 실제 Qwen3 8B, 소스/설치본 | 허용 Write·거부·Stop 중단·제출 훅 문맥·clear 시작 훅 문맥의 파일 쓰기 통과 |
 | 설치/ABI | 0.24 공개 헤더 40개·문서·카탈로그·라이선스 일치, 실제 설치 라이브러리 로딩 |
@@ -1303,7 +1350,7 @@ C++ `ShellTasks`에 실제 백그라운드 Bash, TaskOutput·TaskStop·ShellTask
 | 검증 | 최종 관측 결과 |
 |---|---|
 | Release 전체 빌드·CTest | 빌드 성공, **49/52 통과**, 370.22초. 실패 항목은 아래에 그대로 기록 |
-| ASan·UBSan | llama 비활성 Debug 전체 **33/33 통과**, 67.15초. 아래의 명시적 ASan 실행 조건 적용 |
+|ASan·UBSan| llama 비활성 Debug 전체 **33/33 통과**, 67.15초. 아래의 명시적 ASan 실행 조건 적용 |
 | 셸 C++ 회귀 | 실제 프로세스와 자식 그룹 종료, 완료/중단 중 최종 출력, 조회만 취소, 시간/출력/용량 제한, 세션 격리, 파일 보호·페이지화, 손상 거부·복구, 비정상 종료 코드의 null 처리. 9개 동작 사례 |
 | 새 설치 소비자 | 별도 `shell-stage`와 `shell-consumer/build`에서 **17/20 통과**, 232.28초. 설치된 C++ 셸 실행·출력·중단·재시작 기록 포함 |
 | 설치된 API·CLI·공식 MCP | **3/3 통과**. API·CLI 28개 수락 조건. 공식 Python MCP 1.26.0의 stdio/HTTP에서 16개 도구, 백그라운드 시작·출력·중단, 연결 격리와 호스트 비활성화 확인 |
@@ -1335,7 +1382,7 @@ C++ `TaskStore`에 일곱 작업·Todo 도구, 양방향 의존 관계의 원자
 | 검증 | 최종 관측 결과 |
 |---|---|
 | Release 전체 빌드·CTest | 빌드 성공, **44/50 통과**, 525.60초. 실패 6건과 후속 대조 결과는 아래에 구분 |
-| ASan·UBSan | llama 비활성 Debug 전체 **32/32 통과**, 53.42초. Unicode 보존 및 아래 테스트 격리 수정 포함 |
+|ASan·UBSan| llama 비활성 Debug 전체 **32/32 통과**, 53.42초. Unicode 보존 및 아래 테스트 격리 수정 포함 |
 | 테스트 격리 수정 후 Release | 전송·공식 MCP stdio/HTTP·실제 MCP 추론의 영향 범위 **5/5 통과**, 27.76초. 전체 50개 실행과 별도 기록 |
 | 작업 C++ 회귀 | 7개 동작 사례. 스레드 16개 생성·12개 선점 경쟁, 별도 프로세스 8개 생성·선점 경쟁, 의존 관계·취소·손상 파일·훅 차단·Plan 정책·resume·fork·Unicode 담당자 재조회 포함 |
 | 새 설치 소비자 | 전체 **13/18 통과**, 271.62초. RAM 보호로 기동이 거절된 8B eager와 MCP 연결 검사의 별도 재실행 **2/2 통과**, 142.08초. 모델 응답/검색 실패와 원래 전체 결과는 유지 |
@@ -1373,7 +1420,7 @@ TDD에서 누락 Engine 인터페이스의 빌드 실패를 확인했다. 이후
 
 | 검증 | 최종 결과 |
 |---|---|
-| SDK Release CTest | 45/46, 176.01초. 기존 `iiLocalLLM.discovery_inference` 한 건 실패 유지 |
+|SDK 출시 CTest| 45/46, 176.01초. 기존 `iiLocalLLM.discovery_inference` 한 건 실패 유지 |
 | ASan + UBSan, llama 비활성 | 31/31, 53.64초 |
 | 새 stage의 외부 C++ consumer | 13/14, 33.68초. 동일한 `installed_discovery_inference` 실패 유지. 새 앱 등록·HTTP·QObject 호출·삭제 consumer 통과 |
 | Society 현재 작업 트리 | 전체 20/20, 140.98초. 실제 앱 탐색·범위 거절·자동 발견·제거·비활성 및 네이티브 Qwen 호출 포함 |
@@ -1505,7 +1552,7 @@ Apple M1 Max / Qt 6.8.3에서 C++ 프로젝트 지침 로더를 실제 Engine �
 | 전체 CTest | **29/31 통과**, 96.02초. 실패는 `agent_local_inference`, `mcp_server_inference`의 소형 모델 원문 답변 검사 |
 | 새 컨텍스트 검사 | Markdown 코드·주석 구분, import 순서·중복·symlink·깊이, glob·YAML 조건, UTF-8 BOM·CRLF·한국어 파일명, 크기·개수·스캔 상한, 갱신·삭제·resume·fork·편집 선행 읽기 유지 통과 |
 | 실제 API·Qwen | 지침 파일에만 적힌 코드 답변, 경로별 조회·해시·앱 격리, Read 관측값, HTTP SSE 이벤트, daemon 재시작·CLI 분기 이어가기 통과. 42 생성 토큰·이벤트 11개는 파일 읽기 실행 기준 |
-| ASan + UBSan | **8/8 통과**, 11.94초. C++뿐 아니라 새 C 파서도 sanitizer 플래그로 빌드. src/agent/context/service/http/API/transport/MCP 서버/daemon 검사 |
+|ASan + UBSan| **8/8 통과**, 11.94초. C++뿐 아니라 새 C 파서도 sanitizer 플래그로 빌드. src/agent/context/service/http/API/transport/MCP 서버/daemon 검사 |
 | 새 설치 패키지 | `build/context-stage`와 독립 `build/context-consumer/build`에서 **6/6 통과**, 3.99초. 공개 ProjectContext·Engine API 링크·실행 포함 |
 | 설치본 실제 추론 | 별도 지침 코드 `CTX_bcbff7b5c2` 답변, Read 관측값·HTTP/native/CLI·재시작·분기 통과. 파일 읽기 44 생성 토큰·이벤트 11개 |
 | ABI·배포 | 공개 EngineOptions·RunRequest 변경으로 SOVERSION 0.5. CLI·MCP 구현 버전도 0.5.0. 얇은 iillm은 Core/Network 전용 링크 유지 |
@@ -1528,7 +1575,7 @@ Apple M1 Max / Qt 6.8.3에서 `agent::Api`, 전송 공통 `RpcHandler`, daemon �
 | API·전송 회귀 | 잘못된 키, 앱 간 세션·요청 차단, 고정 workspace, state 소유 잠금, 큐·기한·세션 상한, 페이지·재시작·분기, 이벤트 순서, HTTP에서 IPC 실행 취소, 연결 해제·출력 초과·종료 검사 |
 | 실제 daemon·CLI | 키 파일 소유·권한 검사, 로그/CLI 출력에서 키 미노출, HTTP/native/CLI의 동일 세션, 다른 앱 차단, daemon 재시작 후 원본·분기 기록 복원 통과 |
 | 소스 빌드의 실제 모델 | HTTP SSE → Qwen2.5 0.5B Q4_K_M → Read → 관측값 답변. **41 생성 토큰·이벤트 9개**, 재시작 후 CLI에서 분기 세션 이어가기 통과 |
-| ASan + UBSan | Debug·llama 비활성화 빌드에서 기존 src/agent/service/http 및 새 API/전송/daemon **6/6 통과**, 9.01초 |
+|ASan + UBSan| Debug·llama 비활성화 빌드에서 기존 src/agent/service/http 및 새 API/전송/daemon **6/6 통과**, 9.01초 |
 | 새 설치 패키지 | `build/agent-api-stage`를 이용한 별도 공개 헤더·CMake 소비자 **6/6 통과**, 52.77초. 새 RpcHandler/Api·두 transport setter 링크·실행 포함 |
 | 설치본 실제 모델 | 설치된 daemon·iillm으로 별도 임의 파일 값을 Read하고 답변, 분기·재시작·이어서 실행 통과. **40 생성 토큰·이벤트 9개** |
 | 설치본 로더·CLI 경계 | DYLD/QT/QML 경로 override 제거. `build/agent-api-stage/lib/libiiLocalLLM.0.4.0.dylib` 로딩 확인. 설치된 iillm에는 SDK/llama/ggml 링크 없음 |
@@ -1554,7 +1601,7 @@ Apple M1 Max / Qt 6.8.3에서 0.4.0의 `mcp::ServerSession`, POSIX `serveStdio`,
 | 실제 stdio 실행 파일 | 독립 바이트 단위 peer로 UTF-8 분할, 잘못된 입력 복구, 버전별 배열 처리, 배열 내 취소, EOF·큰 입력·끊어진 stdout 종료 검사 |
 | 공식 SDK 교차 검증 | Python MCP SDK **1.26.0**과 양방향 검증. 실제 파일 읽기·쓰기, 기본 거부와 명시 허용, 스키마·경로 제한, Bash와 자식 프로세스 취소 및 이후 연결 사용 통과 |
 | 실제 모델을 제공하는 MCP 서버 | 공식 클라이언트 → C++ 서버 → Qwen2.5 0.5B Q4_K_M → Read → 최종 답변. **2턴·41 생성 토큰·진행 알림 9개**, 임의 파일 값 및 도구 호출/결과 ID·영속 transcript 확인 |
-| ASan + UBSan | 최종 Debug·llama 비활성화 빌드에서 에이전트·MCP 클라이언트·서버·stdio **4/4 통과**, 12.71초 |
+|ASan + UBSan| 최종 Debug·llama 비활성화 빌드에서 에이전트·MCP 클라이언트·서버·stdio **4/4 통과**, 12.71초 |
 | 새 설치 패키지 | `build/mcp-server-stage`의 공개 패키지만 사용해 별도 소비자를 구성·빌드. **5/5 통과**, 28.61초 |
 | 설치본 실행·로딩 | DYLD/QT/QML 경로 override를 제거했다. 로더에서 `build/mcp-server-stage/lib/libiiLocalLLM.0.4.0.dylib` 확인. 설치된 `iillm-mcp`도 공식 클라이언트의 파일/취소 시험 및 별도 임의 값으로 실제 모델 2턴 실행 통과 |
 | CLI 링크 경계 | 설치된 iillm은 Qt Core/Network 및 시스템 라이브러리만 링크. 별도 iillm-mcp 실행 파일은 의도대로 SDK를 링크 |
@@ -1599,7 +1646,7 @@ Apple M1 Max / Qt 6.8.3 / Release 빌드에서 `agent::Engine`, 도구 스키마
 | 전체 Release CTest | **19/19 통과**, 69.79초. GGUF Metal/CPU 및 MLX Metal/CPU의 기존 추론도 포함 |
 | 에이전트 코어 | 13개 동작 테스트 통과. 도구 루프, 정책/스키마, 훅 입력 재검증, 취소, 병렬/배타 순서, 잠금/중단 복원, registry 교체 중 스냅샷 일관성 포함 |
 | 실제 C++ 모델/도구 루프 | Qwen2.5 0.5B Q4_K_M이 Read를 스스로 선택하고 프롬프트에 없는 무작위 파일 값을 최종 답변에 반환. 서로 다른 값으로 **3회 연속 통과**, 이후 전체 suite에서도 통과 |
-| 실제 daemon HTTP 도구 왕복 | SSE로 Read 호출 수신 → 외부 클라이언트가 fixture 파일을 실제 읽음 → 동일 ID의 tool 결과 입력 → JSON 최종 답변에서 파일 값 확인. CLI/HTTP 전체 과정 model_loads=1, 종료 후 sessions=0 |
+| 실제 daemon HTTP 도구 왕복 | SSE로 Read 호출 수신 → 외부 클라이언트가 픽스처 파일을 실제 읽음 → 동일 ID의 tool 결과 입력 → JSON 최종 답변에서 파일 값 확인. CLI/HTTP 전체 과정 model_loads=1, 종료 후 sessions=0 |
 | 구조화 API 오류/캐시 | 잘못된 역할·호출 ID, required 도구 누락, 호출 재사용, 잘린 출력 거부. 모델별 contextId 격리 및 재사용, 소비자 실패 시 실행 가능한 호출 제거 |
 | HTTP 프로토콜 | tool_choice/parallel_tool_calls 전달, content:null, tool_calls 종료 이유, SSE 호출 index/ID/인자, usage, [DONE] 검증 |
 | 외부 설치 소비자 | `build/agent-stage`의 공개 패키지로 새 consumer를 빌드해 **3/3 통과**. DYLD_LIBRARY_PATH를 제거한 상태에서 앱 도구/모델/세션 ABI 실행 |
@@ -1651,14 +1698,14 @@ Apple M1 Max / RAM 32 GiB / Qt 6.8.3에서 현재 소스를 Release로 빌드하
 
 | 검증 | 결과 |
 | --- | --- |
-| Release CTest | 13/13 통과: 레거시 API, 서비스/IPC, 상주 정책, CLI, HTTP, 모델 카탈로그, 하드웨어 정책, MLX 정책, llama Metal/CPU 추론, 독립 daemon, MLX Metal/CPU 추론 |
+|Release CTest| 13/13 통과: 레거시 API, 서비스/IPC, 상주 정책, CLI, HTTP, 모델 카탈로그, 하드웨어 정책, MLX 정책, llama Metal/CPU 추론, 독립 daemon, MLX Metal/CPU 추론 |
 | 서비스 테스트 상세 | 20개 동작 테스트 통과; Qt init/cleanup 포함 22 passed |
 | 모델 카탈로그 상세 | 8개 동작 테스트 통과; Qt init/cleanup 포함 10 passed |
 | HTTP 상세 | 7개 동작 테스트 통과; Qt init/cleanup 포함 9 passed |
 | 하드웨어 정책 상세 | 데이터 행 포함 23개 검증 통과; Qt init/cleanup 포함 25 passed |
 | MLX 캐시·장치·CPU 스트리밍 | 10개 Python 테스트 통과; prefix/trim, 장치 명시, Metal 불가, EOS/최대 토큰 종료 |
 | AddressSanitizer + UndefinedBehaviorSanitizer | 기본 CTest 8/8 통과; C++/Objective-C++·HTTP 검사, llama 비활성화, leak detection 비활성화 |
-| 설치 패키지 소비 | 2/2 통과: 기존 API 및 manifest/catalog/URI/pull/residency/Service/Hardware/Runtime/IPC/HTTP 공개 API, HTTP 리스너 시작·종료 |
+| 설치 패키지 소비 | 2/2 통과: 기존 API 및 manifest/catalog/URI/pull/residency/Service/Hardware/런타임/IPC/HTTP 공개 API, HTTP 리스너 시작·종료 |
 | 독립 서비스 프로세스 | 패키지 설치 → URI로 GGUF 로드 → Native IPC와 HTTP 동시 추론 → 재시작 후 같은 URI 사용 → 언로드·제거 및 SIGTERM 정리, HTTP 단독 실행 통과 |
 | 설치 후 실행 경로 | DYLD_LIBRARY_PATH, DYLD_FRAMEWORK_PATH, LIBRARY_PATH, CMAKE_PREFIX_PATH 없이 설치 daemon의 실제 추론과 소비자 2/2 통과 |
 

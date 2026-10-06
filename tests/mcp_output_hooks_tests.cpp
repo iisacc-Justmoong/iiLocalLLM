@@ -119,7 +119,7 @@ private slots:
     }
     void apiRunAndSessionExposeTheReplacedObservation() {
         QTemporaryDir root;Remote remote;HttpHook endpoint(response(replacement));
-        a::ApiOptions options;options.workingDirectory=root.filePath("workspace");QDir().mkpath(options.workingDirectory);
+        a::ApiOptions options{.engine={.decision={.enabled=false}}};options.workingDirectory=root.filePath("workspace");QDir().mkpath(options.workingDirectory);
         options.stateDirectory=root.filePath("private");const QString credential(40,'x');options.clientTokens={{"society",credential}};
         a::CommandHooks hooks(settings({endpoint.hook()}),hookOptions(options.workingDirectory));options.engine.hooks={hooks.callback()};
         auto model=std::make_shared<Observer>();a::Api api(model,remote.registry,policy(),options);
@@ -161,7 +161,7 @@ private slots:
     void httpReplacementReachesModelTranscriptAndToolFinished() {
         QTemporaryDir root;Remote remote;HttpHook endpoint(response(replacement));
         a::CommandHooks hooks(settings({endpoint.hook()}),hookOptions(root.path()));
-        auto model=std::make_shared<Observer>();a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");options.hooks={hooks.callback()};
+        auto model=std::make_shared<Observer>();a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");options.hooks={hooks.callback()};
         a::Engine engine(model,remote.registry,policy(),options);const auto session=engine.createSession("fixture",root.path());
         a::Event finished;const auto result=engine.run({session.id,"observe"},[&](const a::Event& event){if(event.kind==a::EventKind::ToolFinished)finished=event;}).result.get();
         QCOMPARE(result.status,a::RunStatus::Completed);QCOMPARE(result.text,replacement);QCOMPARE(remote.calls.load(),1);

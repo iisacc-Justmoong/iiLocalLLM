@@ -112,7 +112,7 @@ private slots:
     }
     void authenticatedApiUsesSameStructuredApprovalAndDoesNotAcceptWireGrants() {
         Fixture f;QTemporaryDir root;const auto work=root.filePath("work");QDir().mkpath(work);int requests=0;
-        a::ApiOptions options;options.workingDirectory=work;options.stateDirectory=root.filePath("state");
+        a::ApiOptions options{.engine={.decision={.enabled=false}}};options.workingDirectory=work;options.stateDirectory=root.filePath("state");
         const QString key(40,'a');options.clientTokens={{"society",key}};options.engine.compaction.automatic=false;
         options.engine.permissionResponse=[&](const auto&,const auto&,const auto&){++requests;a::PermissionResponse result;
             result.behavior=a::PermissionBehavior::Allow;result.updatedArguments=QJsonObject{{"value",6}};return result;};

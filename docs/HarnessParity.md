@@ -1,5 +1,7 @@
 # 에이전트 하네스 구현·검증 대응표
 
+0.53.0은 [절차 반환 채널](Procedures.md), 호스트의 검증된 반환값 교체·취소와 부모 실행 내 중복 자식 재사용을 추가한다. C++·인증 IPC/HTTP·연결별 MCP 경로를 제공하며 제품 앱 UI와 모든 참조 동등성은 별도 범위이다.
+
 이 표는 Claude Code 분석본의 전체 하네스 기능과 iisacc 앱의 양방향 MCP/API 연동을 비교하는 확장 범위 자료이다. C++을 기본 구현 언어로 사용하며 Python은 기존 MLX 런타임처럼 필요가 검증된 경계에서만 사용한다.
 
 0.52.0 MVP의 완료 기준은 로컬 모델 대화·에이전트 도구 실행·C++/IPC/HTTP/MCP 연동·로컬 플러그인과 새 설치본의 실행 검증이다. 결과는 [Verification.md](Verification.md)에 기록한다. 전체 참조 동등성, 마켓플레이스, 실행 중 플러그인 갱신, 원격 하네스와 모든 앱·플랫폼 검증은 이번 완료 기준 밖이다. 이 표의 partial/pending 상태를 MVP 완료 여부와 혼동하지 않는다. 아래 버전별 기록은 각 버전 당시의 결과와 제한을 보존한다.
@@ -10,37 +12,37 @@
 
 | ID | 요구 | 현재 상태 |
 |---|---|---|
-| execution | 대화 루프·스트림·도구 결과 정합성·취소·복구·턴/비용 예산 | partial |
-| providers | llama.cpp·MLX 네이티브 도구 템플릿, 로컬 OpenAI/Ollama 호환 연결, 공급자 어댑터 | partial |
-| tools | 등록·별칭·JSON Schema 입력/출력·입력별 병렬 실행·큰 결과 보관 | partial |
-| permissions | 정책 계층·모드·규칙·사용자/호스트 질문·자동 분류·OS 샌드박스 | partial |
-| files | Read/Write/Edit/Glob/Grep·동시 변경 감지·백업·되돌리기 | partial |
-| shell | Bash/PowerShell·환경·cwd·프로세스 트리 취소·백그라운드 작업 | partial |
-| web | WebFetch/WebSearch·컨텐츠 변환·캐시·네트워크 정책 | partial |
-| multimodal | 이미지·PDF·노트북·음성 입력과 모델별 지원 협상 | partial |
-| context | 프롬프트 조합·CLAUDE/AGENTS 규칙·첨부·요약·microcompact·cache 관리 | partial |
-| memory | 프로젝트 Markdown 메모리·검색·자동 정리·세션 메모리 | partial |
-| sessions | JSONL 영속 기록·resume/fork·압축 경계·파일 rewind | partial |
-| subagents | 전문 에이전트·부모 컨텍스트 fork·모델/도구/권한 범위·백그라운드 알림 | partial |
-| teams | 동일 프로세스/별도 프로세스 팀·mailbox·작업·권한 전달·worktree | partial |
-| mcp_client | stdio·Streamable HTTP·legacy SSE·초기화·버전/기능 협상·재연결·인증 | partial |
-| mcp_features | 도구·리소스·프롬프트·roots·sampling·elicitation·진행/취소·구독·tasks | partial |
-| mcp_server | iiLocalLLM 및 앱 기능을 MCP로 제공·세션 격리·권한·동시성·구조화 결과 | partial |
-| api | C++ SDK·기존 native IPC·HTTP/SSE 에이전트 API·OpenAI 도구 호환 | partial |
-| discovery | 앱 manifest·MCP/API 자동 인식·기능 협상·tool search·지연 공개 | partial |
-| skills | SKILL.md·메타데이터·인라인/fork 실행·허용 도구·검색·설치 | partial |
-| plugins | manifest·명령/스킬/에이전트/훅/MCP/LSP 등록·버전/캐시·설치/갱신 | partial |
-| hooks | 전체 생명주기·C++ 콜백·명령·HTTP·모델/에이전트·입력 변경·결과/차단 | partial |
-| tasks | 계획·Todo/Task·작업 의존성·입력 큐·백그라운드 작업/알림 | partial |
-| git | 작업 디렉터리·worktree·브랜치·변경 이력·복구 | partial |
-| editor | LSP·IDE 통신·파일 변경 알림·진단·심볼/정의/참조 | partial |
-| frontends | CLI interactive/headless·구조화 입출력·앱용 상태/이벤트·LVRS UI 바인딩 | partial |
-| remote | 원격/bridge 실행·인증·연결 복원·메시지 라우팅 | pending |
-| settings | 프로젝트/사용자/관리 설정 우선순위·기능 gate·환경·migration | partial |
-| observability | 구조화 로그·실행 trace·사용량/비용·성능·오류 진단 | partial |
-| iisacc_apps | Society·Dreamscapes·Congregation·Thinking Space 실제 consumer 연동 검증 | partial |
-| packaging | 공개 헤더·CMake export·daemon/CLI·설치 consumer·플랫폼 검증 | partial |
-| conditional | 분석본의 내부/조건부 기능: 실제 구현 확보 범위와 iiLocalLLM 대응을 개별 검증 | pending |
+|실행| 대화 루프·스트림·도구 결과 정합성·취소·복구·턴/비용 예산 |부분|
+|공급자| llama.cpp·MLX 네이티브 도구 템플릿, 로컬 OpenAI/Ollama 호환 연결, 공급자 어댑터 |부분|
+|도구| 등록·별칭·JSON Schema 입력/출력·입력별 병렬 실행·큰 결과 보관 |부분|
+|권한| 정책 계층·모드·규칙·사용자/호스트 질문·자동 분류·OS 샌드박스 |부분|
+|파일| Read/Write/Edit/Glob/Grep·동시 변경 감지·백업·되돌리기 |부분|
+|쉘| Bash/PowerShell·환경·cwd·프로세스 트리 취소·백그라운드 작업 |부분|
+|web| WebFetch/WebSearch·컨텐츠 변환·캐시·네트워크 정책 |부분|
+|멀티모달| 이미지·PDF·노트북·음성 입력과 모델별 지원 협상 |부분|
+|context| 프롬프트 조합·CLAUDE/AGENTS 규칙·첨부·요약·microcompact·cache 관리 |부분|
+|메모리| 프로젝트 Markdown 메모리·검색·자동 정리·세션 메모리 |부분|
+|세션| JSONL 영속 기록·resume/fork·압축 경계·파일 rewind |부분|
+|하위 에이전트| 전문 에이전트·부모 컨텍스트 fork·모델/도구/권한 범위·백그라운드 알림 |부분|
+|팀| 동일 프로세스/별도 프로세스 팀·mailbox·작업·권한 전달·worktree |부분|
+| mcp_client | stdio·Streamable HTTP·legacy SSE·초기화·버전/기능 협상·재연결·인증 |부분|
+| mcp_features | 도구·리소스·프롬프트·roots·sampling·elicitation·진행/취소·구독·tasks |부분|
+| mcp_server | iiLocalLLM 및 앱 기능을 MCP로 제공·세션 격리·권한·동시성·구조화 결과 |부분|
+|api| C++ SDK·기존 native IPC·HTTP/SSE 에이전트 API·OpenAI 도구 호환 |부분|
+|discovery| 앱 manifest·MCP/API 자동 인식·기능 협상·tool search·지연 공개 |부분|
+|스킬| SKILL.md·메타데이터·인라인/fork 실행·허용 도구·검색·설치 |부분|
+|플러그인| manifest·명령/스킬/에이전트/훅/MCP/LSP 등록·버전/캐시·설치/갱신 |부분|
+|후크| 전체 생명주기·C++ 콜백·명령·HTTP·모델/에이전트·입력 변경·결과/차단 |부분|
+|작업| 계획·Todo/Task·작업 의존성·입력 큐·백그라운드 작업/알림 |부분|
+|git| 작업 디렉터리·worktree·브랜치·변경 이력·복구 |부분|
+|편집기| LSP·IDE 통신·파일 변경 알림·진단·심볼/정의/참조 |부분|
+|프런트엔드| CLI interactive/headless·구조화 입출력·앱용 상태/이벤트·LVRS UI 바인딩 |부분|
+|원격| 원격/bridge 실행·인증·연결 복원·메시지 라우팅 |보류 중|
+|설정| 프로젝트/사용자/관리 설정 우선순위·기능 gate·환경·migration |부분|
+|observability| 구조화 로그·실행 trace·사용량/비용·성능·오류 진단 |부분|
+| iisacc_apps | Society·Dreamscapes·Congregation·Thinking Space 실제 consumer 연동 검증 |부분|
+|포장| 공개 헤더·CMake export·daemon/CLI·설치 consumer·플랫폼 검증 |부분|
+|조건부| 분석본의 내부/조건부 기능: 실제 구현 확보 범위와 iiLocalLLM 대응을 개별 검증 |보류 중|
 
 ## 현재 구현 순서
 

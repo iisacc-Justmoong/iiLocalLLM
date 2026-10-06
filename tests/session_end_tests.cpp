@@ -30,7 +30,7 @@ struct Host {
     QTemporaryDir root;
     QString workspace=root.filePath("work");
     std::shared_ptr<Model> model=std::make_shared<Model>();
-    a::EngineOptions options;
+    a::EngineOptions options{.decision={.enabled=false}};
     Host(){QDir().mkpath(workspace);options.sessionsDirectory=root.filePath("sessions");options.compaction.automatic=false;}
     std::unique_ptr<a::Engine> engine(){return std::make_unique<a::Engine>(model,std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(),options);}
 };
@@ -159,7 +159,7 @@ private slots:
         QVERIFY(transcript.readAll().contains("ANSWER"));
     }
     void apiExposesAnAuthenticatedSessionEnd() {
-        Host host;a::ApiOptions options;options.workingDirectory=host.workspace;options.stateDirectory=host.root.filePath("private");
+        Host host;a::ApiOptions options{.engine={.decision={.enabled=false}}};options.workingDirectory=host.workspace;options.stateDirectory=host.root.filePath("private");
         const QString token(48,'a');options.clientTokens={{"client",token}};
         a::Api api(host.model,std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(),options);
         auto call=[&](const QString& method,const QJsonObject& params){return api.dispatch(method,params,token).result.get().toObject();};
@@ -171,7 +171,7 @@ private slots:
         QCOMPARE(ended["ended"],true);QCOMPARE(ended["reason"],"logout");
     }
     void apiEndCancelsRunningAndQueuedRequestsBeforeResumption() {
-        Host host;a::ApiOptions options;options.workingDirectory=host.workspace;options.stateDirectory=host.root.filePath("private");
+        Host host;a::ApiOptions options{.engine={.decision={.enabled=false}}};options.workingDirectory=host.workspace;options.stateDirectory=host.root.filePath("private");
         options.maxConcurrentRequests=1;const QString token(48,'a'),other(48,'b');options.clientTokens={{"client",token},{"other",other}};
         QStringList sources;int ends=0;options.engine.hooks.append([&](const a::HookInput& input,const CancellationToken&){
             if(input.kind==a::HookKind::SessionStart)sources.append(input.context["source"].toString());

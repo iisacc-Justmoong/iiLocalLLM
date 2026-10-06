@@ -57,7 +57,7 @@ int main(int argc, char** argv) {
         const auto loaded = service.loadModel(load).get();
         std::cout << QJsonDocument(QJsonObject{{"model", uri}, {"loaded", loaded.model.loaded},
             {"load_options", loaded.options}}).toJson(QJsonDocument::Compact).constData() << '\n';
-        a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions"); options.taskToolsEnabled = true;
+        a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions"); options.taskToolsEnabled = true;
         options.taskToolsDeferred = deferred; options.projectContext.enabled = false; options.compaction.automatic = false;
         a::Engine engine(std::make_shared<a::ServiceModel>(service), std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), options);
         auto run = [&](const QString& session, const QString& prompt, const QString& expectedTool) {

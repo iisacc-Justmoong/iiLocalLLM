@@ -1,5 +1,9 @@
 # iillm과 iiLocalLLMD
 
+0.54의 daemon --agent-decision FILE 및 agent-enabled MCP --decision FILE은 성공 확률·수익·손실·비용의 private host 설정이다. 미지정 시 정책은 활성화되고 평가가 없어 실행을 보류한다. 반환 채널로 동적 평가를 제공할 수 있다. [DecisionGate.md](DecisionGate.md)를 따른다.
+
+0.53.0의 `iiLocalLLMD --agent-procedures FILE`은 비공개 절차 반환 설정을 읽는다. `iillm --auth-file FILE agent procedures list PARAMS_JSON_FILE`과 `... respond PARAMS_JSON_FILE`로 관측·진행·교체·취소를 처리한다. `iillm-mcp --procedures FILE`은 MCP 모델 실행에 같은 경계를 적용한다. 입력 형태와 반환 한도는 [Procedures.md](Procedures.md)를 따른다.
+
 0.20.0의 daemon은 `--agent-add-dir DIR`, MCP 호스트는 `--add-dir DIR`를 반복하여
 추가 작업 디렉터리를 지정한다. 디스크 설정은 별도의 permission-settings 옵션으로
 선택한다. `agent permissions get` 조회와 범위·수명은 [WorkingDirectories.md](WorkingDirectories.md)를 따른다.
@@ -19,10 +23,10 @@ export IILLM_SOCKET="$PWD/build/llm.sock"
 
 | 명령 | 의미 |
 | --- | --- |
-| pull MODEL | daemon이 registry 원본을 다운로드·검증·설치한다. 정상 설치가 있으면 검증 후 재사용한다 |
-| models | 설치 모델 목록과 loaded/unloaded를 표시한다 |
-| run MODEL [PROMPT] | daemon 세션에서 생성하며 delta를 stdout으로 출력한다. PROMPT가 없고 터미널이면 대화, 파이프이면 stdin 전체를 한 prompt로 처리한다 |
-| ps | 현재 상주한 모델, 예약 메모리 추정 GiB, 선택한 backend, 활성 여부 또는 만료까지 시간을 표시한다. 추론 중에도 응답한다 |
+|pull MODEL| daemon이 registry 원본을 다운로드·검증·설치한다. 정상 설치가 있으면 검증 후 재사용한다 |
+|모델| 설치 모델 목록과 loaded/unloaded를 표시한다 |
+|는 MODEL [PROMPT]| daemon 세션에서 생성하며 delta를 stdout으로 출력한다. PROMPT가 없고 터미널이면 대화, 파이프이면 stdin 전체를 한 prompt로 처리한다 |
+|ps| 현재 상주한 모델, 예약 메모리 추정 GiB, 선택한 backend, 활성 여부 또는 만료까지 시간을 표시한다. 추론 중에도 응답한다 |
 
 `--json`은 models/pull/ps 결과와 run의 최종 GenerationResult를 JSON으로 출력한다. 대화 모드에서도 매 턴 JSON 한 줄을 즉시 flush하며 안내와 프롬프트는 stderr로 출력한다. `run --max-tokens 128 --temperature 0 --system "..." --keep-alive 5m`을 지원한다. temperature는 유한한 0~10 값이며 기본 0.7, 0은 greedy 생성이다. 잘못된 값은 세션 생성 전에 거부한다.
 

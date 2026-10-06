@@ -35,18 +35,18 @@ Unix Bash는 기존 AST 파서로 리터럴 명령·인수·파이프를 검사�
 options.projectMemoryEnabled = true;
 options.memoryExtraction.enabled = true;
 options.memoryExtraction.completed = [](const QJsonObject& result) {
-    // Host-owned UI/event dispatch. result contains no extraction transcript.
+    // 호스트가 소유한 UI·이벤트 디스패치이다. result에는 추출 대화 기록이 포함되지 않는다.
 };
-// engine.run(...) returns before background extraction completes.
+// engine.run(...)은 백그라운드 추출이 완료되기 전에 반환된다.
 auto state = engine.memoryExtractionStatus(sessionId, 0, 32);
-auto retry = engine.extractMemory(sessionId); // Latest retained completed parent context.
+auto retry = engine.extractMemory(sessionId); // 보존된 완료 상태의 가장 최근 부모 문맥.
 engine.drainMemoryExtractions(60000, sessionId);
 ```
 
 | 인증 API 메서드 | 입력 | 결과 |
 |---|---|---|
 | `agent.memory.extract` | `session_id` | queued job ID 또는 disabled/no_context/up_to_date 등의 접수 상태 |
-| `agent.memory.extraction.status` | `session_id`, 선택 `offset`, `limit` | active/pending/cursor, count, records, next_offset |
+| `agent.memory.extraction.status` | `session_id`, 선택 `offset`, `limit` |활성/보류/커서, 개수, 레코드, next_offset|
 | `agent.memory.extraction.cancel` | `session_id` | 취소 요청 뒤 현재 상태 |
 
 API 세션과 메모리는 인증 앱 소유자별로 분리한다. status/cancel에는 기존 제어 요청용 예약 용량을 사용한다. 원격 입력으로 대화 스냅샷·모델·도구 권한을 주입할 수 없다. `agent.info.memory_extraction_enabled`로 기능을 확인한다.

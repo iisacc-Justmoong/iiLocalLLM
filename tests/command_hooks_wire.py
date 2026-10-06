@@ -13,6 +13,7 @@ import selectors
 import signal
 import shlex
 import shutil
+from legacy_decision import legacy_decision_command
 import subprocess
 import sys
 import tempfile
@@ -234,7 +235,7 @@ elif event == "Stop" and (root / "stop").exists():
         def server(name, invocation, pattern):
             log_path = root / (name + ".log")
             with log_path.open("w") as log:
-                process = subprocess.Popen(invocation, env=env, stdout=log, stderr=log)
+                process = subprocess.Popen(legacy_decision_command(invocation), env=env, stdout=log, stderr=log)
                 try:
                     start = time.monotonic()
                     while True:
@@ -575,7 +576,7 @@ elif event == "Stop" and (root / "stop").exists():
 
         for sig in (signal.SIGTERM, signal.SIGINT):
             with (root / (sig.name + ".log")).open("w") as log:
-                process = subprocess.Popen(common_mcp + mcp_flags, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, env=env)
+                process = subprocess.Popen(legacy_decision_command(common_mcp + mcp_flags), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=log, env=env)
                 incoming = b""
                 with selectors.DefaultSelector() as selector:
                     selector.register(process.stdout, selectors.EVENT_READ)

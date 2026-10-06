@@ -28,7 +28,7 @@ Subagents도 사용할 때는 Subagents::attach 다음 Teams::attach를 호출�
 | 도구 | 동작 |
 | --- | --- |
 | TeamCreate | `team_name`, 선택 `description`/`agent_type`. 부모당 하나의 팀을 만들고 새로운 작업 목록을 배정한다. 이름 충돌은 다른 이름으로 해결한다. |
-| Agent | `name`과 `prompt`로 팀원을 시작한다. 선택 `team_name`은 현재 팀과 같아야 한다. `subagent_type`, 허용된 `model`, `max_turns`, 제한을 강화하는 `mode`를 지원한다. 이름 없는 호출은 기존 Subagents로 전달한다. |
+|에이전트| `name`과 `prompt`로 팀원을 시작한다. 선택 `team_name`은 현재 팀과 같아야 한다. `subagent_type`, 허용된 `model`, `max_turns`, 제한을 강화하는 `mode`를 지원한다. 이름 없는 호출은 기존 Subagents로 전달한다. |
 | SendMessage | `to`에 팀원 이름 또는 `*`를 지정한다. 문자열 `message`는 비어 있지 않은 `summary`가 필요하다. 발신자는 세션에서 결정하며 인자로 위조할 수 없다. |
 | TeamStatus / TeamInbox | 호출 세션의 팀 상태와 해당 수신자의 메일함을 조회한다. Inbox는 `offset`, `limit`으로 페이지를 나눈다. |
 | TeamWait | `timeout_ms` 동안 팀원이 유휴 상태가 되기를 기다린다. 대기 중 취소할 수 있다. 대기 종료 때 보존된 리더 알림의 입력 큐 전달을 재시도한다. |

@@ -39,7 +39,7 @@ int main(int argc,char** argv){
         ModelLoadRequest load{uri,contextTokens};load.options={{"enable_thinking",thinking},{"tool_grammar",true}};(void)service.loadModel(load).get();
         auto model=std::make_shared<a::ServiceModel>(service);auto registry=std::make_shared<a::ToolRegistry>();a::registerWorkspaceTools(*registry,workspace);
         for(const auto& definition:registry->definitions())if(definition.name!="Read")registry->remove(definition.name);
-        auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);a::EngineOptions eo;eo.sessionsDirectory=root.filePath("sessions");
+        auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);a::EngineOptions eo{.decision={.enabled=false}};eo.sessionsDirectory=root.filePath("sessions");
         eo.projectContext.enabled=false;eo.skills.enabled=false;eo.toolSearch.enabled=false;eo.taskToolsEnabled=true;eo.taskToolsDeferred=false;eo.compaction.automatic=false;
         eo.maxToolCallsPerTurn=1;
         a::TeamsOptions config;config.workingDirectory=workspace;config.maxTurns=10;config.maxRuntimeMs=180000;config.generation.temperature=0;config.generation.maxTokens=2048;

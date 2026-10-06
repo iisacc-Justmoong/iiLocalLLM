@@ -31,9 +31,9 @@ iillm-mcp ... --permission-requests /private/requests.json
 
 | 전송 | 대기 조회 | 응답 |
 |---|---|---|
-| 인증 HTTP /v1/rpc, native IPC | agent.permissions.pending | agent.permissions.respond |
-| MCP JSON-RPC | iisacc/permissions/pending | iisacc/permissions/respond |
-| iillm --auth-file TOKEN | agent permissions pending [FILE] | agent permissions respond FILE |
+| 인증 HTTP /v1/rpc, native IPC |에이전트.허가.보류|에이전트.허가.응답|
+| MCP JSON-RPC |iisacc/권한/보류 중|iisacc/권한/응답|
+|iillm --auth-file TOKEN|에이전트 권한 보류 중 [FILE]|에이전트 권한 응답 FILE|
 
 목록 인자는 `{"after":0,"limit":32}`이며 생략 가능하다. after는 0–2^53−1 정수, limit는 1–128이다. 결과 requests는 현재 대기 중인 항목이다. 다음 페이지가 있으면 next_cursor를 준다. 페이지 순회 후 새 조회는 after=0부터 시작한다. cursor는 영속 이벤트 구독 위치가 아니다. pending_count는 전체 대기 수이고 closed는 채널 종료 여부이다.
 

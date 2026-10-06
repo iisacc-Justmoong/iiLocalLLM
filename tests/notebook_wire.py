@@ -14,6 +14,7 @@ import json
 import os
 import re
 import secrets
+from legacy_decision import legacy_decision_command
 import subprocess
 import tempfile
 import time
@@ -81,7 +82,7 @@ def main():
         def server(name, command, pattern):
             logpath = root / (name + '.log')
             with logpath.open('w') as log:
-                process = subprocess.Popen(command, cwd=root, env=env, stdout=log, stderr=log)
+                process = subprocess.Popen(legacy_decision_command(command), cwd=root, env=env, stdout=log, stderr=log)
                 try:
                     deadline = time.monotonic() + 60
                     while True:

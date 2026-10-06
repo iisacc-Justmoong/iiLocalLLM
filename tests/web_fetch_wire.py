@@ -10,6 +10,7 @@ import json
 import os
 import re
 import secrets
+from legacy_decision import legacy_decision_command
 import subprocess
 import tempfile
 import threading
@@ -73,7 +74,7 @@ def main():
         def server(name, command, pattern):
             log_path = root / (name + '.log')
             with log_path.open('w') as log:
-                p = subprocess.Popen(command, cwd=root, env=env, stdout=log, stderr=log)
+                p = subprocess.Popen(legacy_decision_command(command), cwd=root, env=env, stdout=log, stderr=log)
                 try:
                     deadline = time.monotonic() + 60
                     while True:

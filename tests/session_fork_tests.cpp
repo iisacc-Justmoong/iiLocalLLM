@@ -29,7 +29,7 @@ class EditModel:public a::Model {public:
         return {"done",{}};
     }
 };
-a::EngineOptions options(const Fixture& f){a::EngineOptions o;o.sessionsDirectory=f.state;o.fileCheckpointsEnabled=true;o.skills.enabled=false;o.toolSearch.enabled=false;o.projectContext.enabled=false;o.compaction.automatic=false;return o;}
+a::EngineOptions options(const Fixture& f){a::EngineOptions o{.decision={.enabled=false}};o.sessionsDirectory=f.state;o.fileCheckpointsEnabled=true;o.skills.enabled=false;o.toolSearch.enabled=false;o.projectContext.enabled=false;o.compaction.automatic=false;return o;}
 std::shared_ptr<a::ToolRegistry> registry(const Fixture& f){auto r=std::make_shared<a::ToolRegistry>();a::registerWorkspaceTools(*r,f.work);return r;}
 }
 class SessionForkTests:public QObject {

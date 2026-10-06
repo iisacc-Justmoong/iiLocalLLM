@@ -24,7 +24,7 @@ struct Host {
     QString workspace = root.filePath("workspace");
     std::shared_ptr<Model> model = std::make_shared<Model>();
     std::shared_ptr<a::ToolRegistry> registry = std::make_shared<a::ToolRegistry>();
-    a::EngineOptions options;
+    a::EngineOptions options{.decision={.enabled=false}};
     int writes = 0;
     Host() {
         QDir().mkpath(workspace);

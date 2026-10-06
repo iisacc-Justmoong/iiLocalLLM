@@ -4,6 +4,7 @@
 #include "PermissionRules.h"
 #include "SkillsInternal.h"
 #include "PromptState.h"
+#include "DecisionProtocol.h"
 #include "../Parameters.h"
 #include <QtCore/QThreadPool>
 #include <QtCore/QRunnable>
@@ -66,6 +67,8 @@ public:
             || this->options.toolSearch.maxActiveTools > 4096)
             throw Error(ErrorCode::InvalidArgument, "Invalid agent engine configuration");
         pool.setMaxThreadCount(this->options.maxConcurrentRuns);
+        if(!this->options.procedures)this->options.procedures=std::make_shared<Procedures>();
+        decisionGate=std::make_shared<DecisionGate>(this->options.decision);
         if(this->options.sessionHistoryEnabled)history=std::make_shared<SessionHistory>(this->options.sessionsDirectory,this->options.sessionHistory);
         if(this->options.fileCheckpointsEnabled)checkpoints=std::make_shared<FileCheckpoints>(QDir(this->options.sessionsDirectory).filePath("file-checkpoints"));
         if(!this->options.lsp.servers.isEmpty()){auto config=this->options.lsp;config.protectedPaths.append(this->options.sessionsDirectory);lsp=std::make_shared<Lsp>(std::move(config),this->policy);}
@@ -101,6 +104,7 @@ public:
     std::shared_ptr<ToolRegistry> registry;
     std::shared_ptr<const PermissionPolicy> policy;
     EngineOptions options;
+    std::shared_ptr<const DecisionGate> decisionGate;
     SessionStore store;
     InputQueue inputs;
     std::shared_ptr<TaskStore> tasks;
@@ -205,7 +209,15 @@ public:
         auto value=full?store.load(id):store.metadata(id);
         value.workingDirectory=executionContext({id,{},value.workingDirectory}).workingDirectory;return value;
     }
-    ToolContext permissionContext(ToolContext context) const {context=executionContext(std::move(context));return plans?plans->scope(std::move(context),*policy):context;}
+    ToolContext permissionContext(ToolContext context) const {
+        context=executionContext(std::move(context));
+        context.procedures=options.procedures;
+        context.decisionGate=decisionGate;
+        if(context.procedureOwnerSessionId.isEmpty())context.procedureOwnerSessionId=options.procedureOwnerSessionId.isEmpty()?context.sessionId:options.procedureOwnerSessionId;
+        if(context.procedureId.isEmpty())context.procedureId=options.parentProcedureId;
+        context.procedureAgentId=options.procedureAgentId;
+        return plans?plans->scope(std::move(context),*policy):context;
+    }
     QStringList contextPaths(const Session& session) const {
         auto paths=projectContextPaths(session.messages);if(!worktrees)return paths;
         const auto prefix=session.workingDirectory+'/';
@@ -380,6 +392,7 @@ public:
         auto activeAllowedTools = request.allowedTools;
         RunResult result; result.runId = runId; result.sessionId = request.sessionId;
         std::unique_ptr<SessionLease> lease;
+        std::unique_ptr<ProcedureScope> runProcedure;
         std::mutex eventsMutex;
         EventCallback send = [&](const Event& event) {
             if (!callback) return;
@@ -513,10 +526,20 @@ public:
         };
         try {
             token.throwIfCancelled();
+            auto runContext=permissionContext({request.sessionId,runId,store.metadata(request.sessionId).workingDirectory, {},runToken});
+            runProcedure=std::make_unique<ProcedureScope>("run",runContext,QJsonObject{{"prompt",request.prompt},{"max_turns",request.maxTurns}},send);
             lease = store.acquire(request.sessionId);
             lease->setExecutionDirectory(executionContext({request.sessionId,runId,lease->session().workingDirectory,{},token}).workingDirectory);
             repair();
             send({EventKind::Started, runId, request.sessionId, {}, {}, {}});
+            auto assessRun=[&](const QString& goal) {
+                if(compactOnly||!decisionGate->options().enabled)return;
+                auto scope=permissionContext({request.sessionId,runId,lease->session().workingDirectory,{},token});scope.procedureId=runProcedure->id();
+                DecisionRequest candidate{"run",request.sessionId.toStdString(),runId.toStdString(),scope.procedureAgentId.toStdString(),goal.toStdString(),scope.workingDirectory.toStdString(),{{"run","run","Initial or continued agent inference",goal.toStdString()}}};
+                result.decision=toJson(detail::decide(candidate,scope,send));
+                if(result.decision["action"]=="defer")throw detail::DeferredDecision{result.decision};
+            };
+            if(!queuedOnly)assessRun(request.skill.isEmpty()?request.prompt:request.skill+" "+request.skillArguments+"\n"+request.prompt);
             bool activation=false;QString startSource;
             {
                 std::lock_guard lock(mutex);activation=!startedSessions.contains(request.sessionId);
@@ -527,6 +550,8 @@ public:
             auto paths = contextPaths(lease->session()); paths.append(request.contextPaths); paths.removeDuplicates();
             const auto initial = loadProjectContext(lease->session().workingDirectory, paths, options.projectContext, token);
             Message user{{}, MessageRole::User, request.prompt};
+            auto inputContext=permissionContext({request.sessionId,runId,lease->session().workingDirectory,{},token});inputContext.procedureId=runProcedure->id();
+            ProcedureScope inputProcedure("input",inputContext,{{"prompt",request.prompt},{"skill",request.skill}},send);
             user.metadata = request.promptMetadata;
             bool forkedSkill = false;
             if (!request.skill.isEmpty()) {
@@ -544,6 +569,10 @@ public:
             if(!request.skill.isEmpty())submittedPrompt=(request.skill.startsWith('/')?request.skill:"/"+request.skill)
                 +(request.skillArguments.isEmpty()?QString():" "+request.skillArguments)+(request.prompt.isEmpty()?QString():"\n\n"+request.prompt);
             if(!compactOnly&&!queuedOnly&&request.userPrompt)user=preparePrompt(std::move(user),submittedPrompt,{{"input_source","direct"}});
+            const auto preparedInput=inputProcedure.returned({{"text",user.text}},[limit=options.maxInputCharacters](const QJsonObject& value){
+                if(value.size()!=1||!value["text"].isString()||value["text"].toString().size()>limit)throw Error(ErrorCode::InvalidArgument,"Invalid replacement input return");
+            });user.text=preparedInput["text"].toString();
+            if(!queuedOnly&&user.text!=request.prompt)assessRun(user.text);
             if (forkedSkill) {
                 // A direct command returns its child result without a parent model turn.
                 // Queued input remains pending for the next parent run.
@@ -578,6 +607,12 @@ public:
                     if (queuedOnly && turn == 1 && !delivered) throw Error(ErrorCode::NotFound, "No queued input is available");
                 }
                 token.throwIfCancelled();
+                if(!compactOnly) {
+                    QString goal;
+                    for(auto it=lease->session().messages.crbegin();it!=lease->session().messages.crend();++it)if(it->role==MessageRole::User){goal=it->text;break;}
+                    // Recheck changed evidence/value before each further model turn.
+                    assessRun(goal);
+                }
                 if(!compactOnly&&recall&&recall->enabled()) {
                     if(memoryQueryId!=startedMemoryQuery) {
                         discardRecall();startedMemoryQuery=memoryQueryId;
@@ -596,6 +631,9 @@ public:
                 if (before.block) throw Error(ErrorCode::InvalidArgument, "Before-model hook blocked execution: " + before.feedback);
                 if (!before.feedback.isEmpty()) append({{}, MessageRole::User, before.feedback});
                 const auto& session = lease->session();
+                auto stepContext=permissionContext({session.id,runId,session.workingDirectory,lease->artifactsDirectory(),token});
+                stepContext.procedureId=runProcedure->id();stepContext.procedureTurn=turn;
+                ProcedureScope contextProcedure("context",stepContext,{{"context_revision",qint64(session.compactions.size())}},send);
                 const auto turnRegistry = registry->snapshot();
                 if(memory) {memory->bindWorkspaceTools(*turnRegistry);turnRegistry->add(memory->forgetTool());}
                 for (const auto& tool : additionalTools()) turnRegistry->add(tool);
@@ -648,7 +686,11 @@ public:
                     send({EventKind::InstructionsLoaded, runId, session.id, {}, {}, context.toJson(false)});
                 }
                 auto modelRequest = base; modelRequest.messages.append(modelMessages(session));
+                QJsonArray visibleTools;for(const auto& definition:modelRequest.tools)visibleTools.append(definition.name);
+                contextProcedure.returned({{"model",modelRequest.model},{"context_id",modelRequest.contextId},{"message_count",modelRequest.messages.size()},
+                    {"tools",visibleTools},{"instruction_fingerprint",context.fingerprint}});
                 if (compactOnly || detail::needsCompaction(*model, modelRequest, options.compaction, token)) {
+                    ProcedureScope compactProcedure("compaction",stepContext,{{"trigger",compactOnly?"manual":"automatic"}},send);
                     if (!hasTranscriptTool) { detail::addTranscriptTool(*turnRegistry, session); base.tools = turnRegistry->definitions(); }
                     send({EventKind::CompactionStarted, runId, session.id, {}, {}, {{"trigger", compactOnly ? "manual" : "automatic"}}});
                     auto beforeCompact = hooks(HookKind::BeforeCompact, compactInstructions);
@@ -658,6 +700,7 @@ public:
                         result.usage, [&](const QJsonObject& progress) { send({EventKind::CompactionProgress, runId, session.id, {}, {}, progress}); });
                     auto afterCompact = hooks(HookKind::AfterCompact, checkpoint.summary);
                     if (afterCompact.block) throw Error(ErrorCode::InvalidArgument, "After-compact hook rejected compaction: " + afterCompact.feedback);
+                    compactProcedure.returned(toJson(checkpoint));
                     token.throwIfCancelled(); lease->compact(checkpoint); ++result.usage.compactions;
                     send({EventKind::Compacted, runId, session.id, {}, {}, toJson(checkpoint)});
                     startSession("compact");
@@ -667,6 +710,7 @@ public:
                 const auto permissionRequests=request.permissionRequests?request.permissionRequests:options.permissionRequests;
                 const ToolRunner runner(turnRegistry, policy, {options.hooks, options.permission, 24000, options.permissionResponse, options.permissionUpdates, permissionRequests,model,session.model,detail::hookAgentExecutor(options,tasks),plans});
                 qsizetype streamed = 0;
+                ProcedureScope modelProcedure("model",stepContext,{{"model",modelRequest.model},{"message_count",modelRequest.messages.size()},{"tool_count",modelRequest.tools.size()}},send);
                 auto reply = model->generate(modelRequest, token, [&](const QString& text) {
                     token.throwIfCancelled(); streamed += text.size();
                     if (streamed > options.maxInputCharacters) throw Error(ErrorCode::ResourceLimit, "Agent model output exceeds limit");
@@ -681,6 +725,12 @@ public:
                 if (reply.toolCalls.size() > options.maxToolCallsPerTurn) throw Error(ErrorCode::ResourceLimit, "Too many agent tool calls");
                 if (reply.text.size() > options.maxInputCharacters) throw Error(ErrorCode::ResourceLimit, "Agent reply exceeds limit");
                 for (auto& call : reply.toolCalls) if (call.id.isEmpty()) call.id = uuid();
+                QJsonArray returnedCalls;for(const auto& call:reply.toolCalls)returnedCalls.append(toJson(call));
+                const auto effectiveReply=modelProcedure.returned({{"text",reply.text},{"tool_calls",returnedCalls}},
+                    [limit=options.maxInputCharacters,calls=options.maxToolCallsPerTurn](const QJsonObject& value){
+                        const auto parsed=replyFromJson(value);if(parsed.text.size()>limit||parsed.toolCalls.size()>calls)throw Error(ErrorCode::ResourceLimit,"Replacement model return exceeds limits");
+                    });
+                const auto observedUsage=reply.usage;reply=replyFromJson(effectiveReply);reply.usage=observedUsage;
                 auto after = hooks(HookKind::AfterModel, reply.text);
                 if (after.block) {
                     append({{}, MessageRole::User, after.feedback.isEmpty() ? QStringLiteral("The response was blocked by a hook; correct it.") : after.feedback});
@@ -715,11 +765,17 @@ public:
                         // A completed answer opens an end-of-turn boundary for later input.
                         allowLater = true; continue;
                     }
-                    result.text = reply.text; result.status = RunStatus::Completed; break;
+                    ProcedureScope completionProcedure("completion",stepContext,{},send);
+                    result.text=completionProcedure.returned({{"text",reply.text}},[limit=options.maxInputCharacters](const QJsonObject& value){
+                        if(value.size()!=1||!value["text"].isString()||value["text"].toString().size()>limit)throw Error(ErrorCode::InvalidArgument,"Invalid replacement completion return");
+                    })["text"].toString();
+                    if(result.text!=reply.text){Message replaced{{},MessageRole::Assistant,result.text};replaced.metadata={{"iilocal.procedure",QJsonObject{{"procedure_id",completionProcedure.id()},{"kind","completion"},{"replaced",true}}}};append(std::move(replaced));}
+                    result.status = RunStatus::Completed; break;
                 }
                 ToolContext toolBase{session.id, runId, session.workingDirectory, lease->artifactsDirectory(), token, {}, quint64(session.compactions.size()), std::make_shared<Session>(session)};
                 toolBase=executionContext(std::move(toolBase));
                 toolBase.fileCheckpointId=fileCheckpointId;
+                toolBase.procedureId=runProcedure->id();toolBase.procedureTurn=turn;
                 toolBase.permissionRequests=permissionRequests;
                 if(!options.hooks.isEmpty())toolBase.asyncHooks=hookScope(session.id);
                 toolBase.hookCancellation=runToken;
@@ -736,7 +792,8 @@ public:
                     return output;
                 };
                 auto commitTool = [&](const ToolCall& call, ToolResult output) {
-                    const bool completed=!output.isError&&turnRegistry->get(call.name).completesRun;
+                    const bool deferred=output.metadata["iilocal.decision_deferred"].toBool();
+                    const bool completed=!deferred&&!output.isError&&turnRegistry->get(call.name).completesRun;
                     const auto completedText=output.text;
                     auto grants = activeAllowedTools;
                     bool activate = false;
@@ -760,7 +817,24 @@ public:
                         }
                     }
                     if(completed){result.status=RunStatus::Completed;result.text=completedText;}
+                    if(deferred){result.status=RunStatus::Deferred;result.decision=output.metadata["iilocal.decision"].toObject();result.text=completedText;}
                 };
+                bool deferredBatch=false;
+                if(decisionGate->options().enabled) {
+                    auto decisionContext=permissionContext(toolBase);DecisionRequest proposed{"tool_batch",session.id.toStdString(),runId.toStdString(),decisionContext.procedureAgentId.toStdString(),request.prompt.toStdString(),session.workingDirectory.toStdString(),{}};
+                    for(const auto& call:reply.toolCalls)if(!detail::decisionControl(turnRegistry->get(call.name).definition))proposed.candidates.push_back(detail::decisionCandidate(call));
+                    if(!proposed.candidates.empty()) {
+                    const auto report=detail::decide(proposed,decisionContext,send);result.decision=toJson(report);
+                    QList<ToolCall> selected;
+                    for(const auto& call:reply.toolCalls) {
+                        if(call.id.toStdString()==report.selectedCandidateId||detail::decisionControl(turnRegistry->get(call.name).definition))selected.append(call);
+                        else append({{},MessageRole::Tool,"Not executed: economic decision deferred this candidate.",{},call.id,false,{{"not_executed",true},{"decision",result.decision}}});
+                    }
+                    if(selected.isEmpty())throw detail::DeferredDecision{result.decision};
+                    for(const auto& call:selected)if(call.id.toStdString()==report.selectedCandidateId){auto receipt=std::make_shared<DecisionReceipt>();receipt->sessionId=session.id.toStdString();receipt->runId=runId.toStdString();receipt->candidate=detail::decisionCandidate(call);receipt->report=report;toolBase.decisionReceipt=std::move(receipt);break;}
+                    deferredBatch=!report.execute();reply.toolCalls=std::move(selected);
+                    }
+                }
                 for (qsizetype i = 0; i < reply.toolCalls.size();) {
                     token.throwIfCancelled();
                     qsizetype end = i + 1;
@@ -785,10 +859,11 @@ public:
                             throw;
                         }
                     }
-                    if(result.status==RunStatus::Completed)break;
+                    if(result.status==RunStatus::Completed||result.status==RunStatus::Deferred)break;
                     i = end;
                 }
-                if(result.status==RunStatus::Completed) {
+                if(deferredBatch&&result.status!=RunStatus::Completed){result.status=RunStatus::Deferred;result.text="Execution deferred by the host probability/value policy.";}
+                if(result.status==RunStatus::Completed||result.status==RunStatus::Deferred) {
                     for(const auto& pending:pendingToolCalls(lease->session().messages))
                         append({{},MessageRole::Tool,"Not executed: a successful completion tool ended this run.",{},pending.id,true,{{"not_executed",true}}});
                     break;
@@ -801,13 +876,18 @@ public:
                     send({EventKind::Interrupted, runId, request.sessionId, {}, "Superseded by urgent queued input", {}});
                 }
             }
-            if (!forkedSkill && result.status != RunStatus::Completed) result.status = RunStatus::TurnLimit;
-        } catch (const Error& error) { failure(result, error); }
+            if (!forkedSkill && result.status != RunStatus::Completed && result.status!=RunStatus::Deferred) result.status = RunStatus::TurnLimit;
+        } catch (const detail::DeferredDecision& deferred) {result.status=RunStatus::Deferred;result.decision=deferred.report;result.text="Execution deferred by the host probability/value policy.";result.errorCode=ErrorCode::None;result.errorMessage.clear();}
+        catch (const Error& error) { failure(result, error); }
         catch (const std::exception& error) { failure(result, Error(ErrorCode::RuntimeFailure, QString::fromUtf8(error.what()))); }
         catch (...) { failure(result, Error(ErrorCode::RuntimeFailure, "Unknown agent failure")); }
         try { discardRecall();repair(); }
         catch (const std::exception& error) { failure(result, Error(ErrorCode::StorageFailure, "Transcript recovery failed: " + QString::fromUtf8(error.what()))); }
         lease.reset();
+        if(runProcedure){
+            if(result.status==RunStatus::Completed||result.status==RunStatus::TurnLimit||result.status==RunStatus::Deferred){try{runProcedure->returned(toJson(result));}catch(const Error& error){failure(result,error);}}
+            else runProcedure->fail(result.errorMessage,result.status==RunStatus::Cancelled,result.errorCode);
+        }
         {
             std::lock_guard lock(mutex); active.erase(runId); busySessions.remove(request.sessionId);changed.notify_all();
         }
@@ -888,8 +968,15 @@ QJsonObject Engine::worktreeStatus(const QString& id,const CancellationToken& to
     auto value=d->worktrees->status({id,{},session.workingDirectory,{},operation.token});value["enabled"]=true;return value;
 }
 std::shared_ptr<void> Engine::bindWorkspaceContext(ToolContext& context) const {return bindWorkspaceContext(context,false);}
+void Engine::bindDecisionContext(ToolContext& context,const QString& owner) const {
+    const auto id=owner.isEmpty()?context.sessionId:owner;(void)d->store.metadata(id);
+    context.decisionGate=d->decisionGate;context.procedures=d->options.procedures;
+    context.procedureOwnerSessionId=d->options.procedureOwnerSessionId.isEmpty()?id:d->options.procedureOwnerSessionId;
+    context.procedureAgentId=d->options.procedureAgentId;
+}
 std::shared_ptr<void> Engine::bindWorkspaceContext(ToolContext& context,bool leaseSession) const {
     (void)d->store.metadata(context.sessionId);
+    context=d->permissionContext(std::move(context));
     context.artifactsDirectory=QDir(QFileInfo(d->options.sessionsDirectory).canonicalFilePath()).filePath(context.sessionId+"/artifacts");
     if(!d->worktrees&&!leaseSession)return {};
     struct Scope {
@@ -1330,6 +1417,10 @@ ToolResult Engine::runShellTool(const QString& id, const QString& name, const QJ
     return runner.run({uuid(), name, args}, d->permissionContext(context), callback);
 }
 Session Engine::sessionMetadata(const QString& id) const { return d->store.metadata(id); }
+QJsonObject Engine::procedures(const QString& id,qint64 after,int limit)const {
+    (void)sessionMetadata(id);return d->options.procedures->list(d->options.procedureOwnerSessionId.isEmpty()?id:d->options.procedureOwnerSessionId,after,limit);
+}
+QJsonObject Engine::respondProcedure(const QString& id,const QJsonObject& response,const QString& owner)const {return d->options.procedures->respond(id,response,owner);}
 QJsonObject Engine::permissions(const QString& id,const CancellationToken& token) const {
     token.throwIfCancelled();
     ToolContext context{id,{},d->store.metadata(id).workingDirectory,{},token};

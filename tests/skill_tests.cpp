@@ -48,7 +48,7 @@ private slots:
         QTemporaryDir d; put(skillPath(d), "---\ndescription: Inspect\n---\nORIGINAL INSTRUCTIONS"); put(d.filePath("input.txt"), "input");
         auto model = std::make_shared<Model>(); model->budgets = true;
         auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, d.path());
-        a::EngineOptions o; o.sessionsDirectory = d.filePath("sessions"); o.compaction.automatic = false; o.compaction.keepRecentGroups = 1;
+        a::EngineOptions o{.decision={.enabled=false}}; o.sessionsDirectory = d.filePath("sessions"); o.compaction.automatic = false; o.compaction.keepRecentGroups = 1;
         a::Engine engine(model, registry, std::make_shared<a::RulePolicy>(), o); const auto s = engine.createSession("fixture", d.path());
         QCOMPARE(engine.run({s.id, "invoke"}).result.get().status, a::RunStatus::Completed);
         QCOMPARE(engine.run({s.id, "follow up one"}).result.get().status, a::RunStatus::Completed);
@@ -74,7 +74,7 @@ private slots:
     void engineInjectsAfterAllResultsAndPreservesSnapshot() {
         QTemporaryDir d; put(skillPath(d), "---\ndescription: Inspect files\n---\nORIGINAL $0"); put(d.filePath("input.txt"), "input");
         auto model = std::make_shared<Model>(); auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, d.path());
-        a::EngineOptions o; o.sessionsDirectory = d.filePath("sessions"); o.projectContext.enabled = false; o.compaction.automatic = false;
+        a::EngineOptions o{.decision={.enabled=false}}; o.sessionsDirectory = d.filePath("sessions"); o.projectContext.enabled = false; o.compaction.automatic = false;
         auto policy = std::make_shared<a::RulePolicy>(); a::Engine engine(model, registry, policy, o);
         auto s = engine.createSession("fixture", d.path(), "host policy");
         const auto result = engine.run({s.id, "invoke"}).result.get();
@@ -97,7 +97,7 @@ private slots:
     void directInvocationAndModelPermissionsRemainSeparate() {
         QTemporaryDir d; put(skillPath(d), "---\ndescription: Manual\ndisable-model-invocation: true\n---\nMANUAL $ARGUMENTS");
         auto model = std::make_shared<Model>(); auto registry = std::make_shared<a::ToolRegistry>();
-        a::EngineOptions o; o.sessionsDirectory = d.filePath("sessions");
+        a::EngineOptions o{.decision={.enabled=false}}; o.sessionsDirectory = d.filePath("sessions");
         auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Default, QList<a::PermissionRule>{{"Skill", a::PermissionBehavior::Deny}});
         a::Engine engine(model, registry, policy, o); const auto s = engine.createSession("fixture", d.path());
         a::RunRequest request{s.id}; request.skill = "inspect"; request.skillArguments = "manual args";
@@ -115,7 +115,7 @@ private slots:
     void committedToolPromptIsRecoveredOnceAfterObserverFailure() {
         QTemporaryDir d; put(skillPath(d), "---\ndescription: Inspect\n---\nKEEP THIS BODY"); put(d.filePath("input.txt"), "input");
         auto model = std::make_shared<Model>(); auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, d.path());
-        a::EngineOptions o; o.sessionsDirectory = d.filePath("sessions"); o.compaction.automatic = false;
+        a::EngineOptions o{.decision={.enabled=false}}; o.sessionsDirectory = d.filePath("sessions"); o.compaction.automatic = false;
         auto policy = std::make_shared<a::RulePolicy>(); a::Engine engine(model, registry, policy, o);
         const auto s = engine.createSession("fixture", d.path());
         const auto r = engine.run({s.id, "invoke"}, [](const a::Event& e) {

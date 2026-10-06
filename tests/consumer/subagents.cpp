@@ -14,7 +14,7 @@ int main(int argc,char** argv){
     try {
         QTemporaryDir root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
         auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
-        a::EngineOptions eo;eo.sessionsDirectory=root.filePath("parents");
+        a::EngineOptions eo{.decision={.enabled=false}};eo.sessionsDirectory=root.filePath("parents");
         a::SubagentOptions so;so.workingDirectory=workspace;so.stateDirectory=root.filePath("children");
         so.profiles.enabled=true;so.profiles.projectBoundary=workspace;
         auto children=std::make_shared<a::Subagents>(model,registry,policy,eo,so);a::Subagents::attach(eo,children);

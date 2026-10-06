@@ -41,7 +41,7 @@ private slots:
         QTemporaryDir root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
         class Model final:public a::Model { a::ModelReply generate(const a::ModelRequest&,const CancellationToken&,const TextCallback&) override{return {"done",{}};} };
         auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
-        a::EngineOptions eo;eo.sessionsDirectory=root.filePath("parents");eo.projectContext.enabled=false;eo.compaction.automatic=false;
+        a::EngineOptions eo{.decision={.enabled=false}};eo.sessionsDirectory=root.filePath("parents");eo.projectContext.enabled=false;eo.compaction.automatic=false;
         a::SubagentOptions so;so.workingDirectory=workspace;so.stateDirectory=root.filePath("children");so.profiles.enabled=true;so.profiles.projectBoundary=workspace;
         auto agents=std::make_shared<a::Subagents>(model,registry,policy,eo,so);a::Subagents::attach(eo,agents);a::Engine engine(model,registry,policy,eo);const auto p=engine.createSession("local",workspace);
         const auto path=workspace+"/.claude/agents/review.md";put(path,profile("missing","skills: [missing]\n"));
@@ -66,7 +66,7 @@ private slots:
         registry->add({{"Read","read",{{"type","object"}}, {},true},[](const auto&,const auto&){return a::ToolResult{"observed"};}});
         registry->add({{"Write","write",{{"type","object"}}},[](const auto&,const auto&){throw std::runtime_error("write escaped");return a::ToolResult{};}});
         auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
-        a::EngineOptions eo;eo.sessionsDirectory=root.filePath("parents");eo.projectContext.enabled=false;eo.compaction.automatic=false;
+        a::EngineOptions eo{.decision={.enabled=false}};eo.sessionsDirectory=root.filePath("parents");eo.projectContext.enabled=false;eo.compaction.automatic=false;
         a::SubagentOptions so;so.workingDirectory=workspace;so.stateDirectory=root.filePath("children");so.profiles.enabled=true;so.profiles.projectBoundary=workspace;
         const auto path=workspace+"/.claude/agents/review.md";
         put(path,profile("original","tools: Read\ninitialPrompt: INITIAL_ONLY_ONCE\n"));
@@ -96,7 +96,7 @@ private slots:
         class Model final:public a::Model { public:std::function<a::ModelReply(const a::ModelRequest&)> next;
             a::ModelReply generate(const a::ModelRequest& r,const CancellationToken&,const TextCallback&) override{return next(r);} };
         auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
-        a::EngineOptions eo;eo.sessionsDirectory=root.filePath("parents");eo.projectContext.enabled=false;eo.compaction.automatic=false;
+        a::EngineOptions eo{.decision={.enabled=false}};eo.sessionsDirectory=root.filePath("parents");eo.projectContext.enabled=false;eo.compaction.automatic=false;
         a::SubagentOptions so;so.workingDirectory=workspace;so.stateDirectory=root.filePath("children");so.profiles.enabled=true;so.profiles.projectBoundary=workspace;so.modelAliases={{"small","authorized-local"}};
         auto agents=std::make_shared<a::Subagents>(model,registry,policy,eo,so);a::Subagents::attach(eo,agents);
         a::Engine engine(model,registry,policy,eo);const auto parent=engine.createSession("local",workspace);

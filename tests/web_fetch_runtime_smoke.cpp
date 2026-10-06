@@ -38,7 +38,7 @@ int main(int argc,char** argv){QCoreApplication app(argc,argv);if(argc!=3)return
         const auto marker="WEB_"+QUuid::createUuid().toString(QUuid::WithoutBraces).remove('-').left(12);Endpoint endpoint(marker);
         const auto work=root.filePath("work");QDir().mkpath(work);auto model=std::make_shared<a::ServiceModel>(service);auto registry=std::make_shared<a::ToolRegistry>();
         auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Default,QList<a::PermissionRule>{{"WebFetch(domain:127.0.0.1)",a::PermissionBehavior::Allow}});
-        a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");options.webFetchEnabled=true;options.webFetch.deferred=false;
+        a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");options.webFetchEnabled=true;options.webFetch.deferred=false;
         options.webFetch.privateOrigins={endpoint.origin()};options.webFetch.maxTokens=512;options.webFetch.summaryTimeoutMs=120000;
         options.skills.enabled=false;options.projectContext.enabled=false;options.compaction.automatic=false;options.toolSearch.enabled=false;
         QJsonArray tools;options.hooks.append([&](const a::HookInput& input,const auto&){if(input.kind==a::HookKind::AfterTool){

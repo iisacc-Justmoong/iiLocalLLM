@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+from legacy_decision import legacy_decision_command
 import subprocess
 import tempfile
 import time
@@ -72,7 +73,7 @@ def main():
             command += ["--agent-allow", "Skill(writer)"]
         started = time.monotonic()
         with (root / "daemon.log").open("w+") as log:
-            process = subprocess.Popen(command, stdout=log, stderr=log, env=env)
+            process = subprocess.Popen(legacy_decision_command(command), stdout=log, stderr=log, env=env)
             try:
                 while True:
                     output = (root / "daemon.log").read_text(errors="replace")

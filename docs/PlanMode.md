@@ -13,7 +13,7 @@
 | `EnterPlanMode {}` | `planning`으로 전환하고 실제 `plan_file_path`를 반환한다. 이미 planning이면 같은 계획과 revision을 유지한다. |
 | `Read`·`Write`·`Edit` | 해당 세션의 정확한 계획 파일에 접근한다. 기존 파일은 먼저 완전히 읽어야 하며 변경 감지·백업 계약을 유지한다. |
 | `ExitPlanMode {allowedPrompts?}` | 디스크의 내용·존재 여부·revision·SHA-256을 고정하여 호스트 검토에 전달한다. |
-| Allow | 검토한 상태와 파일이 같은지 다시 확인한 뒤 `approved`를 저장한다. 호스트의 수정 내용이 있으면 파일에도 원자적으로 반영한다. |
+|| 검토한 상태와 파일이 같은지 다시 확인한 뒤 `approved`를 저장한다. 호스트의 수정 내용이 있으면 파일에도 원자적으로 반영한다. |
 | Deny·기한 만료·취소 | planning을 유지한다. interrupt는 기존 권한 응답 계약에 따라 실행도 취소한다. |
 | 승인 뒤 재진입 | revision을 증가시키고 기존 파일을 다시 검토할 수 있게 한다. |
 
@@ -75,7 +75,7 @@ options.permissionResponse = reviewWithHost;
 | CLI | `iillm ... rpc agent.plan.get parameters.json`; 변경도 동일한 generic RPC 형식 |
 | MCP 모델 도구 | `EnterPlanMode`, `ExitPlanMode`, `iiLocalLLM.agent.plan.get`; 소유 session_id를 입력받지 않음 |
 | MCP 제어 | `iisacc/plan/status`; 별도 제어 스트림 용량을 사용하며 도구 목록에는 없음 |
-| 기능 인식 | API `plan_tools_enabled`, MCP experimental `iisacc/planMode` (`iisacc.plan/1`) |
+| 기능 인식 |API `plan_tools_enabled`, MCP 실험적 `iisacc/planMode` (`iisacc.plan/1`)|
 | 검토 응답 | API `agent.permissions.pending/respond`, MCP `iisacc/permissions/pending/respond` |
 
 계획 상태 조회는 진행 중인 모델·검토 요청의 transcript 잠금을 기다리지 않는다. API에는 별도 제어 응답 용량과 입력 제어 작업 풀이 있으며 MCP raw status도 예약 제어 처리기를 사용한다. 0.34는 일반/제어/초과 요청을 처리할 스레드를 처음부터 생성한다. 동적으로 늘어나는 cpp-httplib 풀이 아직 idle로 집계된 마지막 스레드에 긴 작업과 제어 요청을 연달아 넣으면, 제어 요청이 긴 작업 뒤에 남는 경합을 실제 검사에서 재현하여 수정했다. 최대 응답·큐·스트림 용량 자체는 기존 값이다.

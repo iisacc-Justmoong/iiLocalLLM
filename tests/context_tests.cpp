@@ -80,7 +80,7 @@ private slots:
         QVERIFY(QFile::link(dir.filePath("import.md"), dir.filePath("alias.md")));
         QCOMPARE(names(a::loadProjectContext(dir.path())), (QStringList{"CLAUDE.md", "import.md"}));
         auto model = std::make_shared<ObservingModel>(); auto registry = std::make_shared<a::ToolRegistry>();
-        a::EngineOptions options; options.sessionsDirectory = dir.filePath("sessions");
+        a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = dir.filePath("sessions");
         a::Engine engine(model, registry, std::make_shared<a::RulePolicy>(), options);
         const auto session = engine.createSession("fixture", dir.path());
         a::RunRequest request{session.id, "bad context"}; request.contextPaths = {"../outside"};
@@ -102,7 +102,7 @@ private slots:
         auto model = std::make_shared<ObservingModel>(); model->changedFile = dir.filePath("AGENTS.md");
         auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, dir.path());
         auto policy = std::make_shared<a::RulePolicy>();
-        a::EngineOptions options; options.sessionsDirectory = dir.filePath("sessions");
+        a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = dir.filePath("sessions");
         a::Engine engine(model, registry, policy, options);
         const auto session = engine.createSession("fixture", dir.path(), "Host policy");
         const auto run = engine.run({session.id, "Read the source"}).result.get();

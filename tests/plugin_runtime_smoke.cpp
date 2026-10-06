@@ -31,7 +31,7 @@ int main(int argc,char** argv){
         put(package+"/.claude-plugin/plugin.json",QJsonDocument(manifest).toJson());
         put(package+"/skills/inspect/SKILL.md","---\ndescription: Inspect the plugin peer\n---\nCall mcp__plugin_runtime_peer__echo with an empty object. Return only the exact secret field from its observed result. Do not guess or invent it.\n");
         a::PluginStore store({root.filePath("plugins")});store.install(package);const auto snapshot=store.snapshot();
-        a::EngineOptions e;e.sessionsDirectory=root.filePath("sessions");e.compaction.automatic=false;e.projectContext.enabled=false;e.toolSearch.enabled=false;e.maxToolCallsPerTurn=1;
+        a::EngineOptions e{.decision={.enabled=false}};e.sessionsDirectory=root.filePath("sessions");e.compaction.automatic=false;e.projectContext.enabled=false;e.toolSearch.enabled=false;e.maxToolCallsPerTurn=1;
         a::AgentProfileOptions profiles;profiles.includeProject=false;profiles.includeBuiltins=false;
         a::McpConnectionOptions m;m.workingDirectory=workspace;m.refreshIntervalMs=0;m.deferTools=false;
         a::CommandHookOptions hooks;hooks.workingDirectory=workspace;a::PluginRuntime::attach(e,profiles,m,std::make_shared<a::PluginRuntime>(snapshot,hooks));

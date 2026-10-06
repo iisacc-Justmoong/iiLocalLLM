@@ -1,20 +1,11 @@
-# libgit2 wildmatch adaptation
+<a id="libgit2-wildmatch-adaptation"></a>
 
-The source is from libgit2 v1.9.7. `source.json` records the **upstream**, unmodified
-file hashes and URLs. `COPYING` is unchanged: GNU GPL v2 with the libgit2 Linking
-Exception. This does not make the source MIT licensed.
+# libgit2 와일드매치 적응
 
-Local changes to `wildmatch.c` and `wildmatch.h` rename the private entry point to
-`iilocal_wildmatch`, accept a shared operation budget and cancellation callback,
-limit recursion to 128, and propagate exhaustion as `WM_ABORT_LIMIT`, including
-from the optional `**/` branch. The C++ caller rejects the decision on exhaustion;
-it never interprets exhaustion as a nonmatching deny. The standard-header adapter
-`git2_util.h` avoids linking libgit2 or consulting ambient repository ignore files.
+소스는 libgit2 v1.9.7에서 왔습니다. `source.json`는 **상위 공급 측**와 수정되지 않은 파일 해시 및 URL을 기록합니다. `COPYING`는 변경되지 않았습니다: GNU GPL v2와 libgit2 연결 예외가 있습니다. 이것은 소스 MIT를 라이선스로 만들지 않습니다.
 
-The C++ adapter lowercases UTF-16 input and maps up to 128 distinct non-ASCII code
-units to a sorted byte alphabet. This preserves wildcard character units/ranges
-without changing wildmatch's byte parser. Inputs with a larger alphabet fail
-explicitly. Unicode lowercase behavior follows Qt, not JavaScript RegExp's exact
-Unicode case-folding rules. This difference is exposed in the settings documentation.
+`wildmatch.c` 와 `wildmatch.h` 로의 로컬 변경은 개인 엔트리 포인트를 `iilocal_wildmatch` 로 이름 변경하고, 공유 작업 예산과 취소 콜백을 허용하며, 재귀를 128로 제한하고, `WM_ABORT_LIMIT` 로 소진을 전파합니다. 이는 선택 사항인 `**/` 분기에서 비롯된 것까지 포함됩니다. C++ 호출자는 소진에 대한 결정을 거부하며, 소진을 불일치 거부로 해석하지 않습니다. 표준 헤더 어댑터 `git2_util.h` 는 libgit2 와 연결을 피하거나 환경 리포지토리 무시 파일을 참조하지 않습니다.
 
-Rebuild this private object with a C11 compiler and `-fPIC -fvisibility=hidden` on Unix. `git2_util.h` supplies only standard C headers. The exact integration and install commands are in `cmake/PermissionParsers.cmake`.
+C++ 어댑터는 UTF-16 입력을 소문자로 바꾸고 최대 128개의 서로 다른 비ASCII 코드 단위를 정렬된 바이트 알파벳에 매핑한다. 이는 wildmatch의 바이트 파서를 바꾸지 않고 와일드카드 문자 단위/범위를 보존한다. 더 큰 알파벳을 가진 입력은 명시적으로 실패한다. Unicode 소문자화 동작은 JavaScript RegExp의 정확한 Unicode 대소문자 접기 규칙이 아니라 Qt를 따른다. 이 차이는 설정 문서에 명시한다.
+
+Unix에서 C11 컴파일러와 `-fPIC -fvisibility=hidden`를 사용하여 이 개인 객체를 다시 빌드하세요. `git2_util.h`는 표준 C 헤더만 제공합니다. 정확한 통합 및 설치 명령은 `cmake/PermissionParsers.cmake`에 있습니다.

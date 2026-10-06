@@ -16,6 +16,7 @@
 #include <QtCore/QUuid>
 #include <QtCore/QDateTime>
 #include <QtCore/QSet>
+#include <QtCore/QCryptographicHash>
 #include <condition_variable>
 #include <map>
 #include <mutex>
@@ -33,7 +34,7 @@ bool nested(const QString& path,const QString& root) { return path==root || path
 bool terminal(const QString& s) { return s!="running" && s!="queued"; }
 QJsonObject publicState(const QJsonObject& state) {
     QJsonObject result;
-    for(const auto& key:{"agentId","agent_type","session_id","model","status","description","finished","retrieval_status","tool_uses","duration_ms","result","error","delivery_error","notification_id","notification_transfer_error","skill"})
+    for(const auto& key:{"agentId","agent_type","session_id","model","status","description","finished","retrieval_status","tool_uses","duration_ms","result","error","delivery_error","notification_id","notification_transfer_error","skill","reused","execution_phase","parent_run_id","parent_procedure_id"})
         if(state.contains(key))result.insert(key,state[key]);
     return result;
 }
@@ -115,7 +116,7 @@ public:
     std::mutex transferring;
     mutable std::condition_variable changed;
     bool stopping=false;
-    struct Job { QJsonObject state; CancellationToken token; bool done=true; bool awaitingForeground=false; RunResult outcome; };
+    struct Job { QJsonObject state; CancellationToken token; bool done=true; bool awaitingForeground=false; RunResult outcome; std::shared_ptr<Procedures> procedures; QString procedureOwner; };
     std::map<QString,std::shared_ptr<Job>> jobs;
     std::unique_ptr<detail::SessionOwners> owners;
     static QString rootPath(QString path,const QString& workspace) {
@@ -167,7 +168,7 @@ public:
             QJsonParseError error;const auto doc=QJsonDocument::fromJson(bytes,&error);auto state=doc.object();
             require(error.error==QJsonParseError::NoError && doc.isObject() && state["schema"]=="iisacc.subagent/1" && state["agentId"]==id
                 && state["parent_session_id"].isString() && state["session_id"].isString() && state["profile"].isObject()
-                && QStringList{"queued","running","completed","cancelled","failed","turn_limit","interrupted"}.contains(state["status"].toString()),"Corrupt subagent record",ErrorCode::ProtocolError);
+                && QStringList{"queued","running","completed","cancelled","failed","turn_limit","interrupted","deferred"}.contains(state["status"].toString()),"Corrupt subagent record",ErrorCode::ProtocolError);
             const auto child=children.metadata(state["session_id"].toString());require(child.model==state["model"] && child.workingDirectory==options.workingDirectory,"Subagent transcript identity mismatch",ErrorCode::ProtocolError);
             if(state.contains("notification_refs")) {
                 require(state["notification_refs"].isArray()&&state["notification_refs"].toArray().size()<=10000,"Invalid notification receipts",ErrorCode::ProtocolError);
@@ -294,6 +295,8 @@ public:
                 scoped->add(detail::protectPlanningFiles(source->get(t.name),planDirectory));
             }
             auto eo=parent;eo.sessionsDirectory=QDir(options.stateDirectory).filePath("sessions");eo.maxConcurrentRuns=1;eo.maxQueuedRuns=0;
+            eo.procedures=job->procedures;eo.procedureOwnerSessionId=job->procedureOwner;
+            eo.parentProcedureId=job->state["parent_procedure_id"].toString();eo.procedureAgentId=job->state["agentId"].toString();
             eo.sessionStartHooks=false;eo.maxAsyncHookWakeRuns=0;eo.planToolsEnabled=false;eo.userQuestionsEnabled=false;request.userPrompt=false;
             eo.memoryExtraction.enabled=false;
             eo.sessionHistoryEnabled=false;
@@ -366,6 +369,7 @@ public:
             // Serialize completion publication with trusted ownership transfer.
             // enqueue has no external callbacks; the queue never borrows us.
             std::lock_guard lock(mutex);job->state["status"]=enumName(result.status);job->state["result"]=toJson(result);
+            if(job->state.contains("request_key")&&!job->state.contains("initial_result")){job->state["initial_result"]=toJson(result);job->state["initial_status"]=enumName(result.status);}
                 job->state["duration_ms"]=double(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now()-started).count());
             const auto destination=owner(*job),id=job->state["agentId"].toString();write(*job);
             if(options.completionNotifications&&job->state["background"].toBool()) {
@@ -403,9 +407,9 @@ SkillForkResult Subagents::runSkill(const SkillForkRequest& request,const ToolCo
 }
 ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args,const SkillForkRequest* skill,RunResult* outcome) {
     context.cancellation.throwIfCancelled();
-    const QSet<QString> fields{"prompt","description","subagent_type","model","run_in_background","resume","fork_context","max_turns"};
+    const QSet<QString> fields{"prompt","description","subagent_type","model","run_in_background","resume","fork_context","max_turns","idempotency_key"};
     for(auto it=args.begin();it!=args.end();++it) require(fields.contains(it.key()),"Unknown subagent argument: "+it.key());
-    for(const auto& key:{"prompt","description","subagent_type","model","resume"}) if(args.contains(key)) require(args[key].isString(),"Subagent text field must be a string");
+    for(const auto& key:{"prompt","description","subagent_type","model","resume","idempotency_key"}) if(args.contains(key)) require(args[key].isString(),"Subagent text field must be a string");
     for(const auto& key:{"run_in_background","fork_context"}) if(args.contains(key)) require(args[key].isBool(),"Subagent flag must be boolean");
     require(!args["prompt"].toString().trimmed().isEmpty() && args["prompt"].toString().size()<=d->parent.maxInputCharacters
         && args["description"].toString().size()<=512,"Invalid subagent prompt or description");
@@ -415,6 +419,11 @@ ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args
     require(parent.model==context.sessionSnapshot->model && parent.workingDirectory==d->options.workingDirectory,"Subagent parent identity mismatch");
     bool background=args["run_in_background"].toBool();const bool fork=args["fork_context"].toBool();
     const auto resume=args["resume"].toString();std::shared_ptr<Impl::Job> job;SubagentDefinition definition;RunRequest request;QString id;
+    const auto explicitKey=args["idempotency_key"].toString();
+    require(!args.contains("idempotency_key")||(!explicitKey.isEmpty()&&explicitKey.size()<=128&&!explicitKey.contains(QChar::Null)&&resume.isEmpty()),"idempotency_key is a nonempty new-child key of at most 128 characters; resume starts another invocation");
+    auto identity=args;identity.remove("idempotency_key");
+    const auto fingerprint=QString::fromLatin1(QCryptographicHash::hash(QJsonDocument(identity).toJson(QJsonDocument::Compact),QCryptographicHash::Sha256).toHex());
+    const auto requestKey=!explicitKey.isEmpty()?"explicit:"+explicitKey:!skill&&d->options.deduplicateRequests&&resume.isEmpty()&&!context.runId.isEmpty()?"run:"+context.runId+":"+fingerprint:QString();
     const auto catalog=profiles(context.cancellation);
     const auto configureRequest=[&]{
         request.permissionRequests=context.permissionRequests;
@@ -437,6 +446,16 @@ ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args
     };
     {
         std::lock_guard lock(d->mutex);require(!d->stopping,"Subagent host is closing",ErrorCode::ShuttingDown);
+        if(!requestKey.isEmpty())for(const auto& [_,existing]:d->jobs)if(d->owner(*existing)==context.sessionId&&existing->state["request_key"]==requestKey){
+            require(existing->state["request_fingerprint"]==fingerprint,"Idempotency key already belongs to a different child request",ErrorCode::AlreadyExists);
+            auto reused=existing->state;const bool initialFinished=reused.contains("initial_result");
+            if(initialFinished){reused["result"]=reused["initial_result"];reused["status"]=reused["initial_status"];}
+            const bool finished=initialFinished||existing->done;reused["execution_phase"]=existing->state["status"];reused["finished"]=finished;
+            reused["retrieval_status"]=finished?"success":"pending";reused["reused"]=true;
+            if(!finished)reused["status"]="async_launched";
+            return {finished?"Existing child result reused. No new execution was started.\n"+reused["result"].toObject()["text"].toString():"Existing child execution is still pending. No new execution was started.",
+                publicState(reused),finished&&(reused["status"]!="completed"||reused.contains("delivery_error"))};
+        }
         int active=0;for(const auto& [_,item]:d->jobs)active+=!item->done;
         require(active<d->options.maxConcurrent,"Subagent concurrency limit reached",ErrorCode::QueueFull);
         if(!resume.isEmpty()) {
@@ -486,6 +505,7 @@ ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args
             job->state={{"schema","iisacc.subagent/1"},{"agentId","agent-"+uuid()},{"parent_session_id",parent.id},{"session_id",child.id},
                 {"agent_type",definition.name},{"profile",profileJson(definition)},{"model",model},{"fork_context",fork},{"created_at",QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs)}};
             if(skill)job->state["skill"]=skill->prompt.metadata["iilocal.skill"];
+            if(!requestKey.isEmpty()){job->state["request_key"]=requestKey;job->state["request_fingerprint"]=fingerprint;}
         }
         const auto model=job->state["model"].toString();require(d->modelAllowed(model,parent.model,definition),"Resumed subagent model is no longer authorized");
         Impl::Job accepted;accepted.state=job->state;
@@ -493,6 +513,7 @@ ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args
         if(!context.plansDirectory.isEmpty())accepted.state["parent_plans_directory"]=context.plansDirectory;
         accepted.state["status"]="queued";accepted.state["prompt"]=request.prompt;accepted.state["description"]=args["description"].toString(job->state["description"].toString());
         accepted.state["background"]=background;accepted.state["tool_uses"]=0;
+        accepted.state["parent_run_id"]=context.runId;accepted.state["parent_procedure_id"]=context.procedureId;
         accepted.state["notification_refs"]=d->pendingRefs(Impl::notificationRefs(accepted));
         for(const auto& key:{"result","notification_id","notification_owner","notification_transfer_error","delivery_error","error","duration_ms"})accepted.state.remove(key);
         try {d->policy->inheritSession(context,{request.sessionId,{},d->options.workingDirectory});d->write(accepted);}catch(...) {
@@ -504,21 +525,23 @@ ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args
             throw;
         }
         job->state=std::move(accepted.state);job->token=background?CancellationToken{}:CancellationToken::linkedTo(context.cancellation);job->done=false;
+        job->procedures=context.procedures?context.procedures:d->parent.procedures;
+        job->procedureOwner=context.procedureOwnerSessionId.isEmpty()?context.sessionId:context.procedureOwnerSessionId;
         job->awaitingForeground=!background;
         id=job->state["agentId"].toString();d->jobs[id]=job;
         d->pool.start(QRunnable::create([impl=d.get(),job,request,definition,progress=background?std::function<void(const QJsonObject&)>{}:context.progress]{impl->execute(job,request,definition,progress);}));
     }
-    if(background) return {"Subagent accepted for background execution.",{{"status","async_launched"},{"agentId",id},{"session_id",request.sessionId}}};
+    if(background) return {"Subagent accepted for background execution.",{{"status","async_launched"},{"agentId",id},{"session_id",request.sessionId},{"finished",false},{"reused",false},{"execution_phase","queued"}}};
     // A foreground progress callback borrows its parent's event lifetime. Keep
     // waiting after requesting cancellation until the cooperative worker joins.
     QJsonObject result;
     {std::unique_lock lock(d->mutex);d->changed.wait(lock,[&]{return job->done;});
-        result=job->state;result["finished"]=true;result["retrieval_status"]="success";
+        result=job->state;result["finished"]=true;result["retrieval_status"]="success";result["reused"]=false;result["execution_phase"]=result["status"];
         if(outcome)*outcome=job->outcome;job->awaitingForeground=false;}
     const auto response=result["result"].toObject()["text"].toString();
     const auto text=result["status"]=="completed" ? "Child agent completed. The final response is already available below; use it directly without polling AgentOutput for this completed invocation.\n\n"+response
         : "Child agent ended with status "+result["status"].toString()+".\n"+response;
-    return {text,publicState(result),result["status"]!="completed"||result.contains("delivery_error")};
+    return {text,publicState(result),(result["status"]!="completed"&&result["status"]!="deferred")||result.contains("delivery_error")};
 }
 QJsonObject Subagents::output(const QString& parent,const QString& id,bool block,int timeoutMs,const CancellationToken& token) const {
     require(timeoutMs>=0&&timeoutMs<=86401000,"Invalid subagent output timeout");token.throwIfCancelled();
@@ -589,7 +612,7 @@ QList<Tool> Subagents::makeTools(std::shared_ptr<Subagents> owner,bool includeAg
     agent.definition.inputSchema={{"type","object"},{"additionalProperties",false},{"required",QJsonArray{"prompt"}},{"properties",QJsonObject{
         {"prompt",text},{"description",QJsonObject{{"type","string"},{"maxLength",512}}},{"subagent_type",QJsonObject{{"type","string"},{"enum",types}}},
         {"model",QJsonObject{{"type","string"},{"maxLength",256}}},{"run_in_background",QJsonObject{{"type","boolean"}}},
-        {"fork_context",QJsonObject{{"type","boolean"}}},{"resume",id},{"max_turns",QJsonObject{{"type","integer"},{"minimum",1},{"maximum",owner->d->options.maxTurns}}}}}};
+        {"fork_context",QJsonObject{{"type","boolean"}}},{"resume",id},{"idempotency_key",QJsonObject{{"type","string"},{"minLength",1},{"maxLength",128}}},{"max_turns",QJsonObject{{"type","integer"},{"minimum",1},{"maximum",owner->d->options.maxTurns}}}}}};
     agent.execute=[owner](const auto& args,const auto& context){return owner->run(context,args);};tools.append(std::move(agent));
     }
     for(const auto& name:{QStringLiteral("AgentOutput"),QStringLiteral("AgentStop"),QStringLiteral("AgentList"),QStringLiteral("AgentProfiles")}) {

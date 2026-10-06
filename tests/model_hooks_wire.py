@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+from legacy_decision import legacy_decision_command
 import subprocess
 import tempfile
 import time
@@ -156,7 +157,7 @@ def main():
             def server(name, invocation, pattern):
                 path = root / (name + ".log")
                 with path.open("w") as log:
-                    process = subprocess.Popen(invocation, stdout=log, stderr=log, env=env)
+                    process = subprocess.Popen(legacy_decision_command(invocation), stdout=log, stderr=log, env=env)
                     try:
                         started = time.monotonic()
                         while True:

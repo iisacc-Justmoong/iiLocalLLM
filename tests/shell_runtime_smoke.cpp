@@ -49,7 +49,7 @@ int main(int argc, char** argv) {
         for (const auto* name : {"TaskOutput", "TaskStop", "ShellTaskList"}) {
             auto tool = registry->get(name); tool.definition.deferred = false; registry->remove(name); registry->add(std::move(tool));
         }
-        a::EngineOptions eo; eo.sessionsDirectory = root.filePath("sessions"); eo.projectContext.enabled = false; eo.compaction.automatic = false;
+        a::EngineOptions eo{.decision={.enabled=false}}; eo.sessionsDirectory = root.filePath("sessions"); eo.projectContext.enabled = false; eo.compaction.automatic = false;
         auto policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Default, QList<a::PermissionRule>{{"Bash", a::PermissionBehavior::Allow}});
         a::Engine engine(std::make_shared<a::ServiceModel>(service), registry, policy, eo);
         const auto id = engine.createSession(args[3], workspace).id;

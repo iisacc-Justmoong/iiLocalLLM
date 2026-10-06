@@ -29,7 +29,7 @@ struct Host {
     std::shared_ptr<Model> model=std::make_shared<Model>();
     std::shared_ptr<a::ToolRegistry> registry=std::make_shared<a::ToolRegistry>();
     std::shared_ptr<a::RulePolicy> policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
-    a::EngineOptions options;
+    a::EngineOptions options{.decision={.enabled=false}};
     Host(){QDir().mkpath(workspace);options.sessionsDirectory=root.filePath("sessions");options.compaction.automatic=false;options.taskToolsEnabled=true;}
 };
 }
@@ -104,7 +104,7 @@ private slots:
         QCOMPARE(engine.queuedInputs(next)["count"],1);QCOMPARE(engine.queuedInputs(old)["count"],0);engine.close();agents->close();
     }
     void apiClearIsScopedAndChecksSessionCapacityBeforeEnding() {
-        Host h;a::ApiOptions options;options.workingDirectory=h.workspace;options.stateDirectory=h.root.filePath("private");options.maxSessionsPerClient=2;
+        Host h;a::ApiOptions options{.engine={.decision={.enabled=false}}};options.workingDirectory=h.workspace;options.stateDirectory=h.root.filePath("private");options.maxSessionsPerClient=2;
         const QString token(48,'a'),other(48,'b');options.clientTokens={{"client",token},{"other",other}};
         a::Api api(h.model,h.registry,h.policy,options);
         auto call=[&](const QString& method,const QJsonObject& params){return api.dispatch(method,params,token).result.get().toObject();};

@@ -51,7 +51,7 @@ private slots:
         auto registry=std::make_shared<a::ToolRegistry>();a::registerWorkspaceTools(*registry,work);
         auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Default,QList<a::PermissionRule>{
             {"iiLocalLLM.agent.run",a::PermissionBehavior::Allow},{"iiLocalLLM.agent.agents.run",a::PermissionBehavior::Allow},{"Agent",a::PermissionBehavior::Allow}});
-        auto model=std::make_shared<WriteModel>();a::EngineOptions engineOptions;engineOptions.sessionsDirectory=root.filePath("sessions");engineOptions.compaction.automatic=false;
+        auto model=std::make_shared<WriteModel>();a::EngineOptions engineOptions{.decision={.enabled=false}};engineOptions.sessionsDirectory=root.filePath("sessions");engineOptions.compaction.automatic=false;
         a::SubagentOptions childOptions;childOptions.workingDirectory=work;childOptions.stateDirectory=root.filePath("children");
         auto children=std::make_shared<a::Subagents>(model,registry,policy,engineOptions,childOptions);a::Subagents::attach(engineOptions,children);
         auto engine=std::make_shared<a::Engine>(model,registry,policy,engineOptions);a::McpServerOptions config;
@@ -82,7 +82,7 @@ private slots:
         broker.close();QJsonObject status;(void)broker.wait(three,{},&status);QCOMPARE(status["status"],"closed");
     }
     void apiControlsBypassFullQueueAndChildrenUseTheAuthenticatedChannel() {
-        QTemporaryDir root;a::ApiOptions config;config.workingDirectory=root.filePath("work");QVERIFY(QDir().mkpath(config.workingDirectory));
+        QTemporaryDir root;a::ApiOptions config{.engine={.decision={.enabled=false}}};config.workingDirectory=root.filePath("work");QVERIFY(QDir().mkpath(config.workingDirectory));
         config.stateDirectory=root.filePath("state");config.clientTokens={{"society",QString(48,'a')},{"dreamscapes",QString(48,'b')}};
         config.permissionRequests=a::PermissionRequestsOptions{};config.maxConcurrentRequests=1;config.maxQueuedRequests=0;
         config.subagentsEnabled=true;config.engine.compaction.automatic=false;

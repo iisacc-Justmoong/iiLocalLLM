@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
         (void)service.loadModel(load).get();
         auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, workspace);
         for (const auto& tool : registry->definitions()) if (tool.name != "Read") registry->remove(tool.name);
-        a::EngineOptions eo; eo.sessionsDirectory = root.filePath("sessions"); eo.projectContext.enabled = false; eo.compaction.automatic = false;
+        a::EngineOptions eo{.decision={.enabled=false}}; eo.sessionsDirectory = root.filePath("sessions"); eo.projectContext.enabled = false; eo.compaction.automatic = false;
         a::Engine engine(std::make_shared<a::ServiceModel>(service), registry, std::make_shared<a::RulePolicy>(), eo);
         for (bool modelInvocation : {false, true}) {
             const auto secret = "SKILL_" + QUuid::createUuid().toString(QUuid::WithoutBraces).remove('-').left(16);

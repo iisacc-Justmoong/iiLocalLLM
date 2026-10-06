@@ -1,4 +1,5 @@
 #include "McpServer.h"
+#include "DecisionProtocol.h"
 #include "McpResult.h"
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
@@ -335,7 +336,7 @@ public:
                 if (context.cancellation.isCancelled()) handle.cancel();
             const auto result = handle.result.get(); context.cancellation.throwIfCancelled();
             auto data=toJson(result);if(!cleared.isEmpty())data["clear"]=cleared;
-            return ToolResult{result.text.isEmpty() ? result.errorMessage : result.text, data, result.status != RunStatus::Completed};
+            return ToolResult{result.text.isEmpty() ? result.errorMessage : result.text, data, result.status != RunStatus::Completed&&result.status!=RunStatus::Deferred};
         };
         run.execute = [executeAgent](const auto& args, const auto& context) { return executeAgent(args, context, false); };
         Tool compact;
@@ -378,6 +379,7 @@ public:
             return ToolResult{"Conversation forked.",{{"session_id",session.id},{"parent_session_id",session.parentSessionId},{"message_count",session.messages.size()},{"compaction_count",session.compactions.size()}}};
         };frozen->add(std::move(fork));
         Tool skills; skills.definition.name = "iiLocalLLM.agent.skills.list";
+        skills.definition.metadata={{"source","builtin.agent.control"}};
         skills.definition.description = "List local skill metadata and unsupported features for this connection's agent. Does not load a model or execute a skill.";
         skills.definition.readOnly = true; skills.definition.concurrencySafe = true;
         skills.definition.inputSchema = {{"type", "object"}, {"additionalProperties", false}, {"properties", QJsonObject{}}};
@@ -387,6 +389,7 @@ public:
         };
         frozen->add(std::move(skills));
         Tool plugins; plugins.definition.name="iiLocalLLM.agent.plugins.list";
+        plugins.definition.metadata={{"source","builtin.agent.control"}};
         plugins.definition.description="List the host's configured plugin snapshot, component counts, dependency blocks and unsupported features. Server runtime state is separate.";
         plugins.definition.readOnly=true;plugins.definition.concurrencySafe=true;
         plugins.definition.inputSchema={{"type","object"},{"additionalProperties",false},{"properties",QJsonObject{}}};
@@ -424,6 +427,7 @@ public:
         Tool session;
         session.definition = {"iiLocalLLM.agent.session", "Inspect only this MCP connection's local agent conversation.",
             {{"type", "object"}, {"additionalProperties", false}, {"properties", QJsonObject{{"include_messages", QJsonObject{{"type", "boolean"}}}}}}, {}, true, true};
+        session.definition.metadata={{"source","builtin.agent.control"}};
         session.execute = [self](const QJsonObject& args, const ToolContext& context) {
             auto conversation = self->conversation(context.sessionId);
             std::unique_lock lock(conversation->mutex, std::defer_lock); acquire(lock, context.cancellation);
@@ -472,6 +476,7 @@ public:
         }
         if (!options.artifactsDirectory.isEmpty()) context.artifactsDirectory = QDir(options.artifactsDirectory).filePath(context.sessionId + '/' + context.runId);
         const auto source = frozen->get(name).definition.metadata["source"].toString();
+        if(options.engine&&!detail::decisionControl(frozen->get(name).definition))options.engine->bindDecisionContext(context,sessionId(conversation(request.sessionId),context.cancellation));
         std::shared_ptr<void> workspaceScope;
         auto bindContext = [&](bool history=false) {
             const bool native=source=="builtin.workspace"||source=="builtin.shell"||source=="builtin.shell.control"||source=="builtin.plan"||source=="builtin.user-question"||source=="builtin.memory"||source=="builtin.session-history"||source=="builtin.web"||source=="builtin.lsp"||source=="builtin.lsp.control"||source=="builtin.worktree"||source=="builtin.worktree.control";
@@ -494,7 +499,7 @@ public:
         };
         int hookProgress=0;
         auto observe=[&](const Event& event) {
-            if((event.kind==EventKind::Hook||event.kind==EventKind::PermissionRequested||event.kind==EventKind::PermissionResolved)&&context.progress)context.progress({{"progress",++hookProgress},{"message",enumName(event.kind)},
+            if((event.kind==EventKind::Procedure||event.kind==EventKind::Hook||event.kind==EventKind::PermissionRequested||event.kind==EventKind::PermissionResolved)&&context.progress)context.progress({{"progress",++hookProgress},{"message",enumName(event.kind)},
                 {"_meta",QJsonObject{{"iisacc/agentEvent",toJson(event)}}}});
         };
         const bool shellControl = source == "builtin.shell.control" && QStringList{"TaskOutput", "TaskStop", "ShellTaskList"}.contains(name);
@@ -649,6 +654,21 @@ mcp::ServerOptions mcpServerOptions(std::shared_ptr<ToolRegistry> registry,
                 const auto owner=state->sessionId(state->conversation(request.sessionId),request.cancellation);
                 return cancel?state->options.engine->cancelHooks(owner,params["hook_id"].toString()):state->options.engine->hookStatus(owner,offset,limit);
             };
+    }
+    if(state->options.engine) {
+        server.experimentalCapabilities["iisacc/procedures"]=QJsonObject{{"schema","iisacc.procedure/1"},{"listMethod","iisacc/procedures/list"},{"respondMethod","iisacc/procedures/respond"}};
+        for(const auto& method:QStringList{"iisacc/procedures/list","iisacc/procedures/respond"})server.controlHandlers[method]=[state,method](const QJsonObject& params,const mcp::ServerRequestContext& request){
+            request.cancellation.throwIfCancelled();const bool listing=method.endsWith("/list");
+            const QStringList keys=listing?QStringList{"after","limit","_meta"}:QStringList{"procedure_id","response","_meta"};
+            for(auto it=params.begin();it!=params.end();++it)if(!keys.contains(it.key()))throw mcp::RpcError(-32602,"Unknown procedure parameter: "+it.key());
+            const auto owner=state->sessionId(state->conversation(request.sessionId),request.cancellation);
+            if(!listing){if(!params["procedure_id"].isString()||!params["response"].isObject())throw mcp::RpcError(-32602,"procedure_id and response are required");
+                return state->options.engine->respondProcedure(params["procedure_id"].toString(),params["response"].toObject(),owner);}
+            const auto cursor=params.value("after"),limit=params.value("limit");const auto after=cursor.toDouble(),count=limit.toDouble(128);
+            if((!cursor.isUndefined()&&(!cursor.isDouble()||after<0||after>9007199254740991.0||std::floor(after)!=after))
+                ||(!limit.isUndefined()&&(!limit.isDouble()||count<1||count>128||std::floor(count)!=count)))throw mcp::RpcError(-32602,"Invalid procedure cursor or limit");
+            return state->options.engine->procedures(owner,qint64(after),int(count));
+        };
     }
     if(state->options.permissionRequests) {
         server.experimentalCapabilities["iisacc/permissionRequests"]=QJsonObject{{"schema","iisacc.permission-request/1"},

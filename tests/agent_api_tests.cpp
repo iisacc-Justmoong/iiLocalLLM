@@ -37,7 +37,7 @@ public:
     }
 };
 a::ApiOptions options(QTemporaryDir& root) {
-    a::ApiOptions o; o.workingDirectory = root.filePath("workspace"); QDir().mkpath(o.workingDirectory);
+    a::ApiOptions o{.engine={.decision={.enabled=false}}}; o.workingDirectory = root.filePath("workspace"); QDir().mkpath(o.workingDirectory);
     o.stateDirectory = root.filePath("private"); o.clientTokens = {{"society", firstToken}, {"dreamscapes", secondToken}};
     return o;
 }

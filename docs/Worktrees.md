@@ -39,7 +39,7 @@
 | 경계 | 진입점 |
 |---|---|
 | C++ | `Worktrees`, `Engine::worktreeTool`, `runWorktreeTool`, `worktreeStatus` |
-| HTTP·native IPC | `agent.worktrees.enter`, `agent.worktrees.exit`, `agent.worktrees.status` |
+|HTTP·네이티브 IPC| `agent.worktrees.enter`, `agent.worktrees.exit`, `agent.worktrees.status` |
 | CLI | `iillm --auth-file FILE agent worktrees enter/exit/status SESSION [PARAMS_JSON_FILE]` |
 | MCP | `EnterWorktree`, `ExitWorktree`, `iiLocalLLM.agent.worktrees.status` |
 | 발견 | `agent.info.worktrees_enabled`, MCP `experimental.iisacc/worktrees` |

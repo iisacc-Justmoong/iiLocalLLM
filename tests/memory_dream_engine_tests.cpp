@@ -25,7 +25,7 @@ public:
 struct Fixture {
     QTemporaryDir root{QDir::current().filePath("dream-engine-XXXXXX")};QString work=root.filePath("work");
     std::shared_ptr<Model> model=std::make_shared<Model>();std::shared_ptr<a::ToolRegistry> tools=std::make_shared<a::ToolRegistry>();
-    std::shared_ptr<a::RulePolicy> policy=std::make_shared<a::RulePolicy>();a::EngineOptions options;
+    std::shared_ptr<a::RulePolicy> policy=std::make_shared<a::RulePolicy>();a::EngineOptions options{.decision={.enabled=false}};
     Fixture(){QDir().mkpath(work);a::registerWorkspaceTools(*tools,work);options.sessionsDirectory=root.filePath("sessions");
         options.projectMemoryEnabled=true;options.sessionHistoryEnabled=true;options.memoryRecall.enabled=false;
         options.memoryDream.automatic=true;options.memoryDream.minSessions=1;
@@ -67,7 +67,7 @@ private slots:
         QVERIFY_THROWS_EXCEPTION(Error,a::Engine(f.model,f.tools,f.policy,f.options));
     }
     void apiOwnerIsolationAndReservedControls() {
-        Fixture f;f.options.memoryDream.automatic=false;f.model->slow=true;a::ApiOptions options;options.stateDirectory=f.root.filePath("api");options.workingDirectory=f.work;
+        Fixture f;f.options.memoryDream.automatic=false;f.model->slow=true;a::ApiOptions options{.engine={.decision={.enabled=false}}};options.stateDirectory=f.root.filePath("api");options.workingDirectory=f.work;
         options.engine=f.options;options.engine.sessionsDirectory.clear();options.clientTokens={{"society",QString(48,'a')},{"dreamscapes",QString(48,'b')}};
         a::Api host(f.model,f.tools,f.policy,options);QVERIFY(host.isControlMethod("agent.memory.dream.status"));QVERIFY(host.isControlMethod("agent.memory.dream.cancel"));
         const auto info=api(host,"agent.info");QVERIFY(info["memory_dream_available"].toBool());QVERIFY(!info["auto_dream_enabled"].toBool());

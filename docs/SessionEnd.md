@@ -12,7 +12,7 @@
 | C++ close(), 소멸자 | 이 Engine이 만진 세션을 정리, 기본 other |
 | 인증 API agent.sessions.end | 호출 앱 소유 세션만 종료, 기본 other |
 | API close(), daemon 정상 종료 | 클라이언트별 활성 세션 종료, other |
-| MCP new_session=true | 교체 전 대화 종료, clear |
+|MCP new_session=true| 교체 전 대화 종료, clear |
 | MCP 연결 종료·HTTP DELETE·서버 종료 | 그 연결의 대화 종료, other |
 | MCP stdio EOF·파이프 단절·SIGINT·SIGTERM | serveStdio 정리와 연결 종료, other |
 

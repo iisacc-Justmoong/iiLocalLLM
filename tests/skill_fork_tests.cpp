@@ -22,7 +22,7 @@ struct Host {
     std::shared_ptr<Model> model = std::make_shared<Model>();
     std::shared_ptr<a::ToolRegistry> registry = std::make_shared<a::ToolRegistry>();
     std::shared_ptr<a::PermissionPolicy> policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
-    a::EngineOptions eo;
+    a::EngineOptions eo{.decision={.enabled=false}};
     a::SubagentOptions so;
     std::shared_ptr<a::Subagents> agents;
     Host() {

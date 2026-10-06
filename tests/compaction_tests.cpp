@@ -58,7 +58,7 @@ class CompactionTests : public QObject {
     Q_OBJECT
 private slots:
     void automaticMicroCompactionAndRecall() {
-        QTemporaryDir root; a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
+        QTemporaryDir root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         auto model = std::make_shared<BudgetModel>(); model->window = 2048; model->recall = true;
         a::Engine engine(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), options);
         auto session = engine.createSession("model://test", root.path());
@@ -74,7 +74,7 @@ private slots:
         QVERIFY(a::pendingToolCalls(a::modelMessages(session)).isEmpty());
     }
     void rollingSummaryAndExactLatestInput() {
-        QTemporaryDir root; a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
+        QTemporaryDir root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         auto model = std::make_shared<BudgetModel>();
         a::Engine engine(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), options);
         auto session = engine.createSession("model://test", root.path());
@@ -102,7 +102,7 @@ private slots:
         QCOMPARE(continued.status, a::RunStatus::Completed); QCOMPARE(model->requests.last().messages.last().text, "Resume from the summary");
     }
     void summaryCancellationAndInvalidOutputDoNotCommit() {
-        QTemporaryDir root; a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
+        QTemporaryDir root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         auto model = std::make_shared<BudgetModel>(); model->waitOnSummary = true;
         a::Engine engine(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), options);
         const auto session = engine.createSession("model://test", root.path());
@@ -128,7 +128,7 @@ private slots:
         QVERIFY(!runner.run({"w3", "Write", {{"path", "file.txt"}, {"content", "after"}}}, context).isError);
     }
     void automaticSummaryPreservesCurrentPrompt() {
-        QTemporaryDir root; a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
+        QTemporaryDir root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         auto model = std::make_shared<BudgetModel>();
         a::Engine engine(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), options);
         const auto session = engine.createSession("model://test", root.path());
@@ -142,7 +142,7 @@ private slots:
         QCOMPARE(engine.session(session.id).messages.size(), 9);
     }
     void boundedFailuresHooksAndDisabledAutomatic() {
-        QTemporaryDir root; a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
+        QTemporaryDir root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         bool reject = true; int beforeHooks = 0, afterHooks = 0;
         options.hooks.append([&](const a::HookInput& input, const CancellationToken&) {
             a::HookResult result;
@@ -172,7 +172,7 @@ private slots:
         class Unmeasured : public a::Model {
         public: a::ModelReply generate(const a::ModelRequest&, const CancellationToken&, const TextCallback&) override { return {"answer", {}}; }
         };
-        QTemporaryDir root; a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
+        QTemporaryDir root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         a::Engine engine(std::make_shared<Unmeasured>(), std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), options);
         const auto session = engine.createSession("model://test", root.path());
         QCOMPARE(engine.run({session.id, "hello"}).result.get().status, a::RunStatus::Completed);

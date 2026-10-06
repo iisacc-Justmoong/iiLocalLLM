@@ -1,18 +1,20 @@
-# iiLocalLLM local corrections
+<a id="iilocalllm-local-corrections"></a>
 
-Upstream: ggml-org/llama.cpp, revision `5202104b59ada9005db079eea43882a2b7bf5802`, MIT license (installed alongside this directory as `llama.cpp.LICENSE`).
+# iiLocalLLM 로컬 수정
 
-iiLocalLLM 0.49 corrects `common/chat-auto-parser-generator.cpp`, `analyze_tools::build_tool_parser_json_native`. When a template wraps each JSON tool call separately, the outer `one_or_more` ignored `parallel_tool_calls=false`. The corrected branch allows only one wrapped call when this option is false and preserves repetition when it is true. Parser and sampler grammar share this definition.
+상위 공급 측: ggml-org/llama.cpp, 개정 `5202104b59ada9005db079eea43882a2b7bf5802`, MIT 라이센스(이 디렉토리와 함께 `llama.cpp.LICENSE`로 설치됨).
 
-iiLocalLLM 0.50 also corrects `common/chat.cpp`, `common_chat_params_init_qwen3_coder`. Qwen3.5 selects this specialized XML parser, not the differential autoparser. The parser previously inspected only root properties/required, treated a string/object union as raw string, and accepted optional arguments only after all required arguments. `cmake/LlamaQwenTools.cpp.in` retains the pinned method's reasoning, continuation, call-count and token behavior, and changes its argument builder and matching template inputs:
+iiLocalLLM   0.49  corrects  `common/chat-auto-parser-generator.cpp` ,  `analyze_tools::build_tool_parser_json_native` . 템플릿이 각  JSON  도구 호출을 개별적으로 감싸는 경우, 최외각  `one_or_more`  은  `parallel_tool_calls=false`  됩니다. 수정된 분기는 이 옵션이 false 일 때 하나의 감싸인 호출만 허용하고, true 일 때 반복을 유지합니다. 파서와 샘플러 문법은 이 정의를 공유합니다.
 
-- Self-contained object alternatives under root `anyOf` produce separate argument signatures. SendMessage supplies complete alternatives so plaintext requires summary while structured control messages do not.
-- Explicit string fields remain raw XML values. Mixed or otherwise non-explicit-string fields use JSON encoding in all alternatives. This preserves both an object and a string containing the same JSON bytes without coercion.
-- Fields that allow strings but require JSON encoding receive matching XML encoding instructions in the rendered tool description. Their historical string arguments are JSON-encoded only in the rendering copy. Stored transcripts, caller schemas and API argument types remain unchanged; objects remain objects. Prompt measurement and generation use the same template preparation.
-- Up to six properties, the existing bounded permutation DAG allows required and optional arguments in any order and prevents duplicates. Larger signatures keep the upstream required-first/optional-tail behavior, including its duplicate-optional limitation.
+iiLocalLLM   0.50  또한  `common/chat.cpp` ,  `common_chat_params_init_qwen3_coder` 를 수정합니다. Qwen3.5 는 차분 자동파서가 아닌 이 전문화된  XML  파서를 선택합니다. 파서는 이전에 루트 속성/필수 항목만 검사했으며, 문자/객체 유니온을 원본 문자로 취급하고, 모든 필수 항목 이후에만 선택적 인수를 허용했습니다. `cmake/LlamaQwenTools.cpp.in` 는 고정된 메서드의 추론, 계속, 호출 횟수와 토큰 동작을 유지하며, 인수 빌더와 매칭 템플릿 입력을 변경합니다:
 
-This is not a full JSON Schema compiler. Partial object alternatives retain the root signature; root `oneOf`, arbitrary intersections and raw string constraints still need host validation. iiLocalLLM validates the complete input schema with its existing jsoncons validator before execution. Grammar-disabled generation can also produce invalid calls; no missing argument is synthesized.
+- 루트 `anyOf` 아래의 자체 포함 개체 대안은 별도의 인수 서명을 생성합니다. SendMessage는 완전한 대안을 제공하므로 일반 텍스트에는 요약이 필요하지만 구조화된 제어 메시지에는 요약이 필요하지 않습니다.
+- 명시적 문자열 필드는 원시 XML 값으로 유지됩니다. 혼합 또는 비명시적 문자열 필드는 모든 대안에서 JSON 인코딩을 사용합니다. 이는 강제 없이 동일한 JSON 바이트를 포함하는 객체와 문자열을 모두 보존합니다.
+- 문자를 허용하지만  JSON  인코딩을 요구하는 필드는 렌더된 도구 설명에 일치하는  XML  인코딩 지침을 받습니다. 그들의 역사적 문자 인수는 렌더링 복사본에서만  JSON -인코딩됩니다. 저장된 대본, 호출자 스키마 및  API  인수 타입은 변경되지 않으며, 객체는 객체로 남습니다. 프롬프트 측정과 생성은 동일한 템플릿 준비를 사용합니다.
+- 최대 6개의 속성인 기존 한계가 설정된 순열 DAG는 순서에 관계없이 필수 및 선택적 인수를 허용하고 중복을 방지합니다. 더 큰 서명은 중복-선택적 제한을 포함하여 상위 공급 측 필수 우선/선택적 꼬리 동작을 유지합니다.
 
-`cmake/LlamaToolCalls.cmake` applies exact source replacements to copies under `build/llama-patches/` and compiles those copies into `llama-common`. It does not modify the upstream checkout or add a dependency. Configuration rejects an unrecognized source form instead of silently skipping a correction. The pinned Qwen method SHA-256 is `a44c51fac0c56a9aed8f048ad7467f593540eff6fb912799760dca734cd4c1bd`; an external checkout containing the exact corrected method needs no replacement.
+이는 전체  JSON  스키마 컴파일러가 아닙니다. 부분 객체 대안은 루트 서명을 유지하며, 루트  `oneOf` , 임의의 교차 및 원본 문자 제약은 여전히 호스트 검증을 필요로 합니다.  iiLocalLLM 는 기존 jsoncons 검진기로 실행 전에 완전한 입력 스키마를 검증합니다. 문법 비활성화 생성은 또한 유효하지 않은 호출을 생성할 수 있으며, 누락된 인수가 합성되지 않습니다.
 
-The regression test `tests/native_grammar_tests.cpp` uses pinned upstream Qwen 2.5/3 templates for one versus two calls and Qwen3.5/3 templates for conditional arguments and typed parsing. It also covers XML argument permutations, duplicate rejection, partial alternatives and larger signatures. Separate team native tests exercise model generation through the source and installed SDK. These are downstream corrections, not a claim that upstream has accepted them.
+`cmake/LlamaToolCalls.cmake` 는 `build/llama-patches/` 하의 복사본에 정확한 소스 대체를 적용하고 해당 복사본들을 `llama-common` 로 컴파일합니다. 상위 공급 측 체크아웃을 수정하거나 의존성을 추가하지 않습니다. 아무런 알림 없이 수정을 건너뛰는 대신 인식되지 않는 소스 형식을 거부하는 구성이 사용됩니다. 고정된 Qwen 방법 SHA-256 는 `a44c51fac0c56a9aed8f048ad7467f593540eff6fb912799760dca734cd4c1bd` 입니다. 정확한 수정된 방법을 포함하는 외부 체크아웃은 대체가 필요 없습니다.
+
+회귀 테스트 `tests/native_grammar_tests.cpp`는 한 번과 2번의 호출을 위해 고정된 상위 공급 측 Qwen 2.5/3 템플릿을 사용하며, 조건부 인수와 타입 기반 파싱을 위해 Qwen3.5/3 템플릿을 사용한다. XML 인수 순열, 중복 거부, 부분 대안과 더 큰 시그니처도 검사한다. 별도의 팀 네이티브 테스트는 소스 및 설치된 SDK를 통해 모델 생성을 실행한다. 이는 하위 소비 측에서의 수정이며 상위 공급 측가 이를 수용했다는 주장은 아니다.

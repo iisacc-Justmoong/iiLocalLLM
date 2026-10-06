@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
         Service service(serviceOptions); (void)service.loadModel({"model://agent-fixture", 4096}).get();
         auto model = std::make_shared<a::ServiceModel>(service);
         auto registry = std::make_shared<a::ToolRegistry>();
-        a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         options.compaction.keepRecentGroups = 1;
         a::Engine engine(model, registry, std::make_shared<a::RulePolicy>(), options);
         auto session = engine.createSession("model://agent-fixture", workspace);

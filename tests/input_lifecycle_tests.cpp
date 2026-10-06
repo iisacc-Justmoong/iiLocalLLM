@@ -27,7 +27,7 @@ struct Host {
     QTemporaryDir root;
     QString workspace=root.filePath("work");
     std::shared_ptr<Model> model=std::make_shared<Model>();
-    a::EngineOptions options;
+    a::EngineOptions options{.decision={.enabled=false}};
     Host(){QDir().mkpath(workspace);options.sessionsDirectory=root.filePath("sessions");options.compaction.automatic=false;}
     std::unique_ptr<a::Engine> engine(){return std::make_unique<a::Engine>(model,std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(),options);}
 };

@@ -24,7 +24,7 @@ struct Host {
     std::shared_ptr<Model> model = std::make_shared<Model>();
     std::shared_ptr<a::ToolRegistry> registry = std::make_shared<a::ToolRegistry>();
     std::shared_ptr<a::PermissionPolicy> policy = std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
-    a::EngineOptions engineOptions;
+    a::EngineOptions engineOptions{.decision={.enabled=false}};
     a::SubagentOptions options;
     Host() {
         QDir().mkpath(workspace); engineOptions.sessionsDirectory = root.filePath("parent-sessions");

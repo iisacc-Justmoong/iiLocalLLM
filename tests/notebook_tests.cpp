@@ -30,7 +30,7 @@ struct Fixture {
     a::ToolResult edit(QJsonObject args){args["notebook_path"]=path;return call("NotebookEdit",args);}
 };
 class QuietModel:public a::Model {public:a::ModelReply generate(const a::ModelRequest&,const CancellationToken&,const TextCallback&)override{return {"DONE",{},{1,1}};}};
-a::EngineOptions engineOptions(const QString& state){a::EngineOptions result;result.sessionsDirectory=state;
+a::EngineOptions engineOptions(const QString& state){a::EngineOptions result{.decision={.enabled=false}};result.sessionsDirectory=state;
     result.skills.enabled=false;result.projectContext.enabled=false;result.toolSearch.enabled=false;result.compaction.automatic=false;return result;}
 }
 class NotebookTests:public QObject {
@@ -173,7 +173,7 @@ private slots:
     QVERIFY(engine.runNotebookTool(id,"NotebookEdit",{{"notebook_path","book.ipynb"},{"cell_id","first"},{"new_source","stale"}}).isError);
  }
  void apiAndMcpExposeOwnedNativeNotebookOperations(){
-    Fixture f;QTemporaryDir state(QDir::current().filePath("notebook-owners-XXXXXX"));auto model=std::make_shared<QuietModel>();a::ApiOptions options;options.engine=engineOptions({});options.workingDirectory=f.root.path();
+    Fixture f;QTemporaryDir state(QDir::current().filePath("notebook-owners-XXXXXX"));auto model=std::make_shared<QuietModel>();a::ApiOptions options{.engine={.decision={.enabled=false}}};options.engine=engineOptions({});options.workingDirectory=f.root.path();
     options.stateDirectory=state.filePath("api");options.clientTokens={{"society",QString(48,'a')},{"dreamscapes",QString(48,'b')}};
     a::Api api(model,f.registry,f.policy,options);auto call=[&](QString method,QJsonObject params={},QString token=QString(48,'a')){return api.dispatch(method,params,token).result.get().toObject();};
     QVERIFY(call("agent.info")["notebooks_enabled"].toBool());const auto id=call("agent.sessions.create",{{"model","fixture"}})["session_id"].toString();

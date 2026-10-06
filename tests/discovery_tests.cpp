@@ -41,7 +41,7 @@ void write(const QString& path, const QJsonObject& object) {
     file.write(QJsonDocument(object).toJson());
 }
 a::EngineOptions engineOptions(const QString& state) {
-    a::EngineOptions o; o.sessionsDirectory = state; o.projectContext.enabled = false;
+    a::EngineOptions o{.decision={.enabled=false}}; o.sessionsDirectory = state; o.projectContext.enabled = false;
     o.compaction.automatic = false; return o;
 }
 }

@@ -57,7 +57,7 @@ paths:
 | rules 탐색 entry 수 / scope 디렉터리 수 | 각각 4,096 |
 | import 깊이 | 5단계, 최초 파일 depth 0 포함 |
 | 대상 경로 수 | 128 |
-| YAML frontmatter | 16 KiB, nesting 16, 이벤트 4,096 |
+|YAML 머리말| 16 KiB, nesting 16, 이벤트 4,096 |
 | 확장된 glob 목록 / 한 glob 길이 | 128개 / 512자 |
 
 범위 밖 파일을 읽지 않으며 home·managed 설정·네트워크를 자동 탐색하지 않는다. `~/...`와 URL import는 지원하지 않는다. 루트 안의 symlink는 canonical 경로로 중복을 제거한다. Unix 파일 읽기는 root descriptor에서 `openat`·`O_NOFOLLOW`로 구성 요소를 다시 열고 일반 파일인지 검사한다. FIFO 같은 특수 파일은 읽지 않는다. Windows에서는 canonical 경로 검증과 Qt 파일 읽기를 사용하며 Unix descriptor 방식의 경합 방지는 적용되지 않는다. 같은 OS 사용자 전체를 격리하는 샌드박스는 아니다.

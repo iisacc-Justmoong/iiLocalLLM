@@ -15,11 +15,11 @@ ModelResidencyManager는 모델별 메모리 예약, 마지막 사용 순서, �
 
 | ServiceOptions | daemon 옵션 | 기본 동작 |
 | --- | --- | --- |
-| memoryBudgetBytes | --memory-budget-mib | 0이면 물리 RAM에서 max(2 GiB, 25%)를 제외한다. RAM이 그보다 작으면 절반을 예산으로 둔다. 명시 예산은 물리 RAM을 넘지 않는다 |
-| memoryReserveBytes | --memory-reserve-mib | 새 모델 예약 후 최소 256 MiB의 가용 RAM 여유를 요구한다 |
-| maxModels | --max-models | 상주 모델 최대 4개. 초과 시 유휴 LRU 후보를 찾는다 |
-| keepAliveMs | --keep-alive | -1/생략은 자동: RAM >8 GiB는 300,000ms, <=8 GiB는 0ms |
-| defaultContextTokens | --context-tokens | 2048. manifest 상한 및 캐시 토큰 예산으로 제한한다 |
+| memoryBudgetBytes |--memory-budget-mib| 0이면 물리 RAM에서 max(2 GiB, 25%)를 제외한다. RAM이 그보다 작으면 절반을 예산으로 둔다. 명시 예산은 물리 RAM을 넘지 않는다 |
+| memoryReserveBytes |--memory-reserve-mib| 새 모델 예약 후 최소 256 MiB의 가용 RAM 여유를 요구한다 |
+| maxModels |--max-models| 상주 모델 최대 4개. 초과 시 유휴 LRU 후보를 찾는다 |
+| keepAliveMs |--keep-alive| -1/생략은 자동: RAM >8 GiB는 300,000ms, <=8 GiB는 0ms |
+| defaultContextTokens |--컨텍스트 토큰| 2048. manifest 상한 및 캐시 토큰 예산으로 제한한다 |
 
 물리 RAM을 탐지하지 못하면 4 GiB를 기준으로 보수적인 자동 예산/수명을 사용한다. 메모리 바이트 설정은 서비스 배포 설정이며 앱의 모델 요청에 backend/device 또는 예산 변경 필드를 두지 않는다.
 

@@ -33,7 +33,7 @@ class EditModel:public a::Model {public:
         return {"DONE",{}, {1,1}};
     }
 };
-a::EngineOptions options(QString state){a::EngineOptions o;o.sessionsDirectory=state;o.fileCheckpointsEnabled=true;o.skills.enabled=false;o.projectContext.enabled=false;o.toolSearch.enabled=false;o.compaction.automatic=false;return o;}
+a::EngineOptions options(QString state){a::EngineOptions o{.decision={.enabled=false}};o.sessionsDirectory=state;o.fileCheckpointsEnabled=true;o.skills.enabled=false;o.projectContext.enabled=false;o.toolSearch.enabled=false;o.compaction.automatic=false;return o;}
 std::shared_ptr<a::ToolRegistry> tools(const QString& path){auto registry=std::make_shared<a::ToolRegistry>();a::registerWorkspaceTools(*registry,path);return registry;}
 }
 class FileCheckpointTests:public QObject {
@@ -140,7 +140,7 @@ private slots:
  }
  void apiAndMcpBindHistoryToAuthenticatedOwner(){
     Fixture f;auto registry=tools(f.work);auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);auto model=std::make_shared<EditModel>();
-    a::ApiOptions config;config.engine=options({});config.workingDirectory=f.work;config.stateDirectory=f.root.filePath("api");config.clientTokens={{"society",QString(48,'a')},{"dreamscapes",QString(48,'b')}};
+    a::ApiOptions config{.engine={.decision={.enabled=false}}};config.engine=options({});config.workingDirectory=f.work;config.stateDirectory=f.root.filePath("api");config.clientTokens={{"society",QString(48,'a')},{"dreamscapes",QString(48,'b')}};
     a::Api api(model,registry,policy,config);auto call=[&](QString method,QJsonObject params={},QString token=QString(48,'a')){return api.dispatch(method,params,token).result.get().toObject();};
     QVERIFY(call("agent.info")["file_checkpoints_enabled"].toBool());const auto id=call("agent.sessions.create",{{"model","fixture"}})["session_id"].toString();
     const auto run=call("agent.run",{{"session_id",id},{"prompt","change"}});QCOMPARE(read(f.path),"edited");

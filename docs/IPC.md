@@ -8,25 +8,25 @@
 
 요청은 `{"id":"client-id","method":"...","params":{...}}`이다. id는 1~128자 문자열이며 연결 내 미완료 요청 사이 중복은 거부한다. 일반 응답은 `{"id":"client-id","result":...}` 또는 `{"id":"client-id","error":{"code":"...","message":"..."}}`이다.
 
-| method | params | result |
+|방법|매개변수|결과|
 | --- | --- | --- |
-| hardware.get | {} | cpu_architecture, ram_bytes, apple_silicon, gpus, metal_available, cuda_available, vulkan_available, diagnostics |
-| models.install | package_directory | 설치한 model URI, manifest, loaded=false |
-| models.pull | model(URI 또는 등록 별칭) | accepted/progress 이후 설치한 ModelRecord 또는 error |
-| models.remove | model(URI/등록 별칭) | {}; 로드 중이면 model_in_use |
-| models.list | {} | {models: 설치한 model/manifest/loaded 배열, issues: 잘못된 패키지 진단 배열} |
-| models.resolve | model(URI/등록 별칭) | model, manifest, loaded; 가중치를 해싱하지 않는다 |
-| models.verify | model(URI/등록 별칭) | model, valid, checked_files, checked_bytes, issues |
-| models.loaded | {} | 상주 모델 배열: model/manifest/loaded/context_tokens/options/execution/memory/keep_alive_ms/expires_in_ms/active_requests |
-| models.load | model(URI/등록 별칭), 선택 context_tokens(0), options, keep_alive | 로드한 모델과 서비스가 정한 execution |
-| models.unload | model(URI/등록 별칭) | {}; 세션이 있으면 model_in_use |
-| sessions.create | model(URI/등록 별칭), 선택 system | session_id; 설치된 모델에 chat capability가 필요하며 첫 chat에서 자동 로드한다 |
-| sessions.get | session_id | session_id, model(정규 URI), messages(role/content 배열) |
-| sessions.reset | session_id | {}; system 유지, 대화 및 KV 삭제 |
-| sessions.close | session_id | {}; 세션 및 KV 삭제 |
-| chat | session_id, prompt, 선택 options, keep_alive | 스트리밍 이벤트 |
-| cancel | request_id | cancel_requested; 이 연결의 생성 또는 pull만 취소 |
-| stats | {} | loaded_models, sessions, cached_contexts, reserved_context_tokens, cache_evictions, resident_estimated_bytes, memory_budget_bytes, available_ram_bytes(null 가능), default_keep_alive_ms, model_loads, model_evictions |
+|hardware.get| {} |cpu_architecture, ram_bytes, apple_silicon, GPU, metal_available, cuda_available, vulkan_available, 진단|
+|models.install| package_directory | 설치한 model URI, manifest, loaded=false |
+|models.pull| model(URI 또는 등록 별칭) | accepted/progress 이후 설치한 ModelRecord 또는 error |
+|models.remove| model(URI/등록 별칭) | {}; 로드 중이면 model_in_use |
+|models.list| {} | {models: 설치한 model/manifest/loaded 배열, issues: 잘못된 패키지 진단 배열} |
+|models.resolve| model(URI/등록 별칭) | model, manifest, loaded; 가중치를 해싱하지 않는다 |
+|models.verify| model(URI/등록 별칭) |모델, 유효, checked_files , checked_bytes , 이슈|
+|models.loaded| {} | 상주 모델 배열: model/manifest/loaded/context_tokens/options/execution/memory/keep_alive_ms/expires_in_ms/active_requests |
+|models.load| model(URI/등록 별칭), 선택 context_tokens(0), options, keep_alive | 로드한 모델과 서비스가 정한 execution |
+|models.unload| model(URI/등록 별칭) | {}; 세션이 있으면 model_in_use |
+|session.create| model(URI/등록 별칭), 선택 system | session_id; 설치된 모델에 chat capability가 필요하며 첫 chat에서 자동 로드한다 |
+|session.get| session_id | session_id, model(정규 URI), messages(role/content 배열) |
+|세션.reset| session_id | {}; system 유지, 대화 및 KV 삭제 |
+|세션.닫기| session_id | {}; 세션 및 KV 삭제 |
+|chat| session_id, prompt, 선택 options, keep_alive | 스트리밍 이벤트 |
+|취소| request_id | cancel_requested; 이 연결의 생성 또는 pull만 취소 |
+|통계| {} | loaded_models, sessions, cached_contexts, reserved_context_tokens, cache_evictions, resident_estimated_bytes, memory_budget_bytes, available_ram_bytes(null 가능), default_keep_alive_ms, model_loads, model_evictions |
 
 상태를 다루는 제어 메서드도 FIFO에 들어가므로 긴 추론 뒤에서 대기할 수 있다. hardware.get은 부팅 시 스냅샷, models.loaded는 worker가 게시한 상주 모델 스냅샷을 사용하므로 긴 추론 중에도 응답한다. parameters.list/get/validate는 모델 실행과 무관한 카탈로그 조회·검증으로 Qt 이벤트 루프에서 처리한다. stats와 나머지 제어 API는 FIFO에 들어간다. cancel은 worker 큐를 거치지 않으며 연결의 미완료 요청 상한에도 허용한다. 성공한 cancel 응답은 취소 요청 접수이며 이미 끝난 결과를 소급 취소하지 않는다.
 

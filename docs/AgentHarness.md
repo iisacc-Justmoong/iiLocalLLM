@@ -1,5 +1,49 @@
 # C++ 에이전트 실행 계층
 
+0.54.0은 초기 실행과 도구 선택에 [iiDecision 기반 정량 판단](DecisionGate.md)을 적용한다. 호스트가 제공한 성공/실패 확률모형·수익·손실·비용으로 순기대가치를 계산한다. 평가가 없거나 기준보다 낮으면 deferred로 보류하며, 적격 도구 중 가장 높은 기대가치인 하나를 선택한다. decision_input 반환에서 호스트 사실을 바꾸고 decision 반환에서 실제 평가·선택·보류를 관측한다.
+
+```mermaid
+flowchart TD
+    A[호스트 입력 수락] --> DI[decision_input 반환: 정량 평가와 증거]
+    DI --> D[iiDecision: 조건부 성공·실패 확률과 순기대가치]
+    D --> G{확률·기대가치 기준 통과}
+    G -->|보류| H[run 반환: deferred와 후보별 이유]
+    G -->|진행| I[input 반환: 준비된 입력]
+    I --> C[context·compaction 반환]
+    C --> M[model 반환: text와 tool_calls]
+    M --> T{도구 후보 존재}
+    T -->|없음| F[completion·run 반환: completed]
+    T -->|있음| E[decision_input → iiDecision → decision 반환]
+    E --> V{적격 후보 중 최대 기대가치 선택}
+    V -->|없음| H
+    V -->|하나 선택| R[선택 제외 호출: not_executed 반환]
+    R --> B[검증·훅·인자 재검증]
+    B --> Q{인자 변경}
+    Q -->|변경| E2[수정 인자 decision_input·decision]
+    E2 -->|보류| H
+    E2 -->|진행| P[tool_preparation·permission 반환]
+    Q -->|동일 receipt| P
+    P --> X[tool_execution 시작]
+    X -->|일반 도구| XR[tool_execution 반환: 실행·출력 검증 결과]
+    XR --> O[tool 반환: 호스트가 사용할 최종 관측값]
+    O --> N[다음 턴 전 run 정량 판단]
+    N --> D
+    X -->|Agent 도구| S{동일 자식 요청 존재}
+    S -->|기존 요청| REUSE[기존 자식 접수·결과 재사용]
+    S -->|새 요청| SC[자식 Engine: 초기 정량 판단·실행·절차 반환]
+    REUSE --> XR
+    SC --> XR
+    HOST[호스트: 반환값 교체·진행·취소] -.-> DI
+    HOST -.-> E
+    HOST -.-> I
+    HOST -.-> M
+    HOST -.-> O
+```
+
+실제 초기 판단은 SessionStart·사용자 훅·모델 호출보다 먼저 수행된다. 준비된 입력이 바뀌면 재평가한다. 인자 수정 재평가에는 BeforeTool 훅과 권한 응답의 변경을 포함한다. 선택 제외 결과를 기록한 다음 선택된 호출을 실행하며 나머지 호출을 자동 재실행하지 않는다. 호스트의 조회·취소·절차 응답은 실행 대기 중에도 사용할 수 있다. 전체 작업 상태와 개별 절차 completed를 구분한다.
+
+0.53.0은 실행·입력·문맥·압축·모델·도구 검증/준비/권한/실행·도구 결과·일반 완료의 절차를 구조화된 반환 채널로 관측한다. 호스트는 다음 단계가 반환값을 사용하기 전에 진행·검증된 교체·취소를 결정한다. 같은 부모 실행의 동일한 새 자식 요청은 기존 실행을 재사용한다. 공개 C++ 및 인증 API·MCP 제어 계약은 [Procedures.md](Procedures.md)에 기록한다.
+
 0.24.0은 Engine::clearSession과 즉시 SessionStart(clear), 백그라운드 작업의 소유권/알림 전환을 제공한다. [SessionClear.md](SessionClear.md)에 실제 초기화 범위와 부분 실패 계약을 기록한다.
 
 0.23.0의 Engine::endSession/close는 활성 세션의 종료 훅, 실행·입력 접수 차단, 진행/대기 작업 취소와 기록 보존을 API·MCP에 연결한다. [SessionEnd.md](SessionEnd.md)에 정확한 수명·시간 예산·남은 호환 범위를 기록한다.
@@ -65,6 +109,8 @@ auto tools = std::make_shared<iiLocalLLM::agent::ToolRegistry>();
 iiLocalLLM::agent::registerWorkspaceTools(*tools, workspace);
 iiLocalLLM::agent::EngineOptions options;
 options.sessionsDirectory = sessionsDirectory;
+options.decision.valueUnit = "USD";
+options.decision.inputs = hostQuantitativeAssessment; // 후보 ID별 수익·손실·비용·확률을 반환한다.
 iiLocalLLM::agent::Engine engine(
     std::make_shared<iiLocalLLM::agent::ServiceModel>(service), tools,
     std::make_shared<iiLocalLLM::agent::RulePolicy>(), options);

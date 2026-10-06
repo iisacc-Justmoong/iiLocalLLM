@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
         QFile file(dir + "/SKILL.md"); if (!file.open(QIODevice::WriteOnly)) return 1;
         file.write("---\ndescription: Installed skill\n---\nINSTALLED_SKILL $0"); file.close();
         if (a::discoverSkills(root.path()).skills.size() != 1) return 1;
-        a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         a::Engine engine(std::make_shared<Model>(), std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), options);
         const auto session = engine.createSession("fixture", root.path());
         a::RunRequest request{session.id}; request.skill = "inspect"; request.skillArguments = "'consumer value'";

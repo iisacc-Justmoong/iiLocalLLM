@@ -41,9 +41,9 @@ HttpApiServer의 listen은 전송 스레드를 시작하고 반환한다. 해당
 
 | 메서드·경로 | 동작 |
 | --- | --- |
-| GET /health | 리스너 상태인 {"status":"ok"}. 모델 추론 준비를 보장하지 않는다 |
-| GET /v1/models | 현재 로드한 모델을 {"object":"list","data":[...]}로 반환한다. 각 id는 model:// URI이다 |
-| POST /v1/chat/completions | messages로 일반 JSON 또는 SSE 응답을 생성한다 |
+|GET /health| 리스너 상태인 {"status":"ok"}. 모델 추론 준비를 보장하지 않는다 |
+|GET /v1/models| 현재 로드한 모델을 {"object":"list","data":[...]}로 반환한다. 각 id는 model:// URI이다 |
+|POST /v1/chat/completions| messages로 일반 JSON 또는 SSE 응답을 생성한다 |
 
 모델 설치·검증·로드·언로드와 장기 세션 관리는 기존 [Native IPC](IPC.md) 및 C++ API/daemon 설정을 사용한다. HTTP 생성은 설치된 모델 URI 또는 등록 별칭을 받고, 같은 서비스의 Residency Manager가 상주 인스턴스 재사용 또는 자동 로드·LRU 해제를 수행한다. 설치는 models.pull/models.install로 수행한다. `/v1/models`는 IPC의 models.loaded와 같은 로드 상태를 조회한다. IPC에서 언로드하면 HTTP 목록에서도 빠진다.
 

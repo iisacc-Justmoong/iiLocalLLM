@@ -14,6 +14,7 @@ from pathlib import Path
 import re
 import secrets
 import shutil
+from legacy_decision import legacy_decision_command
 import subprocess
 import tempfile
 import time
@@ -59,7 +60,7 @@ def main():
         def server(name, values, pattern):
             path = args.report.with_suffix("." + name + ".log")
             with path.open("w") as log:
-                process = subprocess.Popen(values, cwd=root, env=env, stdout=log, stderr=log)
+                process = subprocess.Popen(legacy_decision_command(values), cwd=root, env=env, stdout=log, stderr=log)
                 try:
                     deadline = time.monotonic() + 45
                     while True:

@@ -33,7 +33,7 @@ struct Fixture {
     QString work=root.filePath("work"),state=root.filePath("sessions");
     std::shared_ptr<a::ToolRegistry> registry=std::make_shared<a::ToolRegistry>();
     std::shared_ptr<a::RulePolicy> policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
-    a::EngineOptions options;
+    a::EngineOptions options{.decision={.enabled=false}};
     std::shared_ptr<a::Teams> teams;
     std::unique_ptr<a::Engine> engine;
     Fixture(std::shared_ptr<a::Model> model=std::make_shared<ReplyModel>(),std::function<void(a::TeamsOptions&)> configure={},std::function<void(a::EngineOptions&)> configureEngine={}){

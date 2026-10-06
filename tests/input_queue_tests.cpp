@@ -31,7 +31,7 @@ private slots:
         int calls=0;model->action=[&](const auto&,const auto&)->a::ModelReply{
             if(calls++==0)return {{},{{"observation","Observe",{}}}};return {"done",{}};
         };
-        a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");options.maxQueuedInputsPerRun=limit;
+        a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");options.maxQueuedInputsPerRun=limit;
         a::Engine engine(model,registry,std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass),options);
         const auto session=engine.createSession("fixture",root.path()).id;
         for(const auto& text:{"first","second","third"})engine.enqueueInput(session,{{"text",text},{"kind","notification"}});
@@ -42,7 +42,7 @@ private slots:
     }
     void identifiedReplayAfterAcknowledgementDoesNotDuplicateTranscriptInput(){
         QTemporaryDir root;auto model=std::make_shared<QueueModel>();model->action=[](const auto&,const auto&){return a::ModelReply{"done"};};
-        a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");
+        a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");
         a::Engine engine(model,std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(),options);
         const auto session=engine.createSession("fixture",root.path()).id;a::InputQueue queue(options.sessionsDirectory+"/inputs");
         const QJsonObject input{{"text","team notification"},{"kind","notification"},{"priority","next"}};
@@ -87,7 +87,7 @@ private slots:
     void transferredNotificationReplayIgnoresOnlyQueueLocalOrdering() {
         QTemporaryDir root;auto model=std::make_shared<QueueModel>();int calls=0;
         model->action=[&](const auto&,const auto&){++calls;return a::ModelReply{"received once"};};
-        a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");
+        a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");
         a::Engine engine(model,std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(),options);
         const auto from=engine.createSession("fixture",root.path()).id,to=engine.createSession("fixture",root.path()).id;
         a::InputQueue queue(options.sessionsDirectory+"/inputs");
@@ -213,7 +213,7 @@ private slots:
     void interruptedAcknowledgementDoesNotDuplicateTheTranscript() {
         QTemporaryDir root; auto model = std::make_shared<QueueModel>(); int calls = 0;
         model->action = [&](const a::ModelRequest& r, const auto&) { ++calls; return a::ModelReply{r.messages.last().text}; };
-        a::EngineOptions o; o.sessionsDirectory = root.filePath("sessions");int submitted=0;
+        a::EngineOptions o{.decision={.enabled=false}}; o.sessionsDirectory = root.filePath("sessions");int submitted=0;
         o.hooks.append([&](const a::HookInput& input,const CancellationToken&){submitted+=input.kind==a::HookKind::UserPromptSubmit;return a::HookResult{};});
         auto engine = std::make_unique<a::Engine>(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), o);
         const auto id = engine->createSession("fixture", root.path()).id;
@@ -236,7 +236,7 @@ private slots:
     void conflictingTranscriptIdentityIsNotAcknowledged() {
         QTemporaryDir root; auto model = std::make_shared<QueueModel>(); int calls = 0;
         model->action = [&](const auto&, const auto&) { ++calls; return a::ModelReply{"must not run"}; };
-        a::EngineOptions o; o.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions o{.decision={.enabled=false}}; o.sessionsDirectory = root.filePath("sessions");
         a::Engine engine(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), o);
         const auto id = engine.createSession("fixture", root.path()).id;
         const auto input = engine.enqueueInput(id, {{"text", "original"}})["input"].toObject();
@@ -249,7 +249,7 @@ private slots:
     void nextWaitsForToolAndLaterWaitsForAnswer() {
         QTemporaryDir root; auto model = std::make_shared<QueueModel>();
         auto registry = std::make_shared<a::ToolRegistry>();
-        a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         a::Engine engine(model, registry, std::make_shared<a::RulePolicy>(), options);
         const auto session = engine.createSession("model://fixture", root.path());
         int calls = 0; QStringList observed;
@@ -275,7 +275,7 @@ private slots:
     }
     void urgentCancelsToolAndPreservesPairedHistory() {
         QTemporaryDir root; auto model = std::make_shared<QueueModel>(); auto registry = std::make_shared<a::ToolRegistry>();
-        a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         a::Engine engine(model, registry, std::make_shared<a::RulePolicy>(), options);
         const auto session = engine.createSession("model://fixture", root.path());
         std::atomic_bool entered = false; int calls = 0;
@@ -297,7 +297,7 @@ private slots:
     void turnLimitAndObserverReentryPreservePendingInput() {
         QTemporaryDir root; auto model = std::make_shared<QueueModel>();
         model->action = [](const a::ModelRequest& r, const auto&) { return a::ModelReply{r.messages.last().text}; };
-        a::EngineOptions o; o.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions o{.decision={.enabled=false}}; o.sessionsDirectory = root.filePath("sessions");
         a::Engine engine(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), o);
         const auto id = engine.createSession("fixture", root.path()).id;
         engine.enqueueInput(id, {{"text", "later"}, {"priority", "later"}});
@@ -318,7 +318,7 @@ private slots:
         model->action = [&](const auto&, const CancellationToken& c) -> a::ModelReply {
             entered = true; while (!c.isCancelled()) std::this_thread::sleep_for(1ms); c.throwIfCancelled(); return {};
         };
-        a::EngineOptions o; o.sessionsDirectory = root.filePath("sessions");
+        a::EngineOptions o{.decision={.enabled=false}}; o.sessionsDirectory = root.filePath("sessions");
         a::Engine engine(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), o);
         const auto id = engine.createSession("fixture", root.path()).id;
         auto run = engine.run({id, "wait"}); QTRY_VERIFY_WITH_TIMEOUT(entered.load(), 3000);

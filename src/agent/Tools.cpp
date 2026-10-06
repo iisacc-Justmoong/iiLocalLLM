@@ -1,4 +1,6 @@
 #include "Tools.h"
+#include "Procedures.h"
+#include "DecisionProtocol.h"
 #include "PlanMode.h"
 #include "McpResult.h"
 #include "PermissionResponses.h"
@@ -177,6 +179,9 @@ bool ToolRunner::concurrencySafe(const ToolCall& call) const {
 }
 ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, const EventCallback& callback) const {
     auto context=suppliedContext;
+    context.procedureToolCallId=call.id;
+    ProcedureScope toolProcedure("tool",context,toJson(call),callback);
+    context.procedureId=toolProcedure.id().isEmpty()?context.procedureId:toolProcedure.id();
     ToolResult result;
     QJsonObject hookContext;
     std::shared_ptr<ModelHookContext> modelContext;
@@ -199,8 +204,22 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
         if(modelContext){modelContext->executionContext=context;modelContext->executionContext.progress={};modelContext->executionContext.permissionRequests={};}
         const auto entry = registry_->resolve(call.name);
         const auto& tool = entry->tool;
+        auto assess=[&] {
+            if(!context.decisionGate||!context.decisionGate->options().enabled||detail::decisionControl(tool.definition))return;
+            const auto candidate=detail::decisionCandidate(call,tool.definition.description);
+            const auto& receipt=context.decisionReceipt;
+            if(receipt&&receipt->sessionId==context.sessionId.toStdString()&&receipt->runId==context.runId.toStdString()
+                &&receipt->candidate.id==candidate.id&&receipt->candidate.name==candidate.name&&receipt->candidate.arguments==candidate.arguments
+                &&receipt->report.selectedCandidateId==candidate.id)return;
+            const auto report=detail::decide({"tool",context.sessionId.toStdString(),context.runId.toStdString(),context.procedureAgentId.toStdString(),{},context.workingDirectory.toStdString(),{candidate}},context,callback);
+            if(!report.execute())throw detail::DeferredDecision{toJson(report)};
+            auto bound=std::make_shared<DecisionReceipt>();bound->sessionId=context.sessionId.toStdString();bound->runId=context.runId.toStdString();bound->candidate=candidate;bound->report=report;context.decisionReceipt=std::move(bound);
+        };
+        ProcedureScope validation("tool_validation",context,{{"pass","initial"},{"arguments",call.arguments}},callback);
         entry->validateInput(call.arguments);
         if (tool.validate) tool.validate(call.arguments, context);
+        validation.returned({{"valid",true}});
+        assess();
         if(!options_.hooks.isEmpty()) {
             hookContext={{"cwd",context.workingDirectory},{"permission_mode",policy_->describe(context)["mode"].toString("unknown")}};
             hookContext["transcript_path"]=context.transcriptPath;
@@ -218,8 +237,11 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
             }
             if(!r.feedback.isEmpty()) {if(!beforeFeedback.isEmpty())beforeFeedback+='\n';beforeFeedback+=r.feedback;}
         }
+        ProcedureScope revalidation("tool_validation",context,{{"pass","after_hooks"},{"arguments",call.arguments}},callback);
         entry->validateInput(call.arguments);
         if (tool.validate) tool.validate(call.arguments, context);
+        revalidation.returned({{"valid",true},{"arguments",call.arguments}});
+        assess();
         context.workingDirectories=policy_->workingDirectories(context);
         if(hookPermission&&hookPermission->behavior==PermissionBehavior::Allow)context.allowedTools.append(call.name);
         auto prepare=[&] {
@@ -229,7 +251,9 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
                 throw Error(ErrorCode::InvalidArgument,"Prepared tool changed identity/schema or omitted execution");
             return value;
         };
-        auto prepared=prepare();
+        ProcedureScope preparation("tool_preparation",context,{{"arguments",call.arguments}},callback);
+        auto prepared=prepare();preparation.returned(toJson(prepared.definition));
+        ProcedureScope permissionProcedure("permission",context,{{"arguments",call.arguments}},callback);
         auto decide=[&] {
             if(context.planModeActive) {
                 auto planContext=context;planContext.permissionMode=PermissionMode::Plan;
@@ -342,7 +366,7 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
                 context.approvedToolPreview=prepared.definition.metadata;
                 auto reprepare=[&] {
                     context.workingDirectories=policy_->workingDirectories(context);
-                    entry->validateInput(call.arguments);if(tool.validate)tool.validate(call.arguments,context);prepared=prepare();
+                    entry->validateInput(call.arguments);if(tool.validate)tool.validate(call.arguments,context);assess();prepared=prepare();
                 };
                 auto checkDeny=[&] {
                     const auto current=decide();
@@ -358,13 +382,19 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
                 checkDeny();
             }
         }
+        permissionProcedure.returned({{"allowed",allowed},{"reason",decision.reason},{"arguments",call.arguments},{"target",toJson(prepared.definition)}});
         if (!allowed) throw Error(ErrorCode::InvalidArgument, "Tool permission denied: " + decision.reason);
         context.cancellation.throwIfCancelled();
         event(callback, EventKind::ToolStarted, context, call, {}, toJson(call));
+        ProcedureScope execution("tool_execution",context,{{"arguments",call.arguments}},callback);
         result = options_.planning?options_.planning->execute(context,prepared.definition,prepared.execute):prepared.execute();
         context.cancellation.throwIfCancelled();
         if (!result.isError) entry->validateOutput(result.data);
+        execution.returned({{"text",result.text},{"data",result.data},{"is_error",result.isError}});
         mcpOutputEligible=tool.isMcp&&!result.isError;
+    } catch (const detail::DeferredDecision& deferred) {
+        result={"Not executed: economic decision deferred this tool.",{{"not_executed",true},{"decision",deferred.report}},false};
+        result.metadata={{"iilocal.decision_deferred",true},{"iilocal.decision",deferred.report}};
     } catch (const Error& e) {
         if (e.code() == ErrorCode::Cancelled || e.code() == ErrorCode::ConsumerFailure) throw;
         result = {QString::fromUtf8(e.what()), {{"error_code", iiLocalLLM::enumName(e.code())}}, true};
@@ -372,7 +402,7 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
     catch (...) { result = {"Tool failed with an unknown exception", {}, true}; }
     if(!beforeFeedback.isEmpty())result.text+='\n'+beforeFeedback;
     auto accumulatedFeedback=beforeFeedback;
-    for (const auto& hook : options_.hooks) {
+    if(!result.metadata["iilocal.decision_deferred"].toBool())for (const auto& hook : options_.hooks) {
         context.cancellation.throwIfCancelled();
         auto r = hook({HookKind::AfterTool, context.sessionId, context.runId, call, result, {},hookContext,modelContext}, context.cancellation);
         hookEvents(r);
@@ -402,6 +432,14 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
             throw Error(ErrorCode::StorageFailure, "Cannot persist large tool output");
         result.text = result.text.left(options_.maxResultCharacters) + "\nFull output: " + path;
     }
+    const auto effective=toolProcedure.returned({{"text",result.text},{"data",result.data},{"is_error",result.isError}},
+        [registry=registry_,name=call.name,limit=options_.maxResultCharacters](const QJsonObject& value){
+            for(auto it=value.begin();it!=value.end();++it)if(!QStringList{"text","data","is_error"}.contains(it.key()))throw Error(ErrorCode::InvalidArgument,"Unknown replacement tool return field");
+            if(!value["text"].isString()||!value["data"].isObject()||!value["is_error"].isBool()||value["text"].toString().size()>limit)
+                throw Error(ErrorCode::InvalidArgument,"Invalid replacement tool return");
+            if(!value["is_error"].toBool())registry->validateOutput(name,value["data"].toObject());
+        });
+    result.text=effective["text"].toString();result.data=effective["data"].toObject();result.isError=effective["is_error"].toBool();
     event(callback, EventKind::ToolFinished, context, call, result.text, {{"is_error", result.isError}, {"result", result.data},
         {"content", result.content}, {"metadata", result.metadata}});
     return result;

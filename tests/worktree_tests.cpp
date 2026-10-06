@@ -136,7 +136,7 @@ private slots:
     }};
     Fixture f;auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();a::registerWorkspaceTools(*registry,f.repo);
     a::PermissionSettingsOptions settings;settings.workingDirectory=f.repo;settings.fallbackMode=a::PermissionMode::Bypass;
-    auto policy=std::make_shared<a::SettingsPermissionPolicy>(settings);a::EngineOptions options;options.sessionsDirectory=f.state;options.worktrees=f.options;options.worktrees.enabled=true;options.worktrees.deferred=false;options.projectMemoryEnabled=true;options.memoryRecall.enabled=false;options.memoryExtraction.enabled=false;
+    auto policy=std::make_shared<a::SettingsPermissionPolicy>(settings);a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=f.state;options.worktrees=f.options;options.worktrees.enabled=true;options.worktrees.deferred=false;options.projectMemoryEnabled=true;options.memoryRecall.enabled=false;options.memoryExtraction.enabled=false;
     a::Engine engine(model,registry,policy,options);const auto session=engine.createSession("fixture",f.repo);const auto result=engine.run({session.id,"Create an isolated worktree, edit and leave keeping it."}).result.get();
     QVERIFY2(result.status==a::RunStatus::Completed,qPrintable(result.errorMessage));QCOMPARE(result.text,"DONE");
     const auto history=engine.session(session.id);for(const auto& message:history.messages)if(message.role==a::MessageRole::Tool)QVERIFY2(!message.isError,qPrintable(message.text));
@@ -148,7 +148,7 @@ private slots:
  void sessionEndHooksObserveTheCurrentWorktree(){
     class Model:public a::Model {public:a::ModelReply generate(const a::ModelRequest&,const CancellationToken&,const std::function<bool(const QString&)>&)override{return {"READY",{},{1,1}};}};
     Fixture f;auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
-    a::EngineOptions options;options.sessionsDirectory=f.state;options.worktrees=f.options;options.worktrees.enabled=true;
+    a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=f.state;options.worktrees=f.options;options.worktrees.enabled=true;
     QString cwd,snapshot;options.hooks.append([&](const a::HookInput& input,const CancellationToken&){if(input.kind==a::HookKind::SessionEnd){cwd=input.context["cwd"].toString();if(input.modelContext&&input.modelContext->session)snapshot=input.modelContext->session->workingDirectory;}return a::HookResult{};});
     a::Engine engine(std::make_shared<Model>(),registry,policy,options);const auto id=engine.createSession("fixture",f.repo).id;
     QCOMPARE(engine.run({id,"Start"}).result.get().text,QString("READY"));const auto entered=engine.runWorktreeTool(id,"EnterWorktree",{{"name","end-hook"}});
@@ -158,7 +158,7 @@ private slots:
  void engineResumeAndBackgroundShellUseTheOwnedWorkspace(){
     class Model:public a::Model {public:a::ModelReply generate(const a::ModelRequest&,const CancellationToken&,const std::function<bool(const QString&)>&)override{return {"DONE",{},{1,1}};}};
     Fixture f;auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();auto shells=std::make_shared<a::ShellTasks>(f.repo,f.root.filePath("shells"));a::registerWorkspaceTools(*registry,f.repo,shells);
-    auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);a::EngineOptions options;options.sessionsDirectory=f.state;options.worktrees=f.options;options.worktrees.enabled=true;
+    auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=f.state;options.worktrees=f.options;options.worktrees.enabled=true;
     QString id,path;
     {a::Engine engine(model,registry,policy,options);id=engine.createSession("fixture",f.repo).id;auto entered=engine.runWorktreeTool(id,"EnterWorktree",{{"name","persistent"}});QVERIFY2(!entered.isError,qPrintable(entered.text));path=entered.data["worktreePath"].toString();
      QCOMPARE(engine.session(id).workingDirectory,path);QCOMPARE(engine.sessionMetadata(id).workingDirectory,f.repo);QVERIFY_THROWS_EXCEPTION(Error,engine.clearSession(id));

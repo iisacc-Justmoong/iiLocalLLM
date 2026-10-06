@@ -93,12 +93,12 @@ private slots:
         if(request.messages.last().role==a::MessageRole::Tool)return {"DONE",{},{1,1}};
         return {{},{{"lsp-call","LSP",{{"operation","documentSymbol"},{"filePath","main.cpp"},{"line",1},{"character",1}}}},{1,1}};}};
     Fixture f;QTemporaryDir state{QDir::current().filePath("lsp-owned-XXXXXX")};auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>();
-    a::EngineOptions options;options.lsp=f.options;options.lsp.deferred=false;options.skills.enabled=false;options.projectContext.enabled=false;options.toolSearch.enabled=false;options.compaction.automatic=false;
+    a::EngineOptions options{.decision={.enabled=false}};options.lsp=f.options;options.lsp.deferred=false;options.skills.enabled=false;options.projectContext.enabled=false;options.toolSearch.enabled=false;options.compaction.automatic=false;
     options.sessionsDirectory=state.filePath("engine");a::Engine engine(model,registry,policy,options);auto session=engine.createSession("fixture",f.root.path());
     const auto answer=engine.run({session.id,"Analyze"}).result.get();QCOMPARE(answer.status,a::RunStatus::Completed);QCOMPARE(answer.text,"DONE");QCOMPARE(engine.session(session.id).messages.size(),4);
     QVERIFY(!engine.runLsp(session.id,f.args()).isError);QCOMPARE(engine.session(session.id).messages.size(),4);QCOMPARE(engine.lspStatus(session.id)["servers"].toArray().size(),1);
     engine.endSession(session.id);QVERIFY(engine.lspStatus(session.id)["servers"].toArray().isEmpty());
-    options.sessionsDirectory.clear();a::ApiOptions apiOptions;apiOptions.engine=options;apiOptions.workingDirectory=f.root.path();apiOptions.stateDirectory=state.filePath("api");apiOptions.clientTokens={{"society",QString(48,'a')},{"dreamscapes",QString(48,'b')}};
+    options.sessionsDirectory.clear();a::ApiOptions apiOptions{.engine={.decision={.enabled=false}}};apiOptions.engine=options;apiOptions.workingDirectory=f.root.path();apiOptions.stateDirectory=state.filePath("api");apiOptions.clientTokens={{"society",QString(48,'a')},{"dreamscapes",QString(48,'b')}};
     a::Api api(model,registry,policy,apiOptions);auto apiCall=[&](QString method,QJsonObject params={},QString token=QString(48,'a')){return api.dispatch(method,params,token).result.get().toObject();};
     QVERIFY(apiCall("agent.info")["lsp_enabled"].toBool());const auto id=apiCall("agent.sessions.create",{{"model","fixture"}})["session_id"].toString();auto params=f.args();params["session_id"]=id;
     QVERIFY(!apiCall("agent.lsp.query",params)["is_error"].toBool());QVERIFY_THROWS_EXCEPTION(Error,apiCall("agent.lsp.query",params,QString(48,'b')));QCOMPARE(apiCall("agent.sessions.get",{{"session_id",id}})["message_count"].toInt(),0);

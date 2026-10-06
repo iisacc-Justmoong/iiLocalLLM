@@ -27,6 +27,7 @@ struct ApiOptions {
     bool teamsEnabled = false;
     TeamsOptions teams; // workspace and stores are assigned per authenticated client.
     std::optional<PermissionRequestsOptions> permissionRequests; // Opt-in; one channel per authenticated client.
+    ProcedureOptions procedures; // Return interception is host configuration; one private channel per client.
 };
 // One authenticated service shared by HTTP and native IPC. App identities own
 // separate persistent Engine stores. Model, registry and policy are host-owned.

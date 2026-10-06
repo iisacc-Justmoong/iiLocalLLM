@@ -224,7 +224,7 @@ private slots:
         a::CommandHookOptions options;options.workingDirectory=workspace;
         const auto block=output({{"decision","block"},{"reason","REVISE_FROM_HOOK"}});
         a::CommandHooks hooks(config("Stop","cat >> stop-input.jsonl; if [ ! -f revised ]; then touch revised; "+block+"; fi"),options);
-        auto model=std::make_shared<Model>();a::EngineOptions engineOptions;engineOptions.sessionsDirectory=root.filePath("state");engineOptions.hooks={hooks.callback()};
+        auto model=std::make_shared<Model>();a::EngineOptions engineOptions{.decision={.enabled=false}};engineOptions.sessionsDirectory=root.filePath("state");engineOptions.hooks={hooks.callback()};
         a::Engine engine(model,files(workspace),std::make_shared<a::RulePolicy>(),engineOptions);
         const auto session=engine.createSession("model://test",workspace);
         const auto result=engine.run({session.id,"answer"}).result.get();
@@ -249,7 +249,7 @@ private slots:
         auto settings=config("SubagentStart","cat >> child.jsonl","general-purpose");
         auto entries=settings["hooks"].toObject();entries["SubagentStop"]=config("SubagentStop","cat >> child.jsonl","general-purpose")["hooks"].toObject()["SubagentStop"];
         settings["hooks"]=entries;a::CommandHookOptions options;options.workingDirectory=workspace;a::CommandHooks hooks(settings,options);
-        a::EngineOptions engineOptions;engineOptions.sessionsDirectory=root.filePath("parents");engineOptions.hooks={hooks.callback()};
+        a::EngineOptions engineOptions{.decision={.enabled=false}};engineOptions.sessionsDirectory=root.filePath("parents");engineOptions.hooks={hooks.callback()};
         a::SubagentOptions subOptions;subOptions.workingDirectory=workspace;subOptions.stateDirectory=root.filePath("children");
         a::Subagents subagents(std::make_shared<Model>(),files(workspace),std::make_shared<a::RulePolicy>(),engineOptions,subOptions);
         const auto parent=a::SessionStore(engineOptions.sessionsDirectory).create("model://test","",workspace);

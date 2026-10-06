@@ -32,7 +32,7 @@ int main(int argc,char** argv) {
         const auto work=root.filePath("work"),sessions=root.filePath("sessions");QDir().mkpath(work);a::SessionStore store(sessions);
         for(int i=0;i<5;++i){const auto id=store.create(uri,"Prior conversation",work).id;store.acquire(id)->append({{},a::MessageRole::User,"We discussed report language preferences in this project."});}
         auto model=std::make_shared<a::ServiceModel>(service);auto tools=std::make_shared<a::ToolRegistry>();a::registerWorkspaceTools(*tools,work);
-        auto policy=std::make_shared<a::RulePolicy>();a::EngineOptions options;options.sessionsDirectory=sessions;
+        auto policy=std::make_shared<a::RulePolicy>();a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=sessions;
         options.projectMemoryEnabled=true;options.sessionHistoryEnabled=true;options.memoryRecall.enabled=false;options.memoryExtraction.enabled=false;
         options.memoryDream.automatic=true;options.projectContext.enabled=false;options.skills.enabled=false;options.toolSearch.enabled=false;options.compaction.automatic=false;
         QJsonArray calls;std::mutex callsMutex;

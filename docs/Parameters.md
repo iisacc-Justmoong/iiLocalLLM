@@ -79,10 +79,10 @@ const auto loraArguments = restored.object("peft.LoraConfig").toNativeJson();
 | JSON 필드 | 기본값 | 의미·제약 |
 | --- | --- | --- |
 | max_tokens | 256 | 생성 한도 1..1,048,576; 모델 컨텍스트 예산을 별도 적용 |
-| temperature | 0.7 | 0..10, 0=greedy. HTTP 호환 인터페이스는 0..2 |
+|온도| 0.7 | 0..10, 0=greedy. HTTP 호환 인터페이스는 0..2 |
 | top_p / top_k | 0.9 / 40 | nucleus 확률 (0,1] / 상위 후보 수, K=0은 끔 |
-| seed | 0 | uint32 난수 시드. 다른 엔진·장치의 동일 출력을 보장하지 않음 |
-| stop | [] | 최대 16개, 각 1..1024자; 중지 문자열을 출력에서 제외 |
+|시드| 0 | uint32 난수 시드. 다른 엔진·장치의 동일 출력을 보장하지 않음 |
+|정지| [] | 최대 16개, 각 1..1024자; 중지 문자열을 출력에서 제외 |
 | min_p | 0 | 최대 후보 대비 최소 상대 확률 0..1 |
 | typical_p | 1 | typical sampling (0,1]. 활성화는 llama.cpp만 지원 |
 | min_keep | 1 | 최소 후보 수. MLX에서는 min-p에 적용; 실제 어휘 크기 검사 |

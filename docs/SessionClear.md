@@ -4,10 +4,10 @@
 
 | 진입점 | 동작 |
 |---|---|
-| engine.clearSession(id) | 해당 세션의 접수된 실행과 네이티브 호출을 취소·대기하고 새 세션을 반환 |
-| agent.sessions.clear {session_id} | 인증된 클라이언트의 세션만 초기화; 새 세션 상한을 먼저 예약 |
-| MCP iiLocalLLM.agent.clear {} | 같은 연결의 진행·대기 호출을 취소·대기; 모델을 실행하지 않음 |
-| MCP iiLocalLLM.agent.run {new_session:true,...} | 새 대화로 초기화한 뒤 입력 실행; 기존 실행 잠금 뒤에서 처리되므로 즉시 중단에는 별도 clear 도구 사용 |
+|엔진.clearSession(id)| 해당 세션의 접수된 실행과 네이티브 호출을 취소·대기하고 새 세션을 반환 |
+|Agent.sessions.clear {session_id}| 인증된 클라이언트의 세션만 초기화; 새 세션 상한을 먼저 예약 |
+|MCP iiLocalLLM.agent.clear {}| 같은 연결의 진행·대기 호출을 취소·대기; 모델을 실행하지 않음 |
+|MCP iiLocalLLM.agent.run {new_session:true,...}| 새 대화로 초기화한 뒤 입력 실행; 기존 실행 잠금 뒤에서 처리되므로 즉시 중단에는 별도 clear 도구 사용 |
 
 0.26의 순서는 기존 실행 정리 → SessionEnd(clear) → 새 세션 게시 → 런타임 권한 상속 → 백그라운드 소유권 전환 → SessionStart(clear)이다. 새 세션은 같은 모델·작업 디렉터리·호스트 system prompt를 사용하고 parent_session_id로 이전 기록을 가리킨다. 새 ID이므로 이전 대화·압축·읽은 파일 상태·선택한 도구·모델 문맥 ID를 재사용하지 않는다. 실제 추론은 다음 run까지 실행하지 않는다. 시작 훅의 additionalContext는 새 기록에, initialUserMessage는 새 입력 큐에 저장한다. 이후 같은 Engine의 run은 시작 훅을 반복하지 않는다.
 

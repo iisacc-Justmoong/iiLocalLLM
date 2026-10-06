@@ -55,7 +55,7 @@ int main(int argc,char** argv) {
         const auto uri=modelUri(manifest.id);ModelLoadRequest load{uri,8192};load.options["tool_grammar"]=true;load.options["enable_thinking"]=false;(void)service.loadModel(load).get();
         const auto workspace=root.filePath("work");QDir().mkpath(workspace);auto registry=std::make_shared<a::ToolRegistry>();a::registerWorkspaceTools(*registry,workspace);
         const auto code="PLAN_"+QUuid::createUuid().toString(QUuid::WithoutBraces).remove('-').left(10);
-        auto model=std::make_shared<Guided>(service);a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");
+        auto model=std::make_shared<Guided>(service);a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");
         options.planToolsEnabled=true;options.planToolsDeferred=false;options.skills.enabled=false;options.toolSearch.enabled=false;options.projectContext.enabled=false;options.compaction.automatic=false;
         int reviews=0;QString original;
         options.permissionResponse=[&](const auto& call,const auto&,const auto& c) {

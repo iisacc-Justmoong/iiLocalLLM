@@ -18,8 +18,8 @@ C++ 호스트는 Engine::hookStatus(sessionId, offset=0, limit=32)와 cancelHook
 
 | 전송 | 조회 | 취소 | 소유권 |
 | --- | --- | --- | --- |
-| 인증 HTTP/native IPC 및 iillm rpc | agent.hooks.status {session_id, offset?, limit?} | agent.hooks.cancel {session_id, hook_id?} | API 인증 클라이언트의 세션 |
-| MCP | iisacc/hooks/status {offset?, limit?} | iisacc/hooks/cancel {hook_id?} | 현재 MCP 연결만 |
+| 인증 HTTP/native IPC 및 iillm rpc |Agent.hooks.status {session_id, 오프셋?, 제한?}|Agent.hooks.cancel {session_id, hook_id?}| API 인증 클라이언트의 세션 |
+| MCP |iisacc/후크/상태 {오프셋?, 제한?}|iisacc/후크/취소 {hook_id?}| 현재 MCP 연결만 |
 
 MCP는 experimental.iisacc/asyncHooks에 iisacc.async-hooks/1과 두 메서드를 공개한다. HTTP RPC의 정상 응답 정리는 수락된 백그라운드 훅을 취소하지 않는다. 아직 끝나지 않은 요청의 연결 중단·기한 만료는 기존 취소 경로를 따른다. 제어 메서드는 모델용 도구가 아니며 등록된 별도 제어 용량을 사용한다. 외부 session_id나 설정/명령 입력은 받지 않는다. Engine 없는 MCP 내보내기도 연결별 수명·조회·취소를 제공하지만 문맥 큐와 자동 모델 실행은 없다. 조회는 count/hooks/next_offset을 반환하고 Engine의 활성 훅 상태가 있으면 wake_runs/pending_wake_inputs/wake_disabled/wake_error를, 자동 실행이 있으면 wake_run을 추가 제공한다. max_wake_runs는 엔진의 설정값이다. 기동 상태는 조회 시점의 관측이며 페이지 사이 원자적 스냅샷은 아니다.
 

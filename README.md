@@ -1,52 +1,56 @@
 # iiLocalLLM
 
-로컬 LLM 대화와 C++ 에이전트 실행을 제공하는 MVP 모듈이다. 0.52.0의 완료 범위는 모델 로드·대화·스트리밍·세션·취소, 도구 실행, C++/native IPC/HTTP/MCP 연동과 로컬 플러그인 실행이다. 실행 방법은 아래 CLI 예시, 실행 계층은 [AgentHarness.md](docs/AgentHarness.md), 실제 모델과 새 설치본의 최종 검증은 [Verification.md](docs/Verification.md)를 따른다.
+A MVP module that provides local LLM conversations and C++ agent execution. The completed scope of 0.52.0 covers model loading, conversations, streaming, sessions, cancellation, tool execution, C++/native IPC/HTTP/MCP integration, and local plugin execution. For execution instructions, follow the CLI examples below; for the execution layers, follow [AgentHarness.md](docs/AgentHarness.md); for final verification with real models and a fresh installation, follow [Verification.md](docs/Verification.md).
 
-[HarnessParity.md](docs/HarnessParity.md)는 참조 하네스 전체와의 비교 자료이다. 마켓플레이스·실행 중 플러그인 갱신·원격 하네스와 모든 앱·플랫폼의 동등성은 이번 MVP 완료 범위에 포함하지 않는다. 아래 버전별 기록의 미완료 항목은 해당 버전 당시의 범위이다.
+[HarnessParity.md](docs/HarnessParity.md)is reference data for comparison with the entire harness. Marketplace, running plugin updates, remote harness, and equivalence with all apps and platforms are not included in this MVP completion scope. The incomplete items in the version-specific records below are the scope at the time of that version.
 
-0.52.0은 C++ [로컬 플러그인 저장소와 실행](docs/Plugins.md)을 추가한다. 설치된 revision의 스킬·명령·에이전트·훅·MCP·LSP를 기존 실행기에 연결하고, 앱은 인증 API와 MCP로 구성 상태를 확인한다. 갱신·제거는 이전 캐시와 데이터를 보존하며 다음 호스트 시작에 적용한다.
+0.54.0 adds [quantitative host value admission using iiDecision](docs/DecisionGate.md). The harness evaluates success/failure probabilities and expected gain minus loss and cost before model work and tool execution. Missing or low-value host assessments return `deferred`. Eligible tool proposals are ranked by expected value; `decision_input` returns accept trusted host facts, and `decision` returns expose the actual assessment. This policy is enabled by default. Hosts migrating older workflows may explicitly set `decision.enabled=false`. Consumers must rebuild against the 0.54 headers and library.
 
-0.51.0은 [로컬 팀](docs/Teams.md)의 도구 스키마를 역할과 실제 미결 종료 요청에 맞춰 갱신한다. 리더만 종료를 요청하고, 해당 팀원만 요청 ID에 묶인 승인·거부를 보낼 수 있다.
+0.53.0 adds [procedure return control and child request deduplication](docs/Procedures.md). Hosts observe named execution stages and may continue, replace validated input/model/tool/completion returns, or cancel before the next stage consumes the return. Authenticated IPC/HTTP and connection-bound MCP controls remain available while a run waits. Repeated identical new-child requests within one parent run reuse the existing child; explicit idempotency keys preserve the initial receipt across host restarts. Consumers must rebuild against the 0.53 headers and library.
 
-0.50.0은 조건부 메시지 입력 스키마와 Qwen3.5 네이티브 XML 도구 문법을 보정했다. 필수 요약, 문자열·객체 구분, 인자 순서와 대화 이력의 인코딩을 같은 계약에 맞춘다. 시작·유휴 상태의 공유 작업 자동 선점과 우선순위별 메시지 처리도 제공한다.
+0.52.0 adds C++ [local plugin repository and running](docs/Plugins.md). Installed revision's skills, commands, agents, hooks, MCP, and LSP are connected to the existing runner, and apps check configuration status via authentication API and MCP. Updates and removals preserve previous cache and data and apply on the next host start.
 
-0.47.0은 [보관 파일과 체크포인트를 포함한 세션 분기](docs/SessionFork.md)를 추가한다. 대화의 경로를 새 소유자에 연결하고 부모 백업과 독립된 사본을 만든다. C++·API·CLI·MCP 및 자식 에이전트의 문맥 분기에 적용한다.
+0.51.0 updates the [local team](docs/Teams.md)tool schema to match role and actual unresolved termination requests. Only the leader can request termination, and only the corresponding team member can send approval or rejection tied to the request ID.
 
-0.46.0은 C++ [파일 체크포인트와 복원](docs/FileCheckpoints.md)을 추가한다. 사용자 메시지별 원본 기록, 새 파일 삭제 복원, 세션 잠금·작업 트리 경계·권한과 인증 API·MCP·CLI를 제공한다.
+0.50.0 corrects the conditional message input schema and Qwen3.5 native XML tool syntax. It aligns required summaries, string/object distinction, argument order, and dialogue history encoding to the same contract. It also provides automatic preemption of shared tasks in starting and idle states, along with priority-based message processing.
 
-0.45.0은 C++ [Jupyter 노트북 셀 편집](docs/Notebooks.md)을 추가한다. NotebookEdit의 읽기 선행·권한·변경 감지·백업과 인증 API·MCP·CLI를 제공하며, 같은 세션의 작업 트리와 압축 경계를 따른다.
+0.47.0 adds session branching](docs/SessionFork.md), including [archived files and checkpoints. It connects the dialogue path to the new owner and creates a parent backup and independent copy. It applies to context branching for C++ · API · CLI · MCP and child agents.
 
-0.43.0은 C++ [LSP 코드 탐색](docs/Lsp.md)을 제공한다. 호스트가 지정한 언어 서버의 9개 연산, 버전이 있는 문서 동기화, 소유 세션별 프로세스와 진단, 읽기 권한 및 API·MCP·CLI를 연결한다.
+0.46.0 adds C++   [file checkpoints and restore](docs/FileCheckpoints.md). It provides original records per user message, new file deletion restore, session locking, work tree boundary, and permissions and authentication API · MCP ·CLI.
 
-0.42.0은 [WebFetch](docs/WebFetch.md)의 익명 조회·HTML 변환·캐시와 로컬 모델 추출을 제공한다.
+0.45.0 adds C++   [Jupyter notebook cell editing](docs/Notebooks.md). It provides NotebookEdit read precedence, permissions, change detection, backup, and authentication API · MCP ·CLI, and follows the work tree and compression boundary of the same session.
 
-0.41.0은 [프로젝트 메모리 정리](docs/MemoryDream.md)를 추가한다. 24시간·최근 대화 수 조건, 프로세스 잠금, 부모 문맥과 권한을 유지한 C++ 정리 작업, 성공 시각·진행 요약과 인증 API·MCP·CLI를 제공한다. 자동 실행은 기본 OFF이다.
+0.43.0 provides C++   [LSP  code exploration](docs/Lsp.md). It connects 9 operations of the host-specified language server, versioned document synchronization, per-owner session processes and diagnostics, and read permissions and API · MCP ·CLI.
 
-0.40.0은 [저장된 대화 검색](docs/SessionHistory.md)을 제공한다. C++ `SessionSearch`로 큰 JSONL 기록을 나누어 검색하며 소유 범위·원문 위치·변경 감지·권한을 인증 API·MCP·CLI에 연결한다. [대화 종료 메모리 추출](docs/MemoryExtraction.md)도 유지한다.
+0.42.0 provides anonymous retrieval, HTML conversion, caching, and local-model extraction through [WebFetch](docs/WebFetch.md).
 
-0.38.0은 로컬 모델이 관련 주제 메모를 선택하는 [메모리 회상](docs/MemoryRecall.md)을 제공한다. 비동기 선행 실행, 문맥 첨부, 중복·오래된 정보·크기 관리와 인증 API·MCP·CLI를 연결한다. 0.37의 저장·인덱스·파일 도구 계약은 [프로젝트 메모리](docs/ProjectMemory.md), 0.36의 C++ QuestionInbox와 LVRS 질문 화면 계약은 [질문 UI](docs/QuestionUI.md)를 따른다.
+0.41.0 adds [project memory cleanup](docs/MemoryDream.md). It provides 24 time and recent dialogue count conditions, process locking, and C++ cleanup work that maintains parent context and permissions, along with success timestamp, progress summary, and authentication API · MCP ·CLI. Automatic execution is OFF by default.
 
-0.35.0은 C++ AskUserQuestion으로 선택지·자유 입력·부분 응답·미리보기·주석을 호스트 응답과 연결한다. API·IPC·MCP 및 입력 제한은 [사용자 질문](docs/UserQuestions.md)을 따른다.
+0.40.0 provides [stored conversation search](docs/SessionHistory.md). C++ `SessionSearch` divides large JSONL records for search and authenticates scope, original text location, change detection, and permissions API, MCP, and connects to CLI. [also maintains conversation end memory extraction](docs/MemoryExtraction.md).
 
-0.34.0은 세션별 계획 작성·검토·실행 전환을 C++로 제공한다. 실제 계획 파일의 검토, 호스트 수정, 변경 충돌 검사와 API·MCP 연동은 [계획 모드](docs/PlanMode.md)를 따른다.
+0.38.0 provides [memory recall](docs/MemoryRecall.md), where the local model selects relevant topic notes. It connects asynchronous advance execution, context attachment, duplicate/outdated-information/size management, and authenticated API, MCP, and CLI. Storage, index, and file-tool contracts in 0.37 follow [project memory](docs/ProjectMemory.md). The C++ QuestionInbox and LVRS question-screen contracts in 0.36 follow [question UI](docs/QuestionUI.md).
 
-0.32.0은 성공한 MCP 도구의 결과를 명령·HTTP·C++ 훅에서 교체하는 updatedMCPToolOutput을 추가한다. 모델·API·MCP에 변경된 관측을 전달하며 원래 구조화 결과와 일반 도구를 구분한다. 설정, 콘텐츠 형식 및 참조 차이는 [McpOutputHooks.md](docs/McpOutputHooks.md)를 따른다. 전체 하네스는 계속 구현 중이다.
+0.35.0 connects options, free input, partial response, preview, and annotations to host responses with C++ AskUserQuestion. API, IPC, MCP, and input limits follow [user question](docs/UserQuestions.md).
 
-0.31.0은 C++ 에이전트 훅을 추가한다. 별도 대화에서 실제 도구를 사용하고 StructuredOutput으로 판단하며, dontAsk 권한·50개 메시지 한도·취소와 임시 상태 정리를 적용한다. API·CLI·MCP도 같은 경로를 사용한다. 설정과 참조 차이는 [AgentHooks.md](docs/AgentHooks.md)에 기록한다. 전체 하네스는 계속 구현 중이다.
+0.34.0 provides session-based plan writing, review, and execution switching in C++. Review of actual plan files, host modification, and change conflict detection, along with API, MCP integration, follow [plan mode](docs/PlanMode.md).
 
-0.29.0은 C++ HTTP/HTTPS 훅을 API·CLI·MCP 실행 경로에 연결한다. JSON 결정·입력/권한 변경, URL/환경 허용 목록, DNS 주소 고정·TLS 검증, 프록시와 취소/시간/응답 한도를 제공한다. 설정과 참조 차이는 [HTTPHooks.md](docs/HTTPHooks.md)를 따른다. 기존 일반/제어 응답 용량은 [ControlCapacity.md](docs/ControlCapacity.md), 앱 권한 요청은 [PermissionRequests.md](docs/PermissionRequests.md)에 기록한다.
+0.32.0 adds a updatedMCPToolOutput that replaces the result of the successful MCP tool in the command· HTTP · C++ hook. It passes changed observations to the model· API ·MCP and distinguishes the original structured result from general tools. Settings, content format, and reference differences follow [McpOutputHooks .md](docs/McpOutputHooks.md). The entire harness is still under implementation.
 
-0.25.0은 Ask 도구의 PermissionRequest 훅과 구조화된 C++ 호스트 응답을 연결한다. 입력 변경 뒤 정책과 실행 대상을 재검사하고, 지속 권한 갱신은 명시적인 호스트 처리기로 전달한다. [PermissionRequest.md](docs/PermissionRequest.md)에 계약과 남은 범위를 기록한다.
+0.31.0 adds a C++ agent hook. It uses actual tools in a separate conversation, judges with StructuredOutput , and applies dontAsk permissions· 50 message limits·cancellation and temporary state cleanup. API · CLI ·MCP also uses the same path. Settings and reference differences are recorded in [AgentHooks .md](docs/AgentHooks.md). The entire harness is still under implementation.
 
-0.24.0은 C++·API·MCP의 대화 초기화와 즉시 SessionStart(clear)를 제공한다. 백그라운드 셸·자식 에이전트·완료 알림은 새 대화로 이어진다. 계약과 오류 복구 한계는 [SessionClear.md](docs/SessionClear.md)에 기록한다.
+0.29.0 connects C++ HTTP/HTTPS hooks to the API, CLI, and MCP execution paths. It provides JSON decisions and input/permission changes, URL/environment allowlists, DNS address pinning and TLS validation, proxies, and cancellation/time/response limits. For configuration and differences from the reference, follow [HTTPHooks.md](docs/HTTPHooks.md). Existing normal/control response capacities are recorded in [ControlCapacity.md](docs/ControlCapacity.md), and app permission requests are recorded in [PermissionRequests.md](docs/PermissionRequests.md).
 
-C++20, Qt 6.8.3 Core/Network 기반 로컬 LLM 서비스 SDK이다. 버전은 0.52.0이다. 앱은 `model://id`로 모델을 사용한다. 서비스는 manifest와 설치 파일을 관리하고 시작 시 검사한 하드웨어에 따라 실행 장치를 자동 선택한다. 모델 실행은 llama.cpp 또는 MLX에 맡기고 세션, 프롬프트 예산, KV 캐시, FIFO 스케줄링, 스트리밍, 로컬 IPC를 관리한다. 기존 `helloWorld()`와 `iiLocalLLM::iiLocalLLM` CMake 타깃은 유지한다.
+0.25.0 connects the PermissionRequest hook of the Ask tool with the structured C++ host response. After input changes, it rechecks policies and execution targets, and explicit host processing is used for persistent permission renewal. Contract and remaining scope are recorded in [PermissionRequest .md](docs/PermissionRequest.md).
 
-C++ stdio MCP 클라이언트가 외부 도구·리소스·프롬프트를 인식하고 에이전트 엔진에 연결한다. `iillm-mcp` 서버와 C++ 내장 API로 앱 도구 및 로컬 에이전트 실행을 외부 MCP 클라이언트에 제공한다. 프로토콜·정책·자료 보존 및 현재 지원 경계는 [MCP.md](docs/MCP.md) · [MCP 서버·앱 도구 제공](docs/MCPServer.md)에 설명한다.
+0.24.0 provides initialization of C++ · API ·MCP conversations and immediate SessionStart(clear) . Background shell·child agent·completion notifications lead to new conversations. Contract and error recovery limits are recorded in [SessionClear .md](docs/SessionClear.md).
 
-`agent::Api`를 같은 daemon의 HTTP `/v1/rpc`와 native IPC에 연결하면 앱별 키 인증·영속 세션·기본 transcript 분기·실행 이벤트·취소를 공유한다. 설치된 `iillm --auth-file FILE rpc METHOD [PARAMS_FILE]`로도 호출한다. 설정·메서드·수명·현재 한계는 [AgentAPI.md](docs/AgentAPI.md)에 설명한다.
+C++23, Qt 6.8.3 Core/Network-based local LLM service SDK. The current version is 0.54.0. The app uses `model://id` for models. The service manages manifests and installation files, and automatically selects the execution device based on inspected hardware at startup. Model execution is delegated to llama.cpp or MLX, and it manages sessions, prompt budget, KV cache, FIFO scheduling, streaming, and local IPC. Existing `helloWorld()` and `iiLocalLLM::iiLocalLLM` CMake targets are maintained.
 
-0.12.0은 데스크톱 POSIX의 실제 백그라운드 Bash 실행, `TaskOutput`·`TaskStop`·`ShellTaskList`, 실행 기록·출력 보존을 제공한다. 인증된 `agent.shell.*`, 얇은 CLI 및 MCP에서 같은 실행을 제어하며 모델의 다음 턴에는 현재 실행 상태를 전달한다. 대기 취소와 프로세스 종료, 정상 종료와 비정상 종료 복구의 차이는 [BackgroundTasks.md](docs/BackgroundTasks.md)에 명시한다. 소스와 설치 헤더·라이브러리는 함께 다시 빌드한다.
+The C++ stdio MCP client discovers external tools, resources, and prompts and connects them to the agent engine. The `iillm-mcp` server and C++ built-in API expose app tools and local agent execution to external MCP clients. Protocols, policies, material preservation, and current support boundaries are described in [MCP.md](docs/MCP.md) and [MCP server and app tool exposure](docs/MCPServer.md).
+
+Connecting `agent::Api` to the same daemon's HTTP `/v1/rpc` and native IPC allows sharing per-app key authentication, persistent sessions, default transcript branching, execution events, and cancellation. It is also invoked via installed `iillm --auth-file FILE rpc METHOD [PARAMS_FILE]`. Settings, methods, lifecycles, and current limits are described in [AgentAPI .md](docs/AgentAPI.md).
+
+0.12.0 provides actual background Bash execution on desktop POSIX, `TaskOutput` · `TaskStop` · `ShellTaskList`, execution logs, and output preservation. Authenticated `agent.shell.*`, thin CLI, and MCP control the same execution and pass the current execution state to the model's next turn. The difference between waiting cancellation and process termination, and normal termination and abnormal termination recovery is specified in [BackgroundTasks .md](docs/BackgroundTasks.md). Sources and installation headers and libraries are rebuilt together.
 
 ```text
 C++ Local API / Native IPC / localhost HTTP
@@ -63,48 +67,52 @@ C++ Local API / Native IPC / localhost HTTP
      llama.cpp/GGUF   MLX/Python
 ```
 
-| 구성 | 동작 |
+|Configuration|Operation|
 | --- | --- |
-| Model Manager | install/remove/list/resolve/verify/load/unload, manifest·URI·파일 무결성 관리, 엔진 수명 조정 |
-| ModelCatalog / RuntimeManager | 엔진과 독립된 디스크 카탈로그 / 모델 형식·장치에 따른 런타임 선택과 메모리 수명 |
-| Hardware / Policy | GPU vendor·VRAM·통합 메모리·RAM·CPU·가속 API 검사, Metal → CUDA → Vulkan → CPU 정책 |
-| Session Manager | 모델별 system/user/assistant 이력, 초기화·종료 |
-| Prompt / Chat Engine | 실제 tokenizer, 출력 토큰 예약, 오래된 완결 턴 제거 |
-| Context / KV Cache Manager | 세션별 runtime context, LRU, 개수·예약 토큰 상한 |
-| Scheduler | 전용 작업 스레드, bounded FIFO, 취소, 종료 시 future 완료 |
-| Streaming | started → delta → finished, Unicode 처리, 청크를 가로지르는 stop |
-| Local API / IPC / HTTP | C++ future/handle API, 사용자 전용 Local Socket의 NDJSON, localhost Chat Completions JSON/SSE |
-| Runtime Abstraction | Runtime / RuntimeModel / RuntimeContext의 세 인터페이스 |
+| Model Manager |install/remove/list/resolve/verify/load/unload, manifest·URI·file integrity management, engine lifecycle adjustment|
+| ModelCatalog / RuntimeManager |Engine-independent disk catalog / model format, runtime selection based on device, and memory lifecycle|
+| Hardware / Policy |GPU vendor·VRAM·integrated memory·RAM·CPU·acceleration API check, Metal → CUDA → Vulkan → CPU policy|
+| Session Manager |Per-model system/user/assistant history, initialization, termination|
+| Prompt / Chat Engine |Actual tokenizer, output token reservation, removal of old completed turns|
+| Context / KV Cache Manager |Per-session runtime context, LRU, count and reserved token limit|
+| Scheduler |Dedicated worker threads, bounded FIFO, cancellation, future completion on termination|
+| Streaming |started → delta → finished,  Unicode  processing, stop crossing chunks|
+| Local API / IPC / HTTP |C++  future/handle  API , user-only Local Socket  NDJSON , localhost Chat Completions  JSON / SSE|
+| Runtime Abstraction |Runtime /  RuntimeModel  /  RuntimeContext  three interfaces|
 
-ONNX 등은 위 인터페이스를 구현하여 등록한다. 현재 내장 어댑터는 llama.cpp와 MLX이다. HTTP Chat Completions는 텍스트와 함수 도구 호출 일부 계약을 구현한다. 영속 에이전트 세션은 별도 agent API로 제공하며 멀티모달 입력은 미완료이다.
+ONNX  etc. implement and register the above interfaces. Current built-in adapters are llama.cpp and MLX.  HTTP  Chat Completions implements part of the text and function tool call contract. Persistent agent sessions are provided via a separate agent API and multimodal input is not yet complete.
 
-## 상세 제어 객체
+<a id="상세-제어-객체"></a>
 
-추론부터 학습·파인튜닝까지 391개 설정 그룹을 `ParameterCatalog`, `ParameterObject`, `ControlParameters`로 다룬다. 원본 타입·기본값·선택값·제약·설명·상속·소스 커밋/해시를 조회하고 원본 JSON으로 내보낸다. 공통 생성 옵션 16개는 실제 llama.cpp/MLX 요청에 연결된다. 학습 객체는 설정 검증·내보내기를 제공한다. 조사 범위와 실행 지원의 구분, API·CLI 예제는 [Parameters.md](docs/Parameters.md), 공식 소스와 라이선스는 [ParameterSources.md](docs/ParameterSources.md)를 참고한다.
+## Detailed control object
+
+Handles 391 configuration groups, from inference to training and fine-tuning, through `ParameterCatalog`, `ParameterObject`, and `ControlParameters`. It queries original types, defaults, choices, constraints, descriptions, inheritance, and source commits/hashes and exports the original JSON. The 16 common generation options are connected to actual llama.cpp/MLX requests. Training objects provide configuration validation and export. For the distinction between the investigated scope and execution support, and API/CLI examples, see [Parameters.md](docs/Parameters.md); for official sources and licenses, see [ParameterSources.md](docs/ParameterSources.md).
 
 ```sh
 ./build/iillm parameters trl.GRPOConfig
 ./build/iillm parameters peft.LoraConfig docs/examples/lora.json
-./build/iillm run qwen2.5:0.5b "안녕하세요" --options docs/examples/generation.json
+./build/iillm run qwen2.5:0.5b "Hello" --options docs/examples/generation.json
 ```
 
-0.10.0은 실행 중인 로컬 앱의 인증된 MCP 주소를 자동 발견하고 실제 QObject 컨트롤러에 호출을 전달한다. Society·Dreamscapes의 데스크톱 도구와 취소·수명 계약은 [로컬 앱 연결](docs/LocalApplications.md)에 기록한다. 0.10 당시 ABI는 0.10이었다. 현재 버전의 소비자는 새 헤더·라이브러리로 함께 다시 빌드한다.
+0.10.0  automatically discovers the authenticated  MCP  address of the running local app and forwards the call to the actual  QObject  controller.  Society ·Dreamscapes' desktop tools and cancel/lifetime contracts are recorded at  [local app connection](docs/LocalApplications.md).  0.10  ABI at the time was  0.10 . Current version consumers rebuild together with new headers and libraries.
 
-0.9.0은 설정 파일의 MCP 서버 연결·복구와 대화별 `ToolSearch`를 제공한다. 선택 상태는 재개·분기·압축 후에도 복구하고 스키마·연결 변경 시 다시 검색한다. `agent.mcp.status`와 `iillm agent mcp`로 상태를 조회한다. [도구 검색과 MCP 설정](docs/ToolDiscovery.md)에 사용법과 한계를 기록한다.
+0.9.0  provides  MCP  server connection and recovery and per-conversation  `ToolSearch` . Status is recovered even after resume/branch/compress and re-searches on schema/connection changes.  `agent.mcp.status`  and  `iillm agent mcp`  are used to query status.  [tool search and  MCP  settings](docs/ToolDiscovery.md)record usage and limits.
 
-고정 Qwen2.5 0.5B 모델은 검색 후 연속 호출 검증을 통과하지 못했다. 이 모델에서는 MCP 도구를 처음부터 제공하는 `--agent-mcp-eager` / `--mcp-eager` 경로를 사용할 수 있다. 자세한 관측 결과는 [Verification.md](docs/Verification.md)에 기록한다.
+Fixed Qwen2.5   0.5B model failed continuous call verification after search. In this model,  MCP  tool path providing tools from the start  `--agent-mcp-eager`  /  `--mcp-eager`  can be used. Detailed observation results are recorded at  [Verification.md](docs/Verification.md).
 
-0.8.0은 인증된 C++ MCP HTTP 서버와 `iillm-mcp --http-port`를 제공한다. 앱별 세션, 원래 요청 스트림의 SSE 재개, 취소·역방향 요청, 비공개 인증·상태 폴더를 지원한다. [MCP HTTP 서버](docs/MCPHTTPServer.md)를 참조한다.
+0.8.0  provides authenticated  C++   MCP   HTTP  server and  `iillm-mcp --http-port` . Supports per-app sessions,  SSE  resume of original request stream, cancel/reverse request, and private auth/status folders.  [MCP   HTTP  server](docs/MCPHTTPServer.md)is referenced.
 
-0.7.0에서 도입한 공통 C++ MCP 클라이언트와 Streamable HTTP 연결·인증 헤더·SSE 복원·세션 재초기화도 유지한다. [MCP HTTP](docs/MCPHTTP.md)를 참조한다.
+0.7.0 maintains the common C++   MCP client introduced there, along with Streamable HTTP connection·authentication headers· SSE recovery·session reinitialization. It references [MCP   HTTP](docs/MCPHTTP.md).
 
-0.6.0은 실제 네이티브 토큰 측정, 자동 도구 결과 축소·여러 묶음의 대화 요약, 원본을 보존하는 압축 체크포인트와 수동 C++/API/MCP 호출을 제공한다. 공개 구조체와 Model 가상 인터페이스 변경으로 ABI는 0.6이며 새 헤더·라이브러리로 함께 다시 빌드한다. [대화 압축](docs/Compaction.md)과 [프로젝트 지침](docs/ProjectContext.md)을 참조한다. 전체 하네스 및 제품 앱 통합은 대응표에서 계속 추적한다.
+0.6.0 provides actual native token measurement, automatic tool result reduction·conversation summaries of multiple bundles, compression checkpoints preserving the original, and manual C++ / API / MCP calls. ABI is 0.6 due to public structures and Model virtual interface changes and is rebuilt together with new headers·libraries. It references [conversation compression](docs/Compaction.md)and [project guidelines](docs/ProjectContext.md). The entire harness and product app integration are still tracked in the correspondence table.
 
-## 빌드
+<a id="빌드"></a>
 
-CMake 3.24 이상, C++20 컴파일러, **Qt 6.8.3** Core/Network가 필요하다. 테스트에는 Qt Test와 Python 3도 사용한다. 헤더와 구현을 함께 배치하며 별도 소스 include 디렉터리를 두지 않는다.
+## Build
 
-기본 빌드는 llama.cpp를 포함하므로 GGUF 모델을 바로 실행할 수 있다. 고정 커밋의 아카이브를 SHA-256으로 검증하고 공유 SDK에 정적으로 링크한다. 엔진 없이 서비스 계약만 사용하는 구성은 `-DIILOCALLLM_WITH_LLAMA=OFF`로 선택한다. 모델 가중치는 빌드 중 다운로드하지 않는다. 모든 빌드 산출물은 build/ 아래에 둔다.
+CMake 3.24 or later, a C++23 compiler, and **Qt 6.8.3** Core/Network and an installed **iiDecision 0.0.3 or later** CMake package are required. The probability/value core uses standard C++23 without Qt. CMake consumers also discover the dependencies enabled in their iiDecision installation. Tests also use Qt Test and Python 3. Headers and implementations are placed together without a separate source include directory.
+
+The default build includes llama.cpp, so GGUF models can be run immediately. The archive of fixed commits is verified and statically linked to the shared SDK as SHA-256. A configuration that uses only the service contract without an engine is selected as `-DIILOCALLLM_WITH_LLAMA=OFF`. Model weights are not downloaded during build. All build outputs are placed under build/.
 
 ```sh
 mkdir -p build/tmp build/ccache
@@ -117,13 +125,13 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-기존 llama.cpp 소스는 `IILOCALLLM_LLAMA_SOURCE_DIR`로 지정한다. 검증 커밋은 `5202104b59ada9005db079eea43882a2b7bf5802`이다. 다른 커밋의 C API 호환성은 별도 확인이 필요하다. JSON 도구 호출의 단일 호출 제한과 Qwen3.5 XML 도구 인자를 [빌드 시 보정](docs/AgentHarness.md)한다. 원본 체크아웃은 수정하지 않으며, 보정 위치가 달라진 외부 소스는 구성 오류로 알린다.
+Specify the existing llama.cpp source through `IILOCALLLM_LLAMA_SOURCE_DIR`. The verified commit is `5202104b59ada9005db079eea43882a2b7bf5802`. C API compatibility with other commits requires separate verification. The single-call limit on JSON tool calls and the Qwen3.5 XML tool arguments are [patched at build time](docs/AgentHarness.md). The original checkout is not modified; an external source whose patch locations have changed is reported as a configuration error.
 
-새 빌드 구성은 설치된 CUDA Toolkit 및 Vulkan SDK(glslc, SPIRV-Headers 포함)를 탐지하여 해당 llama.cpp 모듈의 기본 빌드 여부를 정한다. Metal은 Apple 플랫폼의 기본 빌드를 따른다. GGML_CUDA/GGML_VULKAN 등의 CMake 값은 배포 패키지의 포함 모듈을 정하며 앱의 실행 장치 선택 API가 아니다. 기존 CMake 캐시 값은 보존한다.
+A new build configuration detects the installed CUDA Toolkit and Vulkan SDK, including glslc and SPIRV-Headers, to determine whether the corresponding llama.cpp module builds by default. Metal follows the default build on Apple platforms. CMake values such as GGML_CUDA/GGML_VULKAN determine the modules included in the distribution package; they are not an API for choosing the app's execution device. Existing CMake cache values are preserved.
 
 ## C++ API
 
-모델 패키지를 먼저 설치한다. `manifest.json`은 다음 최소 필드를 갖는다. 설치 시 전체 파일의 크기와 SHA-256 목록을 생성하며, 이후 로드 전에 다시 검증한다.
+Install the model package first. `manifest.json` has the following minimum fields. It generates the size of the entire file and SHA-256 list during installation and re-verification before loading.
 
 ```text
 Models/
@@ -144,9 +152,9 @@ Models/
 }
 ```
 
-GGUF의 기본 진입 파일은 `model.gguf`이다. 다른 이름이면 `entry_point`를 지정한다. MLX는 `format: "mlx"`와 기본 `entry_point: "."`를 사용한다. capabilities는 패키지의 선언이며 도구 호출 API를 추가하지 않는다. 카탈로그 API, 스키마, 검증 범위는 [docs/ModelManagement.md](docs/ModelManagement.md)에 있다.
+The default entry file for GGUF is `model.gguf`. If another name is used, `entry_point` is specified. MLX uses `format: "mlx"` and default `entry_point: "."`. capabilities is a package declaration and does not add tool call APIs. Catalog API, schema, and validation scope are in [docs/ModelManagement.md](docs/ModelManagement.md).
 
-아래는 daemon 또는 임베딩 서비스 호스트의 C++ 예시이다. 여러 앱이 모델을 공유할 때에는 하나의 iiLocalLLMD에 Native IPC/HTTP로 접속한다. 호스트가 지정하는 modelsDirectory는 저장소 위치이며 클라이언트 추론 요청에는 파일 경로가 없다.
+The following is an example of C++ for a daemon or embedding service host. When multiple apps share a model, they access a single iiLocalLLMD via Native IPC /HTTP. The modelsDirectory specified by the host is the repository location, and there is no file path in client inference requests.
 
 ```cpp
 #include <iiLocalLLM.h>
@@ -170,7 +178,7 @@ int main(int argc, char** argv) {
         if (event.kind == iiLocalLLM::StreamEventKind::Delta)
             std::cout << event.text.toStdString() << std::flush;
     });
-    // 다른 스레드에서도 generation.cancel()로 취소할 수 있다.
+    // Cancellation through generation.cancel() is also possible from another thread.
     auto result = generation.result.get();
     service.closeSession(session).get();
     service.unloadModel("model://qwen3-8b-q4").get();
@@ -178,18 +186,20 @@ int main(int argc, char** argv) {
 }
 ```
 
-제어 메서드의 실패는 future에서 `Error`로 전달한다. chat은 오류·취소도 GenerationResult로 반환하고 terminal 이벤트를 한 번 전달한다. 큐 거절 또는 실행 전 취소에는 started/delta가 없을 수 있다.
+Failure of the control method is passed to `Error` in the future. chat also returns errors and cancellations as GenerationResult and passes terminal events to one time. For queue rejection or cancellation before execution, started/delta may be absent.
 
-콜백은 작업 스레드에서 실행하며 즉시 큐 거절은 호출 스레드에서 전달한다. Qt UI 갱신은 queued invoke로 넘긴다. 콜백 안에서 서비스 future를 기다리거나 서비스를 파괴하면 안 된다. 콜백은 빨리 반환해야 한다. 서비스 파괴는 진행 중·대기 작업을 취소하고 worker 종료를 기다린다. 파괴와 새 메서드 호출을 동시에 수행하지 않는다.
+The callback executes in the worker thread and immediately passes the queue rejection to the calling thread. Qt UI Renewal is passed as queued invoke. Do not wait for the service future or destroy the service inside the callback. The callback must return quickly. Service destruction cancels in-progress and pending tasks and waits for worker termination. Do not perform destruction and new method calls simultaneously.
 
-## CLI와 공유 daemon
+<a id="cli와-공유-daemon"></a>
 
-`iillm`은 Qt Core/Network만 링크하는 Native IPC 클라이언트이다. 추론 엔진을 링크하거나 daemon을 대신해 모델을 실행하지 않는다.
+## CLI and shared daemon
+
+`iillm` is a Native IPC client that links only Qt Core/Network. It does not link the inference engine or run the model on behalf of the daemon.
 
 ```sh
 export IILLM_SOCKET="$PWD/build/llm.sock"
 ./build/iiLocalLLMD --models-root "$PWD/build/chat/Models" --socket "$IILLM_SOCKET" --http-port 8080
-# 다른 터미널에서도 저장소 디렉터리로 이동하고 설정한다.
+# In another terminal, also change to the repository directory and configure this.
 export IILLM_SOCKET="$PWD/build/llm.sock"
 ./build/iillm pull qwen2.5:0.5b
 ./build/iillm models
@@ -197,11 +207,11 @@ export IILLM_SOCKET="$PWD/build/llm.sock"
 ./build/iillm ps
 ```
 
-시작 모델 `qwen2.5:0.5b`는 공식 Qwen2.5-0.5B-Instruct의 Q4_K_M GGUF이며 다운로드 크기는 491,400,032 bytes이다. `model://qwen2.5-0.5b-instruct-q4`로 해석한다. 기존 `qwen3:8b`도 유지한다. pull은 서비스가 고정된 공식 GGUF를 다운로드하고 SHA-256 검증 후 설치한다. 다운로드 후 대화는 인터넷이나 외부 추론 서비스 없이 실행된다.
+The startup model `qwen2.5:0.5b` is a Q4_K_M GGUF of the official Qwen2.5-0.5B-Instruct, with a download size of 491,400,032 bytes. It resolves to `model://qwen2.5-0.5b-instruct-q4`. The existing `qwen3:8b` is also retained. Pull makes the service download the pinned official GGUF and install it after SHA-256 verification. After download, conversation runs without the internet or an external inference service.
 
-터미널에서 Enter로 한 턴을 보내고 `/clear`로 system prompt를 유지한 채 대화 이력·KV를 초기화한다. `/bye`, `/exit`, EOF는 종료이며 Ctrl+C는 생성 취소·세션 정리 후 종료한다. `--temperature 0`은 greedy 생성을 선택한다. `--max-tokens`는 답변 길이 상한으로 긴 답변은 잘릴 수 있다. 작은 모델의 답변 품질은 모델 용량에 따른다.
+Send a turn by pressing Enter in the terminal and initialize the conversation history and KV while maintaining the system prompt at `/clear`. `/bye`, `/exit`, and EOF are termination signals, while Ctrl+C cancels generation and terminates after session cleanup. `--temperature 0` selects greedy generation. `--max-tokens` is the answer length upper limit, so long answers may be truncated. The answer quality of small models depends on the model capacity.
 
-CLI·GUI·Python·에이전트의 요청은 같은 상주 모델을 재사용한다. 모델이 메모리에 없으면 서비스가 예산과 가용 RAM을 검사하고 유휴 LRU 모델을 내린 뒤 로드한다. 기본 keep_alive는 5분이며 RAM 8 GiB 이하에서는 0이다. `iillm run qwen2.5:0.5b --keep-alive 0`으로 요청 직후 해제할 수 있다.
+Requests from CLI · GUI · Python · and the agent reuse the same resident model. If the model is not in memory, the service checks the budget and available RAM, unloads the idle LRU model, and then loads it. The default keep_alive is 5 minutes, and it is 0 for RAM 8 GiB or less. It can be released immediately upon request via `iillm run qwen2.5:0.5b --keep-alive 0`.
 
 ```sh
 ./build/iillm run qwen2.5:0.5b "What is 2 + 2?" --temperature 0
@@ -210,11 +220,13 @@ curl -N http://127.0.0.1:8080/v1/chat/completions \
   -d '{"model":"qwen2.5:0.5b","messages":[{"role":"user","content":"Hello!"}],"stream":true,"max_tokens":128}'
 ```
 
-[CLI 사용법](docs/CLI.md), [상주·메모리 정책](docs/Residency.md)에 설치 원본, 설정, 실패·취소 계약을 설명한다. 기존 `iilocal-llm-service` 실행 파일도 유지한다.
+[CLI usage](docs/CLI.md)and [residency/memory policy](docs/Residency.md)describe the installation sources, configuration, and failure/cancellation contracts. The existing `iilocal-llm-service` executable is also retained.
 
-## IPC 서비스
+<a id="ipc-서비스"></a>
 
-로컬 패키지를 설치한 뒤 URI만 담은 models.json으로 부팅한다. `--models-root`의 기본값은 작업 디렉터리의 Models이다. 안정적인 서비스 배포에는 절대 저장소 경로를 지정한다.
+## IPC service
+
+Boot using models.json containing only the URI after installing the local package. The default for `--models-root` is Models in the working directory. For stable service deployment, always specify the repository path.
 
 ```json
 {"models":[{"model":"model://qwen3-8b-q4","context_tokens":2048,"options":{"threads":4}}]}
@@ -226,11 +238,11 @@ curl -N http://127.0.0.1:8080/v1/chat/completions \
   --config models.json --socket "$PWD/build/llm.sock"
 ```
 
-설정 파일 없이 시작하여 models.install 또는 models.pull로 설치할 수 있다. models.install은 로컬 복사이며 models.pull은 서비스 registry의 검증된 원격 원본을 사용한다. 설치된 모델은 첫 생성 요청에서 자동 로드한다. 저장소마다 서비스 하나가 소유권 잠금을 유지하므로 실행 중인 서비스에는 IPC로 설치한다. 설치 파일은 재시작 후에도 유지하고 로드 상태와 세션은 다시 만든다. 기존 소켓을 자동 삭제하지 않는다. SIGINT/SIGTERM에서 연결과 추론을 정리한다. macOS Unix 소켓의 경로 길이 제한 때문에 짧은 경로를 사용한다. 프로토콜과 클라이언트 예시는 [docs/IPC.md](docs/IPC.md)에 있다.
+You can start without a configuration file and install via models.install or models.pull. models.install is a local copy, while models.pull uses a verified remote source from the service registry. Installed models are automatically loaded on the first generation request. Since each repository maintains an ownership lock on one service, install via IPC for running services. Installation files are retained after restart, while the load status and sessions are recreated. Existing sockets are not automatically deleted. SIGINT /SIGTERM cleans up connections and inference. Due to the path length limit of macOS Unix sockets, short paths are used. Protocol and client examples are in [docs/IPC.md](docs/IPC.md).
 
 ## localhost HTTP
 
-Native IPC와 HTTP를 같은 서비스에서 동시에 활성화한다. IPC는 macOS/Linux의 Unix Domain Socket과 Windows Named Pipe를 사용한다. HTTP는 127.0.0.1에만 바인딩한다.
+Native IPC and HTTP are enabled simultaneously in the same service. IPC uses Unix Domain Sockets on macOS/Linux and Windows Named Pipes. HTTP binds only to 127.0.0.1.
 
 ```sh
 ./build/iilocal-llm-service --models-root "$PWD/build/chat/Models" \
@@ -240,13 +252,13 @@ curl http://127.0.0.1:8080/v1/chat/completions \
   -d '{"model":"model://qwen3-8b-q4","messages":[{"role":"user","content":"Hello"}],"max_tokens":128}'
 ```
 
-`--http-port 0`은 빈 포트를 자동 선택하고 주소를 출력한다. `--http-port`만 지정하면 HTTP 전용이고, 둘 다 생략하면 사용자별 기본 Native IPC endpoint로 시작한다. GET /health, GET /v1/models, POST /v1/chat/completions를 제공한다. `stream: true`는 SSE delta와 [DONE]을 반환한다.
+`--http-port 0` automatically selects a free port and outputs the address. If only `--http-port` is specified, it is dedicated to HTTP, and if both are omitted, it starts with the per-user default Native IPC endpoint. It provides GET /health, GET /v1/models, and POST /v1/chat/completions. `stream: true` returns SSE delta and [DONE].
 
-HTTP는 Service::complete를 통해 기존 채팅 실행 경로와 scheduler를 사용한다. messages의 과거 대화와 최신 user 입력을 임시 세션으로 처리하고 완료·오류·연결 취소 시 세션과 KV를 정리한다. Native IPC에서 로드한 모델을 HTTP가 그대로 사용하며, 장기 IPC 세션의 이력은 유지한다. 지원하는 텍스트 Chat Completions 범위, Python 예제, 오류·자원 제한은 [docs/HTTP.md](docs/HTTP.md)에 있다.
+HTTP uses Service::complete to run existing chat execution paths and the scheduler. It processes past conversations and the latest user input in temporary sessions, and cleans up sessions and KV upon completion, error, or connection cancellation. The model loaded from Native IPC is used directly by HTTP, and the history of long-term IPC sessions is maintained. The supported text Chat Completions scope, Python examples, and error/resource limits are in [docs/HTTP.md](docs/HTTP.md).
 
 ## MLX
 
-MLX는 Apple Silicon용 선택 의존성이다. 별도 Python 환경과 로컬 모델 디렉터리가 필요하다. 검증 버전은 mlx-lm 0.31.3 / mlx 0.32.2이다.
+MLX is an optional dependency for Apple Silicon. A separate Python environment and local model directory are required. The verified version is mlx-lm 0.31.3 / mlx 0.32.2.
 
 ```sh
 python3 -m venv build/mlx-env
@@ -256,57 +268,61 @@ build/mlx-env/bin/python -m pip install -r src/runtimes/mlx-requirements.txt
   --mlx-worker "$PWD/runtimes/mlx_worker.py"
 ```
 
-tokenizer/config/safetensors와 MLX manifest를 포함한 패키지를 설치하고 URI로 로드하면 서비스가 MLX를 선택한다. 앱은 runtime을 지정하지 않는다. 런타임은 네트워크 다운로드를 하지 않고 trust_remote_code=False를 적용한다. 가중치는 별도로 준비한다. 모델당 Python 프로세스 하나를 유지하고 세션별 KV 상태를 분리한다. 취소·타임아웃·소비자 오류 시 프로세스를 종료하고 다음 요청에서 모델을 다시 로드한다. 이때 같은 모델의 다른 세션도 물리 KV 캐시가 사라지지만 대화 이력은 유지된다. MLX 기본 장치와 생성 stream은 서비스가 지정한 Metal/CPU로 초기화한다. 임베딩 서비스의 Python/worker 배포 경로는 Service 생성자의 두 번째 MlxRuntimeOptions 인수로 지정한다.
+Install a package including tokenizer/config/safetensors and MLX manifest, and load via URI to select MLX. The app does not specify the runtime. The runtime applies trust_remote_code =False and does not perform network downloads. Weights are prepared separately. One process per model Python is maintained, and KV states are separated per session. Processes are terminated on cancellation, timeout, or consumer error, and the model is reloaded on the next request. At this time, other sessions of the same model also lose their physical KV cache, but conversation history is maintained. MLX default device and generation stream are initialized to the service-specified Metal /CPU. The embedding service's Python /worker deployment path is specified as the second MlxRuntimeOptions argument of the Service creator.
 
-## 실행 정책
+<a id="실행-정책"></a>
 
-앱은 ModelLoadRequest의 model URI/contextTokens/options를 전달한다. ModelManager가 URI를 해석하고 manifest·전체 파일 해시·형식 구조를 검증한 뒤 내부 ModelSpec에 실제 경로와 형식을 전달한다. GGUF는 llama.cpp, MLX 패키지는 MLX가 처리한다. 내장 런타임 등록도 서비스가 처리한다. 모델 형식은 장치 선택과 별개이므로 Apple Silicon에서도 GGUF는 llama.cpp/Metal로 실행한다.
+## Execution Policy
 
-| 하드웨어와 가용 조건 | 선택 |
+The app passes the model URI / contextTokens /options of ModelLoadRequest. ModelManager interprets the URI and validates the manifest, full file hash, and format structure, then passes the actual path and format to the internal ModelSpec. GGUF is processed by llama.cpp, and the package is processed by MLX. Built-in runtime registration is also handled by the service. Since the model format is separate from device selection, GGUF runs on Apple Silicon via llama.cpp /Metal.
+
+|Hardware and availability conditions|Hardware and Availability Conditions|
 | --- | --- |
-| Apple Silicon + 동작하는 Metal | Metal |
-| NVIDIA GPU + 동작하는 CUDA | CUDA |
-| AMD/Intel GPU + 동작하는 Vulkan | Vulkan |
-| 모델 런타임에서 사용할 수 있는 위 GPU 경로가 없음 | CPU |
+|Apple Silicon + a working Metal| Metal |
+|NVIDIA GPU + CUDA operating| CUDA |
+|AMD /Intel GPU + Vulkan operating| Vulkan |
+|No GPU path available in the model runtime| CPU |
 
-GPU 가속은 해당 엔진에도 컴파일·지원되어 있어야 한다. 같은 우선순위에서는 확인된 메모리 크기, 장치 id 순으로 정렬한다. 모델 로드 또는 llama.cpp GPU 컨텍스트 사전 할당 실패 시 CPU로 재시도한다. 잘못된 입력·취소는 재시도하지 않는다. runtime/backend/device/gpu_layers를 모델 요청에 넣으면 invalid_argument이다. 실행 결과는 ModelInfo.execution 및 models.loaded로 조회하며 hardware.get 또는 `build/iilocal-llm-service --hardware`로 부팅 시 검사한 정보를 조회한다. 필드 의미와 실패 범위는 [docs/HardwarePolicy.md](docs/HardwarePolicy.md)에 있다.
+GPU Acceleration must also be compiled and supported for that engine. Within the same priority, sort by confirmed memory size and device id. If model load or llama.cpp GPU context pre-allocation fails, retry on CPU. Do not retry for invalid input or cancellation. If put into runtime/ backend/device/gpu_layers model request, it is invalid_argument . Execution results are queried via ModelInfo .execution and models.loaded, and information checked at boot via hardware.get or `build/iilocal-llm-service --hardware` . Field meanings and failure ranges are in [docs/HardwarePolicy.md](docs/HardwarePolicy.md).
 
-contextTokens=0 또는 생략 시 manifest.context_length, ServiceOptions.defaultContextTokens(기본 2048), 캐시 토큰 예산 중 최솟값을 사용한다. 명시한 컨텍스트가 manifest 상한을 넘으면 context_overflow이다. 명시적인 unload/remove는 해당 모델의 세션을 모두 닫은 뒤 호출한다. 자동 LRU/만료는 세션의 이력을 보존하면서 KV와 가중치를 해제한다.
+contextTokens = 0 or omitted uses manifest. context_length , ServiceOptions . defaultContextTokens (default: 2048) , and uses the minimum among cache token budgets. If the specified context exceeds the manifest upper limit, it is context_overflow . Explicit unload/remove calls after closing all sessions of that model. Automatic LRU /expiration releases KV and weights while preserving session history.
 
-기본 상한은 대기 작업 64개, 모델 4개, 세션 128개, 캐시 컨텍스트 4개, 예약 컨텍스트 토큰 합계 16,384개이다. ServiceOptions로 변경한다. 제어와 생성을 한 worker에서 FIFO로 실행한다. 같은 세션의 후속 요청은 앞선 성공 응답이 저장된 뒤 최신 이력을 읽는다. 여러 Service 인스턴스 사이의 GPU 사용량은 별도 관리 대상이다.
+Default limits are 64 queued jobs, 4 models, 128 sessions, 4 cached contexts, and 16,384 total reserved context tokens. Change them through ServiceOptions. Control and generation run FIFO in one worker. A subsequent request in the same session reads the latest history after the preceding successful response is stored. GPU usage across multiple Service instances is managed separately.
 
-ModelResidencyManager가 가중치·KV·런타임 여유분의 바이트 예약과 최신 가용 RAM을 검사한다. 개수/바이트 상한에 도달하면 유휴 LRU 모델을 해제하고, 만료 시에는 새 요청 없이도 worker가 해제한다. 활성 요청은 보호하며 유휴 세션의 이력은 보존한다. 추정치는 프로세스 RSS의 강제 상한이 아니다. 상세 산식과 한계는 [Residency.md](docs/Residency.md)에 있다. 배치 추론은 제공하지 않는다.
+ModelResidencyManager checks weight reservation, KV , runtime slack bytes, and latest available RAM. Upon reaching count/byte upper limits, release idle LRU models, and upon expiration, the worker releases without new requests. Active requests are protected and idle session history is preserved. Estimates are not hard upper limits of process RSS. Detailed formulas and limits are in [Residency.md](docs/Residency.md). Batch inference is not provided.
 
-실제 prompt 토큰과 maxTokens 합계로 컨텍스트를 검사한다. 초과 시 오래된 user/assistant 쌍을 제거하되 system과 최신 user는 보존한다. 여전히 초과하면 context_overflow이다. 성공한 경우에만 축소한 이력과 assistant를 저장한다. 오류·취소 시 기존 이력을 유지하고 KV를 폐기한다. 이미 보낸 partial text는 결과에 남아도 이력에는 저장하지 않는다. 오류·취소 시 중간 토큰 사용량은 완전하지 않을 수 있다.
+Check context with the actual prompt token count and maxTokens total. If exceeded, remove old user/assistant pairs but preserve system and the latest user. If still exceeded, it is context_overflow . Save compressed history and assistant only on success. On error or cancellation, retain existing history and discard KV. Partial text already sent remains in the result but is not stored in history. Token usage for intermediate tokens on error or cancellation may be incomplete.
 
-llama.cpp의 내장 chat template formatter가 지원하지 않는 템플릿은 오류이다. 템플릿 없는 GGUF에는 options.chat_template을 명시한다(예: chatml). 임의 모델에 ChatML을 자동 적용하지 않는다. MLX는 모델 tokenizer의 chat template을 사용한다. 부분 KV 제거가 불가능한 모델은 캐시를 새로 구성한다.
+Templates not supported by llama.cpp's built-in chat template formatter are errors. For GGUF without a template, specify options. chat_template (e.g., chatml). Do not automatically apply ChatML to arbitrary models. MLX uses the model tokenizer's chat template. Models where partial KV removal is impossible reconfigure the cache.
 
-0.12.1은 모델 로딩의 `enable_thinking` boolean을 네이티브 Jinja 템플릿에 전달한다. 명시적 설정은 일반 대화와 구조화 도구 대화에 함께 적용한다. 추론만 반환된 응답은 실행 가능한 도구나 최종 답으로 승격하지 않고 별도 오류로 구분한다. [네이티브 추론 모드](docs/NativeThinking.md)에 제어·검증 범위를 기록한다.
+0.12.1 passes a `enable_thinking` boolean for model loading to the native Jinja template. Explicit settings apply together to both general chat and structured tool chat. Inference-only returned responses are distinguished as separate errors and are not promoted to executable tools or final answers. [records the control and verification scope in native inference mode](docs/NativeThinking.md).
 
-llama.cpp의 구조화 도구 생성에는 모델 로딩 옵션 `tool_grammar`(boolean, 기본 true)를 제공한다. false는 생성 시 문법 제약을 끄며 실행 전 스키마·권한 검사는 유지한다. 다중 필드 인수와 모델별 운용 조건은 [Tasks.md](docs/Tasks.md)에 설명한다.
+llama.cpp provides model loading option `tool_grammar` (boolean, default true) for structured tool generation. false disables syntax constraints at generation time while maintaining schema and permission checks before execution. Multi-field arguments and per-model operational conditions are described in [Tasks.md](docs/Tasks.md).
 
-stop 문자열은 청크 사이 부분 일치를 보관하고 완성되면 출력에서 제외한다. stop으로 잘린 KV는 이력과 달라질 수 있어 폐기한다. 생성 옵션은 maxTokens, temperature, topP, topK, seed, stop이다. 동일 seed가 서로 다른 런타임에서 동일 출력을 보장하지는 않는다.
+Stop strings retain partial matches between chunks and are excluded from output upon completion. KV cut by stop may differ from history and is discarded. Generation options are maxTokens, temperature, topP, topK, seed, and stop. Identical seed does not guarantee identical output across different runtimes.
 
-구조와 확장 계약은 [docs/Architecture.md](docs/Architecture.md)에 있다.
+Structure and extension contracts are in [docs/Architecture.md](docs/Architecture.md).
 
-## 설치와 검증
+<a id="설치와-검증"></a>
 
-기본 설치 경로는 $HOME/.local/SDK/iiLocalLLM이다. install.sh는 빌드·CTest·설치 후 설치된 패키지를 소비하는 별도 프로젝트도 검증한다. Workspace staging 경로를 지정할 수 있다.
+## Installation and verification
+
+The default installation path is $ HOME /.local/ SDK / iiLocalLLM. install.sh also verifies separate projects that consume installed packages after build and CTest installation. The workspace staging path can be specified.
 
 ```sh
 IILOCALLLM_WITH_LLAMA=ON INSTALL_PREFIX="$PWD/build/stage" ./install.sh
 ```
 
-IILOCALLLM_WITH_LLAMA를 생략하면 기존 CMake 선택을 유지하며 새 구성의 기본값은 ON이다. 과거 OFF로 구성했던 build/는 `IILOCALLLM_WITH_LLAMA=ON ./install.sh`로 활성화한다. INSTALL_PREFIX, QT_PREFIX_PATH, CMAKE_PREFIX_PATH로 경로를 설정한다. Qt와 MLX Python 환경은 패키지에 복사하지 않는다.
+Omitting IILOCALLLM_WITH_LLAMA maintains the existing CMake selection, and the default for the new configuration is ON. It activates build/ `IILOCALLLM_WITH_LLAMA=ON ./install.sh` which were previously configured as OFF. The path is set using INSTALL_PREFIX, QT_PREFIX_PATH, CMAKE_PREFIX_PATH. Qt and MLX Python environments are not copied to the package.
 
 ```cmake
-find_package(iiLocalLLM 0.52.0 CONFIG REQUIRED)
+find_package(iiLocalLLM 0.54.0 CONFIG REQUIRED)
 target_link_libraries(your_app PRIVATE iiLocalLLM::iiLocalLLM)
 ```
 
-공개 헤더, 공유 라이브러리, CMake package, iiLocalLLMD, iillm, 호환 daemon 이름, MLX worker, 기본 registry, 문서와 외부 라이선스 고지를 설치한다. HTTP에는 고정한 cpp-httplib 단일 헤더를 내부적으로 사용하며 별도 HTTP 런타임 설치나 네트워크 다운로드가 필요 없다. 설치된 daemon은 상대 경로로 worker를 찾는다. 커스텀 datadir에는 --mlx-worker를 지정한다.
+Install public headers, shared libraries, CMake package, iiLocalLLMD, iillm, compatible daemon name, MLX worker, default registry, documentation, and external license notice. HTTP internally uses a fixed cpp-httplib single header and requires no separate HTTP runtime installation or network download. The installed daemon finds the worker via relative path. Specify --mlx-worker for custom datadir.
 
-기본 CTest는 레거시 API, 서비스·IPC, 모델 상주·LRU·만료·메모리 거절, HTTP JSON/SSE·취소·제한, 영속 카탈로그·manifest·무결성, CLI의 daemon 통신·loopback pull·실패·취소·재시작, 하드웨어 자동 선택·CPU 재시도, MLX 캐시·장치 정책을 검증하며 인터넷이나 실제 모델이 필요 없다. IPC와 HTTP 테스트는 loopback 소켓을 사용한다. 실제 추론 테스트는 로컬 모델을 명시한 경우에만 등록한다.
+Default CTest verifies legacy API, service and IPC, model hosting and LRU expiration and memory rejection, HTTP JSON / SSE cancellation and limit, persistent catalog, manifest, and integrity, CLI daemon communication, loopback pull, failure, cancellation, and restart, hardware auto-selection and CPU retry, MLX cache and device policy, without requiring internet or actual models. IPC and HTTP tests use loopback sockets. Actual inference tests are registered only if a local model is specified.
 
 ```sh
 cmake -S . -B build -DIILOCALLLM_WITH_LLAMA=ON \
@@ -318,45 +334,49 @@ cmake --build build --parallel
 ctest --test-dir build --output-on-failure
 ```
 
-`IILOCALLLM_TEST_CHAT_GGUF`는 위 `pull qwen2.5:0.5b`로 설치한 공식 모델 파일을 지정한다. UNIX의 `iiLocalLLM.chat`은 네트워크 없이 임시 카탈로그에 해당 파일을 해시 검증하여 설치하고, 내장 template으로 실제 대화한다. 터미널의 두 번째 턴 이름 기억·KV 재사용, `/clear`의 이력·KV 초기화와 system prompt 보존, 매 턴 JSON 즉시 출력, CLI/HTTP의 단일 모델 공유, HTTP JSON/SSE 완료까지 검증한다. 가중치는 테스트 실행 전에 준비해야 하며 CTest는 다운로드하지 않는다.
+`IILOCALLLM_TEST_CHAT_GGUF` is designated as the official model file installed in the above `pull qwen2.5:0.5b`. UNIX's `iiLocalLLM.chat` hashes and verifies the file in a temporary catalog without a network and actually converses using a built-in template. The terminal's second turn name memory and KV reuse, `/clear` history and KV initialization and system prompt preservation, per-turn JSON immediate output, CLI/HTTP single model sharing, and verification until HTTP/JSON/SSE completion are performed. Weights must be prepared before test execution and CTest is not downloaded.
 
-GGUF smoke는 chatml을 명시하여 경량 테스트 모델도 사용한다. 임시 패키지 설치·검증·URI 로드부터 서비스의 자동 장치 선택, 실제 추론·두 번째 턴 KV 재사용·초기화·취소·재생성·제거까지 검증한다. 독립 daemon 테스트는 원본 패키지 경로를 바꾸고 서비스를 재시작하여 카탈로그의 지속성을 확인한다. 별도 어댑터 적합성 테스트가 실제 CPU 추론도 검증한다. 모델 답변 품질이나 모든 아키텍처 호환성 평가는 아니다. 환경과 결과는 [docs/Verification.md](docs/Verification.md)에 기록한다.
+GGUF smoke explicitly specifies chatml and also uses a lightweight test model. From temporary package installation and verification and URI load to the service's automatic device selection, actual inference, second turn KV reuse, initialization, cancellation, regeneration, and removal are verified. Independent daemon tests check catalog persistence by changing the original package path and restarting the service. A separate adapter suitability test also verifies actual CPU inference. Model answer quality or all architecture compatibility evaluation is not performed. Environment and results are recorded in [/docs/Verification.md/](docs/Verification.md).
 
-## 라이선스
+<a id="라이선스"></a>
 
-자체 코드·문서는 **AGPL-3.0-only**이며 [LICENSE](LICENSE)를 따른다. 외부 의존성과 가중치는 각각의 라이선스를 유지한다. 도입 검토와 출처는 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)에 있다.
+## License
 
-0.11.0에서 작업·Todo 영속 저장, 의존 관계와 원자적 선점, C++/에이전트 API/MCP/CLI 연결을 추가했다. [작업 관리](docs/Tasks.md)에 입력·저장·권한·재시작 계약을 기록한다. 소비자는 현재 버전의 헤더와 라이브러리로 함께 다시 빌드한다.
+Own code and documentation are **/AGPL-3.0-only**and follow [/LICENSE/](LICENSE). External dependencies and weights maintain their respective licenses. Introduction review and sources are in [/THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-0.13.0은 대화별 영속 입력 큐와 now/next/later 전달, 연산 단위 협력 중단·도구 이력 복구를 제공한다. C++·인증된 API·MCP·CLI로 제어하며 유휴 큐는 명시적으로 runQueued를 호출한다. 자동 기동과 셸 완료 알림 생산은 남아 있다. [입력 큐](docs/InputQueue.md), [검증 기록](docs/Verification.md)을 참조한다. CancellationToken 레이아웃과 Engine/API 옵션이 바뀌었으므로 소비자는 0.13 헤더와 라이브러리로 함께 다시 빌드한다.
+0.11.0 added work and Todo persistent storage, dependency and atomic preemption, and added C++/agent API/MCP/CLI connections. [work management](docs/Tasks.md)records input, storage, permission, and restart contracts. Consumers rebuild together with the current version's header and library.
 
-0.13.1은 네이티브 에이전트의 도구 관측에 text·data·is_error를 함께 전달하여 구조화 결과와 부분 완료·오류 상태의 누락을 수정한다. 같은 관측을 토큰 예산에 반영하며 원문과 호스트 metadata 경계를 보존한다. [에이전트 계약](docs/AgentHarness.md), [검증 기록](docs/Verification.md)을 참조한다.
+0.13.0 provides per-conversation persistent input queues and now/next/later delivery, and operation-unit cooperation interruption and tool history recovery. Controlled via C++·authenticated API·MCP·CLI, and idle queues are explicitly invoked via runQueued. Automatic startup and shell completion notification production remain. Refer to [input queue](docs/InputQueue.md), [verification record](docs/Verification.md). CancellationToken layout and Engine/API options have changed, so consumers rebuild together with 0.13 header and library.
 
-0.13.2는 MCP 요청의 기한·경과 시간·전송 계층 제출 여부를 C++ 오류에 보존하고 연결 관리자에 실패 단계별 진단을 추가한다. 설정 파일로 서버별 초기화·요청 기한을 지정할 수 있다. 초기화 기본 기한은 유지하며 재현된 시간 초과를 해결 완료로 처리하지 않는다. [MCP 계약](docs/MCP.md), [도구 발견](docs/ToolDiscovery.md), [검증 기록](docs/Verification.md)을 참조한다.
+0.13.1 delivers text, data, and is_error together to the native agent's tool observation to correct omissions in structured results and partial completion/error states. The same observation is reflected in the token budget while preserving the original text and host metadata boundaries. Refer to [agent contract](docs/AgentHarness.md), [verification record](docs/Verification.md).
 
-0.14.0은 로컬 SKILL.md 탐색·인자 치환·인라인 주입과 인증 API·MCP·CLI 호출을 추가한다. EngineOptions와 RunRequest 확장으로 C++ 소비자는 다시 빌드해야 한다. 0.17.0은 fork 실행, 0.18.0은 호출 범위의 allowed-tools와 인자 권한 규칙을 추가한다. 훅·설치 등의 기능은 남아 있다. [스킬 계약](docs/Skills.md)을 참조한다.
+0.13.2 preserves the deadline, elapsed time, and whether the request was submitted to the transport layer for MCP requests in C++ errors, and adds diagnostics for each failure stage to the connection manager. Configuration files can specify initialization and request deadlines per server. The default initialization deadline is retained, and reproduced timeouts are not treated as resolved. See the [MCP contract](docs/MCP.md), [tool discovery](docs/ToolDiscovery.md), and [verification records](docs/Verification.md).
 
-## C++ 서브에이전트 (0.17.0)
+0.14.0 adds local SKILL .md search·argument substitution·inline injection and authentication API · MCP · CLI calls. With EngineOptions and RunRequest extensions, C++ consumers must rebuild again. 0.17.0 adds fork execution, 0.18.0 adds allowed-tools and argument permission rules within the call scope. Hook·install and other features remain. It refers to [skill contract](docs/Skills.md).
 
-별도 대화의 위임 실행·백그라운드·부모 컨텍스트 분기·재개, 파일 기반 프로파일·스킬 사전 로딩·자식 생명주기 훅과 인증 API·MCP·CLI를 제공한다. 프로파일 계약은 [AgentProfiles.md](docs/AgentProfiles.md)에 기록한다. 계약과 남은 범위는 [Subagents.md](docs/Subagents.md), 실제 모델 결과는 [Verification.md](docs/Verification.md)에 기록한다.
+<a id="c-서브에이전트-0170"></a>
 
-0.17.0에서는 `context: fork` 스킬을 같은 API·MCP·CLI 호출로 별도 자식에서 실행한다. 직접 호출은 자식 결과를 반환하고 모델의 `Skill` 호출은 후속 부모 턴에 결과를 전달한다. 본문 분리·권한·모델·사용량·큐 입력과 참조 차이는 [Skills.md](docs/Skills.md)의 별도 자식 실행 계약을 따른다.
+## C++ subagent ( 0.17.0 )
 
-0.18.0은 스킬 권한의 호출 수명, 권한 판정 전에 고정한 실행 스냅샷, 파일·Bash·Skill·Agent·MCP 도구의 권한 규칙을 제공한다. 지원 문법과 참조 차이는 [Permissions.md](docs/Permissions.md)를 따른다.
+It provides delegated execution of separate conversations, background, parent context branching, resumption, file-based profiles, skill pre-loading, child lifecycle hooks, and authentication API · MCP ·CLI. The profile contract is recorded in [AgentProfiles .md](docs/AgentProfiles.md). The contract and remaining scope are recorded in [Subagents.md](docs/Subagents.md), and actual model results are recorded in [Verification.md](docs/Verification.md).
 
-0.19.0은 사용자·프로젝트·로컬·호스트·관리 파일의 권한 설정 계층과 출처별 파일 규칙, 실시간 재로딩, 인증 API·CLI·MCP 조회를 제공한다. `PermissionPolicy` 가상 함수와 `PermissionRule` 레이아웃이 바뀌어 소비자는 ABI 0.19로 다시 빌드한다. 지원 범위와 명시적인 차이는 [권한 설정](docs/PermissionSettings.md)에 기록한다.
+0.17.0 executes the `context: fork` skill separately in a child with the same API · MCP · CLI calls. Direct calls return child results, and model `Skill` calls pass results to subsequent parent turns. Body separation, permissions, model, usage, queue input, and reference differences follow the separate child execution contract of [Skills.md](docs/Skills.md).
 
-0.20.0은 추가 작업 디렉터리를 파일 도구·Bash 리다이렉션·자식 에이전트에 연결한다. 설정과 `--agent-add-dir`/`--add-dir`, 실시간 철회, canonical 대상 바인딩, 호스트 비공개 파일 보호와 API·MCP 조회를 제공한다. 이 단계의 ABI는 0.20이다. [추가 작업 디렉터리](docs/WorkingDirectories.md)에 사용법과 남은 참조 차이를 기록한다.
+0.18.0 provides the call lifespan of skill permissions, fixed execution snapshots before permission judgment, and permission rules for file, Bash, Skill, Agent, and MCP tools. Supported syntax and reference differences follow [Permissions.md](docs/Permissions.md).
 
-0.21.0은 C++ 외부 명령 훅을 도구·모델·종료·압축·작업·자식 생명주기에 연결한다. `--agent-hooks`/`--hooks`의 명시적 호스트 설정, JSON stdin, 입력 변경과 일회 권한, 차단·중단, 병렬 실행·취소·진단을 제공한다. 0.21 당시 ABI는 0.21이며 전체 생명주기 및 HTTP·prompt·agent 훅은 남아 있다. [명령 훅](docs/CommandHooks.md)에 사용법과 참조 차이를 기록한다.
+0.19.0 provides the permission setting hierarchy for user, project, local, host, and management files, per-source file rules, real-time reloading, and authentication API · CLI · MCP lookup. `PermissionPolicy` virtual functions and `PermissionRule` layouts have changed, so consumers must rebuild with ABI 0.19. Supported scope and explicit differences are recorded in [permission setting](docs/PermissionSettings.md).
 
-0.22.0은 UserPromptSubmit과 SessionStart를 직접 입력·스킬·큐·세션 재개·압축에 연결한다. 차단 판정을 원본에 보존하고 일반 모델 문맥에서 제외하며, 큐의 준비와 확인을 분리해 재진입·취소·저장 후 복구를 지원한다. 해당 버전의 ABI는 0.22이다. [입력·세션 생명주기](docs/InputLifecycle.md)에 설정과 보존·실패 계약을 기록한다. 전체 하네스 및 앱 배포 완료와는 구분한다.
+0.20.0 connects the additional work directory to file tools, Bash redirection, and child agents. It provides settings and `--agent-add-dir` / `--add-dir`, real-time revocation, canonical target binding, host private file protection, and API · MCP lookup. The ABI of this stage is 0.20. Usage and remaining reference differences for [additional work directory](docs/WorkingDirectories.md)are recorded.
 
-0.33.0은 C++ 비동기 명령 훅, 첫 stdout 행의 async 선언, 완료 문맥의 세션 전달과 asyncRewake 유휴 실행을 추가한다. 세션/연결별 수명과 취소, 자동 실행 횟수 제한, API/CLI/MCP 제어를 제공한다. 변경된 공개 구조체 때문에 소비자 재빌드가 필요하다. 자식 실행 후 재기동·환경 캐시 무효화·전체 생명주기 및 설정 병합은 계속 partial이다. [비동기 훅](docs/AsyncHooks.md)을 따른다.
+0.21.0 connects C++ external command hooks to tool·model·exit·compress·action·child lifecycle. `--agent-hooks` / `--hooks` explicit host setting, JSON stdin, input change and one-time permission, block·abort, parallel execution·cancel·diagnosis are provided. 0.21 ABI at that time is 0.21 and entire lifecycle and HTTP ·prompt·agent hooks remain. [command hook](docs/CommandHooks.md)records usage and reference difference.
 
-0.34.0은 EnterPlanMode·ExitPlanMode, 세션별 계획 파일과 검토 해시, 호스트 수정, 실행 전환의 동시성 제어를 추가한다. 재시작·분기·초기화와 인증 API/IPC/MCP를 같은 상태에 연결한다. 공개 구조체와 ABI 0.34에 맞춰 소비자를 다시 빌드한다. 팀 리더 검토·인터뷰 UI·자동 권한 분류·전체 앱 검증은 계속 partial이다. [계획 모드](docs/PlanMode.md)를 따른다.
+0.22.0 connects UserPromptSubmit and SessionStart directly to input·skill·queue·session resume·compress. Block verdict is preserved in the original and excluded from general model context, and queue preparation and confirmation are separated to support re-entry·cancel·restore after save. ABI of that version is 0.22 . [input·session lifecycle](docs/InputLifecycle.md)records setting and preservation·failure contract. It is distinguished from complete harness and app deployment.
 
-0.42의 C++ [WebFetch](docs/WebFetch.md)는 URL 조회·HTML 변환·캐시·도메인 권한과 로컬 모델 추출을 Engine/API/MCP/CLI에 제공한다. WebSearch와 전체 플랫폼 검증은 별도 진행 중이다.
+0.33.0 adds C++ asynchronous command hook, async declaration of first stdout line, session transfer in completion context, and asyncRewake idle execution. It provides session/connection lifespan and cancel, automatic execution count limit, and API / CLI / MCP control. Consumer rebuild is needed due to changed public structures. Child execution followed by restart·environment cache invalidation·entire lifecycle and setting merge remains partial. [asynchronous hook](docs/AsyncHooks.md)is followed.
+
+0.34.0 adds EnterPlanMode · ExitPlanMode , per-session plan file and review hash, host modification, and execution switch concurrency control. Restart·branch·initialization and authentication API / IPC /MCP are connected to the same state. Consumers are rebuilt according to public structures and ABI   0.34 . Team leader review·interview UI ·automatic permission classification·entire app verification remains partial. [plan mode](docs/PlanMode.md)is followed.
+
+The C++ [WebFetch](docs/WebFetch.md)in 0.42 provides URL retrieval, HTML conversion, caching, domain permissions, and local model extraction to Engine/API/MCP/CLI. WebSearch and full platform verification are separately in progress.
 
 ## Source layout
 

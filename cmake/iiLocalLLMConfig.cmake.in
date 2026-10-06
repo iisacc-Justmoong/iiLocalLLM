@@ -2,6 +2,7 @@
 
 include(CMakeFindDependencyMacro)
 find_dependency(Qt6 6.8.3 EXACT COMPONENTS Core Network)
+find_dependency(iiDecision 0.0.3 CONFIG)
 include("${CMAKE_CURRENT_LIST_DIR}/iiLocalLLMTargets.cmake")
 set_and_check(IILOCALLLM_QML_DIR "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/iiLocalLLM/qml")
 check_required_components(iiLocalLLM)

@@ -204,7 +204,7 @@ private slots:
 #endif
     }
     void modelToolsResumeContextPolicyAndFork() {
-        QTemporaryDir root; a::EngineOptions options; options.sessionsDirectory = root.filePath("sessions");
+        QTemporaryDir root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         options.taskToolsEnabled = true; options.projectContext.enabled = false; options.compaction.automatic = false;
         int createdHooks = 0; bool rejectCompletion = false;
         options.hooks.append([&](const a::HookInput& input, const CancellationToken&) {

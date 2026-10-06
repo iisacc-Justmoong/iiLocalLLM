@@ -54,7 +54,7 @@ int main(int argc,char** argv) {
         const auto code="RECALL_"+QUuid::createUuid().toString(QUuid::WithoutBraces).remove('-').left(12);
         auto model=std::make_shared<Guided>(service);auto tools=std::make_shared<a::ToolRegistry>();a::registerWorkspaceTools(*tools,work);
         auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::AcceptEdits);
-        a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");options.projectMemoryEnabled=true;
+        a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");options.projectMemoryEnabled=true;
         options.projectContext.enabled=false;options.skills.enabled=false;options.toolSearch.enabled=false;options.compaction.automatic=false;
         a::RunResult automatic,control;QJsonArray events;QJsonObject manual;
         {

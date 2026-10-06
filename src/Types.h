@@ -1,4 +1,5 @@
 #pragma once
+#include "Export.h"
 
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
@@ -11,12 +12,6 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
-
-#if defined(IILOCALLLM_BUILDING_LIBRARY)
-#  define IILOCALLLM_EXPORT Q_DECL_EXPORT
-#else
-#  define IILOCALLLM_EXPORT Q_DECL_IMPORT
-#endif
 
 namespace iiLocalLLM {
 

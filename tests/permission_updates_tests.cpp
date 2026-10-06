@@ -145,7 +145,7 @@ private slots:
     }
     void clearAndForkInheritTrustedRuntimeStateAndCapacityIsBounded() {
         Fixture f;auto policy=std::make_shared<a::SettingsPermissionPolicy>(f.options);
-        a::EngineOptions options;options.sessionsDirectory=f.root.filePath("sessions");options.compaction.automatic=false;
+        a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=f.root.filePath("sessions");options.compaction.automatic=false;
         a::Engine engine(std::make_shared<Model>(),std::make_shared<a::ToolRegistry>(),policy,options);
         const auto old=engine.createSession("fixture",f.work).id;
         policy->applyUpdates({rules("addRules","session","allow","Write","/approved/**")},f.context(old));

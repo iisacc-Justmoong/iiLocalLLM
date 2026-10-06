@@ -11,13 +11,13 @@ Service 생성 시 detectHardware가 프로세스 내 최초 스냅샷을 만든
 | cpu_architecture | 네이티브 CPU 아키텍처. macOS Rosetta에서도 hw.optional.arm64로 Apple Silicon을 확인한다 |
 | ram_bytes | macOS sysctl hw.memsize, Windows GlobalMemoryStatusEx, Unix sysconf의 물리 RAM |
 | apple_silicon | macOS에서 실제 ARM64 하드웨어인지 검사 |
-| gpus[].id / name / vendor | OS 또는 가속 API의 어댑터. Apple/NVIDIA/AMD/Intel/unknown |
-| gpus[].vram_bytes | 확인 가능한 전용 GPU 메모리. 통합 메모리 또는 확인 불가이면 null |
-| gpus[].unified_memory | Metal hasUnifiedMemory 또는 ggml integrated GPU 유형. OS에서 확인 불가이면 null |
-| gpus[].recommended_working_set_bytes | Metal의 권장 작업 메모리 예산. VRAM이나 전체 RAM으로 취급하지 않는다 |
-| gpus[].available_backends | 해당 어댑터에서 초기화에 성공한 가속 API 목록 |
+|gpus[].id / 이름 / 공급업체| OS 또는 가속 API의 어댑터. Apple/NVIDIA/AMD/Intel/unknown |
+|gpus[].vram_bytes| 확인 가능한 전용 GPU 메모리. 통합 메모리 또는 확인 불가이면 null |
+|gpus[].unified_memory| Metal hasUnifiedMemory 또는 ggml integrated GPU 유형. OS에서 확인 불가이면 null |
+|gpus[].recommended_working_set_bytes| Metal의 권장 작업 메모리 예산. VRAM이나 전체 RAM으로 취급하지 않는다 |
+|gpus[].available_backends| 해당 어댑터에서 초기화에 성공한 가속 API 목록 |
 | metal_available / cuda_available / vulkan_available | 검사한 어댑터 중 초기화에 성공한 API가 있는지 여부 |
-| diagnostics | 비포함 엔진 또는 초기화 실패 원인 |
+|진단| 비포함 엔진 또는 초기화 실패 원인 |
 
 Metal은 시스템 Metal API의 장치·명령 큐와 명령 완료를 검사한다. CUDA/Vulkan 및 llama.cpp용 Metal은 실제 패키지에 포함된 ggml backend registry에서 장치 속성을 읽고 backend를 생성·해제해 가용성을 확인한다. 드라이버 파일이나 환경변수의 존재만으로 가용하다고 보고하지 않는다. llama.cpp가 비활성화된 패키지는 그 엔진의 CUDA/Vulkan을 가용하다고 보고하지 않는다. 모델별 연산 및 전체 KV 할당의 성공까지 이 초기 검사로 보장하지는 않는다.
 

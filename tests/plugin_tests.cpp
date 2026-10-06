@@ -29,7 +29,7 @@ struct Fixture{
     void manifest(QJsonObject extra={}){extra["name"]="sample";if(!extra.contains("version"))extra["version"]="1.0.0";json(package+"/.claude-plugin/plugin.json",extra);}
     a::PluginSnapshot install(){store.install(package);return store.snapshot();}
     std::shared_ptr<a::PluginRuntime> runtime(const a::PluginSnapshot& s){a::CommandHookOptions o;o.workingDirectory=workspace;return std::make_shared<a::PluginRuntime>(s,o);}
-    a::EngineOptions engineOptions(){a::EngineOptions e;e.sessionsDirectory=root.filePath("sessions");e.projectContext.enabled=false;e.compaction.automatic=false;return e;}
+    a::EngineOptions engineOptions(){a::EngineOptions e{.decision={.enabled=false}};e.sessionsDirectory=root.filePath("sessions");e.projectContext.enabled=false;e.compaction.automatic=false;return e;}
     a::AgentProfileOptions profiles(){a::AgentProfileOptions p;p.includeProject=false;p.includeBuiltins=false;return p;}
     a::McpConnectionOptions connections(){a::McpConnectionOptions m;m.workingDirectory=workspace;m.refreshIntervalMs=0;return m;}
 };
@@ -162,7 +162,7 @@ private slots:
     void authenticatedApiAndMcpExposeTheSameRedactedSnapshot(){
         Fixture f;auto e=f.engineOptions();auto p=f.profiles();auto m=f.connections();const auto s=f.install();a::PluginRuntime::attach(e,p,m,f.runtime(s));
         auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>();
-        a::ApiOptions options;options.workingDirectory=f.workspace;options.stateDirectory=f.root.filePath("api");options.engine=e;options.engine.sessionsDirectory.clear();options.clientTokens={{"society",QString(48,'a')},{"dreamscapes",QString(48,'b')}};
+        a::ApiOptions options{.engine={.decision={.enabled=false}}};options.workingDirectory=f.workspace;options.stateDirectory=f.root.filePath("api");options.engine=e;options.engine.sessionsDirectory.clear();options.clientTokens={{"society",QString(48,'a')},{"dreamscapes",QString(48,'b')}};
         a::Api api(model,registry,policy,options);
         const auto result=api.dispatch("agent.plugins.list",{},QString(48,'a')).result.get().toObject();QCOMPARE(result,s.toJson());
         QCOMPARE(api.dispatch("agent.plugins.list",{},QString(48,'b')).result.get().toObject(),result);

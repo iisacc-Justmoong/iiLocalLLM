@@ -163,7 +163,7 @@ private slots:
         Endpoint e;QTemporaryDir root{QDir::current().filePath("web-engine-XXXXXX")};const auto work=root.filePath("work");QDir().mkpath(work);
         auto model=std::make_shared<Model>();model->pageUrl=e.url();auto registry=std::make_shared<a::ToolRegistry>();
         auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Default,QList<a::PermissionRule>{{"WebFetch(domain:127.0.0.1)",a::PermissionBehavior::Allow}});
-        a::EngineOptions o;o.sessionsDirectory=root.filePath("sessions");o.webFetchEnabled=true;o.webFetch=options(e);o.webFetch.deferred=false;
+        a::EngineOptions o{.decision={.enabled=false}};o.sessionsDirectory=root.filePath("sessions");o.webFetchEnabled=true;o.webFetch=options(e);o.webFetch.deferred=false;
         o.skills.enabled=false;o.projectContext.enabled=false;o.compaction.automatic=false;o.toolSearch.enabled=false;
         a::Engine engine(model,registry,policy,o);auto id=engine.createSession("fixture",work).id;
         const auto result=engine.run({id,"Read the web page"}).result.get();QCOMPARE(result.status,a::RunStatus::Completed);
@@ -177,8 +177,8 @@ private slots:
         Endpoint e;QTemporaryDir root{QDir::current().filePath("web-bridges-XXXXXX")};const auto work=root.filePath("work");QDir().mkpath(work);
         auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();
         auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Default,QList<a::PermissionRule>{{"WebFetch(domain:127.0.0.1)",a::PermissionBehavior::Allow}});
-        a::EngineOptions o;o.webFetchEnabled=true;o.webFetch=options(e);o.webFetch.model.clear();o.skills.enabled=false;o.projectContext.enabled=false;
-        a::ApiOptions apiOptions;apiOptions.workingDirectory=work;apiOptions.stateDirectory=root.filePath("api");apiOptions.engine=o;
+        a::EngineOptions o{.decision={.enabled=false}};o.webFetchEnabled=true;o.webFetch=options(e);o.webFetch.model.clear();o.skills.enabled=false;o.projectContext.enabled=false;
+        a::ApiOptions apiOptions{.engine={.decision={.enabled=false}}};apiOptions.workingDirectory=work;apiOptions.stateDirectory=root.filePath("api");apiOptions.engine=o;
         apiOptions.clientTokens={{"society",QString(48,'a')},{"dreamscapes",QString(48,'b')}};a::Api api(model,registry,policy,apiOptions);
         auto call=[&](QString method,QJsonObject params={},QString token=QString(48,'a')){return api.dispatch(method,params,token).result.get().toObject();};
         QVERIFY(call("agent.info")["web_fetch_enabled"].toBool());const auto id=call("agent.sessions.create",{{"model","fixture"}})["session_id"].toString();

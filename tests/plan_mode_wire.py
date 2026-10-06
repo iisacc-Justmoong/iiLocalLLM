@@ -8,6 +8,7 @@ import json
 import os
 import re
 import secrets
+from legacy_decision import legacy_decision_command
 import subprocess
 import tempfile
 import time
@@ -56,7 +57,7 @@ def main():
         def server(name, command, pattern):
             log_path = root / (name + '.log')
             with log_path.open('w') as log:
-                process = subprocess.Popen(command, stdout=log, stderr=log, env=env)
+                process = subprocess.Popen(legacy_decision_command(command), stdout=log, stderr=log, env=env)
                 try:
                     def ready():
                         text = log_path.read_text()

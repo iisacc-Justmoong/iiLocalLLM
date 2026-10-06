@@ -36,7 +36,7 @@ struct Fixture {
     QTemporaryDir root;QString work=root.filePath("work");
     std::shared_ptr<Model> model=std::make_shared<Model>();
     std::shared_ptr<a::ToolRegistry> registry=std::make_shared<a::ToolRegistry>();
-    a::EngineOptions options;
+    a::EngineOptions options{.decision={.enabled=false}};
     Fixture(){QDir().mkpath(work);options.sessionsDirectory=root.filePath("state");options.skills.enabled=false;options.projectContext.enabled=false;
         a::registerWorkspaceTools(*registry,work,{},QStringList{options.sessionsDirectory});}
     bool clean() const {return QDir(root.filePath("state/hook-agents")).entryList(QDir::Dirs|QDir::NoDotAndDotDot).isEmpty();}
@@ -49,7 +49,7 @@ private slots:
         QTemporaryDir root;const auto work=root.filePath("work");QVERIFY(QDir().mkpath(work));
         auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();
         a::registerWorkspaceTools(*registry,work,{},QStringList{root.filePath("state")});
-        a::EngineOptions options;options.sessionsDirectory=root.filePath("state");options.skills.enabled=false;options.projectContext.enabled=false;
+        a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("state");options.skills.enabled=false;options.projectContext.enabled=false;
         options.hooks={configured(work)};QString transcript;int mainCalls=0,verifierCalls=0;bool isolated=false,observed=false;
         model->next=[&](const a::ModelRequest& request,const CancellationToken&) {
             if(!request.verificationAgent){++mainCalls;return a::ModelReply{"PARENT_FINISHED"};}
@@ -72,7 +72,7 @@ private slots:
     }
     void failedConditionRequestsAnotherParentTurn() {
         QTemporaryDir root;auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();
-        a::EngineOptions options;options.sessionsDirectory=root.filePath("state");options.skills.enabled=false;options.projectContext.enabled=false;
+        a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("state");options.skills.enabled=false;options.projectContext.enabled=false;
         options.hooks={configured(root.path())};int parent=0,verifier=0;bool feedback=false;
         model->next=[&](const a::ModelRequest& request,const CancellationToken&) {
             if(request.verificationAgent)return a::ModelReply{{},{{"decision","StructuredOutput",{{"ok",++verifier>1},{"reason","NEEDS_MORE"}}}}};
@@ -85,7 +85,7 @@ private slots:
     void assistantMessageLimit_data(){QTest::addColumn<int>("decisionAt");QTest::newRow("49th accepted")<<49;QTest::newRow("50th not executed")<<50;}
     void assistantMessageLimit() {
         QFETCH(int,decisionAt);QTemporaryDir root;auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();
-        a::EngineOptions options;options.sessionsDirectory=root.filePath("state");options.skills.enabled=false;options.projectContext.enabled=false;
+        a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("state");options.skills.enabled=false;options.projectContext.enabled=false;
         options.hooks={configured(root.path())};int calls=0;QJsonObject diagnostic;
         model->next=[&](const a::ModelRequest& request,const CancellationToken&) {
             if(!request.verificationAgent)return a::ModelReply{"main"};
@@ -99,7 +99,7 @@ private slots:
     }
     void taskVerifierCanInspectTheSameBoard() {
         QTemporaryDir root;auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();
-        a::EngineOptions options;options.sessionsDirectory=root.filePath("state");options.skills.enabled=false;options.projectContext.enabled=false;
+        a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("state");options.skills.enabled=false;options.projectContext.enabled=false;
         options.taskToolsEnabled=true;options.taskToolsDeferred=false;options.hooks={configured(root.path(),"TaskCreated")};int turns=0;bool inspected=false;
         model->next=[&](const a::ModelRequest& request,const CancellationToken&) {
             if(++turns==1)return a::ModelReply{{},{{"list","TaskList",{}}}};

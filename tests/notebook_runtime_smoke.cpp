@@ -40,7 +40,7 @@ int main(int argc,char** argv){QCoreApplication app(argc,argv);
         auto rules=QList<a::PermissionRule>{{"NotebookEdit",a::PermissionBehavior::Allow}};
         if(checkpoints){rules.append({"Write",a::PermissionBehavior::Allow});rules.append({"RewindFiles",a::PermissionBehavior::Allow});}
         auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::DontAsk,rules);
-        a::EngineOptions options;options.sessionsDirectory=root.filePath("sessions");options.projectContext.enabled=false;options.skills.enabled=false;options.compaction.automatic=false;options.toolSearch.enabled=false;
+        a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");options.projectContext.enabled=false;options.skills.enabled=false;options.compaction.automatic=false;options.toolSearch.enabled=false;
         options.fileCheckpointsEnabled=checkpoints;
         options.toolFilter=[](const a::ToolDefinition& tool){return QStringList{"Read","NotebookEdit"}.contains(tool.name);};
         QJsonArray calls;options.hooks.append([&](const a::HookInput& input,const auto&){if(input.kind==a::HookKind::AfterTool)
