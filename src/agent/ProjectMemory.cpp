@@ -1,3 +1,4 @@
+#include <iiFileProviderDevice.h>
 #include "ProjectMemory.h"
 #include "ContextFile.h"
 #include "Frontmatter.h"
@@ -5,8 +6,6 @@
 #include <QtCore/QDateTime>
 #include <QtCore/QDirIterator>
 #include <QtCore/QJsonDocument>
-#include <QtCore/QLockFile>
-#include <QtCore/QSaveFile>
 #include <QtCore/QStringConverter>
 #include <QtCore/QThread>
 #include <QtCore/QUuid>
@@ -24,7 +23,7 @@ QString decode(const QByteArray& bytes) {
     require(!decoder.hasError()&&!text.contains(QChar::Null),"Memory must be UTF-8 text without NUL");return text;
 }
 class Lock {
-    QLockFile file;
+    iiFileProvider::LockFile file;
 public:
     Lock(const QString& path,int timeout,const CancellationToken& token):file(path) {
         require(!QFileInfo(path).isSymLink(),"Project memory lock must not be a symlink",ErrorCode::StorageFailure);
@@ -32,7 +31,7 @@ public:
         const auto deadline=std::chrono::steady_clock::now()+std::chrono::milliseconds(timeout);
         for(;;) {
             token.throwIfCancelled();if(file.tryLock(0))break;
-            require(file.error()==QLockFile::LockFailedError,"Cannot lock project memory",ErrorCode::StorageFailure);
+            require(file.error()==iiFileProvider::LockFile::LockFailedError,"Cannot lock project memory",ErrorCode::StorageFailure);
             require(std::chrono::steady_clock::now()<deadline,"Project memory is busy",ErrorCode::Timeout);
             QThread::msleep(10);
         }
@@ -50,21 +49,21 @@ public:
     mutable std::mutex mutex;
     mutable QHash<QString,std::shared_ptr<Entry>> entries;
     explicit Impl(ProjectMemoryOptions value):options(std::move(value)) {
-        require(!options.directory.isEmpty()&&QDir::isAbsolutePath(options.directory)&&!options.directory.contains(QChar::Null),"Project memory requires an absolute host directory");
+        require(!options.directory.isEmpty()&&iiFileProvider::Directory::isAbsolutePath(options.directory)&&!options.directory.contains(QChar::Null),"Project memory requires an absolute host directory");
         require(options.maxIndexLines>=1&&options.maxIndexLines<=10000&&options.maxIndexBytes>=1&&options.maxIndexBytes<=1024*1024
             &&options.maxFileBytes>=1&&options.maxFileBytes<=1024*1024&&options.maxFiles>=1&&options.maxFiles<=2000
             &&options.maxScannedEntries>=options.maxFiles&&options.maxScannedEntries<=100000
             &&options.maxScanBytes>=options.maxFileBytes&&options.maxScanBytes<=64*1024*1024
             &&options.lockTimeoutMs>=1&&options.lockTimeoutMs<=60000,"Invalid project memory limits");
-        require(QDir().mkpath(options.directory),"Cannot create project memory base",ErrorCode::StorageFailure);
+        require(iiFileProvider::Directory().mkpath(options.directory),"Cannot create project memory base",ErrorCode::StorageFailure);
         base=QFileInfo(options.directory).canonicalFilePath();
-        require(!base.isEmpty()&&base!=QDir::rootPath(),"Project memory base must not be a filesystem root");
+        require(!base.isEmpty()&&base!=iiFileProvider::Directory::rootPath(),"Project memory base must not be a filesystem root");
     }
     void check(const Entry& e) const {
         require(QFileInfo(base).canonicalFilePath()==base&&QFileInfo(base).isDir(),"Project memory base changed",ErrorCode::StorageFailure);
         QString at=base;
-        for(const auto& part:QDir(base).relativeFilePath(e.directory).split('/')) {
-            at=QDir(at).filePath(part);const QFileInfo info(at);
+        for(const auto& part:iiFileProvider::Directory(base).relativeFilePath(e.directory).split('/')) {
+            at=iiFileProvider::Directory(at).filePath(part);const QFileInfo info(at);
             require(!info.isSymLink()&&info.isDir()&&info.canonicalFilePath()==at,"Project memory scope changed",ErrorCode::StorageFailure);
         }
     }
@@ -76,26 +75,26 @@ public:
         require(QFileInfo(base).canonicalFilePath()==base,"Project memory base changed",ErrorCode::StorageFailure);
         QString at=base;
         for(const auto& part:QStringList{"projects",hash(canonical.toUtf8()),"memory"}) {
-            token.throwIfCancelled();at=QDir(at).filePath(part);const QFileInfo before(at);
+            token.throwIfCancelled();at=iiFileProvider::Directory(at).filePath(part);const QFileInfo before(at);
             require(!before.isSymLink(),"Project memory directory is a symlink",ErrorCode::StorageFailure);
             if(!before.exists()) {
                 require(create,"Initialize project memory before binding file operations",ErrorCode::StorageFailure);
-                (void)QDir().mkdir(at); // Another owner may create the same scope concurrently; validate the result below.
+                (void)iiFileProvider::Directory().mkdir(at); // Another owner may create the same scope concurrently; validate the result below.
             }
             const QFileInfo info(at);require(info.isDir()&&info.canonicalFilePath()==at,"Invalid project memory directory",ErrorCode::StorageFailure);
         }
-        auto e=std::make_shared<Entry>();e->directory=at;e->lockPath=QDir(QFileInfo(at).absolutePath()).filePath("memory.lock");
+        auto e=std::make_shared<Entry>();e->directory=at;e->lockPath=iiFileProvider::Directory(QFileInfo(at).absolutePath()).filePath("memory.lock");
         e->tools=std::make_shared<ToolRegistry>();registerWorkspaceTools(*e->tools,at);
         entries.insert(canonical,e);return e;
     }
     QString file(const Entry& e,const QString& path,bool markdown) const {
-        check(e);require(!path.isEmpty()&&QDir::isAbsolutePath(path)&&!path.contains(QChar::Null),"Memory tools require an absolute path");
-        const auto clean=QDir::cleanPath(path);require(inside(clean,e.directory),"Path is outside this project's memory");
+        check(e);require(!path.isEmpty()&&iiFileProvider::Directory::isAbsolutePath(path)&&!path.contains(QChar::Null),"Memory tools require an absolute path");
+        const auto clean=iiFileProvider::Directory::cleanPath(path);require(inside(clean,e.directory),"Path is outside this project's memory");
         require(!markdown||(clean!=e.directory&&clean.endsWith(".md")),"Memory changes require a Markdown file");
-        QString at=e.directory;const auto relative=QDir(e.directory).relativeFilePath(clean);
+        QString at=e.directory;const auto relative=iiFileProvider::Directory(e.directory).relativeFilePath(clean);
         require(relative.size()<=1024&&relative.split('/').size()<=32,"Memory path exceeds limit",ErrorCode::ResourceLimit);
         if(relative!=".")for(const auto& part:relative.split('/')) {
-            at=QDir(at).filePath(part);const QFileInfo info(at);
+            at=iiFileProvider::Directory(at).filePath(part);const QFileInfo info(at);
             require(!info.isSymLink(),"Memory paths must not contain symlinks");
             if(info.exists())require(inside(info.canonicalFilePath(),e.directory),"Memory path escaped its scope");
         }
@@ -105,7 +104,7 @@ public:
         file(e,path,false);return detail::readContextFile(e.directory,path,options.maxFileBytes,token);
     }
     QJsonObject index(const Entry& e,const CancellationToken& token) const {
-        QJsonObject result{{"enabled",true},{"directory",e.directory},{"index_path",QDir(e.directory).filePath("MEMORY.md")},
+        QJsonObject result{{"enabled",true},{"directory",e.directory},{"index_path",iiFileProvider::Directory(e.directory).filePath("MEMORY.md")},
             {"index",""},{"index_sha256",""},{"index_truncated",false},{"index_lines",0},{"index_bytes",0}};
         const auto path=result["index_path"].toString();const QFileInfo info(path);
         if(!info.exists()&&!info.isSymLink())return result;
@@ -124,12 +123,12 @@ public:
         require(query.size()<=512&&!query.contains(QChar::Null),"Invalid memory query");
         const auto e=entry(workspace,token);Lock lock(e->lockPath,options.lockTimeoutMs,token);check(*e);
         auto result=index(*e,token);QJsonArray diagnostics;QList<QJsonObject> records;
-        QDirIterator iterator(e->directory,QDir::AllEntries|QDir::Hidden|QDir::NoDotAndDotDot,QDirIterator::Subdirectories);
+        QDirIterator iterator(e->directory,iiFileProvider::Directory::AllEntries|iiFileProvider::Directory::Hidden|iiFileProvider::Directory::NoDotAndDotDot,QDirIterator::Subdirectories);
         int scanned=0,bytesRead=0;bool truncated=false;
         while(iterator.hasNext()) {
             token.throwIfCancelled();if(scanned>=options.maxScannedEntries){truncated=true;break;}++scanned;
             const auto path=iterator.next();const QFileInfo info=iterator.fileInfo();
-            const auto relative=QDir(e->directory).relativeFilePath(path);
+            const auto relative=iiFileProvider::Directory(e->directory).relativeFilePath(path);
             if(info.isSymLink()) {diagnostics.append(QJsonObject{{"path",relative},{"error","symlink_skipped"}});continue;}
             if(!info.isFile()||!path.endsWith(".md")||path==result["index_path"].toString())continue;
             if(info.size()>options.maxFileBytes){diagnostics.append(QJsonObject{{"path",relative},{"error","file_limit"}});continue;}
@@ -178,8 +177,8 @@ public:
         // exact host memory path. The model cannot submit a different scope.
         wrapped.prepare=[self,original](const QJsonObject& args,const ToolContext& context) {
             const auto e=self->entry(context.workingDirectory,context.cancellation,false);
-            const auto path=args["path"].toString();const auto clean=QDir::cleanPath(path);
-            if(!QDir::isAbsolutePath(path)||!inside(clean,e->directory)) {
+            const auto path=args["path"].toString();const auto clean=iiFileProvider::Directory::cleanPath(path);
+            if(!iiFileProvider::Directory::isAbsolutePath(path)||!inside(clean,e->directory)) {
                 auto scope=context;scope.protectedPaths.append(self->base);scope.protectedPaths.removeDuplicates();
                 if(original.prepare)return original.prepare(args,scope);
                 return PreparedTool{original.definition,[original,args,scope]{return original.execute(args,scope);}};
@@ -193,7 +192,7 @@ public:
             // Routing already narrows access to this exact owned directory.
             // Private ancestors protect ordinary tools; protected descendants
             // inside the memory directory still remain excluded.
-            scope.protectedPaths.removeIf([&](const QString& root){const auto clean=QDir::cleanPath(root),canonical=QFileInfo(root).canonicalFilePath();
+            scope.protectedPaths.removeIf([&](const QString& root){const auto clean=iiFileProvider::Directory::cleanPath(root),canonical=QFileInfo(root).canonicalFilePath();
                 return clean!=e->directory&&canonical!=e->directory&&(inside(e->directory,clean)||inside(e->directory,canonical));});
             auto native=e->tools->get(original.definition.name);auto prepared=native.prepare(args,scope);
             auto preview=original.definition;preview.metadata=prepared.definition.metadata;preview.metadata["memory_directory"]=e->directory;
@@ -262,13 +261,13 @@ Tool ProjectMemory::forgetTool(bool deferred) const {
         return PreparedTool{preview,[self,e,path,args,context] {
             Lock lock(e->lockPath,self->options.lockTimeoutMs,context.cancellation);const auto before=self->read(*e,path,context.cancellation);
             require(hash(before)==args["sha256"].toString(),"Memory changed; read it again before forgetting");
-            const auto backupDirectory=QDir(QFileInfo(e->directory).absolutePath()).filePath("forgotten");
-            require(!QFileInfo(backupDirectory).isSymLink()&&QDir().mkpath(backupDirectory),"Cannot create memory backup directory",ErrorCode::StorageFailure);
-            const auto backup=QDir(backupDirectory).filePath(QUuid::createUuid().toString(QUuid::WithoutBraces)+".md");
-            QSaveFile file(backup);require(file.open(QIODevice::WriteOnly)&&file.write(before)==before.size()&&file.commit(),"Cannot save memory backup",ErrorCode::StorageFailure);
+            const auto backupDirectory=iiFileProvider::Directory(QFileInfo(e->directory).absolutePath()).filePath("forgotten");
+            require(!QFileInfo(backupDirectory).isSymLink()&&iiFileProvider::Directory().mkpath(backupDirectory),"Cannot create memory backup directory",ErrorCode::StorageFailure);
+            const auto backup=iiFileProvider::Directory(backupDirectory).filePath(QUuid::createUuid().toString(QUuid::WithoutBraces)+".md");
+            iiFileProvider::SaveFile file(backup);require(file.open(QIODevice::WriteOnly)&&file.write(before)==before.size()&&file.commit(),"Cannot save memory backup",ErrorCode::StorageFailure);
             context.cancellation.throwIfCancelled();self->file(*e,path,true);
             require(self->read(*e,path,context.cancellation)==before,"Memory changed before deletion");
-            require(QFile::remove(path),"Cannot remove memory file",ErrorCode::StorageFailure);
+            require(iiFileProvider::FileDevice::remove(path),"Cannot remove memory file",ErrorCode::StorageFailure);
             return ToolResult{"Removed obsolete memory",{{"path",path},{"removed",true},{"sha256",hash(before)},{"backup_path",backup}}};
         }};
     };

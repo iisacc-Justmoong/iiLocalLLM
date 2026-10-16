@@ -43,7 +43,7 @@ QString modelId(const QString& uri)
 }
 ModelManifest parseModelManifest(const QJsonObject& o)
 {
-    static const QSet<QString> fields{"schema_version", "id", "architecture", "format", "quantization", "context_length", "capabilities", "entry_point", "files"};
+    static const QSet<QString> fields{"schema_version", "id", "architecture", "format", "quantization", "context_length", "capabilities", "entry_point", "files", "projector"};
     for (auto it = o.begin(); it != o.end(); ++it) require(fields.contains(it.key()), QStringLiteral("Unknown manifest field: ") + it.key());
     const auto version = o.value(QStringLiteral("schema_version"));
     require(version.isUndefined() || (version.isDouble() && version.toDouble() == 1), QStringLiteral("Unsupported manifest schema_version"));
@@ -72,6 +72,11 @@ ModelManifest parseModelManifest(const QJsonObject& o)
     else throw Error(ErrorCode::InvalidManifest, QStringLiteral("Custom formats require an explicit entry_point"));
     require((m.entryPoint == QStringLiteral(".") && m.format == QStringLiteral("mlx")) || relativeFile(m.entryPoint),
             QStringLiteral("entry_point must remain inside the model package"));
+    if (o.contains("projector")) {
+        m.projector = text(o, "projector", 1024);
+        require(m.format == "gguf" && relativeFile(m.projector) && m.projector != m.entryPoint,
+            "projector must be a separate GGUF inside the model package");
+    }
     const auto files = o.value(QStringLiteral("files"));
     require(files.isUndefined() || files.isArray(), QStringLiteral("files must be an array"));
     require(files.toArray().size() <= 10000, QStringLiteral("Too many manifest files"));
@@ -100,6 +105,7 @@ QJsonObject manifestObject(const ModelManifest& m, bool includeFiles)
     QJsonObject out{{"schema_version", 1}, {"id", m.id}, {"architecture", m.architecture}, {"format", m.format},
         {"quantization", m.quantization}, {"context_length", m.contextLength}, {"capabilities", QJsonArray::fromStringList(m.capabilities)},
         {"entry_point", m.entryPoint}};
+    if (!m.projector.isEmpty()) out["projector"] = m.projector;
     if (includeFiles) {
         QJsonArray files;
         for (const auto& file : m.files) files.append(QJsonObject{{"path", file.path}, {"size", file.size}, {"sha256", file.sha256}});

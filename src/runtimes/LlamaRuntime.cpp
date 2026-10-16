@@ -2,6 +2,7 @@
 #include "Parameters.h"
 #include "Utf8Stream.h"
 #include "MemoryEstimate.h"
+#include "MediaContent.h"
 #include "hardware/Detection.h"
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -11,12 +12,17 @@
 #include <cstdio>
 #include <mutex>
 #include <vector>
+#include <limits>
+#include <QtCore/QUuid>
 
 #ifdef IILOCALLLM_WITH_LLAMA
 #include <llama.h>
 #include <gguf.h>
 #include <chat.h>
 #include <sampling.h>
+#include <mtmd.h>
+#include <mtmd-helper.h>
+#include <stb/stb_image.h>
 #endif
 
 namespace iiLocalLLM {
@@ -25,6 +31,12 @@ namespace {
 using ModelPtr = std::shared_ptr<llama_model>;
 using ContextPtr = std::unique_ptr<llama_context, decltype(&llama_free)>;
 using SamplerPtr = std::unique_ptr<llama_sampler, decltype(&llama_sampler_free)>;
+using BitmapPtr = std::unique_ptr<mtmd_bitmap, decltype(&mtmd_bitmap_free)>;
+using ChunksPtr = std::unique_ptr<mtmd_input_chunks, decltype(&mtmd_input_chunks_free)>;
+struct NativeProjector {
+    std::unique_ptr<mtmd_context, decltype(&mtmd_free)> context{nullptr, mtmd_free};
+    std::mutex mutex; // Encoding and embedding decode share projector scratch state.
+};
 bool abortDecode(void* data) { return static_cast<const CancellationToken*>(data)->isCancelled(); }
 void initializeLlama()
 {
@@ -64,6 +76,10 @@ struct LlamaConversationState final : RuntimePromptState {
     common_chat_params chat;
     common_chat_parser_params parser;
     bool thinkingEnabled = true;
+    std::shared_ptr<NativeProjector> projector;
+    std::vector<BitmapPtr> bitmaps;
+    ChunksPtr chunks{nullptr, mtmd_input_chunks_free};
+    qint64 inputTokens = 0;
 };
 class LlamaContext final : public RuntimeContext {
 public:
@@ -106,20 +122,33 @@ private:
             if (token >= vocabSize) throw Error(ErrorCode::InvalidArgument, "logit_bias token is outside the vocabulary");
             biases.push_back({token, float(it.value().toDouble())});
         }
-        if (prompt.isEmpty() || prompt.size() + options.maxTokens > llama_n_ctx(context_.get()))
+        const auto inputTokens=conversation&&conversation->chunks?conversation->inputTokens:prompt.size();
+        if (inputTokens <= 0 || inputTokens + options.maxTokens > llama_n_ctx(context_.get()))
             throw Error(ErrorCode::ContextOverflow, QStringLiteral("llama.cpp context overflow"));
         llama_set_abort_callback(context_.get(), abortDecode, const_cast<CancellationToken*>(&cancel));
         struct ResetAbort { llama_context* ctx; ~ResetAbort() { llama_set_abort_callback(ctx, nullptr, nullptr); } } reset{context_.get()};
         int reuse = 0;
         // Always decode at least the last prompt token to produce current logits.
-        while (reuse < std::min(previous_.size(), prompt.size() - 1) && previous_[reuse] == prompt[reuse]) ++reuse;
+        const bool media=conversation&&conversation->chunks;
+        if(!media)while (reuse < std::min(previous_.size(), prompt.size() - 1) && previous_[reuse] == prompt[reuse]) ++reuse;
         const auto memory = llama_get_memory(context_.get());
         if (!llama_memory_seq_rm(memory, 0, reuse, -1)) {
             llama_memory_clear(memory, true);
             reuse = 0; // Recurrent models may not permit partial cache removal.
         }
         previous_.resize(reuse);
-        decode(prompt.sliced(reuse), cancel);
+        nextPosition_=reuse;
+        if(media) {
+            std::lock_guard lock(conversation->projector->mutex);
+            const auto ctx=conversation->projector->context.get();
+            for(size_t i=0;i<mtmd_input_chunks_size(conversation->chunks.get());++i) {
+                cancel.throwIfCancelled();
+                const auto status=mtmd_helper_eval_chunk_single(ctx,context_.get(),mtmd_input_chunks_get(conversation->chunks.get(),i),
+                    nextPosition_,0,llama_n_batch(context_.get()),i+1==mtmd_input_chunks_size(conversation->chunks.get()),&nextPosition_);
+                cancel.throwIfCancelled();
+                if(status)throw Error(ErrorCode::RuntimeFailure,QString("Native media evaluation failed: %1").arg(status));
+            }
+        } else decode(prompt.sliced(reuse), cancel);
         SamplerPtr sampler(nullptr, llama_sampler_free);
         common_sampler_ptr structuredSampler;
         std::set<llama_token> preserved;
@@ -201,34 +230,47 @@ private:
             const QString text = utf8(piece);
             if (!text.isEmpty() && !onText(text)) { result.finishReason = FinishReason::Stop; break; }
             // The last sampled token is not evaluated until needed by a subsequent request.
-            if (n + 1 < options.maxTokens) decode({token}, cancel);
+            if (n + 1 < options.maxTokens) decode({token}, cancel, !media);
         }
         const auto tail = utf8.finish();
         if (!tail.isEmpty()) onText(tail);
+        if(media)previous_.clear(); // Text token prefixes cannot describe media embeddings.
         return result;
     }
 private:
     ModelPtr model_;
     ContextPtr context_;
     TokenList previous_;
-    void decode(const TokenList& tokens, const CancellationToken& cancel)
+    llama_pos nextPosition_=0;
+    void decode(const TokenList& tokens, const CancellationToken& cancel, bool trackHistory=true)
     {
         for (qsizetype start = 0; start < tokens.size();) {
             cancel.throwIfCancelled();
             const int count = std::min<qsizetype>(llama_n_batch(context_.get()), tokens.size() - start);
             auto batch = llama_batch_get_one(const_cast<llama_token*>(tokens.constData() + start), count);
+            std::vector<llama_pos> positions(count);
+            for(int i=0;i<count;++i)positions[i]=nextPosition_+i;
+            batch.pos=positions.data();
             const int status = llama_decode(context_.get(), batch);
             cancel.throwIfCancelled();
             if (status != 0) throw Error(ErrorCode::RuntimeFailure, QStringLiteral("llama_decode failed: %1").arg(status));
-            previous_.append(tokens.sliced(start, count));
+            if(trackHistory)previous_.append(tokens.sliced(start, count));
+            nextPosition_+=count;
             start += count;
         }
     }
 };
 class LlamaModel final : public RuntimeModel {
 public:
-    LlamaModel(ModelPtr model, ModelSpec spec, bool accelerated)
-        : model_(std::move(model)), spec_(std::move(spec)), accelerated_(accelerated) {}
+    LlamaModel(ModelPtr model, ModelSpec spec, bool accelerated, ggml_backend_dev_t device)
+        : model_(std::move(model)), spec_(std::move(spec)), accelerated_(accelerated) {
+        if(!spec_.projectorPath.isEmpty()) {
+            projector_=std::make_shared<NativeProjector>();auto params=mtmd_context_params_default();
+            params.use_gpu=accelerated_;params.device=device;params.n_threads=optionInt(spec_,"threads",4,1,512);params.warmup=false;
+            projector_->context.reset(mtmd_init_from_file(spec_.projectorPath.toUtf8().constData(),model_.get(),params));
+            if(!projector_->context)throw Error(ErrorCode::RuntimeFailure,"Cannot load native multimodal projector");
+        }
+    }
     TokenList tokenize(const QList<ChatMessage>& messages, const CancellationToken& cancel) override
     {
         cancel.throwIfCancelled();
@@ -273,14 +315,64 @@ public:
         cancel.throwIfCancelled();
         if (!templates_) templates_ = common_chat_templates_init(model_.get(), spec_.options["chat_template"].toString().toStdString());
         common_chat_templates_inputs input;
-        input.messages = common_chat_msgs_parse_oaicompat(common_json::parse(QJsonDocument(request.messages).toJson(QJsonDocument::Compact).toStdString()));
+        auto state = std::make_shared<LlamaConversationState>();state->projector=projector_;
+        QJsonArray messages;std::vector<std::string> markers;
+        constexpr std::uint64_t mediaLimit=128*1024*1024;
+        std::uint64_t decodedMediaBytes=0;
+        const auto nonce=QUuid::createUuid().toString(QUuid::WithoutBraces).toStdString();
+        auto addBitmap=[&](const QJsonObject& block,bool video,QJsonArray& parts) {
+            cancel.throwIfCancelled();
+            if(!projector_)throw Error(ErrorCode::RuntimeUnavailable,"Native media requires a package-owned multimodal projector");
+            const bool audio=block["type"]=="audio";const auto ctx=projector_->context.get();
+            if((audio&&!mtmd_support_audio(ctx))||(!audio&&!mtmd_support_vision(ctx)))
+                throw Error(ErrorCode::RuntimeUnavailable,"Loaded projector does not support the requested modality");
+            const auto bytes=mediaBytes(block);
+            if(!audio) {
+                int width=0,height=0,channels=0;
+                if(!stbi_info_from_memory(reinterpret_cast<const unsigned char*>(bytes.constData()),bytes.size(),&width,&height,&channels)
+                    ||width<=0||height<=0)throw Error(ErrorCode::InvalidArgument,"Invalid native image header");
+                if(std::uint64_t(width)*std::uint64_t(height)>16*1024*1024)
+                    throw Error(ErrorCode::ResourceLimit,"Native image exceeds 16 megapixels");
+                if(std::uint64_t(width)*std::uint64_t(height)*3>mediaLimit-decodedMediaBytes)
+                    throw Error(ErrorCode::ResourceLimit,"Decoded request media exceeds 128 MiB");
+            }
+            auto decoded=mtmd_helper_bitmap_init_from_buf(ctx,reinterpret_cast<const unsigned char*>(bytes.constData()),bytes.size(),false,mtmd_helper_init_opt_default());
+            BitmapPtr bitmap(decoded.bitmap,mtmd_bitmap_free);
+            if(!bitmap)throw Error(ErrorCode::InvalidArgument,"Cannot decode native media bytes");
+            if(mtmd_bitmap_is_audio(bitmap.get())!=audio)throw Error(ErrorCode::InvalidArgument,"Media bytes do not match their declared modality");
+            const auto decodedBytes=mtmd_bitmap_get_n_bytes(bitmap.get());
+            if(decodedBytes>mediaLimit-decodedMediaBytes)throw Error(ErrorCode::ResourceLimit,"Decoded request media exceeds 128 MiB");
+            decodedMediaBytes+=decodedBytes;
+            mtmd_bitmap_set_mergeable(bitmap.get(),video);
+            markers.push_back("<__iillm_"+nonce+"_"+std::to_string(markers.size())+"__>");
+            parts.append(QJsonObject{{"type","media_marker"},{"text",QString::fromStdString(markers.back())}});
+            state->bitmaps.push_back(std::move(bitmap));
+        };
+        for(const auto& value:request.messages) {
+            auto message=value.toObject();
+            if(message["content"].isArray()) {
+                QJsonArray parts;
+                for(const auto& item:nativeContent(message["content"].toArray())) {
+                    const auto block=item.toObject();const auto type=block["type"].toString();
+                    if(type=="text")parts.append(block);
+                    else if(type=="video") {
+                        for(const auto& frame:block["frames"].toArray()) {
+                            const auto image=frame.toObject();parts.append(QJsonObject{{"type","text"},{"text",QString("[video frame at %1 ms]").arg(image["timestamp_ms"].toDouble(),0,'g',16)}});
+                            addBitmap(image,true,parts);
+                        }
+                    } else addBitmap(block,false,parts);
+                }
+                message["content"]=parts;
+            }
+            messages.append(message);
+        }
+        input.messages = common_chat_msgs_parse_oaicompat(common_json::parse(QJsonDocument(messages).toJson(QJsonDocument::Compact).toStdString()));
         input.tools = common_chat_tools_parse_oaicompat(common_json::parse(QJsonDocument(request.tools).toJson(QJsonDocument::Compact).toStdString()));
         input.tool_choice = common_chat_tool_choice_parse_oaicompat(request.toolChoice.toStdString());
         input.parallel_tool_calls = request.parallelToolCalls;
         input.reasoning_format = COMMON_REASONING_FORMAT_DEEPSEEK;
         input.enable_thinking = request.enableThinking.value_or(spec_.options.value("enable_thinking").toBool(true));
         if(!request.responseSchema.isEmpty())input.json_schema=QJsonDocument(request.responseSchema).toJson(QJsonDocument::Compact).toStdString();
-        auto state = std::make_shared<LlamaConversationState>();
         state->thinkingEnabled = input.enable_thinking;
         state->chat = common_chat_templates_apply(templates_.get(), input);
         if (!spec_.options.value("tool_grammar").toBool(true)&&request.responseSchema.isEmpty()) {
@@ -293,12 +385,41 @@ public:
         state->parser = common_chat_parser_params(state->chat);
         state->parser.reasoning_format = input.reasoning_format;
         if (!state->chat.parser.empty()) state->parser.parser.load(state->chat.parser);
-        const auto tokens = common_tokenize(llama_model_get_vocab(model_.get()), state->chat.prompt, true, true);
+        std::vector<llama_token> tokens;
+        if(!state->bitmaps.empty()) {
+            // Split only host-generated markers. User text cannot impersonate a bitmap slot.
+            std::vector<std::string> text;std::vector<mtmd_input_text> spans;std::vector<mtmd_input_part> parts;
+            text.reserve(markers.size()+1);spans.reserve(markers.size()+1);parts.reserve(2*markers.size()+1);
+            size_t at=0;
+            auto addText=[&](std::string value){text.push_back(std::move(value));spans.push_back({text.back().data(),text.back().size(),false,true});parts.push_back({&spans.back(),nullptr});};
+            for(size_t i=0;i<markers.size();++i) {
+                const auto pos=state->chat.prompt.find(markers[i],at);
+                if(pos==std::string::npos||state->chat.prompt.find(markers[i],pos+markers[i].size())!=std::string::npos)
+                    throw Error(ErrorCode::RuntimeUnavailable,"Chat template did not preserve native media ordering");
+                if(pos>at)addText(state->chat.prompt.substr(at,pos-at));
+                parts.push_back({nullptr,state->bitmaps[i].get()});at=pos+markers[i].size();
+            }
+            if(at<state->chat.prompt.size())addText(state->chat.prompt.substr(at));
+            std::vector<const mtmd_input_part*> pointers;for(const auto& part:parts)pointers.push_back(&part);
+            state->chunks.reset(mtmd_input_chunks_init());
+            if(mtmd_tokenize_from_parts(projector_->context.get(),state->chunks.get(),pointers.data(),pointers.size(),true))
+                throw Error(ErrorCode::RuntimeFailure,"Native multimodal tokenization failed");
+            const auto count=mtmd_helper_get_n_tokens(state->chunks.get());
+            state->inputTokens=std::max<qint64>(count,mtmd_helper_get_n_pos(state->chunks.get()));
+            if(state->inputTokens>std::numeric_limits<int>::max())throw Error(ErrorCode::ResourceLimit,"Native media token budget overflow");
+            for(size_t i=0;i<mtmd_input_chunks_size(state->chunks.get());++i) {
+                const auto chunk=mtmd_input_chunks_get(state->chunks.get(),i);
+                if(mtmd_input_chunk_get_type(chunk)==MTMD_INPUT_CHUNK_TYPE_TEXT) {
+                    size_t n=0;const auto data=mtmd_input_chunk_get_tokens_text(chunk,&n);tokens.insert(tokens.end(),data,data+n);
+                }
+            }
+        } else tokens=common_tokenize(llama_model_get_vocab(model_.get()),state->chat.prompt,true,true);
         RuntimeConversationPrompt result;
         result.tokens.reserve(tokens.size());
         for (const auto token : tokens) result.tokens.append(token);
         for (const auto& stop : state->chat.additional_stops) result.stop.append(QString::fromStdString(stop));
         result.state = std::move(state);
+        result.inputTokens=static_cast<const LlamaConversationState*>(result.state.get())->inputTokens;
         cancel.throwIfCancelled(); return result;
     }
     RuntimeConversationReply parseConversation(const RuntimeConversationPrompt& prompt, const QString& text) override
@@ -331,6 +452,7 @@ private:
     ModelSpec spec_;
     bool accelerated_;
     common_chat_templates_ptr templates_;
+    std::shared_ptr<NativeProjector> projector_;
 };
 #endif
 class LlamaRuntime final : public Runtime {
@@ -359,6 +481,12 @@ public:
     MemoryEstimate estimateMemory(const ModelSpec& spec, int contextSlots) const override
     {
         auto estimate = Runtime::estimateMemory(spec, contextSlots);
+        if(!spec.projectorPath.isEmpty()) {
+            const QFileInfo projector(spec.projectorPath);
+            if(!projector.isFile())throw Error(ErrorCode::InvalidManifest,"Multimodal projector is missing");
+            estimate.weightsBytes+=projector.size();
+            estimate.overheadBytes+=128*1024*1024; // Bounded decoded media plus projector scratch reservation.
+        }
 #ifdef IILOCALLLM_WITH_LLAMA
         std::unique_ptr<gguf_context, decltype(&gguf_free)> metadata(
             gguf_init_from_file(spec.path.toUtf8().constData(), {true, nullptr}), gguf_free);
@@ -431,7 +559,7 @@ public:
                        [selected](llama_model* model) { llama_model_free(model); });
         cancel.throwIfCancelled();
         if (!model) throw Error(ErrorCode::RuntimeFailure, QStringLiteral("llama.cpp could not load GGUF model"));
-        auto loaded = std::make_shared<LlamaModel>(std::move(model), spec, accelerated);
+        auto loaded = std::make_shared<LlamaModel>(std::move(model), spec, accelerated, selected->front());
         // Check context/KV allocation before advertising a successful GPU selection.
         if (accelerated) (void)loaded->createContext(cancel);
         return loaded;

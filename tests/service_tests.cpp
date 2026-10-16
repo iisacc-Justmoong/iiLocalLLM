@@ -21,6 +21,7 @@ struct Probe {
     std::atomic<bool> started{false}, release{true}, fail{false};
     QString answer = QStringLiteral("가나다");
     QList<ConversationRequest> preparedConversations;
+    qint64 nativeInputTokens=0;
 };
 class FakePromptState final : public RuntimePromptState {
 public:
@@ -73,7 +74,7 @@ public:
         for (const auto& message : request.messages)
             for (const auto ch : message.toObject()["content"].toString()) tokens.append(ch.unicode());
         tokens.append(3);
-        return {tokens, {}, std::make_shared<FakePromptState>(p)};
+        return {tokens, {}, std::make_shared<FakePromptState>(p),p->nativeInputTokens};
     }
     RuntimeConversationReply parseConversation(const RuntimeConversationPrompt&, const QString& text) override {
         const auto reply = QJsonDocument::fromJson(text.toUtf8()).object();
@@ -155,6 +156,23 @@ private slots:
         QVERIFY(storage->isValid());
     }
     void cleanup() { storage.reset(); }
+    void nativeMediaBudgetAndToolObservationsUseThePublicServiceAdapter() {
+        auto p=std::make_shared<Probe>();p->nativeInputTokens=80;p->answer="{\"text\":\"observed\"}";
+        Service service(options());setup(service,p,128);agent::ServiceModel model(service);
+        const auto image=QJsonObject{{"type","image"},{"mimeType","image/png"},{"data","aW1hZ2U="}};
+        agent::ModelRequest request;request.model="model://small";request.generation.maxTokens=8;
+        request.messages={{"user",agent::MessageRole::User,"inspect"},{"call",agent::MessageRole::Assistant,{},{{"c","Observe",{}}}},
+            {"result",agent::MessageRole::Tool,"exact observation",{},"c",false,{{"verified",true}},QJsonArray{image}}};
+        const auto budget=model.measure(request,{});QVERIFY(budget);QCOMPARE(budget->inputTokens,80);QCOMPARE(p->contexts.load(),0);
+        const auto result=model.generate(request,{},{});QCOMPARE(result.text,"observed");QCOMPARE(result.usage.promptTokens,80);
+        const auto content=p->preparedConversations.last().messages.last().toObject()["content"].toArray();
+        QCOMPARE(content.last().toObject(),image);
+        const auto observation=QJsonDocument::fromJson(content.first().toObject()["text"].toString().toUtf8()).object();
+        QCOMPARE(observation["text"],"exact observation");QCOMPARE(observation["data"].toObject()["verified"],true);
+        p->nativeInputTokens=200;
+        try{model.generate(request,{},{});QFAIL("Native media exceeded context without rejection");}
+        catch(const Error& error){QCOMPARE(error.code(),ErrorCode::ContextOverflow);}
+    }
     void conversationBudgetUsesTokenizerWithoutGeneration()
     {
         auto p = std::make_shared<Probe>(); Service service(options()); setup(service, p, 128);

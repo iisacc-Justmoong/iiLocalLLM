@@ -1,3 +1,4 @@
+#include <iiFileProviderDevice.h>
 #include "Tools.h"
 #include "Procedures.h"
 #include "DecisionProtocol.h"
@@ -10,8 +11,6 @@
 #include <jsoncons_ext/jsonschema/jsonschema.hpp>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QRegularExpression>
-#include <QtCore/QSaveFile>
-#include <QtCore/QDir>
 #include <QtCore/QFileInfo>
 #include <QtCore/QUuid>
 #include <map>
@@ -108,7 +107,7 @@ void ToolRegistry::validateOutput(const QString& name, const QJsonObject& output
 QStringList PermissionPolicy::workingDirectories(const ToolContext& context) const {
     context.cancellation.throwIfCancelled();QStringList paths;
     if(!context.workingDirectory.isEmpty()) {
-        paths.append(QDir::cleanPath(QFileInfo(context.workingDirectory).absoluteFilePath()));
+        paths.append(iiFileProvider::Directory::cleanPath(QFileInfo(context.workingDirectory).absoluteFilePath()));
         const auto canonical=QFileInfo(context.workingDirectory).canonicalFilePath();
         if(!canonical.isEmpty())paths.append(canonical);
     }
@@ -425,9 +424,9 @@ ToolResult ToolRunner::run(ToolCall call, const ToolContext& suppliedContext, co
         if (r.block) result.isError = true;
     }
     if (result.text.size() > options_.maxResultCharacters && !context.artifactsDirectory.isEmpty()) {
-        if (!QDir().mkpath(context.artifactsDirectory)) throw Error(ErrorCode::StorageFailure, "Cannot create tool artifact directory");
-        const auto path = QDir(context.artifactsDirectory).filePath(QUuid::createUuid().toString(QUuid::WithoutBraces) + ".txt");
-        QSaveFile file(path); const auto bytes = result.text.toUtf8();
+        if (!iiFileProvider::Directory().mkpath(context.artifactsDirectory)) throw Error(ErrorCode::StorageFailure, "Cannot create tool artifact directory");
+        const auto path = iiFileProvider::Directory(context.artifactsDirectory).filePath(QUuid::createUuid().toString(QUuid::WithoutBraces) + ".txt");
+        iiFileProvider::SaveFile file(path); const auto bytes = result.text.toUtf8();
         if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit())
             throw Error(ErrorCode::StorageFailure, "Cannot persist large tool output");
         result.text = result.text.left(options_.maxResultCharacters) + "\nFull output: " + path;

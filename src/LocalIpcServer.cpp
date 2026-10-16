@@ -1,3 +1,4 @@
+#include <iiFileProviderDevice.h>
 #include "LocalIpcServer.h"
 #include "Parameters.h"
 #include <QtCore/QJsonArray>
@@ -5,7 +6,6 @@
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
-#include <QtCore/QLockFile>
 #include <QtCore/QSet>
 #include <QtCore/QTimer>
 #include <QtNetwork/QLocalServer>
@@ -99,7 +99,7 @@ public:
     IpcOptions options;
     QObject* owner;
     QLocalServer server;
-    std::unique_ptr<QLockFile> endpointLock;
+    std::unique_ptr<iiFileProvider::LockFile> endpointLock;
     QString listenError;
     QTimer timer;
     std::vector<std::shared_ptr<Client>> clients;
@@ -126,7 +126,7 @@ public:
         const auto path = QDir::cleanPath(name.startsWith('/') ? name : QDir::temp().filePath(name));
         const auto lockPath = path + QStringLiteral(".lock");
 #endif
-        auto lock = std::make_unique<QLockFile>(lockPath);
+        auto lock = std::make_unique<iiFileProvider::LockFile>(lockPath);
         lock->setStaleLockTime(0);
         if (!lock->tryLock(0)) { listenError = QStringLiteral("Local endpoint is locked or inaccessible"); return false; }
 #ifndef Q_OS_WIN

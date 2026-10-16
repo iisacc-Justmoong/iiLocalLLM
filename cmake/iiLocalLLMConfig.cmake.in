@@ -1,6 +1,13 @@
 @PACKAGE_INIT@
 
 include(CMakeFindDependencyMacro)
+find_dependency(iiFileProvider 0.6 CONFIG HINTS "$ENV{IIFILEPROVIDER_PREFIX}" "$ENV{HOME}/.local/SDK/iiFileProvider")
+find_dependency(iiFileProviderNative 0.6 CONFIG HINTS "$ENV{IIFILEPROVIDER_PREFIX}" "$ENV{HOME}/.local/SDK/iiFileProvider")
+
+
+
+
+
 find_dependency(Qt6 6.8.3 EXACT COMPONENTS Core Network)
 find_dependency(iiDecision 0.0.3 CONFIG)
 include("${CMAKE_CURRENT_LIST_DIR}/iiLocalLLMTargets.cmake")

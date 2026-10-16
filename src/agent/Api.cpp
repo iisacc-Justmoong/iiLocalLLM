@@ -1,12 +1,11 @@
+#include <iiFileProviderDevice.h>
 #include "Api.h"
 #include "McpConnections.h"
 #include "../Parameters.h"
 #include <QtCore/QCryptographicHash>
-#include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
-#include <QtCore/QLockFile>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QSet>
 #include <QtCore/QThreadPool>
@@ -101,7 +100,7 @@ public:
     std::map<QString, std::shared_ptr<Client>> clients;
     std::map<QString, std::shared_ptr<Job>> active;
     QThreadPool workers, inputWorkers;
-    std::unique_ptr<QLockFile> stateLock;
+    std::unique_ptr<iiFileProvider::LockFile> stateLock;
 
     Impl(std::shared_ptr<Model> model, std::shared_ptr<ToolRegistry> registry,
         std::shared_ptr<const PermissionPolicy> policy, ApiOptions o) : options(std::move(o)) {
@@ -123,18 +122,18 @@ public:
             require(options.permissionRequests->maxRequestBytes<=options.maxResultBytes-256,"Permission requests must fit the API result limit");
         }
         options.workingDirectory = QFileInfo(options.workingDirectory).canonicalFilePath();
-        require(!options.workingDirectory.isEmpty() && !QDir(options.workingDirectory).isRoot() && QFileInfo(options.workingDirectory).isDir(), "Agent API workspace must exist");
+        require(!options.workingDirectory.isEmpty() && !iiFileProvider::Directory(options.workingDirectory).isRoot() && QFileInfo(options.workingDirectory).isDir(), "Agent API workspace must exist");
         require(options.engine.projectContext.rootDirectory.isEmpty()
             || QFileInfo(options.engine.projectContext.rootDirectory).canonicalFilePath() == options.workingDirectory,
             "Agent API instruction root must equal its workspace");
         options.engine.projectContext.rootDirectory = options.workingDirectory;
-        require(!options.stateDirectory.trimmed().isEmpty() && QDir().mkpath(options.stateDirectory), "Cannot create agent API state directory");
+        require(!options.stateDirectory.trimmed().isEmpty() && iiFileProvider::Directory().mkpath(options.stateDirectory), "Cannot create agent API state directory");
         options.stateDirectory = QFileInfo(options.stateDirectory).canonicalFilePath();
         require(!nested(options.stateDirectory, options.workingDirectory) && !nested(options.workingDirectory, options.stateDirectory),
             "Agent API state and tool workspace must be disjoint");
         require(QFile::setPermissions(options.stateDirectory, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner),
             "Cannot make agent API state private", ErrorCode::StorageFailure);
-        stateLock = std::make_unique<QLockFile>(QDir(options.stateDirectory).filePath("api.lock")); stateLock->setStaleLockTime(0);
+        stateLock = std::make_unique<iiFileProvider::LockFile>(iiFileProvider::Directory(options.stateDirectory).filePath("api.lock")); stateLock->setStaleLockTime(0);
         require(stateLock->tryLock(0), "Agent API state is already owned or inaccessible", ErrorCode::AlreadyExists);
         const QRegularExpression idPattern("^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"), tokenPattern("^[A-Za-z0-9_-]{32,256}$");
         QSet<QByteArray> digests;
@@ -151,11 +150,11 @@ public:
                 engineOptions.permissionRequests=client->permissionRequests;
             }
             const auto directory = QString::fromLatin1(QCryptographicHash::hash(client->id.toUtf8(), QCryptographicHash::Sha256).toHex());
-            engineOptions.sessionsDirectory = QDir(options.stateDirectory).filePath(directory + "/sessions");
+            engineOptions.sessionsDirectory = iiFileProvider::Directory(options.stateDirectory).filePath(directory + "/sessions");
             if (options.subagentsEnabled) {
                 require(options.subagents.workingDirectory.isEmpty() && options.subagents.stateDirectory.isEmpty(), "Agent API assigns subagent workspace and state");
                 auto so = options.subagents; so.workingDirectory = options.workingDirectory;
-                so.stateDirectory = QDir(options.stateDirectory).filePath(directory + "/subagents");
+                so.stateDirectory = iiFileProvider::Directory(options.stateDirectory).filePath(directory + "/subagents");
                 client->subagents = std::make_shared<Subagents>(model, registry, policy, engineOptions, so);
                 Subagents::attach(engineOptions,client->subagents);
             }
@@ -355,7 +354,7 @@ public:
             if (method == "agent.inputs.remove") {
                 fields(p, {"session_id", "input_id"}); return client->engine->removeInput(id, text(p, "input_id"), job->token);
             }
-            fields(p, {"session_id", "text", "kind", "priority", "context_paths"});
+            fields(p, {"session_id", "text", "content", "kind", "priority", "context_paths"});
             auto input = p; input.remove("session_id"); return client->engine->enqueueInput(id, input, job->token);
         }
         static const QMap<QString, QString> shellMethods{{"agent.shell.start", "Bash"}, {"agent.shell.output", "TaskOutput"},
@@ -477,9 +476,10 @@ public:
         const bool queuedOnly = method == "agent.inputs.run";
         if (compactOnly) fields(p, {"session_id", "instructions", "options"});
         else if (queuedOnly) fields(p, {"session_id", "options", "max_turns", "context_paths"});
-        else fields(p, {"session_id", "prompt", "options", "max_turns", "context_paths", "skill", "skill_arguments"});
+        else fields(p, {"session_id", "prompt", "content", "options", "max_turns", "context_paths", "skill", "skill_arguments"});
         const auto original = session(client, p);
-        RunRequest request{original.id, compactOnly || queuedOnly ? QString() : text(p, "prompt", !p.contains("skill")), generationOptionsFromJson(object(p, "options")), integer(p, "max_turns", options.maxTurns, 1, options.maxTurns)};
+        RunRequest request{original.id, compactOnly || queuedOnly ? QString() : text(p, "prompt", !p.contains("skill")&&!p.contains("content")), generationOptionsFromJson(object(p, "options")), integer(p, "max_turns", options.maxTurns, 1, options.maxTurns)};
+        require(!p.contains("content") || p["content"].isArray(), "Content must be an array");request.content=p["content"].toArray();
         request.contextPaths = contextPaths(p, options.engine.projectContext.maxTargetPaths);
         request.skill = text(p, "skill", false); request.skillArguments = text(p, "skill_arguments", false);
         job->token.throwIfCancelled();

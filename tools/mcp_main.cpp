@@ -1,3 +1,4 @@
+#include <iiFileProviderDevice.h>
 #include "agent/McpServer.h"
 #include "agent/McpConnections.h"
 #include "agent/PluginRuntime.h"
@@ -15,9 +16,7 @@
 #include "CommandHookConfig.h"
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QCoreApplication>
-#include <QtCore/QDir>
 #include <QtCore/QFileInfo>
-#include <QtCore/QLockFile>
 #include <QtCore/QTimer>
 #include <cmath>
 #include <csignal>
@@ -136,7 +135,7 @@ int main(int argc, char** argv) {
         if (transport.maxStreamsPerSession < 2) throw std::runtime_error("Invalid --max-streams-per-session");
         if (!http && (parser.isSet("max-streams") || parser.isSet("max-control-streams") || parser.isSet("max-streams-per-session")))
             throw std::runtime_error("HTTP stream capacity options require --http-port");
-        quint16 port = 0; QString privateState; std::unique_ptr<QLockFile> stateLock;
+        quint16 port = 0; QString privateState; std::unique_ptr<iiFileProvider::LockFile> stateLock;
         if (http) {
             if (!parser.isSet("credentials") || !parser.isSet("state"))
                 throw std::runtime_error("HTTP requires --credentials and --state");
@@ -151,14 +150,14 @@ int main(int argc, char** argv) {
         if (parser.isSet("state")) {
             if (parser.isSet("sessions") || parser.isSet("artifacts"))
                 throw std::runtime_error("Use --state instead of --sessions or --artifacts");
-            if (statePath.trimmed().isEmpty() || !QDir().mkpath(statePath)) throw std::runtime_error("Cannot create MCP state directory");
+            if (statePath.trimmed().isEmpty() || !iiFileProvider::Directory().mkpath(statePath)) throw std::runtime_error("Cannot create MCP state directory");
             privateState = QFileInfo(statePath).canonicalFilePath();
             if (privateState.isEmpty() || iiLocalLLMClient::containsPath(workspace, privateState)
                 || iiLocalLLMClient::containsPath(privateState, workspace))
                 throw std::runtime_error("MCP state and workspace must be disjoint");
             if (!QFile::setPermissions(privateState, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ExeOwner))
                 throw std::runtime_error("Cannot make MCP state private");
-            stateLock = std::make_unique<QLockFile>(QDir(privateState).filePath("mcp.lock")); stateLock->setStaleLockTime(0);
+            stateLock = std::make_unique<iiFileProvider::LockFile>(iiFileProvider::Directory(privateState).filePath("mcp.lock")); stateLock->setStaleLockTime(0);
             if (!stateLock->tryLock(0)) throw std::runtime_error("MCP state is already owned or inaccessible");
         }
         namespace a = iiLocalLLM::agent;
@@ -198,7 +197,7 @@ int main(int argc, char** argv) {
         std::shared_ptr<a::ShellTasks> shells;
 #if defined(Q_OS_UNIX) && !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
         if (!parser.isSet("no-background")) shells = std::make_shared<a::ShellTasks>(workspace,
-            !privateState.isEmpty() ? QDir(privateState).filePath("shells") : QDir(workspace).filePath(".iilocal-llm/shells"));
+            !privateState.isEmpty() ? iiFileProvider::Directory(privateState).filePath("shells") : iiFileProvider::Directory(workspace).filePath(".iilocal-llm/shells"));
 #endif
         a::McpConnectionOptions connectionOptions; connectionOptions.workingDirectory = workspace;
         for (const auto& path : parser.values("mcp-config")) connectionOptions.configFiles.append(QFileInfo(path).absoluteFilePath());
@@ -208,7 +207,7 @@ int main(int argc, char** argv) {
         if (!parser.isSet("no-apps")) connectionOptions.localApplicationsDirectory = iiLocalLLM::mcp::localApplicationsDirectory();
 #endif
         if (parser.isSet("apps-dir")) connectionOptions.localApplicationsDirectory = QFileInfo(parser.value("apps-dir")).absoluteFilePath();
-        QStringList privatePaths{privateState.isEmpty()?QDir(workspace).filePath(".iilocal-llm"):privateState};
+        QStringList privatePaths{privateState.isEmpty()?iiFileProvider::Directory(workspace).filePath(".iilocal-llm"):privateState};
         std::shared_ptr<a::PluginRuntime> plugins;
         if(parser.isSet("plugins")){
             if(parser.value("plugins").isEmpty())throw std::runtime_error("--plugins requires a store");
@@ -218,7 +217,7 @@ int main(int argc, char** argv) {
         }
         for(const auto& key:{"credentials","permission-settings","permission-requests","procedures","decision","agent-profiles","model-options","sessions","artifacts","hooks","lsp-config","worktree-config"})
             if(parser.isSet(key))privatePaths.append(parser.value(key));
-        for(const auto& file:connectionOptions.configFiles)privatePaths.append(QDir::isAbsolutePath(file)?file:QDir(workspace).filePath(file));
+        for(const auto& file:connectionOptions.configFiles)privatePaths.append(iiFileProvider::Directory::isAbsolutePath(file)?file:iiFileProvider::Directory(workspace).filePath(file));
         if(!connectionOptions.localApplicationsDirectory.isEmpty())privatePaths.append(connectionOptions.localApplicationsDirectory);
         auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, workspace, shells,privatePaths);
         std::unique_ptr<a::McpConnections> connections;
@@ -228,8 +227,8 @@ int main(int argc, char** argv) {
         a::McpServerOptions options; options.workingDirectory = workspace; options.appId = "com.iisacc.iiLocalLLM";
         options.tools.hooks=hooks;
         options.permissionRequests=permissionRequests;
-        options.artifactsDirectory = !privateState.isEmpty() ? QDir(privateState).filePath("artifacts")
-            : parser.isSet("artifacts") ? parser.value("artifacts") : QDir(workspace).filePath(".iilocal-llm/artifacts");
+        options.artifactsDirectory = !privateState.isEmpty() ? iiFileProvider::Directory(privateState).filePath("artifacts")
+            : parser.isSet("artifacts") ? parser.value("artifacts") : iiFileProvider::Directory(workspace).filePath(".iilocal-llm/artifacts");
         if (agent) {
             if (!parser.isSet("models") || !parser.value("model").startsWith("model://")) throw std::runtime_error("--model requires a model:// URI and --models catalog");
             iiLocalLLM::ServiceOptions serviceOptions; serviceOptions.modelsDirectory = parser.value("models"); serviceOptions.defaultContextTokens = contextTokens;
@@ -269,8 +268,8 @@ int main(int argc, char** argv) {
             engineOptions.userQuestions.previewFormat = parser.value("question-preview");
             engineOptions.skills.enabled = !parser.isSet("no-skills");
             engineOptions.skills.directories = parser.values("skills-dir");
-            engineOptions.sessionsDirectory = !privateState.isEmpty() ? QDir(privateState).filePath("sessions")
-                : parser.isSet("sessions") ? parser.value("sessions") : QDir(workspace).filePath(".iilocal-llm/sessions");
+            engineOptions.sessionsDirectory = !privateState.isEmpty() ? iiFileProvider::Directory(privateState).filePath("sessions")
+                : parser.isSet("sessions") ? parser.value("sessions") : iiFileProvider::Directory(workspace).filePath(".iilocal-llm/sessions");
             auto model = std::make_shared<a::ServiceModel>(*service);
             if(plugins){
                 a::PluginRuntime::attach(engineOptions,profiles.profiles,connectionOptions,plugins);
@@ -279,7 +278,7 @@ int main(int argc, char** argv) {
             }
             if (!privateState.isEmpty() && !parser.isSet("no-subagents")) {
                 auto subagents=profiles; subagents.workingDirectory = workspace;
-                subagents.stateDirectory = QDir(privateState).filePath("subagents");
+                subagents.stateDirectory = iiFileProvider::Directory(privateState).filePath("subagents");
                 subagents.maxRuntimeMs = timeout; subagents.generation.maxTokens = maxTokens; subagents.generation.temperature = temperature;
                 a::Subagents::attach(engineOptions,std::make_shared<a::Subagents>(model, registry, policy, engineOptions, subagents));
             }
@@ -293,8 +292,8 @@ int main(int argc, char** argv) {
             options.model = parser.value("model"); options.generation.maxTokens = maxTokens; options.generation.temperature = temperature;
         }
         if (!agent && !parser.isSet("no-tasks"))
-            options.taskStore = std::make_shared<a::TaskStore>(!privateState.isEmpty() ? QDir(privateState).filePath("tasks")
-                : QDir(workspace).filePath(".iilocal-llm/tasks"));
+            options.taskStore = std::make_shared<a::TaskStore>(!privateState.isEmpty() ? iiFileProvider::Directory(privateState).filePath("tasks")
+                : iiFileProvider::Directory(workspace).filePath(".iilocal-llm/tasks"));
         auto server = a::mcpServerOptions(registry, policy, std::move(options)); server.requestTimeoutMs = timeout;
         if (http) {
             // All configured clients share this explicitly selected workspace

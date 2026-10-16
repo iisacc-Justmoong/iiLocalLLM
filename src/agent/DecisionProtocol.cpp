@@ -1,5 +1,6 @@
 #include "DecisionProtocol.h"
 #include "Procedures.h"
+#include "../ModelManifest.h"
 #include <QtCore/QJsonDocument>
 #include <cmath>
 #include <iomanip>
@@ -51,12 +52,28 @@ DecisionInput parseInput(const QJsonObject& o){
 }
 }
 DecisionOptions decisionOptionsFromJson(const QJsonObject& o){
-    fields(o,{"enabled","min_success_probability","min_expected_value","value_unit","profiles"});DecisionOptions options;
+    fields(o,{"enabled","min_success_probability","min_expected_value","value_unit","profiles","model_routes"});DecisionOptions options;
     if(o.contains("enabled")){require(o["enabled"].isBool(),"Decision enabled must be boolean");options.enabled=o["enabled"].toBool();}
     if(o.contains("min_success_probability"))options.minSuccessProbability=number(o["min_success_probability"]);
     if(o.contains("min_expected_value"))options.minExpectedValue=number(o["min_expected_value"]);
     if(o.contains("value_unit")){require(o["value_unit"].isString(),"Decision value unit must be a string");options.valueUnit=o["value_unit"].toString().toStdString();}
     if(o.contains("profiles"))options.profiles=parseInput({{"value_unit",QString::fromStdString(options.valueUnit)},{"estimates",o["profiles"]}}).estimates;
+    if(o.contains("model_routes")) {
+        require(o["model_routes"].isArray()&&o["model_routes"].toArray().size()<=64,"Invalid model routes");
+        for(const auto& value:o["model_routes"].toArray()) {
+            require(value.isObject(),"Model route must be an object");const auto route=value.toObject();fields(route,{"id","model","modalities"});
+            require(route["id"].isString()&&route["model"].isString()&&route["modalities"].isArray(),"Invalid model route");
+            (void)modelId(route["model"].toString());
+            Modalities mask=0;
+            for(const auto& item:route["modalities"].toArray()) {
+                const auto name=item.toString();Modalities bit=0;
+                if(name=="text")bit=modality(Modality::Text);else if(name=="image")bit=modality(Modality::Image);
+                else if(name=="audio")bit=modality(Modality::Audio);else if(name=="video")bit=modality(Modality::Video);
+                require(bit&&!(mask&bit),"Unknown or duplicate route modality");mask|=bit;
+            }
+            options.modelRoutes.push_back({route["id"].toString().toStdString(),route["model"].toString().toStdString(),mask});
+        }
+    }
     try {DecisionGate validate(options);if(!options.profiles.empty()){
         std::vector<DecisionCandidate> candidates;for(const auto& e:options.profiles)candidates.push_back({e.candidateId});
         validate.evaluate(candidates,{options.valueUnit,options.profiles,{}});
@@ -86,6 +103,7 @@ DecisionReport decide(const DecisionRequest& request,const ToolContext& context,
     context.cancellation.throwIfCancelled();const auto& gate=*context.decisionGate;
     QJsonArray candidates;for(const auto& c:request.candidates)candidates.append(QJsonObject{{"id",QString::fromStdString(c.id)},{"name",QString::fromStdString(c.name)},{"description",QString::fromStdString(c.description)},{"arguments",QString::fromStdString(c.arguments)}});
     QJsonObject immutable{{"stage",QString::fromStdString(request.stage)},{"goal",QString::fromStdString(request.goal)},{"candidates",candidates},
+        {"required_modalities",int(request.requiredModalities)},
         {"min_success_probability",decimal(gate.options().minSuccessProbability)},{"min_expected_value",decimal(gate.options().minExpectedValue)}};
     ProcedureScope input("decision_input",context,immutable,events);
     DecisionInput supplied;try{supplied=gate.inputs(request);}catch(const std::exception& e){throw Error(ErrorCode::ConsumerFailure,QString::fromUtf8(e.what()));}

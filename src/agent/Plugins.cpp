@@ -1,14 +1,12 @@
+#include <iiFileProviderDevice.h>
 #include "Plugins.h"
 #include "ContextFile.h"
 #include "Frontmatter.h"
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDirIterator>
 #include <QtCore/QJsonDocument>
-#include <QtCore/QLockFile>
 #include <QtCore/QRegularExpression>
-#include <QtCore/QSaveFile>
 #include <QtCore/QSet>
-#include <QtCore/QTemporaryDir>
 #include <algorithm>
 
 namespace iiLocalLLM::agent {
@@ -29,17 +27,17 @@ QString field(const QJsonObject& object, const QString& key, int max, bool requi
 }
 QString boundedPath(const QString& root,const QString& relative,bool required=true) {
     require(!relative.isEmpty() && relative.size()<=4096 && !relative.contains(QChar::Null)
-        && !QDir::isAbsolutePath(relative) && !relative.contains(':') && !relative.contains('\\')
+        && !iiFileProvider::Directory::isAbsolutePath(relative) && !relative.contains(':') && !relative.contains('\\')
         && !relative.split('/').contains(".."),"Plugin paths must stay relative to their package");
-    const QFileInfo file(QDir(root).filePath(relative));
+    const QFileInfo file(iiFileProvider::Directory(root).filePath(relative));
     if(!file.exists() && !file.isSymLink()){require(!required,"Plugin component does not exist");return {};}
     const auto path=file.canonicalFilePath();
     require(!file.isSymLink() && !path.isEmpty() && inside(path,root),"Plugin component escapes its package");
     return path;
 }
 void privateDirectory(const QString& path) {
-    require(!QFileInfo(path).isSymLink() && QDir().mkpath(path),"Cannot create plugin directory",ErrorCode::StorageFailure);
-    require(QFile::setPermissions(path,QFileDevice::ReadOwner|QFileDevice::WriteOwner|QFileDevice::ExeOwner),
+    require(!QFileInfo(path).isSymLink() && iiFileProvider::Directory().mkpath(path),"Cannot create plugin directory",ErrorCode::StorageFailure);
+    require(iiFileProvider::FileDevice::setPermissions(path,QFileDevice::ReadOwner|QFileDevice::WriteOwner|QFileDevice::ExeOwner),
         "Cannot make plugin directory private",ErrorCode::StorageFailure);
 }
 QJsonObject jsonFile(const QString& root,const QString& path,const CancellationToken& token={}) {
@@ -53,8 +51,8 @@ QString packageTree(const QString& root,const PluginStoreOptions& options,const 
     QCryptographicHash hash(QCryptographicHash::Sha256); qint64 total=0; int count=0;
     auto frame=[&](const QByteArray& bytes){hash.addData(QByteArray::number(bytes.size())+':');hash.addData(bytes);};
     std::function<void(const QString&)> walk=[&](const QString& relative){
-        const QDir dir(QDir(root).filePath(relative));
-        for(const auto& file:dir.entryInfoList(QDir::AllEntries|QDir::Hidden|QDir::System|QDir::NoDotAndDotDot,QDir::Name)){
+        const iiFileProvider::Directory dir(iiFileProvider::Directory(root).filePath(relative));
+        for(const auto& file:dir.entryInfoList(iiFileProvider::Directory::AllEntries|iiFileProvider::Directory::Hidden|iiFileProvider::Directory::System|iiFileProvider::Directory::NoDotAndDotDot,iiFileProvider::Directory::Name)){
             token.throwIfCancelled(); if(file.fileName()==".git")continue;
             require(++count<=options.maxEntries,"Plugin package entry limit exceeded",ErrorCode::ResourceLimit);
             require(!file.isSymLink() && (file.isFile()||file.isDir()),"Plugin package contains a symlink or special file");
@@ -64,7 +62,7 @@ QString packageTree(const QString& root,const PluginStoreOptions& options,const 
             frame(name.toUtf8());
             if(file.isDir()){
                 frame("directory");
-                if(!destination.isEmpty())privateDirectory(QDir(destination).filePath(name));
+                if(!destination.isEmpty())privateDirectory(iiFileProvider::Directory(destination).filePath(name));
                 walk(name);
             }else{
                 const auto bytes=detail::readContextFile(root,path,options.maxFileBytes,token);
@@ -72,7 +70,7 @@ QString packageTree(const QString& root,const PluginStoreOptions& options,const 
                 const bool executable=bool(file.permissions()&(QFileDevice::ExeOwner|QFileDevice::ExeGroup|QFileDevice::ExeOther));
                 frame(executable?"executable":"file");frame(bytes);
                 if(!destination.isEmpty()){
-                    QFile output(QDir(destination).filePath(name));
+                    iiFileProvider::FileDevice output(iiFileProvider::Directory(destination).filePath(name));
                     require(output.open(QIODevice::WriteOnly|QIODevice::NewOnly)
                         && output.setPermissions(QFileDevice::ReadOwner|QFileDevice::WriteOwner|(executable?QFileDevice::ExeOwner:QFileDevice::Permissions{}))
                         && output.write(bytes)==bytes.size(),"Cannot cache plugin file",ErrorCode::StorageFailure);
@@ -83,7 +81,7 @@ QString packageTree(const QString& root,const PluginStoreOptions& options,const 
     walk({});return QString::fromLatin1(hash.result().toHex());
 }
 QJsonObject readState(const PluginStoreOptions& options) {
-    const auto path=QDir(options.directory).filePath("installed.json");
+    const auto path=iiFileProvider::Directory(options.directory).filePath("installed.json");
     if(!QFileInfo::exists(path)&&!QFileInfo(path).isSymLink())return {};
     const auto state=jsonFile(options.directory,path);
     require(state["schema"]=="iisacc.plugins/1" && state["plugins"].isObject(),"Unsupported plugin state");
@@ -97,19 +95,19 @@ QJsonObject readState(const PluginStoreOptions& options) {
     return plugins;
 }
 void writeState(const PluginStoreOptions& options,const QJsonObject& plugins) {
-    QSaveFile file(QDir(options.directory).filePath("installed.json"));file.setDirectWriteFallback(false);
+    iiFileProvider::SaveFile file(iiFileProvider::Directory(options.directory).filePath("installed.json"));file.setDirectWriteFallback(false);
     const auto bytes=QJsonDocument(QJsonObject{{"schema","iisacc.plugins/1"},{"plugins",plugins}}).toJson();
     require(file.open(QIODevice::WriteOnly)&&file.setPermissions(QFileDevice::ReadOwner|QFileDevice::WriteOwner)
         &&file.write(bytes)==bytes.size()&&file.commit(),"Cannot commit plugin state",ErrorCode::StorageFailure);
 }
 struct StoreLock {
-    QLockFile lock;
-    explicit StoreLock(const QString& root):lock(QDir(root).filePath("plugins.lock")){
+    iiFileProvider::LockFile lock;
+    explicit StoreLock(const QString& root):lock(iiFileProvider::Directory(root).filePath("plugins.lock")){
         lock.setStaleLockTime(0);require(lock.tryLock(5000),"Plugin store is busy or inaccessible",ErrorCode::AlreadyExists);
     }
 };
 QString cacheRoot(const PluginStoreOptions& options,const QString& name,const QString& hash){
-    return QDir(options.directory).filePath("cache/"+name+'/'+hash);
+    return iiFileProvider::Directory(options.directory).filePath("cache/"+name+'/'+hash);
 }
 struct Package {
     PluginInfo info;QJsonObject manifest;
@@ -174,17 +172,17 @@ void compile(Package& p,PluginSnapshot& snapshot,const CancellationToken& token)
         if(file.isFile()){require(path.endsWith(".md"),"Plugin document must be Markdown");
             addDocument(path,explicitName.isEmpty()?file.completeBaseName():explicitName,kind=="agents");return;}
         require(file.isDir(),"Plugin component must be a file or directory");
-        if(QFileInfo::exists(QDir(path).filePath("SKILL.md"))&&kind!="agents"){
-            addDocument(boundedPath(root,QDir(root).relativeFilePath(QDir(path).filePath("SKILL.md"))),
+        if(QFileInfo::exists(iiFileProvider::Directory(path).filePath("SKILL.md"))&&kind!="agents"){
+            addDocument(boundedPath(root,iiFileProvider::Directory(root).relativeFilePath(iiFileProvider::Directory(path).filePath("SKILL.md"))),
                 explicitName.isEmpty()?file.fileName():explicitName,false);return;
         }
-        QDirIterator it(path,QDir::Files|QDir::Dirs|QDir::Hidden|QDir::NoDotAndDotDot,QDirIterator::Subdirectories);QStringList candidates;
+        QDirIterator it(path,iiFileProvider::Directory::Files|iiFileProvider::Directory::Dirs|iiFileProvider::Directory::Hidden|iiFileProvider::Directory::NoDotAndDotDot,QDirIterator::Subdirectories);QStringList candidates;
         while(it.hasNext()){token.throwIfCancelled();require(++scanned<=8192,"Plugin component scan exceeds limit",ErrorCode::ResourceLimit);
             const auto candidate=it.next();require(!QFileInfo(candidate).isSymLink(),"Plugin component contains a symlink");
             if(QFileInfo(candidate).isFile()&&candidate.endsWith(".md")&&(kind!="skills"||QFileInfo(candidate).fileName()=="SKILL.md"))candidates.append(candidate);}
         candidates.sort();
         for(const auto& candidate:candidates){
-            auto local=QDir(path).relativeFilePath(candidate);
+            auto local=iiFileProvider::Directory(path).relativeFilePath(candidate);
             if(local.endsWith("/SKILL.md"))local.chop(9);else local.chop(3);
             addDocument(candidate,local,kind=="agents");
         }
@@ -284,19 +282,19 @@ QJsonObject PluginSnapshot::toJson() const {
     return {{"schema","iisacc.plugins/1"},{"revision",revision},{"lifecycle","startup_snapshot"},{"reload_requires_restart",true},{"plugins",items}};
 }
 PluginStore::PluginStore(PluginStoreOptions o):options(std::move(o)){
-    require(!options.directory.isEmpty()&&QDir::isAbsolutePath(options.directory)&&!QDir(options.directory).isRoot()
+    require(!options.directory.isEmpty()&&iiFileProvider::Directory::isAbsolutePath(options.directory)&&!iiFileProvider::Directory(options.directory).isRoot()
         &&options.maxPlugins>=1&&options.maxPlugins<=256&&options.maxEntries>=1&&options.maxEntries<=65536
         &&options.maxFileBytes>=1&&options.maxFileBytes<=64*1024*1024&&options.maxPackageBytes>=1&&options.maxPackageBytes<=1024LL*1024*1024,"Invalid plugin store options");
     privateDirectory(options.directory);options.directory=QFileInfo(options.directory).canonicalFilePath();
-    privateDirectory(QDir(options.directory).filePath("cache"));privateDirectory(QDir(options.directory).filePath("data"));
+    privateDirectory(iiFileProvider::Directory(options.directory).filePath("cache"));privateDirectory(iiFileProvider::Directory(options.directory).filePath("data"));
 }
 QString PluginStore::directory() const{return options.directory;}
 PluginInfo PluginStore::install(const QString& input,bool enabled,const CancellationToken& token){
     token.throwIfCancelled();const QFileInfo source(input);const auto root=source.canonicalFilePath();
-    require(!root.isEmpty()&&source.isDir()&&!source.isSymLink()&&!QDir(root).isRoot()
+    require(!root.isEmpty()&&source.isDir()&&!source.isSymLink()&&!iiFileProvider::Directory(root).isRoot()
         &&!inside(root,options.directory)&&!inside(options.directory,root),"Plugin source and store must be separate directories");
     StoreLock lock(options.directory);auto state=readState(options);
-    QTemporaryDir staging(QDir(options.directory).filePath(".install-XXXXXX"));require(staging.isValid(),"Cannot stage plugin package",ErrorCode::StorageFailure);
+    iiFileProvider::TemporaryDirectory staging(iiFileProvider::Directory(options.directory).filePath(".install-XXXXXX"));require(staging.isValid(),"Cannot stage plugin package",ErrorCode::StorageFailure);
     const auto hash=packageTree(root,options,staging.path(),token);
     auto package=metadata(staging.path(),{},token);PluginSnapshot validate;compile(package,validate,token);
     SkillOptions skills;skills.includeProject=false;skills.sources=validate.skills;
@@ -308,9 +306,9 @@ PluginInfo PluginStore::install(const QString& input,bool enabled,const Cancella
     if(QFileInfo::exists(target)){
         require(!QFileInfo(target).isSymLink()&&packageTree(target,options,{},token)==hash,"Existing plugin cache was modified",ErrorCode::StorageFailure);
     }else{
-        require(QDir().rename(staging.path(),target),"Cannot publish plugin cache",ErrorCode::StorageFailure);staging.setAutoRemove(false);
+        require(iiFileProvider::Directory().rename(staging.path(),target),"Cannot publish plugin cache",ErrorCode::StorageFailure);staging.setAutoRemove(false);
     }
-    const auto data=QDir(options.directory).filePath("data/"+package.info.name);privateDirectory(data);
+    const auto data=iiFileProvider::Directory(options.directory).filePath("data/"+package.info.name);privateDirectory(data);
     state[package.info.name]=QJsonObject{{"version",package.info.version},{"sha256",hash},{"enabled",enabled}};
     token.throwIfCancelled();writeState(options,state);
     package.info.sha256=hash;package.info.root=target;package.info.dataDirectory=data;package.info.enabled=enabled;package.info.status=enabled?"selected":"disabled";return package.info;
@@ -335,7 +333,7 @@ PluginSnapshot PluginStore::snapshot(const CancellationToken& token) const {
         Package p;
         if(record["enabled"].toBool()){
             require(!QFileInfo(root).isSymLink()&&QFileInfo(root).isDir()&&packageTree(root,options,{},token)==hash,"Plugin cache integrity check failed",ErrorCode::StorageFailure);
-            p=metadata(root,QDir(options.directory).filePath("data/"+it.key()),token);
+            p=metadata(root,iiFileProvider::Directory(options.directory).filePath("data/"+it.key()),token);
             require(QFileInfo(p.info.dataDirectory).isDir()&&!QFileInfo(p.info.dataDirectory).isSymLink()
                 &&QFileInfo(p.info.dataDirectory).canonicalFilePath()==p.info.dataDirectory,"Plugin data directory was replaced",ErrorCode::StorageFailure);
             require(p.info.name==it.key()&&p.info.version==record["version"].toString(),"Plugin identity does not match installed state",ErrorCode::StorageFailure);

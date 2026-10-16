@@ -1,5 +1,27 @@
 # 구현 검증 기록
 
+## 0.55 네이티브 멀티모달 하네스와 iiDecision 모델 경로
+
+2026-10-08 Asia/Seoul 기준 실제 소스와 로컬 모델을 검증했다. 계약은 [MultimodalHarness.md](MultimodalHarness.md)에 기록한다. 모델 확률·경제적 수치는 검증 호스트가 제공한 고정 입력이며 경험적으로 보정한 제품 성능이나 수익 예측이 아니다.
+
+- `build/multimodal-closure-build.log`: SDK·daemon·MCP·모든 구성된 테스트 타깃의 전체 빌드 성공이다. 디코더 고지의 패키징을 포함한 마지막 빌드는 `build/multimodal-package-build.log`에 기록한다.
+- `build/multimodal-focused-tests.log`: 판단 게이트, 엔진, 서비스, 모델 카탈로그, API/전송, MCP, 입력 큐·수명, 압축, 파라미터 카탈로그 등 핵심 회귀 **13/13 통과**이다.
+- `build/multimodal-suite-tests.log`: 큐의 실제 목표·미디어 해시 전달과 타입을 유지하는 미디어 요약·원본 기록 보존·압축 뒤 재라우팅을 포함한 추가 멀티모달 검사가 통과했다.
+- `build/multimodal-native-tests.log`: 실제 이미지/영상 프레임·오디오 추론과 기존 텍스트 에이전트·정량 판단·CPU 추론의 네이티브 검사 **5/5 통과, 193.63초**이다.
+- `build/multimodal-closure-tests.log`: 요청 전체의 128 MiB 디코딩 상한을 추가한 최종 멀티모달 계약·실제 이미지/프레임 추론·기존 메모리 추출·MCP 계약 검사 **4/4 통과, 53.44초**이다. 개별적으로 유효한 2048픽셀 압축 PNG 11개가 합산 상한을 넘으면 native tokenization 이전에 거부된다.
+- `build/multimodal-vision.json`: SmolVLM2-256M Q4_K_M + f16 projector, llama.cpp/Metal 실행이다. 빨간 이미지에 `Red`가 반환되었다. 동일 작업의 텍스트 예산 154토큰, 미디어 예산 288토큰이다. 빨강·파랑 두 프레임 예산은 442토큰이다. 미디어 KV cached_tokens는 0이고 미지원 모달리티를 거부했다. 이 시험은 입력·임베딩·라우팅·생성 계약을 검증하며 일반 시각 인식 정확도나 영상 이해 품질 평가는 아니다.
+- `build/multimodal-audio.json`: Qwen3-ASR-0.6B Q8_0 + Q8 projector, llama.cpp/Metal 실행이다. 로컬 합성 음성의 실제 출력은 `language English<asr_text>The sky is blue.`이다. 텍스트 예산 149토큰, 오디오 포함 예산 177토큰이다. 실제 native 경로 선택과 미지원 모달리티 거부를 확인했다. ASR 모델의 출력 표식은 보존하며 보편적인 음성 인식 정확도를 주장하지 않는다.
+
+검증 모델은 ggml-org의 SmolVLM2-256M-Video-Instruct-GGUF revision `2fd73d28c10a108a723cbf6f348114977cd488c1`, Qwen3-ASR-0.6B-GGUF revision `928ab958557df9aa2ef1c93e0e83c7ad0933fae2`이다. 로컬 패키지 설치 후 가중치와 projector의 inventory/hash 검증을 통과했다. 테스트 실행은 네트워크 다운로드를 수행하지 않는다.
+
+- `build/multimodal-final-serial-tests.log`: 최종 소스의 순차 회귀 묶음 **102/103 통과, 509.03초**이다. Notebook 권한 검사 한 건이 `Permission pattern work limit exceeded`로 실패했다. 동일 바이너리의 `build/multimodal-notebook-recheck.log` 단독 재검사는 **1/1 통과, 5.70초**이다. 전체 한 번의 103/103 통과로 합산하지 않는다.
+- `build/multimodal-serial-tests.log`: 앞선 회귀는 **101/103, 478.81초**이다. MCP 시험은 네이티브 미디어를 항상 거부하는 이전 계약을 기대했으므로 정상 미디어 전달·잘못된 base64 거부로 갱신했다. 메모리 추출의 읽기 전용 셸 검사는 코드를 바꾸지 않고 최종 전체 회귀와 위 4/4 검사에서 통과했다. Notebook·읽기 전용 셸의 최초 시간 제한 오류 원인을 확정하지 않았다. 검사 상한은 완화하지 않았다.
+- 회귀 묶음은 CTest 이름에서 `inference|tasks_catalog_discovery|tasks_catalog_thinking_control|discovery_catalog_thinking_control|native_schema|reasoning_template`을 제외해 선택한다. 실제 `chat`·`daemon` 시험은 포함하며 모든 고비용 모델·추론 시나리오를 재실행했다는 뜻은 아니다.
+- `build/multimodal-consumer-tests.log`: 설치된 공개 SDK를 별도 빌드한 소비자의 멀티모달 계약·실제 이미지/프레임·오디오 추론·기존 iiDecision gate/engine 검사 **5/5 통과, 233.58초**이다. dyld 기록은 실제 `build/multimodal-stage/lib/libiiLocalLLM.0.55.0.dylib`를 로드했음을 확인한다. 실제 모델 출력·토큰 예산·라우팅·메모리 상한·미지원 모달리티 거부 기록은 `build/multimodal-consumer/build/multimodal-vision.json`, `multimodal-audio.json`이다.
+- `build/multimodal-acceptance.json`: 소스/설치 라이브러리 SHA-256, 공개 헤더·문서·원본 디코더 고지의 해시 대조, 소스/소비자 결과와 모델 revision을 기록한다.
+
+검증용 설치 prefix는 `build/multimodal-stage`, 소비자는 `build/multimodal-consumer/build`이다. 기존 iiDecision 설치의 MLX·MoltenVK·ONNX Runtime 의존성 위치를 소비자 CMake에 제공했다. 판단 엔진은 iiDecision ExactDecisionMaker CPU, 실제 모델은 llama.cpp/Metal이다. 현재 실행 증거는 macOS arm64이다. PDF 렌더링·영상 컨테이너 디코딩·스트리밍 미디어·미디어 출력 생성·Laya 기반 학습형 전역 계획·실측 확률 보정·제품 앱 반영·Windows/Linux/iOS/Android 실행·기본 사용자 SDK 설치 경로 갱신·원격 게시를 검증 범위에 포함하지 않았다.
+
 ## 0.54 호스트 정량 판단과 iiDecision 실행
 
 호스트의 정량 수익·손실·비용을 기준으로 초기 실행과 도구 선택을 평가한다. 성공/실패 확률은 iiDecision ExactDecisionMaker로 계산한다. 기본 평가 부재, 낮은 확률, 낮은 순기대가치는 deferred이고 적격 후보 중 최대 EV 하나를 실행한다. [DecisionGate.md](DecisionGate.md)에 실제 계약과 예외를 기록한다.

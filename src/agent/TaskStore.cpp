@@ -1,11 +1,8 @@
+#include <iiFileProviderDevice.h>
 #include "TaskStore.h"
-#include <QtCore/QDir>
-#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
-#include <QtCore/QLockFile>
 #include <QtCore/QRegularExpression>
-#include <QtCore/QSaveFile>
 #include <QtCore/QThread>
 #include <QtCore/QSet>
 #include <QtCore/QMap>
@@ -106,38 +103,38 @@ struct Board {
 };
 QString listDirectory(const QString& root, const QString& list) {
     require(validId(list), "Invalid task list ID");
-    const auto path = QDir(root).filePath(list);
+    const auto path = iiFileProvider::Directory(root).filePath(list);
     require(!QFileInfo(path).isSymLink(), "Task list must not be a symlink", ErrorCode::StorageFailure);
-    require(QDir().mkpath(path) && QFileInfo(path).canonicalFilePath() == path
-        && QFile::setPermissions(path, ownerDirectory), "Cannot open private task list", ErrorCode::StorageFailure);
+    require(iiFileProvider::Directory().mkpath(path) && QFileInfo(path).canonicalFilePath() == path
+        && iiFileProvider::FileDevice::setPermissions(path, ownerDirectory), "Cannot open private task list", ErrorCode::StorageFailure);
     return path;
 }
 class LockedBoard {
 public:
     QString path;
-    QLockFile lock;
+    iiFileProvider::LockFile lock;
     LockedBoard(const QString& root, const QString& list, const TaskStoreOptions& o, const CancellationToken& token)
-        : path(listDirectory(root, list)), lock(QDir(path).filePath("board.lock")) {
+        : path(listDirectory(root, list)), lock(iiFileProvider::Directory(path).filePath("board.lock")) {
         token.throwIfCancelled();
-        require(!QFileInfo(QDir(path).filePath("board.lock")).isSymLink(), "Task lock must not be a symlink", ErrorCode::StorageFailure);
+        require(!QFileInfo(iiFileProvider::Directory(path).filePath("board.lock")).isSymLink(), "Task lock must not be a symlink", ErrorCode::StorageFailure);
         lock.setStaleLockTime(0); const auto start = std::chrono::steady_clock::now();
         while (!lock.tryLock(0)) {
             token.throwIfCancelled();
-            require(lock.error() == QLockFile::LockFailedError, "Cannot lock task list", ErrorCode::StorageFailure);
+            require(lock.error() == iiFileProvider::LockFile::LockFailedError, "Cannot lock task list", ErrorCode::StorageFailure);
             require(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(o.lockTimeoutMs), "Task list lock timed out", ErrorCode::Timeout);
             QThread::msleep(10);
         }
         token.throwIfCancelled();
     }
     Board read(const QString& list, const TaskStoreOptions& options) {
-        const QFileInfo retired(QDir(path).filePath("retired.json"));
+        const QFileInfo retired(iiFileProvider::Directory(path).filePath("retired.json"));
         require(!retired.isSymLink(),"Task retirement marker is a symlink",ErrorCode::StorageFailure);
         require(!retired.exists(),"Task list has been retired",ErrorCode::NotFound);
-        Board b; b.listId = list; const auto filePath = QDir(path).filePath("board.json"); const QFileInfo info(filePath);
+        Board b; b.listId = list; const auto filePath = iiFileProvider::Directory(path).filePath("board.json"); const QFileInfo info(filePath);
         require(!info.isSymLink(), "Task state must not be a symlink", ErrorCode::StorageFailure);
         if (!info.exists()) return b;
         require(info.isFile(), "Task state is not a regular file", ErrorCode::StorageFailure);
-        QFile file(filePath); require(file.open(QIODevice::ReadOnly), "Cannot read task state", ErrorCode::StorageFailure);
+        iiFileProvider::FileDevice file(filePath); require(file.open(QIODevice::ReadOnly), "Cannot read task state", ErrorCode::StorageFailure);
         const auto bytes = file.read(options.maxBytes + 1);
         require(bytes.size() <= options.maxBytes && file.atEnd(), "Task state exceeds limit", ErrorCode::ResourceLimit);
         QJsonParseError error; const auto doc = QJsonDocument::fromJson(bytes, &error); const auto o = doc.object();
@@ -170,7 +167,7 @@ public:
     void write(const Board& board, const TaskStoreOptions& options, const CancellationToken& token) {
         const auto bytes = QJsonDocument(board.json()).toJson(QJsonDocument::Compact) + '\n';
         require(bytes.size() <= options.maxBytes, "Task state exceeds byte limit", ErrorCode::ResourceLimit);
-        QSaveFile file(QDir(path).filePath("board.json")); file.setDirectWriteFallback(false);
+        iiFileProvider::SaveFile file(iiFileProvider::Directory(path).filePath("board.json")); file.setDirectWriteFallback(false);
         require(!QFileInfo(file.fileName()).isSymLink(), "Task state must not be a symlink", ErrorCode::StorageFailure);
         require(file.open(QIODevice::WriteOnly) && file.setPermissions(ownerFile) && file.write(bytes) == bytes.size(),
             "Cannot write task state", ErrorCode::StorageFailure);
@@ -246,9 +243,9 @@ TaskStore::TaskStore(QString directory, TaskStoreOptions options) : options_(opt
     require(!directory.trimmed().isEmpty() && options.maxTasks > 0 && options.maxTasks <= 1000 && options.maxTodos > 0 && options.maxTodos <= 1000
         && options.maxBytes >= 1024 && options.maxBytes <= 64 * 1024 * 1024 && options.lockTimeoutMs > 0 && options.lockTimeoutMs <= 60000,
         "Invalid task store configuration");
-    require(!QFileInfo(directory).isSymLink() && QDir().mkpath(directory), "Cannot create task store", ErrorCode::StorageFailure);
+    require(!QFileInfo(directory).isSymLink() && iiFileProvider::Directory().mkpath(directory), "Cannot create task store", ErrorCode::StorageFailure);
     directory_ = QFileInfo(directory).canonicalFilePath();
-    require(!directory_.isEmpty() && QFile::setPermissions(directory_, ownerDirectory), "Cannot make task store private", ErrorCode::StorageFailure);
+    require(!directory_.isEmpty() && iiFileProvider::FileDevice::setPermissions(directory_, ownerDirectory), "Cannot make task store private", ErrorCode::StorageFailure);
 }
 QJsonObject TaskStore::snapshot(const QString& listId, const CancellationToken& token) const {
     token.throwIfCancelled(); LockedBoard locked(directory_, listId, options_, token);
@@ -359,12 +356,12 @@ ToolResult TaskStore::execute(const QString& listId, const QString& operation, c
 }
 void TaskStore::retire(const QString& list,const CancellationToken& token)const {
     require(validId(list),"Invalid task list identity");LockedBoard locked(directory_,list,options_,token);
-    const auto marker=QDir(locked.path).filePath("retired.json");
+    const auto marker=iiFileProvider::Directory(locked.path).filePath("retired.json");
     require(!QFileInfo(marker).isSymLink(),"Task retirement marker is a symlink",ErrorCode::StorageFailure);
-    QSaveFile file(marker);const auto bytes=QJsonDocument(QJsonObject{{"schema","iisacc.agent.retired-tasks/1"},{"list_id",list}}).toJson();
+    iiFileProvider::SaveFile file(marker);const auto bytes=QJsonDocument(QJsonObject{{"schema","iisacc.agent.retired-tasks/1"},{"list_id",list}}).toJson();
     require(file.open(QIODevice::WriteOnly)&&file.setPermissions(ownerFile)&&file.write(bytes)==bytes.size()&&file.commit(),"Cannot retire task namespace",ErrorCode::StorageFailure);
-    const auto board=QDir(locked.path).filePath("board.json");
-    require(!QFileInfo::exists(board)||QFile::remove(board),"Task namespace retired but contents could not be removed",ErrorCode::StorageFailure);
+    const auto board=iiFileProvider::Directory(locked.path).filePath("board.json");
+    require(!QFileInfo::exists(board)||iiFileProvider::FileDevice::remove(board),"Task namespace retired but contents could not be removed",ErrorCode::StorageFailure);
 }
 QList<Tool> taskTools(std::shared_ptr<TaskStore> store, QString listId, bool deferred, TaskCommitCallback callback) {
     require(bool(store) && (listId.isEmpty() || validId(listId)), "Task tools require a store and valid host-selected list ID");

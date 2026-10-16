@@ -149,6 +149,7 @@ struct RunRequest {
     QStringList allowedTools; // Trusted host/child invocation grants; expires at the end of this run.
     bool userPrompt = true; // C++ host provenance. Internal delegated instructions are not user submissions.
     std::shared_ptr<PermissionRequests> permissionRequests; // Trusted per-run channel; not transcript/model authority.
+    QJsonArray content; // Native text/image/audio/video blocks; preserved in the transcript.
 };
 struct RunUsage {
     qint64 promptTokens = 0;
@@ -177,6 +178,8 @@ struct RunResult {
     ErrorCode errorCode = ErrorCode::None;
     QString errorMessage;
     QJsonObject decision; // Last probability/value assessment; Deferred is a deliberate no-op.
+    QString selectedModel;
+    QJsonObject routing; // Last per-turn model-route assessment, separate from tool economics.
 };
 struct Event {
     EventKind kind = EventKind::Started;

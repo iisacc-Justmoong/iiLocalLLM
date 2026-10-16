@@ -1,11 +1,9 @@
+#include <iiFileProviderDevice.h>
 #include "InputQueue.h"
-#include <QtCore/QDir>
-#include <QtCore/QFile>
+#include "../MediaContent.h"
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
-#include <QtCore/QLockFile>
 #include <QtCore/QRegularExpression>
-#include <QtCore/QSaveFile>
 #include <QtCore/QSet>
 #include <QtCore/QThread>
 #include <QtCore/QUuid>
@@ -27,9 +25,14 @@ int priority(const QJsonObject& input) {
     const auto p = input["priority"].toString(); return p == "now" ? 0 : p == "next" ? 1 : 2;
 }
 QJsonObject normalized(QJsonObject input, const InputQueueOptions& o) {
-    const QSet<QString> allowed{"text", "priority", "kind", "context_paths"};
+    const QSet<QString> allowed{"text", "priority", "kind", "context_paths", "content"};
     for (auto it = input.begin(); it != input.end(); ++it) require(allowed.contains(it.key()), "Unknown queued input field: " + it.key());
-    require(input["text"].isString() && !input["text"].toString().trimmed().isEmpty()
+    if(!input.contains("text")&&input.contains("content"))input["text"]="";
+    if(input.contains("content")) {
+        require(input["content"].isArray(),"Queued content must be an array");
+        (void)nativeContent(input["content"].toArray(),o.maxBytes);
+    }
+    require(input["text"].isString() && (!input["text"].toString().trimmed().isEmpty() || !input["content"].toArray().isEmpty())
         && input["text"].toString().size() <= o.maxTextCharacters, "Invalid queued input text");
     if (!input.contains("kind")) input["kind"] = "prompt";
     require(input["kind"] == "prompt" || input["kind"] == "notification", "Invalid queued input kind");
@@ -53,33 +56,33 @@ struct State {
 class LockedState {
 public:
     QString path, session;
-    QLockFile lock;
+    iiFileProvider::LockFile lock;
     InputQueueOptions options;
     static QString sessionPath(const QString& root, const QString& id) {
-        require(validId(id), "Invalid input queue session ID"); const auto path = QDir(root).filePath(id);
-        require(!QFileInfo(path).isSymLink() && QDir().mkpath(path) && QFileInfo(path).canonicalFilePath() == path
-            && QFile::setPermissions(path, directoryPermissions), "Cannot open private input queue", ErrorCode::StorageFailure);
-        require(!QFileInfo(QDir(path).filePath("queue.lock")).isSymLink(), "Input queue lock is a symlink", ErrorCode::StorageFailure);
+        require(validId(id), "Invalid input queue session ID"); const auto path = iiFileProvider::Directory(root).filePath(id);
+        require(!QFileInfo(path).isSymLink() && iiFileProvider::Directory().mkpath(path) && QFileInfo(path).canonicalFilePath() == path
+            && iiFileProvider::FileDevice::setPermissions(path, directoryPermissions), "Cannot open private input queue", ErrorCode::StorageFailure);
+        require(!QFileInfo(iiFileProvider::Directory(path).filePath("queue.lock")).isSymLink(), "Input queue lock is a symlink", ErrorCode::StorageFailure);
         return path;
     }
     LockedState(const QString& root, const QString& id, InputQueueOptions o, const CancellationToken& token,
         const QString& lockName = "queue.lock")
-        : path(sessionPath(root, id)), session(id), lock(QDir(path).filePath(lockName)), options(o) {
-        require(!QFileInfo(QDir(path).filePath(lockName)).isSymLink(),"Input queue lock is a symlink",ErrorCode::StorageFailure);
+        : path(sessionPath(root, id)), session(id), lock(iiFileProvider::Directory(path).filePath(lockName)), options(o) {
+        require(!QFileInfo(iiFileProvider::Directory(path).filePath(lockName)).isSymLink(),"Input queue lock is a symlink",ErrorCode::StorageFailure);
         token.throwIfCancelled(); lock.setStaleLockTime(0); const auto start = std::chrono::steady_clock::now();
         while (!lock.tryLock(0)) {
-            token.throwIfCancelled(); require(lock.error() == QLockFile::LockFailedError, "Cannot lock input queue", ErrorCode::StorageFailure);
+            token.throwIfCancelled(); require(lock.error() == iiFileProvider::LockFile::LockFailedError, "Cannot lock input queue", ErrorCode::StorageFailure);
             require(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(o.lockTimeoutMs), "Input queue lock timed out", ErrorCode::Timeout);
             QThread::msleep(5);
         }
         token.throwIfCancelled();
     }
     State read() const {
-        State state; const auto name = QDir(path).filePath("queue.json"); const QFileInfo info(name);
+        State state; const auto name = iiFileProvider::Directory(path).filePath("queue.json"); const QFileInfo info(name);
         require(!info.isSymLink(), "Input queue is a symlink", ErrorCode::StorageFailure);
         if (!info.exists()) return state;
         require(info.isFile(), "Input queue is not a regular file", ErrorCode::StorageFailure);
-        QFile file(name); require(file.open(QIODevice::ReadOnly), "Cannot read input queue", ErrorCode::StorageFailure);
+        iiFileProvider::FileDevice file(name); require(file.open(QIODevice::ReadOnly), "Cannot read input queue", ErrorCode::StorageFailure);
         const auto bytes = file.read(options.maxBytes + 1);
         require(bytes.size() <= options.maxBytes && file.atEnd(), "Input queue byte limit exceeded", ErrorCode::ResourceLimit);
         QJsonParseError error; const auto doc = QJsonDocument::fromJson(bytes, &error); const auto data = doc.object();
@@ -112,7 +115,7 @@ public:
             {"next_sequence", double(state.nextSequence)}, {"inputs", items}};
         const auto bytes = QJsonDocument(data).toJson(QJsonDocument::Compact) + '\n';
         require(bytes.size() <= options.maxBytes, "Input queue byte limit exceeded", ErrorCode::ResourceLimit);
-        QSaveFile file(QDir(path).filePath("queue.json")); file.setDirectWriteFallback(false);
+        iiFileProvider::SaveFile file(iiFileProvider::Directory(path).filePath("queue.json")); file.setDirectWriteFallback(false);
         require(!QFileInfo(file.fileName()).isSymLink(), "Input queue is a symlink", ErrorCode::StorageFailure);
         require(file.open(QIODevice::WriteOnly) && file.setPermissions(filePermissions) && file.write(bytes) == bytes.size(),
             "Cannot write input queue", ErrorCode::StorageFailure);
@@ -124,9 +127,9 @@ InputQueue::InputQueue(QString directory, InputQueueOptions options) : options_(
     require(!directory.trimmed().isEmpty() && options.maxPending >= 1 && options.maxPending <= 10000
         && options.maxTextCharacters >= 1 && options.maxTextCharacters <= 1048576 && options.maxBytes >= 1024
         && options.maxBytes <= 64 * 1024 * 1024 && options.lockTimeoutMs >= 1 && options.lockTimeoutMs <= 60000, "Invalid input queue configuration");
-    require(QDir().mkpath(directory), "Cannot create input queue root", ErrorCode::StorageFailure);
+    require(iiFileProvider::Directory().mkpath(directory), "Cannot create input queue root", ErrorCode::StorageFailure);
     directory_ = QFileInfo(directory).canonicalFilePath();
-    require(!directory_.isEmpty() && QFile::setPermissions(directory_, directoryPermissions), "Cannot protect input queue root", ErrorCode::StorageFailure);
+    require(!directory_.isEmpty() && iiFileProvider::FileDevice::setPermissions(directory_, directoryPermissions), "Cannot protect input queue root", ErrorCode::StorageFailure);
 }
 QJsonObject InputQueue::enqueue(const QString& id, const QJsonObject& input, const CancellationToken& token) const {
     return enqueueIdentified(id,QUuid::createUuid().toString(QUuid::WithoutBraces),input,token);

@@ -1,13 +1,10 @@
+#include <iiFileProviderDevice.h>
 #include "ShellTasks.h"
 #include "ShellProcess.h"
 #include "SessionOwners.h"
 #include <QtCore/QDateTime>
-#include <QtCore/QDir>
-#include <QtCore/QFile>
 #include <QtCore/QJsonDocument>
-#include <QtCore/QLockFile>
 #include <QtCore/QRegularExpression>
-#include <QtCore/QSaveFile>
 #include <QtCore/QUuid>
 #include <algorithm>
 #include <condition_variable>
@@ -79,15 +76,15 @@ public:
     mutable std::mutex mutex;
     std::mutex joining;
     std::map<QString, std::shared_ptr<Job>> jobs;
-    std::unique_ptr<QLockFile> lock;
+    std::unique_ptr<iiFileProvider::LockFile> lock;
     std::unique_ptr<detail::SessionOwners> owners;
     bool closing = false;
-    static QString outputPath(const Job& job) { return QDir(job.directory).filePath("output.log"); }
+    static QString outputPath(const Job& job) { return iiFileProvider::Directory(job.directory).filePath("output.log"); }
     static void save(const Job& job) {
-        const auto path = QDir(job.directory).filePath("state.json");
+        const auto path = iiFileProvider::Directory(job.directory).filePath("state.json");
         require(!QFileInfo(path).isSymLink(), "Shell task state must not be a symlink", ErrorCode::StorageFailure);
         const auto bytes = QJsonDocument(job.metadata).toJson(QJsonDocument::Compact) + '\n';
-        QSaveFile file(path); file.setDirectWriteFallback(false);
+        iiFileProvider::SaveFile file(path); file.setDirectWriteFallback(false);
         require(file.open(QIODevice::WriteOnly) && file.setPermissions(privateFile) && file.write(bytes) == bytes.size() && file.commit(),
             "Cannot publish shell task state", ErrorCode::StorageFailure);
     }
@@ -115,22 +112,22 @@ public:
             "Invalid shell task limits");
         workspace = QFileInfo(root).canonicalFilePath();
         require(!workspace.isEmpty() && QFileInfo(workspace).isDir(), "Shell workspace must exist");
-        require(!state.trimmed().isEmpty() && !QFileInfo(state).isSymLink() && QDir().mkpath(state), "Cannot create shell state directory", ErrorCode::StorageFailure);
+        require(!state.trimmed().isEmpty() && !QFileInfo(state).isSymLink() && iiFileProvider::Directory().mkpath(state), "Cannot create shell state directory", ErrorCode::StorageFailure);
         directory = QFileInfo(state).canonicalFilePath();
         require(directory != workspace && !workspace.startsWith(directory + '/'), "Shell state cannot contain the workspace");
-        require(!directory.isEmpty() && QFile::setPermissions(directory, privateDirectory), "Cannot make shell state private", ErrorCode::StorageFailure);
-        const auto lockPath = QDir(directory).filePath("shell.lock");
+        require(!directory.isEmpty() && iiFileProvider::FileDevice::setPermissions(directory, privateDirectory), "Cannot make shell state private", ErrorCode::StorageFailure);
+        const auto lockPath = iiFileProvider::Directory(directory).filePath("shell.lock");
         require(!QFileInfo(lockPath).isSymLink(), "Shell state lock must not be a symlink", ErrorCode::StorageFailure);
-        lock = std::make_unique<QLockFile>(lockPath); lock->setStaleLockTime(0);
+        lock = std::make_unique<iiFileProvider::LockFile>(lockPath); lock->setStaleLockTime(0);
         require(lock->tryLock(0), "Shell state is already owned or inaccessible", ErrorCode::AlreadyExists);
-        owners=std::make_unique<detail::SessionOwners>(QDir(directory).filePath("session-owners.json"),options.maxRecords);
-        const auto entries = QDir(directory).entryInfoList({"sh-*"}, QDir::AllEntries | QDir::NoDotAndDotDot, QDir::Name);
+        owners=std::make_unique<detail::SessionOwners>(iiFileProvider::Directory(directory).filePath("session-owners.json"),options.maxRecords);
+        const auto entries = iiFileProvider::Directory(directory).entryInfoList({"sh-*"}, iiFileProvider::Directory::AllEntries | iiFileProvider::Directory::NoDotAndDotDot, iiFileProvider::Directory::Name);
         require(entries.size() <= o.maxRecords, "Shell history exceeds configured record capacity", ErrorCode::ResourceLimit);
         for (const auto& entry : entries) {
             require(taskValid(entry.fileName()) && entry.isDir() && !entry.isSymLink()
                 && entry.canonicalFilePath() == entry.absoluteFilePath(), "Invalid shell task directory", ErrorCode::StorageFailure);
             auto job = std::make_shared<Job>(); job->directory = entry.absoluteFilePath();
-            const auto path = QDir(job->directory).filePath("state.json"); QFile file(path);
+            const auto path = iiFileProvider::Directory(job->directory).filePath("state.json"); iiFileProvider::FileDevice file(path);
             require(!QFileInfo(path).isSymLink() && QFileInfo(path).isFile() && file.open(QIODevice::ReadOnly), "Cannot read shell state", ErrorCode::StorageFailure);
             const auto bytes = file.read(1024 * 1024 + 1); QJsonParseError error;
             const auto doc = QJsonDocument::fromJson(bytes, &error); auto m = doc.object();
@@ -161,7 +158,7 @@ public:
     void execute(const std::shared_ptr<Job>& job) noexcept {
         QString status = "failed", errorCode, errorText; QJsonValue exitCode(QJsonValue::Null);
         try {
-            QFile output(outputPath(*job));
+            iiFileProvider::FileDevice output(outputPath(*job));
             require(!QFileInfo(output.fileName()).isSymLink() && output.open(QIODevice::WriteOnly | QIODevice::Append), "Cannot open shell output", ErrorCode::StorageFailure);
             QString command,cwd; int timeout;
             { std::lock_guard guard(job->mutex); command = job->metadata["command"].toString();cwd=job->metadata["working_directory"].toString(); timeout = job->metadata["timeout_ms"].toInt(); }
@@ -223,9 +220,9 @@ QJsonObject ShellTasks::start(const ToolContext& context, QString command, QStri
             else if (existing->worker.joinable()) existing->worker.join();
         }
         require(running < d->options.maxConcurrent && d->jobs.size() < size_t(d->options.maxRecords), "Shell task capacity reached", ErrorCode::ResourceLimit);
-        job->directory = QDir(d->directory).filePath(id);
-        require(QDir().mkpath(job->directory) && QFile::setPermissions(job->directory, privateDirectory), "Cannot create private shell task", ErrorCode::StorageFailure);
-        QFile output(Impl::outputPath(*job));
+        job->directory = iiFileProvider::Directory(d->directory).filePath(id);
+        require(iiFileProvider::Directory().mkpath(job->directory) && iiFileProvider::FileDevice::setPermissions(job->directory, privateDirectory), "Cannot create private shell task", ErrorCode::StorageFailure);
+        iiFileProvider::FileDevice output(Impl::outputPath(*job));
         require(output.open(QIODevice::WriteOnly | QIODevice::NewOnly) && output.setPermissions(privateFile), "Cannot create shell output", ErrorCode::StorageFailure); output.close();
         const auto points = command.toUcs4();
         const auto label = description.isEmpty() ? QString::fromUcs4(points.constData(), std::min(points.size(), qsizetype(1024))) : description;
@@ -256,7 +253,7 @@ QJsonObject ShellTasks::output(const QString& session, const QString& id, bool b
         token.throwIfCancelled(); job->changed.wait_for(guard, std::chrono::milliseconds(10));
     }
     token.throwIfCancelled(); auto task = Impl::view(*job); const auto path = Impl::outputPath(*job);
-    QFile file(path); require(!QFileInfo(path).isSymLink() && QFileInfo(path).isFile() && file.open(QIODevice::ReadOnly) && file.seek(offset),
+    iiFileProvider::FileDevice file(path); require(!QFileInfo(path).isSymLink() && QFileInfo(path).isFile() && file.open(QIODevice::ReadOnly) && file.seek(offset),
         "Cannot read shell output", ErrorCode::StorageFailure);
     const auto bytes = file.read(limit); task["output"] = QString::fromUtf8(bytes);
     // Byte pages may split UTF-8, and shell output may be binary. Preserve exact

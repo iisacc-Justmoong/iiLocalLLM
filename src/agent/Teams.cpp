@@ -1,13 +1,10 @@
+#include <iiFileProviderDevice.h>
 #include "Teams.h"
 #include "PlanningFiles.h"
 #include <QtCore/QDateTime>
-#include <QtCore/QDir>
-#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
-#include <QtCore/QLockFile>
 #include <QtCore/QRegularExpression>
-#include <QtCore/QSaveFile>
 #include <QtCore/QUuid>
 #include <condition_variable>
 #include <map>
@@ -121,12 +118,12 @@ public:
 };
 QString privateDirectory(QString path,const QString& workspace){
     // Check every existing component, including dangling symlinks.
-    auto cursor=QDir::cleanPath(QFileInfo(path).absoluteFilePath());
+    auto cursor=iiFileProvider::Directory::cleanPath(QFileInfo(path).absoluteFilePath());
     for(;;){require(!QFileInfo(cursor).isSymLink(),"Team state path is a symlink",ErrorCode::StorageFailure);
         const auto up=QFileInfo(cursor).absolutePath();if(up==cursor)break;cursor=up;}
-    require(QDir().mkpath(path),"Cannot create team state",ErrorCode::StorageFailure);path=QFileInfo(path).canonicalFilePath();
+    require(iiFileProvider::Directory().mkpath(path),"Cannot create team state",ErrorCode::StorageFailure);path=QFileInfo(path).canonicalFilePath();
     require(!path.isEmpty()&&!nested(path,workspace)&&!nested(workspace,path),"Team state and workspace must be disjoint");
-    require(QFile::setPermissions(path,QFileDevice::ReadOwner|QFileDevice::WriteOwner|QFileDevice::ExeOwner),"Cannot protect team state",ErrorCode::StorageFailure);return path;
+    require(iiFileProvider::FileDevice::setPermissions(path,QFileDevice::ReadOwner|QFileDevice::WriteOwner|QFileDevice::ExeOwner),"Cannot protect team state",ErrorCode::StorageFailure);return path;
 }
 }
 class Teams::Impl {
@@ -153,7 +150,7 @@ public:
     SessionStore parents,children;
     InputQueue leaderInputs,memberInputs;
     std::shared_ptr<TaskStore> tasks;
-    QLockFile ownership;
+    iiFileProvider::LockFile ownership;
     std::mutex lifecycle; // Serializes starts, joins and owner close, never held by a member worker.
     mutable std::mutex mutex;
     mutable std::condition_variable changed;
@@ -161,13 +158,13 @@ public:
     bool closing=false;
     Impl(std::shared_ptr<Model> m,std::shared_ptr<ToolRegistry> r,std::shared_ptr<const PermissionPolicy> p,EngineOptions e,TeamsOptions o)
         :model(std::move(m)),registry(std::move(r)),policy(std::move(p)),parent(std::move(e)),options(std::move(o)),
-        root(privateDirectory(QDir(parent.sessionsDirectory).filePath("teams"),QFileInfo(options.workingDirectory).canonicalFilePath())),
-        workspace(QFileInfo(options.workingDirectory).canonicalFilePath()),memberSessions(privateDirectory(QDir(root).filePath("sessions"),workspace)),
-        parents(parent.sessionsDirectory),children(memberSessions),leaderInputs(QDir(parent.sessionsDirectory).filePath("inputs"),parent.inputQueue),
-        memberInputs(QDir(memberSessions).filePath("inputs"),parent.inputQueue),
-        tasks(parent.taskStore?parent.taskStore:std::make_shared<TaskStore>(QDir(parent.sessionsDirectory).filePath("tasks"))),
-        ownership(QDir(root).filePath("runtime.lock")) {
-        require(model&&registry&&policy&&!workspace.isEmpty()&&QFileInfo(workspace).isDir()&&!QDir(workspace).isRoot(),"Invalid team host");
+        root(privateDirectory(iiFileProvider::Directory(parent.sessionsDirectory).filePath("teams"),QFileInfo(options.workingDirectory).canonicalFilePath())),
+        workspace(QFileInfo(options.workingDirectory).canonicalFilePath()),memberSessions(privateDirectory(iiFileProvider::Directory(root).filePath("sessions"),workspace)),
+        parents(parent.sessionsDirectory),children(memberSessions),leaderInputs(iiFileProvider::Directory(parent.sessionsDirectory).filePath("inputs"),parent.inputQueue),
+        memberInputs(iiFileProvider::Directory(memberSessions).filePath("inputs"),parent.inputQueue),
+        tasks(parent.taskStore?parent.taskStore:std::make_shared<TaskStore>(iiFileProvider::Directory(parent.sessionsDirectory).filePath("tasks"))),
+        ownership(iiFileProvider::Directory(root).filePath("runtime.lock")) {
+        require(model&&registry&&policy&&!workspace.isEmpty()&&QFileInfo(workspace).isDir()&&!iiFileProvider::Directory(workspace).isRoot(),"Invalid team host");
         require(options.maxTeams>=1&&options.maxTeams<=256&&options.maxMembers>=1&&options.maxMembers<=128
             &&options.maxTurns>=1&&options.maxTurns<=10000&&options.maxRuntimeMs>=1&&options.maxRuntimeMs<=86400000
             &&options.maxMailboxMessages>=1&&options.maxMailboxMessages<=10000&&options.maxRunsPerMember>=1&&options.maxRunsPerMember<=10000
@@ -175,12 +172,12 @@ public:
         require(!QFileInfo(ownership.fileName()).isSymLink(),"Team runtime lock is a symlink",ErrorCode::StorageFailure);
         ownership.setStaleLockTime(0);require(ownership.tryLock(0),"Team store already owned or inaccessible",ErrorCode::AlreadyExists);
         if(options.definitions.isEmpty()&&!options.profiles.enabled)options.definitions.append(SubagentDefinition{});
-        if(parent.projectMemoryEnabled&&parent.projectMemory.directory.isEmpty())parent.projectMemory.directory=QDir(parent.sessionsDirectory).filePath("memory");
-        const auto files=QDir(root).entryList({"team-*.json"},QDir::Files|QDir::Hidden|QDir::System,QDir::Name);
+        if(parent.projectMemoryEnabled&&parent.projectMemory.directory.isEmpty())parent.projectMemory.directory=iiFileProvider::Directory(parent.sessionsDirectory).filePath("memory");
+        const auto files=iiFileProvider::Directory(root).entryList({"team-*.json"},iiFileProvider::Directory::Files|iiFileProvider::Directory::Hidden|iiFileProvider::Directory::System,iiFileProvider::Directory::Name);
         require(files.size()<=options.maxTeams,"Too many persisted teams",ErrorCode::ResourceLimit);
         QSet<QString> sessions,names;int count=0;
         for(const auto& fileName:files){
-            QFile file(QDir(root).filePath(fileName));require(!QFileInfo(file.fileName()).isSymLink()&&QFileInfo(file.fileName()).isFile()&&file.open(QIODevice::ReadOnly),"Cannot read team record",ErrorCode::StorageFailure);
+            iiFileProvider::FileDevice file(iiFileProvider::Directory(root).filePath(fileName));require(!QFileInfo(file.fileName()).isSymLink()&&QFileInfo(file.fileName()).isFile()&&file.open(QIODevice::ReadOnly),"Cannot read team record",ErrorCode::StorageFailure);
             const auto bytes=file.read(16*1024*1024+1);require(bytes.size()<=16*1024*1024&&file.atEnd(),"Team record exceeds limit",ErrorCode::ResourceLimit);
             QJsonParseError error;const auto doc=QJsonDocument::fromJson(bytes,&error);const auto state=doc.object();
             file.close(); // Windows atomic replacement requires releasing the old record handle.
@@ -218,10 +215,10 @@ public:
     }
     void write(Team& team){
         QJsonArray members;for(const auto& [_,member]:team.members)members.append(member->record);team.record["members"]=members;
-        const auto path=QDir(root).filePath(team.record["id"].toString()+".json");
+        const auto path=iiFileProvider::Directory(root).filePath(team.record["id"].toString()+".json");
         require(!QFileInfo(path).isSymLink(),"Team record is a symlink",ErrorCode::StorageFailure);
         const auto bytes=QJsonDocument(team.record).toJson(QJsonDocument::Compact)+'\n';require(bytes.size()<=16*1024*1024,"Team record exceeds limit",ErrorCode::ResourceLimit);
-        QSaveFile file(path);file.setDirectWriteFallback(false);require(file.open(QIODevice::WriteOnly)&&file.setPermissions(QFileDevice::ReadOwner|QFileDevice::WriteOwner)
+        iiFileProvider::SaveFile file(path);file.setDirectWriteFallback(false);require(file.open(QIODevice::WriteOnly)&&file.setPermissions(QFileDevice::ReadOwner|QFileDevice::WriteOwner)
             &&file.write(bytes)==bytes.size()&&file.commit(),"Cannot publish team record",ErrorCode::StorageFailure);
     }
     std::pair<std::shared_ptr<Team>,std::shared_ptr<Member>> locate(const QString& session,bool required=true)const{
@@ -454,7 +451,7 @@ ToolResult Teams::create(const ToolContext& context,const QJsonObject& args){
     team->record={{"schema","iisacc.agent.team/1"},{"id",id},{"team_name",name},{"description",description},{"lead_session_id",leader.id},{"task_list_id",id},{"created_at",now()},{"messages",QJsonArray{}}};
     auto member=std::make_shared<Impl::Member>();member->record={{"name","team-lead"},{"agent_id","team-lead@"+name},{"session_id",leader.id},{"model",leader.model},{"agent_type",type},{"status","leader"}};
     team->members.emplace("team-lead",member);d->tasks->snapshot(id);d->write(*team);d->teams.emplace(id,team);
-    return result({{"team_name",name},{"lead_agent_id",member->record["agent_id"]},{"task_list_id",id},{"team_file_path",QDir(d->root).filePath(id+".json")}});
+    return result({{"team_name",name},{"lead_agent_id",member->record["agent_id"]},{"task_list_id",id},{"team_file_path",iiFileProvider::Directory(d->root).filePath(id+".json")}});
 }
 ToolResult Teams::spawn(const ToolContext& context,const QJsonObject& args){
     context.cancellation.throwIfCancelled();keys(args,{"name","team_name","prompt","description","subagent_type","model","max_turns","mode","run_in_background"});
@@ -482,7 +479,7 @@ ToolResult Teams::spawn(const ToolContext& context,const QJsonObject& args){
     require(selected==leader.model||d->options.allowedModels.contains(selected),"Teammate model is not allowed");
     auto member=std::make_shared<Impl::Member>();const auto config=profile.toJson(true);
     auto scoped=d->registry->snapshot();const auto definitions=scoped->definitions();for(const auto& definition:definitions)if(!allowed(definition,config))scoped->remove(definition.name);
-    const auto planDirectory=d->parent.planToolsEnabled?QDir(d->parent.sessionsDirectory).filePath("plans"):QString();
+    const auto planDirectory=d->parent.planToolsEnabled?iiFileProvider::Directory(d->parent.sessionsDirectory).filePath("plans"):QString();
     for(const auto& definition:scoped->definitions()){auto tool=scoped->get(definition.name);scoped->remove(definition.name);scoped->add(detail::protectPlanningFiles(std::move(tool),planDirectory));}
     auto options=d->parent;options.sessionsDirectory=d->memberSessions;options.maxConcurrentRuns=1;options.maxQueuedRuns=0;options.sessionStartHooks=false;options.maxQueuedInputsPerRun=1;
     options.planToolsEnabled=false;options.userQuestionsEnabled=false;options.sessionHistoryEnabled=false;options.memoryExtraction.enabled=false;options.memoryDream.automatic=false;options.worktrees.enabled=false;
@@ -547,9 +544,9 @@ ToolResult Teams::spawn(const ToolContext& context,const QJsonObject& args){
         const auto failure=std::current_exception();
         if(!published){
             bool cleaned=true;try{member->engine->close();d->policy->forgetSession({session.id,{},d->workspace});}catch(...){cleaned=false;}
-            const auto path=QDir(d->memberSessions).filePath(session.id);const QFileInfo info(path);
-            if(info.isSymLink())cleaned=QFile::remove(path)&&cleaned;
-            else if(info.exists())cleaned=!QFileInfo(d->memberSessions).isSymLink()&&info.canonicalFilePath()==path&&QDir(path).removeRecursively()&&cleaned;
+            const auto path=iiFileProvider::Directory(d->memberSessions).filePath(session.id);const QFileInfo info(path);
+            if(info.isSymLink())cleaned=iiFileProvider::FileDevice::remove(path)&&cleaned;
+            else if(info.exists())cleaned=!QFileInfo(d->memberSessions).isSymLink()&&info.canonicalFilePath()==path&&iiFileProvider::Directory(path).removeRecursively()&&cleaned;
             require(cleaned,"Teammate publication failed and its uncommitted session could not be cleaned up",ErrorCode::StorageFailure);
         }
         std::rethrow_exception(failure);
@@ -633,7 +630,7 @@ ToolResult Teams::remove(const ToolContext& context){
             try{queue.remove(member->record["session_id"].toString(),message["id"].toString());}
             catch(const Error& error){if(error.code()!=ErrorCode::NotFound)throw;}
         }
-        const auto path=QDir(d->root).filePath(id+".json");require(!QFileInfo(path).isSymLink()&&QFile::remove(path),"Cannot delete team record",ErrorCode::StorageFailure);
+        const auto path=iiFileProvider::Directory(d->root).filePath(id+".json");require(!QFileInfo(path).isSymLink()&&iiFileProvider::FileDevice::remove(path),"Cannot delete team record",ErrorCode::StorageFailure);
         d->teams.erase(id);
     }catch(...){throw;}
     return result({{"success",true},{"team_name",team->record["team_name"]},{"task_list_retired",true}});

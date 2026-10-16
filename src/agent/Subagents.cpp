@@ -1,14 +1,11 @@
+#include <iiFileProviderDevice.h>
 #include "Subagents.h"
 #include "HookAgent.h"
 #include "SkillsInternal.h"
 #include "PermissionRules.h"
 #include "SessionOwners.h"
 #include "PlanningFiles.h"
-#include <QtCore/QDir>
-#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
-#include <QtCore/QSaveFile>
-#include <QtCore/QLockFile>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QRunnable>
@@ -110,7 +107,7 @@ public:
     SubagentOptions options;
     SessionStore parentStore,children;
     InputQueue notifications;
-    QLockFile ownership;
+    iiFileProvider::LockFile ownership;
     QThreadPool pool;
     mutable std::mutex mutex;
     std::mutex transferring;
@@ -120,30 +117,30 @@ public:
     std::map<QString,std::shared_ptr<Job>> jobs;
     std::unique_ptr<detail::SessionOwners> owners;
     static QString rootPath(QString path,const QString& workspace) {
-        require(!path.trimmed().isEmpty() && !QFileInfo(path).isSymLink() && QDir().mkpath(path),"Cannot create subagent state",ErrorCode::StorageFailure);
+        require(!path.trimmed().isEmpty() && !QFileInfo(path).isSymLink() && iiFileProvider::Directory().mkpath(path),"Cannot create subagent state",ErrorCode::StorageFailure);
         path=QFileInfo(path).canonicalFilePath();
         require(!path.isEmpty() && !nested(path,workspace) && !nested(workspace,path),"Subagent state and workspace must be disjoint");
-        require(QFile::setPermissions(path,QFileDevice::ReadOwner|QFileDevice::WriteOwner|QFileDevice::ExeOwner),"Cannot protect subagent state",ErrorCode::StorageFailure);
+        require(iiFileProvider::FileDevice::setPermissions(path,QFileDevice::ReadOwner|QFileDevice::WriteOwner|QFileDevice::ExeOwner),"Cannot protect subagent state",ErrorCode::StorageFailure);
         return path;
     }
     static QString sessionPath(const QString& path,const QString& workspace) {
-        const auto root=rootPath(path,workspace);const auto sessions=QDir(root).filePath("sessions");
+        const auto root=rootPath(path,workspace);const auto sessions=iiFileProvider::Directory(root).filePath("sessions");
         require(!QFileInfo(sessions).isSymLink(),"Subagent sessions directory is a symlink",ErrorCode::StorageFailure);return sessions;
     }
     Impl(std::shared_ptr<Model> m,std::shared_ptr<ToolRegistry> r,std::shared_ptr<const PermissionPolicy> p,EngineOptions e,SubagentOptions o)
         :model(std::move(m)),registry(std::move(r)),policy(std::move(p)),parent(std::move(e)),options(std::move(o)),
          parentStore(parent.sessionsDirectory),children(sessionPath(options.stateDirectory,QFileInfo(options.workingDirectory).canonicalFilePath())),
-         notifications(QDir(parent.sessionsDirectory).filePath("inputs"),parent.inputQueue),ownership(QDir(options.stateDirectory).filePath("agents.lock")) {
+         notifications(iiFileProvider::Directory(parent.sessionsDirectory).filePath("inputs"),parent.inputQueue),ownership(iiFileProvider::Directory(options.stateDirectory).filePath("agents.lock")) {
         require(model && registry && policy && options.maxConcurrent>=1 && options.maxConcurrent<=64 && options.maxRecords>=1 && options.maxRecords<=10000
             && options.maxTurns>=1 && options.maxTurns<=10000 && options.maxRuntimeMs>=1 && options.maxRuntimeMs<=86400000
             && options.definitions.size()<=128 && options.allowedModels.size()<=128 && options.modelAliases.size()<=128,"Invalid subagent host configuration");
         options.workingDirectory=QFileInfo(options.workingDirectory).canonicalFilePath(); options.stateDirectory=QFileInfo(options.stateDirectory).canonicalFilePath();
         if(parent.projectMemoryEnabled&&parent.projectMemory.directory.isEmpty())
-            parent.projectMemory.directory=QDir(parent.sessionsDirectory).absoluteFilePath("memory");
-        require(!options.workingDirectory.isEmpty() && QFileInfo(options.workingDirectory).isDir() && !QDir(options.workingDirectory).isRoot(),"Invalid subagent workspace");
+            parent.projectMemory.directory=iiFileProvider::Directory(parent.sessionsDirectory).absoluteFilePath("memory");
+        require(!options.workingDirectory.isEmpty() && QFileInfo(options.workingDirectory).isDir() && !iiFileProvider::Directory(options.workingDirectory).isRoot(),"Invalid subagent workspace");
         require(!QFileInfo(ownership.fileName()).isSymLink(),"Subagent ownership lock is a symlink",ErrorCode::StorageFailure);
         ownership.setStaleLockTime(0); require(ownership.tryLock(0),"Subagent store already owned or inaccessible",ErrorCode::AlreadyExists);
-        owners=std::make_unique<detail::SessionOwners>(QDir(options.stateDirectory).filePath("session-owners.json"),options.maxRecords);
+        owners=std::make_unique<detail::SessionOwners>(iiFileProvider::Directory(options.stateDirectory).filePath("session-owners.json"),options.maxRecords);
         if(options.definitions.isEmpty() && !options.profiles.enabled) options.definitions.append(SubagentDefinition{});
         QSet<QString> names; for(const auto& definition:options.definitions) {checkProfile(definition);require(!names.contains(definition.name),"Duplicate subagent definition");names.insert(definition.name);}
         for(const auto& name:options.allowedModels) require(!name.trimmed().isEmpty() && name.size()<=256,"Invalid allowed subagent model");
@@ -158,12 +155,12 @@ public:
             auto tools=provider();tools.removeIf([](const Tool& t){return t.definition.name=="Agent"||t.definition.metadata["source"]=="builtin.subagent";});return tools;
         };
         pool.setMaxThreadCount(options.maxConcurrent);
-        const auto files=QDir(options.stateDirectory).entryList({"agent-*.json"},QDir::Files|QDir::Hidden,QDir::Name);
+        const auto files=iiFileProvider::Directory(options.stateDirectory).entryList({"agent-*.json"},iiFileProvider::Directory::Files|iiFileProvider::Directory::Hidden,iiFileProvider::Directory::Name);
         require(files.size()<=options.maxRecords,"Subagent record limit exceeded",ErrorCode::ResourceLimit);
         for(const auto& name:files) {
-            const auto id=name.chopped(5); safeId(id); const auto path=QDir(options.stateDirectory).filePath(name);
+            const auto id=name.chopped(5); safeId(id); const auto path=iiFileProvider::Directory(options.stateDirectory).filePath(name);
             require(!QFileInfo(path).isSymLink(),"Subagent record is a symlink",ErrorCode::StorageFailure);
-            QFile file(path);require(file.open(QIODevice::ReadOnly),"Cannot read subagent record",ErrorCode::StorageFailure);
+            iiFileProvider::FileDevice file(path);require(file.open(QIODevice::ReadOnly),"Cannot read subagent record",ErrorCode::StorageFailure);
             const auto bytes=file.read(8*1024*1024+1);require(bytes.size()<=8*1024*1024 && file.atEnd(),"Subagent record exceeds limit",ErrorCode::ResourceLimit);
             QJsonParseError error;const auto doc=QJsonDocument::fromJson(bytes,&error);auto state=doc.object();
             require(error.error==QJsonParseError::NoError && doc.isObject() && state["schema"]=="iisacc.subagent/1" && state["agentId"]==id
@@ -193,10 +190,10 @@ public:
         require(pattern.match(id).hasMatch(),"Invalid subagent ID");
     }
     void write(const Job& job) const {
-        const auto id=job.state["agentId"].toString();safeId(id);const auto path=QDir(options.stateDirectory).filePath(id+".json");
+        const auto id=job.state["agentId"].toString();safeId(id);const auto path=iiFileProvider::Directory(options.stateDirectory).filePath(id+".json");
         require(!QFileInfo(path).isSymLink(),"Subagent record is a symlink",ErrorCode::StorageFailure);
         const auto bytes=QJsonDocument(job.state).toJson(QJsonDocument::Compact)+'\n';require(bytes.size()<=8*1024*1024,"Subagent record exceeds limit",ErrorCode::ResourceLimit);
-        QSaveFile file(path);file.setDirectWriteFallback(false);
+        iiFileProvider::SaveFile file(path);file.setDirectWriteFallback(false);
         require(file.open(QIODevice::WriteOnly) && file.setPermissions(QFileDevice::ReadOwner|QFileDevice::WriteOwner)
             && file.write(bytes)==bytes.size() && file.commit(),"Cannot commit subagent record",ErrorCode::StorageFailure);
     }
@@ -286,16 +283,16 @@ public:
             QJsonObject original,current=profileJson(definition),hookContext;
             {std::lock_guard lock(mutex);job->state["status"]="running";original=job->state["profile"].toObject();write(*job);
                 hookContext={{"agent_id",job->state["agentId"]},{"agent_type",definition.name},{"parent_session_id",job->state["parent_session_id"]}};}
-            hookContext["transcript_path"]=QDir(options.stateDirectory).filePath("sessions/"+request.sessionId+"/transcript.jsonl");
+            hookContext["transcript_path"]=iiFileProvider::Directory(options.stateDirectory).filePath("sessions/"+request.sessionId+"/transcript.jsonl");
             if(job->state["parent_plan_mode"].toBool()){original["permission_mode"]="plan";current["permission_mode"]="plan";}
             auto scopedPolicy=std::make_shared<ScopedPolicy>(policy,original,current);
             const auto planDirectory=job->state["parent_plans_directory"].toString(
-                parent.planToolsEnabled?QDir(parent.sessionsDirectory).absoluteFilePath("plans"):QString());
+                parent.planToolsEnabled?iiFileProvider::Directory(parent.sessionsDirectory).absoluteFilePath("plans"):QString());
             auto scoped=std::make_shared<ToolRegistry>();const auto source=registry->snapshot();
             for(const auto& t:source->definitions()) if(allowed(t,original)&&allowed(t,current)) {
                 scoped->add(detail::protectPlanningFiles(source->get(t.name),planDirectory));
             }
-            auto eo=parent;eo.sessionsDirectory=QDir(options.stateDirectory).filePath("sessions");eo.maxConcurrentRuns=1;eo.maxQueuedRuns=0;
+            auto eo=parent;eo.sessionsDirectory=iiFileProvider::Directory(options.stateDirectory).filePath("sessions");eo.maxConcurrentRuns=1;eo.maxQueuedRuns=0;
             eo.procedures=job->procedures;eo.procedureOwnerSessionId=job->procedureOwner;
             eo.parentProcedureId=job->state["parent_procedure_id"].toString();eo.procedureAgentId=job->state["agentId"].toString();
             eo.sessionStartHooks=false;eo.maxAsyncHookWakeRuns=0;eo.planToolsEnabled=false;eo.userQuestionsEnabled=false;request.userPrompt=false;
@@ -327,10 +324,10 @@ public:
                 modelContext->executionContext={request.sessionId,{},options.workingDirectory};
                 modelContext->executionContext.asyncHooks=engine.hookScope(request.sessionId);
                 modelContext->executionContext.hookCancellation=job->token;
-                auto verifierOptions=parent;verifierOptions.sessionsDirectory=QDir(options.stateDirectory).filePath("sessions");
+                auto verifierOptions=parent;verifierOptions.sessionsDirectory=iiFileProvider::Directory(options.stateDirectory).filePath("sessions");
                 verifierOptions.toolFilter=[original,current,filter=parent.toolFilter](const ToolDefinition& tool){return allowed(tool,original)&&allowed(tool,current)&&(!filter||filter(tool));};
                 modelContext->agentExecutor=detail::hookAgentExecutor(verifierOptions,parent.taskToolsEnabled
-                    ?std::make_shared<TaskStore>(QDir(verifierOptions.sessionsDirectory).filePath("tasks")):nullptr);
+                    ?std::make_shared<TaskStore>(iiFileProvider::Directory(verifierOptions.sessionsDirectory).filePath("tasks")):nullptr);
             }
             for(const auto& hook:parent.hooks) {
                 job->token.throwIfCancelled();
@@ -423,6 +420,7 @@ ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args
     const auto explicitKey=args["idempotency_key"].toString();
     require(!args.contains("idempotency_key")||(!explicitKey.isEmpty()&&explicitKey.size()<=128&&!explicitKey.contains(QChar::Null)&&resume.isEmpty()),"idempotency_key is a nonempty new-child key of at most 128 characters; resume starts another invocation");
     auto identity=args;identity.remove("idempotency_key");
+    if(skill&&!skill->prompt.content.isEmpty())identity["content"]=skill->prompt.content;
     const auto fingerprint=QString::fromLatin1(QCryptographicHash::hash(QJsonDocument(identity).toJson(QJsonDocument::Compact),QCryptographicHash::Sha256).toHex());
     const auto requestKey=!explicitKey.isEmpty()?"explicit:"+explicitKey:!skill&&d->options.deduplicateRequests&&resume.isEmpty()&&!context.runId.isEmpty()?"run:"+context.runId+":"+fingerprint:QString();
     const auto catalog=profiles(context.cancellation);
@@ -442,6 +440,7 @@ ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args
         if(skill) {
             request.generation=skill->generation;request.maxTurns=std::min(request.maxTurns,skill->maxTurns);
             request.contextPaths=skill->contextPaths;request.promptMetadata=skill->prompt.metadata;
+            request.content=skill->prompt.content;
             request.allowedTools=parsePermissionRules(request.allowedTools+detail::skillAllowedTools(skill->prompt));
         }
     };
@@ -520,8 +519,8 @@ ToolResult Subagents::runImpl(const ToolContext& context,const QJsonObject& args
         try {d->policy->inheritSession(context,{request.sessionId,{},d->options.workingDirectory});d->write(accepted);}catch(...) {
             if(resume.isEmpty()) {
                 try {d->policy->forgetSession({request.sessionId,{},d->options.workingDirectory});}catch(...) {}
-                const auto directory=QDir(d->options.stateDirectory).filePath("sessions/"+request.sessionId);
-                QDir(directory).removeRecursively();
+                const auto directory=iiFileProvider::Directory(d->options.stateDirectory).filePath("sessions/"+request.sessionId);
+                iiFileProvider::Directory(directory).removeRecursively();
             }
             throw;
         }

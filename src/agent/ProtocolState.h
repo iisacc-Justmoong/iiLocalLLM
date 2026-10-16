@@ -17,7 +17,7 @@ public:
             require(pending.isEmpty(), "Tool results must precede the next message");
             require(m.toolCallId.isEmpty(), "Non-tool message has a tool result ID");
             require(m.role == MessageRole::Assistant || m.toolCalls.isEmpty(), "Only assistants may request tools");
-            require(!m.text.trimmed().isEmpty() || !m.toolCalls.isEmpty(), "Empty transcript message");
+            require(!m.text.trimmed().isEmpty() || !m.toolCalls.isEmpty() || !m.content.isEmpty(), "Empty transcript message");
             QSet<QString> inMessage;
             for (const auto& c : m.toolCalls) {
                 require(!c.id.isEmpty() && !c.name.isEmpty() && !callIds.contains(c.id) && !inMessage.contains(c.id), "Missing or reused tool call ID");

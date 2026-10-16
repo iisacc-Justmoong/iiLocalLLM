@@ -196,7 +196,7 @@ std::future<ContextBudget> Service::measureConversation(ConversationRequest requ
             {
                 const auto prepared = model.runtime->prepareConversation(request, token);
                 token.throwIfCancelled();
-                budget = {prepared.tokens.size(), model.spec.contextTokens};
+                budget = {prepared.tokenCount(), model.spec.contextTokens};
             } // Prompt state may borrow model resources; destroy it before keep_alive=0 can unload the model.
             state.models.release(acquired); acquired.clear();
             promise->set_value(budget);
@@ -236,9 +236,9 @@ GenerationHandle Service::converse(ConversationRequest request, StreamCallback c
             const auto key = request.contextId.isEmpty() ? result.requestId : request.contextId;
             cacheId = "conversation:" + leasedModel + ':' + QString::fromLatin1(QCryptographicHash::hash(key.toUtf8(), QCryptographicHash::Sha256).toHex());
             auto prepared = model.runtime->prepareConversation(request, token);
-            if (prepared.tokens.isEmpty() || prepared.tokens.size() > model.spec.contextTokens - request.options.maxTokens)
+            if (prepared.tokenCount() <= 0 || prepared.tokenCount() > model.spec.contextTokens - request.options.maxTokens)
                 throw Error(ErrorCode::ContextOverflow, "Structured conversation exceeds context; compact its complete tool turns before retrying");
-            result.usage.promptTokens = prepared.tokens.size();
+            result.usage.promptTokens = prepared.tokenCount();
             auto& context = impl->state->cache.acquire(cacheId, model, token);
             notify({StreamEventKind::Started, result.requestId, result.sessionId, {}, {}});
             StopFilter stop(request.options.stop + prepared.stop);

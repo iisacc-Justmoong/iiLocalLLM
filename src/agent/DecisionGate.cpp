@@ -16,6 +16,23 @@ DecisionGate::DecisionGate(DecisionOptions options):options_(std::move(options))
     require(std::isfinite(options_.minExpectedValue)&&options_.minExpectedValue>=0,"Invalid minimum expected value");
     std::set<std::string> names;
     for(const auto& profile:options_.profiles)require(!profile.candidateId.empty()&&names.insert(profile.candidateId).second,"Duplicate or empty decision profile");
+    require(options_.modelRoutes.size()<=64,"Too many model routes");
+    names.clear();
+    for(const auto& route:options_.modelRoutes) {
+        require(!route.id.empty()&&route.id.size()<=64&&names.insert(route.id).second,"Duplicate or invalid model route ID");
+        require(std::all_of(route.id.begin(),route.id.end(),[](unsigned char c){return (c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='-'||c=='.';}),"Invalid model route ID syntax");
+        require(route.model.starts_with("model://")&&route.model.size()>8,"Model route requires a model:// URI");
+        require(route.model.size()<=136&&std::all_of(route.model.begin()+8,route.model.end(),[](unsigned char c){return (c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='_'||c=='-'||c=='.';}),"Invalid model route URI syntax");
+        require((route.inputModalities&~allModalities)==0&&supportsModalities(route.inputModalities,modality(Modality::Text)),"Invalid route modalities");
+        require(!(route.inputModalities&modality(Modality::Video))||supportsModalities(route.inputModalities,modality(Modality::Image)),"Video routes require image support");
+    }
+}
+std::vector<DecisionCandidate> DecisionGate::modelCandidates(Modalities required)const {
+    require(required!=0&&(required&~allModalities)==0,"Invalid required modalities");
+    std::vector<DecisionCandidate> result;
+    for(const auto& route:options_.modelRoutes)if(supportsModalities(route.inputModalities,required))
+        result.push_back({route.id,"model:"+route.id,route.model,"{\"required_modalities\":"+std::to_string(required)+"}"});
+    return result;
 }
 DecisionInput DecisionGate::inputs(const DecisionRequest& request)const {
     if(options_.inputs)return options_.inputs(request);

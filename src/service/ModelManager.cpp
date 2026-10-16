@@ -1,4 +1,5 @@
 #include "ModelManager.h"
+#include <QtCore/QDir>
 #include <algorithm>
 
 namespace iiLocalLLM::detail {
@@ -69,7 +70,8 @@ ModelInfo ModelManager::load(const ModelLoadRequest& input, const CancellationTo
         throw Error(ErrorCode::ResourceLimit, QStringLiteral("Model context exceeds cache token budget"));
     const auto verification = catalog_.verify(request.model, token);
     if (!verification.valid) throw Error(ErrorCode::IntegrityFailure, verification.issues.join(QStringLiteral("; ")));
-    const ModelSpec spec{id, resolved.entryPath, context, config.options, resolved.record.manifest.format};
+    const ModelSpec spec{id, resolved.entryPath, context, config.options, resolved.record.manifest.format,
+        resolved.record.manifest.projector.isEmpty() ? QString() : QDir(resolved.directory).filePath(resolved.record.manifest.projector)};
     const auto memory = runtimes_.estimateMemory(spec, std::min(options_.maxCachedContexts, options_.maxCachedContextTokens / context));
     if (memory.totalBytes() > residency_.budget())
         throw Error(ErrorCode::ResourceLimit, QStringLiteral("Model weights, KV and runtime reservation exceed the service memory budget"));

@@ -1,16 +1,22 @@
 # C++ 에이전트 실행 계층
 
+0.55.0은 사용자 입력·입력 큐·도구 관측의 이미지, 오디오, 시간 정보가 있는 영상 프레임을 네이티브 임베딩 추론까지 연결한다. iiDecision의 `model_route` 절차는 매 턴 모델 문맥의 모달리티와 호스트 기대가치를 평가하며 모델 경로를 선택한다. 원본 기록, KV 경계, 미디어 토큰 예산과 압축의 계약은 [MultimodalHarness.md](MultimodalHarness.md)에 기록한다.
+
 0.54.0은 초기 실행과 도구 선택에 [iiDecision 기반 정량 판단](DecisionGate.md)을 적용한다. 호스트가 제공한 성공/실패 확률모형·수익·손실·비용으로 순기대가치를 계산한다. 평가가 없거나 기준보다 낮으면 deferred로 보류하며, 적격 도구 중 가장 높은 기대가치인 하나를 선택한다. decision_input 반환에서 호스트 사실을 바꾸고 decision 반환에서 실제 평가·선택·보류를 관측한다.
 
 ```mermaid
 flowchart TD
-    A[호스트 입력 수락] --> DI[decision_input 반환: 정량 평가와 증거]
+    A[호스트 텍스트·이미지·오디오·영상 프레임 입력 수락] --> DI[decision_input 반환: 정량 평가와 증거]
     DI --> D[iiDecision: 조건부 성공·실패 확률과 순기대가치]
     D --> G{확률·기대가치 기준 통과}
     G -->|보류| H[run 반환: deferred와 후보별 이유]
     G -->|진행| I[input 반환: 준비된 입력]
-    I --> C[context·compaction 반환]
-    C --> M[model 반환: text와 tool_calls]
+    I --> C[타입이 보존된 콘텐츠·문맥 구성]
+    C --> MR[지원 모달리티로 경로 후보 필터링]
+    MR --> MD[iiDecision model_route: 조건부 확률·순기대가치]
+    MD -->|미지원·평가 부족·기준 미달| H
+    MD -->|적격 모델 선택| MB[미디어 임베딩 토큰 예산·네이티브 압축]
+    MB --> M[네이티브 멀티모달 model 반환: text와 tool_calls]
     M --> T{도구 후보 존재}
     T -->|없음| F[completion·run 반환: completed]
     T -->|있음| E[decision_input → iiDecision → decision 반환]
@@ -26,7 +32,7 @@ flowchart TD
     P --> X[tool_execution 시작]
     X -->|일반 도구| XR[tool_execution 반환: 실행·출력 검증 결과]
     XR --> O[tool 반환: 호스트가 사용할 최종 관측값]
-    O --> N[다음 턴 전 run 정량 판단]
+    O --> N[미디어 관측 기록·다음 턴 run 정량 판단]
     N --> D
     X -->|Agent 도구| S{동일 자식 요청 존재}
     S -->|기존 요청| REUSE[기존 자식 접수·결과 재사용]
@@ -35,6 +41,7 @@ flowchart TD
     SC --> XR
     HOST[호스트: 반환값 교체·진행·취소] -.-> DI
     HOST -.-> E
+    HOST -.-> MD
     HOST -.-> I
     HOST -.-> M
     HOST -.-> O

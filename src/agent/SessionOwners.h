@@ -1,9 +1,8 @@
+#include <iiFileProviderDevice.h>
 #pragma once
 #include "Types.h"
-#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
-#include <QtCore/QSaveFile>
 #include <QtCore/QSet>
 
 namespace iiLocalLLM::agent::detail {
@@ -14,7 +13,7 @@ class SessionOwners {
 public:
     SessionOwners(QString path,int maximum):path_(std::move(path)),maximum_(maximum) {
         if(QFileInfo(path_).isSymLink())throw Error(ErrorCode::StorageFailure,"Session owner table is a symlink");
-        QFile file(path_);if(!file.exists())return;
+        iiFileProvider::FileDevice file(path_);if(!file.exists())return;
         if(!file.open(QIODevice::ReadOnly))throw Error(ErrorCode::StorageFailure,"Cannot read session owner table");
         const auto bytes=file.read(8*1024*1024+1);QJsonParseError error;const auto doc=QJsonDocument::fromJson(bytes,&error);
         if(bytes.size()>8*1024*1024||!file.atEnd()||error.error!=QJsonParseError::NoError||!doc.isObject()
@@ -33,7 +32,7 @@ public:
         if(QFileInfo(path_).isSymLink())throw Error(ErrorCode::StorageFailure,"Session owner table is a symlink");
         const auto bytes=QJsonDocument(QJsonObject{{"schema","iisacc.agent.owners/1"},{"owners",next}}).toJson(QJsonDocument::Compact)+'\n';
         if(bytes.size()>8*1024*1024)throw Error(ErrorCode::ResourceLimit,"Session owner table exceeds byte limit");
-        QSaveFile file(path_);file.setDirectWriteFallback(false);
+        iiFileProvider::SaveFile file(path_);file.setDirectWriteFallback(false);
         if(!file.open(QIODevice::WriteOnly)||!file.setPermissions(QFileDevice::ReadOwner|QFileDevice::WriteOwner)
             ||file.write(bytes)!=bytes.size()||!file.commit())throw Error(ErrorCode::StorageFailure,"Cannot publish session owner table");
         owners_=std::move(next);

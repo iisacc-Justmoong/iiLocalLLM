@@ -17,6 +17,8 @@ struct RuntimeConversationPrompt {
     TokenList tokens;
     QStringList stop;
     std::shared_ptr<const RuntimePromptState> state;
+    qint64 inputTokens = 0; // Includes native media embeddings; zero uses text tokens.
+    qint64 tokenCount() const noexcept { return inputTokens ? inputTokens : tokens.size(); }
 };
 struct RuntimeConversationReply {
     QString text;

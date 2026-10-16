@@ -1,12 +1,9 @@
+#include <iiFileProviderDevice.h>
 #include "PlanMode.h"
 #include <QtCore/QCryptographicHash>
-#include <QtCore/QDir>
-#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
-#include <QtCore/QLockFile>
 #include <QtCore/QRegularExpression>
-#include <QtCore/QSaveFile>
 #include <QtCore/QStringConverter>
 #include <chrono>
 #include <map>
@@ -48,24 +45,24 @@ public:
     Impl(QString path,int max):maxBytes(max) {
         require(!path.isEmpty()&&max>=1024&&max<=262144,"Invalid planning configuration");
         const auto absolute=QFileInfo(path).absoluteFilePath();regular(absolute,true);
-        require(QDir().mkpath(absolute),"Cannot create plan directory",ErrorCode::StorageFailure);
+        require(iiFileProvider::Directory().mkpath(absolute),"Cannot create plan directory",ErrorCode::StorageFailure);
         directory=QFileInfo(absolute).canonicalFilePath();require(!directory.isEmpty(),"Cannot resolve plan directory");
     }
     QString session(const QString& id) const {
         static const QRegularExpression valid("\\A[A-Za-z0-9_-]{1,128}\\z");
         require(valid.match(id).hasMatch(),"Invalid plan session ID");
         regular(directory,true);require(QFileInfo(directory).canonicalFilePath()==directory,"Plan directory changed");
-        const auto result=QDir(directory).filePath(id);regular(result,true);return result;
+        const auto result=iiFileProvider::Directory(directory).filePath(id);regular(result,true);return result;
     }
-    std::unique_ptr<QLockFile> lock(const QString& id,const CancellationToken& token,bool create) const {
+    std::unique_ptr<iiFileProvider::LockFile> lock(const QString& id,const CancellationToken& token,bool create) const {
         const auto path=session(id);token.throwIfCancelled();
         if(!QFileInfo::exists(path)) {
             if(!create)return {};
-            require(QDir().mkpath(path),"Cannot create session plan directory",ErrorCode::StorageFailure);
+            require(iiFileProvider::Directory().mkpath(path),"Cannot create session plan directory",ErrorCode::StorageFailure);
             (void)session(id);
         }
         const auto name=path+"/lock";regular(name);
-        auto value=std::make_unique<QLockFile>(name);value->setStaleLockTime(30000);
+        auto value=std::make_unique<iiFileProvider::LockFile>(name);value->setStaleLockTime(30000);
         const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(5);
         while(!value->tryLock(10)) {
             token.throwIfCancelled();require(std::chrono::steady_clock::now()<until,"Plan state is busy",ErrorCode::ModelInUse);
@@ -73,13 +70,13 @@ public:
         (void)session(id);token.throwIfCancelled();return value;
     }
     QByteArray read(const QString& path,int limit) const {
-        regular(path);QFile file(path);require(file.open(QIODevice::ReadOnly),"Cannot read plan file",ErrorCode::StorageFailure);
+        regular(path);iiFileProvider::FileDevice file(path);require(file.open(QIODevice::ReadOnly),"Cannot read plan file",ErrorCode::StorageFailure);
         const auto bytes=file.read(limit+1);require(bytes.size()<=limit,"Plan file exceeds limit",ErrorCode::ResourceLimit);
         require(file.error()==QFileDevice::NoError,"Cannot read plan file",ErrorCode::StorageFailure);return bytes;
     }
     void write(const QString& id,const QString& name,const QByteArray& bytes) const {
         const auto path=session(id)+"/"+name;regular(path);
-        QSaveFile file(path);require(file.open(QIODevice::WriteOnly)&&file.write(bytes)==bytes.size()&&file.commit(),
+        iiFileProvider::SaveFile file(path);require(file.open(QIODevice::WriteOnly)&&file.write(bytes)==bytes.size()&&file.commit(),
             "Cannot save plan file",ErrorCode::StorageFailure);
     }
     QJsonObject state(const QString& id) const {

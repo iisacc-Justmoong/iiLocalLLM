@@ -74,3 +74,7 @@ options.decision.inputs = [](const agent::DecisionRequest& request) {
 daemon은 `--agent-decision FILE`, agent-enabled MCP는 `--decision FILE`이다. 파일은 agent workspace 밖의 private host 설정이다. 미지정 시 정책은 활성화되고 평가가 없어 실행을 보류한다. 절차 반환으로 입력할 호스트는 별도 `--agent-procedures`/`--procedures` 설정에서 decision_input을 대기 경계로 선택한다. 정책을 명시적으로 끌 때에는 `{ "enabled":false }`를 사용한다.
 
 판단 코어 `DecisionGate.h/.cpp`는 표준 C++23과 iiDecision만 사용한다. 기존 Qt JSON ABI와 전송 연결은 DecisionProtocol에서 처리한다. 현재 판단은 CpuOnly 증거 일치와 호스트 확률 계산으로 수행한다. 모델 추론의 GPU/Metal 사용과 iiDecision의 실제 실행 장치를 구분한다.
+
+## Multimodal model routing (0.55)
+
+Trusted `DecisionOptions::modelRoutes` / private JSON `model_routes` add per-turn `model_route` assessment. Capability-incompatible candidates are filtered before iiDecision posterior/expected-value comparison. Profiles use `model:<route-id>`. Route estimates are host-owned and missing estimates defer before native model work. Current goal and bounded media digests are supplied to the host; raw bytes are not exposed as candidate arguments. See [MultimodalHarness.md](MultimodalHarness.md).

@@ -1,13 +1,10 @@
+#include <iiFileProviderDevice.h>
 #include "FileCheckpoints.h"
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDateTime>
-#include <QtCore/QDir>
-#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
-#include <QtCore/QLockFile>
 #include <QtCore/QRegularExpression>
-#include <QtCore/QSaveFile>
 #include <QtCore/QUuid>
 #include <QtCore/QSet>
 #include <algorithm>
@@ -28,18 +25,18 @@ void plainPath(const QString& path){
 }
 QByteArray read(const QString& path,qint64 limit){
     plainPath(path);check(QFileInfo(path).isFile(),"Checkpoint target is not a regular file: "+path);
-    QFile file(path);check(file.open(QIODevice::ReadOnly),"Cannot read checkpoint file: "+path);
+    iiFileProvider::FileDevice file(path);check(file.open(QIODevice::ReadOnly),"Cannot read checkpoint file: "+path);
     const auto bytes=file.read(limit+1);check(file.error()==QFileDevice::NoError,"Cannot read complete checkpoint file: "+path);
     check(bytes.size()<=limit,"Checkpoint file exceeds byte limit",ErrorCode::ResourceLimit);return bytes;
 }
 void write(const QString& path,const QByteArray& bytes,std::optional<QFileDevice::Permissions> permissions={}){
-    plainPath(path);QSaveFile file(path);check(file.open(QIODevice::WriteOnly),"Cannot open checkpoint destination: "+path);
+    plainPath(path);iiFileProvider::SaveFile file(path);check(file.open(QIODevice::WriteOnly),"Cannot open checkpoint destination: "+path);
     if(permissions)check(file.setPermissions(*permissions),"Cannot restore file permissions");
     check(file.write(bytes)==bytes.size()&&file.commit(),"Cannot commit checkpoint file: "+path);
 }
 QString scope(const ToolContext& c){return hash((c.workingDirectory+'\n'+QString::number(c.workspaceRevision)).toUtf8());}
 void target(const QString& path,const ToolContext& c,const QString& privateRoot){
-    check(QDir::isAbsolutePath(path)&&path.size()<=4096&&QDir::cleanPath(path)==path&&!path.contains(QChar::Null),"Invalid checkpoint target",ErrorCode::ProtocolError);
+    check(iiFileProvider::Directory::isAbsolutePath(path)&&path.size()<=4096&&iiFileProvider::Directory::cleanPath(path)==path&&!path.contains(QChar::Null),"Invalid checkpoint target",ErrorCode::ProtocolError);
     plainPath(path);
     auto covered=[&](const QString& root){return path!=root&&inside(path,root);};
     check(covered(c.workingDirectory)||std::any_of(c.workingDirectories.cbegin(),c.workingDirectories.cend(),covered),"Checkpoint target is outside current working directories",ErrorCode::Unauthorized);
@@ -60,10 +57,10 @@ void validateBackup(const QJsonValue& value){
         &&o["permissions"].toDouble()==o["permissions"].toInteger()&&o["permissions"].toInteger()>=0&&o["permissions"].toInteger()<=65535,"Invalid checkpoint backup fields",ErrorCode::ProtocolError);
 }
 struct Journal {
-    QString root,dir;QLockFile lock;QJsonObject state;
-    Journal(const QString& root,const ToolContext& c):root(root),dir(QDir(root).filePath(c.sessionId)),lock(dir+"/history.lock"){
+    QString root,dir;iiFileProvider::LockFile lock;QJsonObject state;
+    Journal(const QString& root,const ToolContext& c):root(root),dir(iiFileProvider::Directory(root).filePath(c.sessionId)),lock(dir+"/history.lock"){
         check(!c.workingDirectory.isEmpty()&&QFileInfo(c.workingDirectory).canonicalFilePath()==c.workingDirectory&&QFileInfo(c.workingDirectory).isDir(),"Checkpoint workspace must be canonical",ErrorCode::InvalidArgument);
-        c.cancellation.throwIfCancelled();validId(c.sessionId);plainPath(dir);check(QDir().mkpath(dir),"Cannot create checkpoint directory");
+        c.cancellation.throwIfCancelled();validId(c.sessionId);plainPath(dir);check(iiFileProvider::Directory().mkpath(dir),"Cannot create checkpoint directory");
         lock.setStaleLockTime(0);check(lock.tryLock(0),"File checkpoints are in use",ErrorCode::ModelInUse);
         const auto path=dir+"/state.json";plainPath(path);
         if(!QFileInfo::exists(path))state={{"version",1},{"session_id",c.sessionId},{"sequence",0},{"snapshots",QJsonArray{}},{"scopes",QJsonObject{}}};
@@ -82,9 +79,9 @@ struct Journal {
         int tracked=0;
         for(auto it=scopes.begin();it!=scopes.end();++it){
             const auto o=it.value().toObject();const auto workspace=o["workspace"].toString(),revision=o["revision"].toString();bool ok=false;const auto n=revision.toULongLong(&ok);
-            check(it.value().isObject()&&QDir::isAbsolutePath(workspace)&&QDir::cleanPath(workspace)==workspace&&ok&&QString::number(n)==revision
+            check(it.value().isObject()&&iiFileProvider::Directory::isAbsolutePath(workspace)&&iiFileProvider::Directory::cleanPath(workspace)==workspace&&ok&&QString::number(n)==revision
                 &&it.key()==hash((workspace+'\n'+revision).toUtf8())&&o["initial"].isObject(),"Invalid checkpoint workspace",ErrorCode::ProtocolError);
-            const auto files=o["initial"].toObject();tracked+=files.size();for(auto f=files.begin();f!=files.end();++f){check(QDir::isAbsolutePath(f.key())&&QDir::cleanPath(f.key())==f.key(),"Invalid tracked path",ErrorCode::ProtocolError);validateBackup(f.value());}
+            const auto files=o["initial"].toObject();tracked+=files.size();for(auto f=files.begin();f!=files.end();++f){check(iiFileProvider::Directory::isAbsolutePath(f.key())&&iiFileProvider::Directory::cleanPath(f.key())==f.key(),"Invalid tracked path",ErrorCode::ProtocolError);validateBackup(f.value());}
         }
         check(tracked<=trackedLimit,"Too many tracked files",ErrorCode::ResourceLimit);QSet<QString> seen;
         for(const auto& value:snaps){const auto o=value.toObject();validId(o["message_id"].toString());const auto key=o["scope"].toString();
@@ -99,7 +96,7 @@ struct Journal {
         const auto bytes=read(path,fileLimit);check(hash(bytes)==result["sha256"].toString(),"File changed while checkpointing");
         const auto blob=dir+'/'+result["sha256"].toString()+".blob";
         if(QFileInfo::exists(blob))check(read(blob,fileLimit)==bytes,"Corrupt existing checkpoint blob",ErrorCode::ProtocolError);
-        else {qint64 total=0;for(const auto& info:QDir(dir).entryInfoList({"*.blob"},QDir::Files|QDir::Hidden))total+=info.size();
+        else {qint64 total=0;for(const auto& info:iiFileProvider::Directory(dir).entryInfoList({"*.blob"},iiFileProvider::Directory::Files|iiFileProvider::Directory::Hidden))total+=info.size();
             check(total<=blobLimit-bytes.size(),"Checkpoint blob storage exceeds 64 MiB",ErrorCode::ResourceLimit);write(blob,bytes);}
         return result;
     }
@@ -127,11 +124,11 @@ struct Journal {
         // is durable. First versions remain reachable for older checkpoints.
         QSet<QString> live;auto collect=[&](const QJsonObject& files){for(const auto& v:files)if(v.toObject()["exists"].toBool())live.insert(v.toObject()["sha256"].toString()+".blob");};
         for(const auto& o:scopes)collect(o.toObject()["initial"].toObject());for(const auto& o:state["snapshots"].toArray())collect(o.toObject()["files"].toObject());
-        for(const auto& name:QDir(dir).entryList({"*.blob"},QDir::Files|QDir::NoSymLinks))if(!live.contains(name)&&digest(name.chopped(5)))QFile::remove(dir+'/'+name);
+        for(const auto& name:iiFileProvider::Directory(dir).entryList({"*.blob"},iiFileProvider::Directory::Files|iiFileProvider::Directory::NoSymLinks))if(!live.contains(name)&&digest(name.chopped(5)))iiFileProvider::FileDevice::remove(dir+'/'+name);
     }
 };
 }
-FileCheckpoints::FileCheckpoints(QString directory):directory_(QDir::cleanPath(QFileInfo(directory).absoluteFilePath())){
+FileCheckpoints::FileCheckpoints(QString directory):directory_(iiFileProvider::Directory::cleanPath(QFileInfo(directory).absoluteFilePath())){
     check(!directory.trimmed().isEmpty(),"Checkpoint directory is required",ErrorCode::InvalidArgument);plainPath(directory_);
 }
 QJsonObject FileCheckpoints::checkpoint(const QString& id,const ToolContext& c)const{
@@ -154,9 +151,9 @@ QJsonObject FileCheckpoints::list(const ToolContext& c)const{
 void FileCheckpoints::fork(const ToolContext& c,const QString& destination,const std::optional<QStringList>& retained)const{
     c.cancellation.throwIfCancelled();
     validId(c.sessionId);validId(destination);check(destination!=c.sessionId,"Checkpoint fork requires a new owner",ErrorCode::InvalidArgument);
-    const auto path=QDir(directory_).filePath(destination);plainPath(path);
+    const auto path=iiFileProvider::Directory(directory_).filePath(destination);plainPath(path);
     check(!QFileInfo::exists(path),"Checkpoint fork target already exists",ErrorCode::AlreadyExists);
-    const auto source=QDir(directory_).filePath(c.sessionId);plainPath(source+"/state.json");
+    const auto source=iiFileProvider::Directory(directory_).filePath(c.sessionId);plainPath(source+"/state.json");
     if(!QFileInfo::exists(source+"/state.json"))return;
     Journal original(directory_,c);auto state=original.state;auto snapshots=state["snapshots"].toArray();
     if(retained){const QSet<QString> ids(retained->cbegin(),retained->cend());
@@ -167,8 +164,8 @@ void FileCheckpoints::fork(const ToolContext& c,const QString& destination,const
         state["scopes"]=scopes;state["sequence"]=snapshots.size();
     }
     state["snapshots"]=snapshots;state["session_id"]=destination;
-    check(QDir().mkdir(path),"Checkpoint fork target already exists or cannot be created");
-    struct Guard{QString path;bool keep=false;~Guard(){if(!keep)QDir(path).removeRecursively();}} guard{path};
+    check(iiFileProvider::Directory().mkdir(path),"Checkpoint fork target already exists or cannot be created");
+    struct Guard{QString path;bool keep=false;~Guard(){if(!keep)iiFileProvider::Directory(path).removeRecursively();}} guard{path};
     auto context=c;context.sessionId=destination;Journal targetJournal(directory_,context);targetJournal.state=state;targetJournal.validate(context);
     QJsonObject blobs;auto collect=[&](const QJsonObject& files){for(const auto& v:files){const auto b=v.toObject();if(!b["exists"].toBool())continue;
         const auto id=b["sha256"].toString();check(!blobs.contains(id)||blobs[id]==b["bytes"],"Conflicting checkpoint blob sizes",ErrorCode::ProtocolError);blobs[id]=b["bytes"];}};
@@ -201,9 +198,9 @@ QJsonObject FileCheckpoints::rewind(const QString& id,bool dryRun,const ToolCont
     for(const auto& item:pending){try{
         c.cancellation.throwIfCancelled();target(item.path,c,directory_);check(current(item.path)==item.before,"File changed while rewinding");
         if(item.after["exists"].toBool()){
-            check(QDir().mkpath(QFileInfo(item.path).absolutePath()),"Cannot create restore directory");target(item.path,c,directory_);
+            check(iiFileProvider::Directory().mkpath(QFileInfo(item.path).absolutePath()),"Cannot create restore directory");target(item.path,c,directory_);
             write(item.path,item.bytes,QFileDevice::Permissions(item.after["permissions"].toInt()));
-        }else check(QFile::remove(item.path),"Cannot remove file created after checkpoint");
+        }else check(iiFileProvider::FileDevice::remove(item.path),"Cannot remove file created after checkpoint");
         restored.append(item.path);
     }catch(const Error& e){errors.append(QJsonObject{{"path",item.path},{"error",QString::fromUtf8(e.what())},{"cancelled",e.code()==ErrorCode::Cancelled}});break;}}
     result["filesRestored"]=restored;result["complete"]=errors.isEmpty();result["errors"]=errors;return result;

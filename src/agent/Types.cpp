@@ -64,7 +64,8 @@ QJsonObject toJson(const RunResult& r) {
             {"summary_generated_tokens", r.usage.summaryGeneratedTokens}, {"compactions", r.usage.compactions},
             {"memory_recall_prompt_tokens",r.usage.memoryRecallPromptTokens},{"memory_recall_generated_tokens",r.usage.memoryRecallGeneratedTokens},
             {"memory_recall_cached_tokens",r.usage.memoryRecallCachedTokens}}},
-        {"error_code", iiLocalLLM::enumName(r.errorCode)}, {"error_message", r.errorMessage},{"decision",r.decision}};
+        {"error_code", iiLocalLLM::enumName(r.errorCode)}, {"error_message", r.errorMessage},{"decision",r.decision},
+        {"selected_model", r.selectedModel}, {"routing", r.routing}};
 }
 QJsonObject toJson(const Event& e) {
     return {{"event", enumName(e.kind)}, {"run_id", e.runId}, {"session_id", e.sessionId},

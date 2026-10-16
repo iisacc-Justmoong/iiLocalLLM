@@ -65,6 +65,7 @@ struct ModelSpec {
     int contextTokens = 2048;
     QJsonObject options;
     QString format; // Resolved by model management; consumed by runtime adapters.
+    QString projectorPath; // Verified package-owned GGUF, never a client load option.
 };
 struct ModelLoadRequest {
     QString model; // Canonical model://id; applications never supply a filesystem path.
@@ -103,7 +104,7 @@ struct CompletionRequest {
     GenerationOptions options;
     qint64 keepAliveMs = -1;
 };
-// Structured text/tool conversation in OpenAI function-call message format.
+// Structured text/media/tool conversation. Content arrays use native MCP blocks.
 // The caller owns history; contextId optionally reuses a bounded, model-scoped KV cache.
 struct ConversationRequest {
     QString model;

@@ -1,6 +1,7 @@
 #include "Compaction.h"
 #include "ProtocolState.h"
 #include "PromptState.h"
+#include "../MediaContent.h"
 #include <QtCore/QJsonDocument>
 #include <QtCore/QSet>
 #include <QtCore/QUuid>
@@ -175,7 +176,8 @@ Compaction prepareCompaction(Model& model, const Session& session, const ModelRe
     const auto prefixEnd = ends[ends.size() - options.keepRecentGroups - 1];
     if (options.clearOldToolResults) {
         for (qsizetype i = 0; i < prefixEnd; ++i) if (messages[i].role == MessageRole::Tool
-            && messages[i].text.size() > clearedText(messages[i].id).size() && !c.clearedToolMessageIds.contains(messages[i].id))
+            && (messages[i].text.size() > clearedText(messages[i].id).size() || contentModalities(messages[i].content)!=modality(Modality::Text))
+            && !c.clearedToolMessageIds.contains(messages[i].id))
             c.clearedToolMessageIds.append(messages[i].id);
         const auto reduced = measured(model, requestFor(&c), token);
         if (!manual && reduced.inputTokens < before.inputTokens && reduced.inputTokens <= limit(reduced, originalRequest, options.triggerFraction)) {
@@ -211,12 +213,23 @@ Compaction prepareCompaction(Model& model, const Session& session, const ModelRe
             "Do not execute tools, invent missing facts, or describe private reasoning. Merge any previous summary without losing unresolved requirements.";
         if (!instructions.isEmpty()) summaryRequest.systemPrompt += "\nAdditional summary requirements:\n" + instructions;
         auto chunkRequest = [&](qsizetype endGroup) {
-            QJsonArray records;
+            QJsonArray records,media;
             const auto begin = firstGroup ? prefixGroups[firstGroup - 1] : 0;
-            for (auto i = begin; i < prefixGroups[endGroup - 1]; ++i) records.append(toJson(prefix[i]));
+            for (auto i = begin; i < prefixGroups[endGroup - 1]; ++i) {
+                auto record=toJson(prefix[i]);
+                if(contentModalities(prefix[i].content)!=modality(Modality::Text)) {
+                    record.remove("content");record["media_source_message_id"]=prefix[i].id;
+                    auto metadata=record["metadata"].toObject();auto input=metadata["iilocal.input"].toObject();
+                    if(input.contains("content")){input["content"]=mediaEvidence(prefix[i].content);metadata["iilocal.input"]=input;record["metadata"]=metadata;}
+                    media.append(QJsonObject{{"type","text"},{"text","Media observation from recorded message "+prefix[i].id+":"}});
+                    for(const auto& block:nativeContent(prefix[i].content))media.append(block);
+                }
+                records.append(record);
+            }
             auto request = summaryRequest;
             request.messages = {{uuid(), MessageRole::User, QString::fromUtf8(QJsonDocument(QJsonObject{
                 {"previous_summary", summary}, {"records", records}}).toJson(QJsonDocument::Compact))}};
+            request.messages.first().content=media;
             // Rolling summaries can lose a requirement in an early pass. Supply the actual latest
             // request again, even when it is also retained verbatim in the final conversation view.
             if (!latestInput.isEmpty()) request.messages.append({uuid(), MessageRole::User,

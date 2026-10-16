@@ -1,11 +1,10 @@
+#include <iiFileProviderDevice.h>
 #include "WebFetch.h"
 #include "WebContent.h"
 #include <QtCore/QCryptographicHash>
-#include <QtCore/QDir>
 #include <QtCore/QEventLoop>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
-#include <QtCore/QSaveFile>
 #include <QtCore/QTimer>
 #include <QtCore/QUuid>
 #include <QtNetwork/QHostInfo>
@@ -105,13 +104,13 @@ Page get(const QUrl& url,const WebFetchOptions& options,bool privateOrigin,const
     return page;
 }
 QJsonObject artifact(const Page& page,const ToolContext& context) {
-    require(!context.artifactsDirectory.isEmpty()&&QDir::isAbsolutePath(context.artifactsDirectory),"Binary WebFetch requires a host-owned artifact directory",ErrorCode::StorageFailure);
-    auto path=QDir::cleanPath(context.artifactsDirectory);
-    for(auto at=path;!QDir(at).isRoot();at=QFileInfo(at).absolutePath())require(!QFileInfo(at).isSymLink(),"WebFetch artifact directory must not contain symbolic links",ErrorCode::StorageFailure);
-    require(QDir().mkpath(path),"Cannot create WebFetch artifact directory",ErrorCode::StorageFailure);
+    require(!context.artifactsDirectory.isEmpty()&&iiFileProvider::Directory::isAbsolutePath(context.artifactsDirectory),"Binary WebFetch requires a host-owned artifact directory",ErrorCode::StorageFailure);
+    auto path=iiFileProvider::Directory::cleanPath(context.artifactsDirectory);
+    for(auto at=path;!iiFileProvider::Directory(at).isRoot();at=QFileInfo(at).absolutePath())require(!QFileInfo(at).isSymLink(),"WebFetch artifact directory must not contain symbolic links",ErrorCode::StorageFailure);
+    require(iiFileProvider::Directory().mkpath(path),"Cannot create WebFetch artifact directory",ErrorCode::StorageFailure);
     const auto type=page.type.split(';').first().trimmed().toLower();const QMap<QByteArray,QString> suffixes{{"application/pdf","pdf"},{"image/png","png"},{"image/jpeg","jpg"},{"image/webp","webp"},{"image/gif","gif"},{"audio/mpeg","mp3"},{"application/zip","zip"}};
-    path=QDir(path).filePath("webfetch-"+QUuid::createUuid().toString(QUuid::WithoutBraces)+'.'+suffixes.value(type,"bin"));
-    context.cancellation.throwIfCancelled();QSaveFile file(path);require(file.open(QIODevice::WriteOnly)&&file.setPermissions(QFileDevice::ReadOwner|QFileDevice::WriteOwner)
+    path=iiFileProvider::Directory(path).filePath("webfetch-"+QUuid::createUuid().toString(QUuid::WithoutBraces)+'.'+suffixes.value(type,"bin"));
+    context.cancellation.throwIfCancelled();iiFileProvider::SaveFile file(path);require(file.open(QIODevice::WriteOnly)&&file.setPermissions(QFileDevice::ReadOwner|QFileDevice::WriteOwner)
         &&file.write(page.body)==page.body.size()&&file.commit(),"Cannot save WebFetch binary artifact",ErrorCode::StorageFailure);
     return {{"path",path},{"bytes",page.bytes},{"sha256",page.hash},{"content_type",QString::fromLatin1(page.type)}};
 }

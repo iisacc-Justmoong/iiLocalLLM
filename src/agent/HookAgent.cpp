@@ -1,9 +1,9 @@
+#include <iiFileProviderDevice.h>
 #include "HookAgent.h"
 #include "ModelHook.h"
 #include "ContextFile.h"
 #include "PlanningFiles.h"
 #include <QtCore/QJsonDocument>
-#include <QtCore/QTemporaryDir>
 #include <QtCore/QStringConverter>
 #include <chrono>
 namespace iiLocalLLM::agent::detail {
@@ -90,7 +90,7 @@ void bindTranscriptRead(ToolRegistry& registry,const QString& transcript,int max
     if(read.definition.metadata["source"]!="builtin.workspace")return;
     const auto ordinary=read.prepare;const auto definition=read.definition;
     read.prepare=[ordinary,definition,transcript,maxBytes](const QJsonObject& args,const ToolContext& context) {
-        const auto requested=QDir::cleanPath(QDir::isAbsolutePath(args["path"].toString())?args["path"].toString():QDir(context.workingDirectory).filePath(args["path"].toString()));
+        const auto requested=iiFileProvider::Directory::cleanPath(iiFileProvider::Directory::isAbsolutePath(args["path"].toString())?args["path"].toString():iiFileProvider::Directory(context.workingDirectory).filePath(args["path"].toString()));
         if(requested!=transcript)return ordinary(args,context);
         require(QFileInfo(transcript).canonicalFilePath()==transcript&&!QFileInfo(transcript).isSymLink(),"Parent transcript path changed",ErrorCode::StorageFailure);
         auto preview=definition;preview.metadata["canonical_path"]=transcript;
@@ -130,7 +130,7 @@ AgentHookExecutor hookAgentExecutor(EngineOptions host,std::shared_ptr<TaskStore
             try{tool.definition=registry->get(tool.definition.name).definition;registry->remove(tool.definition.name);}catch(const Error& error){if(error.code()!=ErrorCode::NotFound)throw;}
             registry->add(std::move(tool));
         }
-        const auto transcript=QDir::cleanPath(input.context["transcript_path"].toString());
+        const auto transcript=iiFileProvider::Directory::cleanPath(input.context["transcript_path"].toString());
         const auto path=input.context["transcript_path"].toString().isEmpty()?QString():transcript;
         bindTranscriptRead(*registry,path,request.maxInputBytes);
         AgentHookReply reply;Tool output;output.definition={"StructuredOutput","Return the verification result exactly once after checking the condition.",
@@ -138,9 +138,9 @@ AgentHookExecutor hookAgentExecutor(EngineOptions host,std::shared_ptr<TaskStore
         output.execute=[&](const QJsonObject& decision,const ToolContext&) {reply.decision=decision;return ToolResult{QString::fromUtf8(QJsonDocument(decision).toJson(QJsonDocument::Compact)),decision};};
         registry->add(std::move(output));
         const auto base=QFileInfo(host.sessionsDirectory).canonicalFilePath();require(!base.isEmpty(),"Missing host session directory",ErrorCode::StorageFailure);
-        const auto directory=QDir(base).filePath("hook-agents");require(!QFileInfo(directory).isSymLink()&&QDir().mkpath(directory)
-            &&QFile::setPermissions(directory,QFileDevice::ReadOwner|QFileDevice::WriteOwner|QFileDevice::ExeOwner),"Cannot create private verifier directory",ErrorCode::StorageFailure);
-        QTemporaryDir temporary(QDir(directory).filePath("hook-XXXXXX"));require(temporary.isValid(),"Cannot create verifier state",ErrorCode::StorageFailure);
+        const auto directory=iiFileProvider::Directory(base).filePath("hook-agents");require(!QFileInfo(directory).isSymLink()&&iiFileProvider::Directory().mkpath(directory)
+            &&iiFileProvider::FileDevice::setPermissions(directory,QFileDevice::ReadOwner|QFileDevice::WriteOwner|QFileDevice::ExeOwner),"Cannot create private verifier directory",ErrorCode::StorageFailure);
+        iiFileProvider::TemporaryDirectory temporary(iiFileProvider::Directory(directory).filePath("hook-XXXXXX"));require(temporary.isValid(),"Cannot create verifier state",ErrorCode::StorageFailure);
         auto options=host;options.sessionsDirectory=temporary.path();options.maxInputCharacters=qMin(options.maxInputCharacters,request.maxInputBytes);
         options.toolFilter=[filter=host.toolFilter](const ToolDefinition& tool){return resultTool(tool)||(allowed(tool)&&(!filter||filter(tool)));};
         options.hooks={[](const HookInput& hook,const CancellationToken&) {

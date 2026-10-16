@@ -18,6 +18,7 @@ struct ModelManifest {
     QStringList capabilities;
     QString entryPoint;
     QList<ModelFile> files;
+    QString projector; // Optional package-relative multimodal projector GGUF.
 };
 struct ModelRecord {
     QString uri;

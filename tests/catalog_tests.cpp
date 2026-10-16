@@ -61,6 +61,23 @@ private slots:
         custom["entry_point"] = "model.onnx";
         QCOMPARE(parseModelManifest(custom).format, QStringLiteral("onnx"));
     }
+    void projectorIsPackageOwnedAndIntegrityChecked() {
+        auto manifest=minimal();manifest["projector"]="mmproj.gguf";
+        QCOMPARE(manifestObject(parseModelManifest(manifest))["projector"],"mmproj.gguf");
+        for(const auto& value:QStringList{"../mmproj.gguf","/mmproj.gguf","model.gguf"}) {
+            auto invalid=manifest;invalid["projector"]=value;QVERIFY_THROWS_EXCEPTION(Error,parseModelManifest(invalid));
+        }
+        QTemporaryDir root(QDir::current().filePath("projector-XXXXXX"));QVERIFY(root.isValid());
+        const auto source=package(root.filePath("package"));
+        write(QDir(source).filePath("manifest.json"),QJsonDocument(manifest).toJson());
+        ModelCatalog catalog(root.filePath("Models"));
+        QVERIFY_THROWS_EXCEPTION(Error,catalog.install(source));
+        write(QDir(source).filePath("mmproj.gguf"),"GGUF-projector-fixture");
+        const auto installed=catalog.install(source);QVERIFY(catalog.verify(installed.uri).valid);
+        const auto resolved=catalog.resolve(installed.uri);QCOMPARE(resolved.record.manifest.projector,"mmproj.gguf");
+        write(QDir(resolved.directory).filePath("mmproj.gguf"),"GGUF-tampered-projector");
+        QVERIFY(!catalog.verify(installed.uri).valid);
+    }
     void installVerifyResolvePersistAndRemove()
     {
         QTemporaryDir root(QDir::current().filePath("catalog-XXXXXX")); QVERIFY(root.isValid());

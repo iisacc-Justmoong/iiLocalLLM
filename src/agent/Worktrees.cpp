@@ -1,14 +1,11 @@
+#include <iiFileProviderDevice.h>
 #include "Worktrees.h"
 #include "ShellProcess.h"
 #include <QtCore/QCryptographicHash>
-#include <QtCore/QDir>
 #include <QtCore/QDirIterator>
-#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
-#include <QtCore/QLockFile>
 #include <QtCore/QRegularExpression>
-#include <QtCore/QSaveFile>
 #include <QtCore/QUuid>
 
 namespace iiLocalLLM::agent {
@@ -30,15 +27,15 @@ void input(const QJsonObject& args,bool entering){
         require(!args.contains("discard_changes")||args["discard_changes"].isBool(),"discard_changes must be boolean");}
 }
 void directory(const QString& path,bool create){
-    require(QDir::isAbsolutePath(path)&&!QDir(path).isRoot(),"Worktree directory must be an absolute non-root path");
-    QString current=QDir(path).rootPath();
-    for(const auto& part:QDir::cleanPath(path).split('/',Qt::SkipEmptyParts)){
-        current=QDir(current).filePath(part);QFileInfo info(current);
+    require(iiFileProvider::Directory::isAbsolutePath(path)&&!iiFileProvider::Directory(path).isRoot(),"Worktree directory must be an absolute non-root path");
+    QString current=iiFileProvider::Directory(path).rootPath();
+    for(const auto& part:iiFileProvider::Directory::cleanPath(path).split('/',Qt::SkipEmptyParts)){
+        current=iiFileProvider::Directory(current).filePath(part);QFileInfo info(current);
         require(!info.isSymLink(),"Worktree directory contains a symbolic link",ErrorCode::Unauthorized);
-        if(!info.exists()){require(create&&QDir().mkdir(current),"Cannot create worktree directory",ErrorCode::StorageFailure);info.refresh();}
+        if(!info.exists()){require(create&&iiFileProvider::Directory().mkdir(current),"Cannot create worktree directory",ErrorCode::StorageFailure);info.refresh();}
         require(info.isDir(),"Worktree directory is not a directory",ErrorCode::StorageFailure);
     }
-    require(canonical(path)==QDir::cleanPath(path),"Worktree directory changed identity",ErrorCode::Unauthorized);
+    require(canonical(path)==iiFileProvider::Directory::cleanPath(path),"Worktree directory changed identity",ErrorCode::Unauthorized);
 }
 ToolDefinition definition(bool entering,bool deferred){
     ToolDefinition result;result.name=entering?"EnterWorktree":"ExitWorktree";
@@ -59,24 +56,24 @@ public:
         require(!state.isEmpty()&&options.commandTimeoutMs>=100&&options.commandTimeoutMs<=600000&&options.maxOutputBytes>=1024&&options.maxOutputBytes<=16*1024*1024,"Invalid worktree configuration");
         require(!options.gitProgram.isEmpty()&&!options.gitProgram.contains(QChar::Null),"Invalid Git program");
         require(!options.baseRef.contains(QChar::Null)&&options.baseRef.size()<=4096,"Invalid worktree base ref");
-        if(!options.directory.isEmpty())require(QDir::isAbsolutePath(options.directory),"Worktree storage must be absolute");
-        for(const auto& path:options.sparsePaths)require(!path.isEmpty()&&!QDir::isAbsolutePath(path)&&!path.split('/').contains("..")&&!path.contains(QChar::Null)&&!path.startsWith('-'),"Invalid sparse checkout path");
+        if(!options.directory.isEmpty())require(iiFileProvider::Directory::isAbsolutePath(options.directory),"Worktree storage must be absolute");
+        for(const auto& path:options.sparsePaths)require(!path.isEmpty()&&!iiFileProvider::Directory::isAbsolutePath(path)&&!path.split('/').contains("..")&&!path.contains(QChar::Null)&&!path.startsWith('-'),"Invalid sparse checkout path");
         stateDirectory=QFileInfo(state).absoluteFilePath();directory(stateDirectory,true);
-        require(QFile::setPermissions(stateDirectory,QFileDevice::ReadOwner|QFileDevice::WriteOwner|QFileDevice::ExeOwner),"Cannot protect worktree state",ErrorCode::StorageFailure);
+        require(iiFileProvider::FileDevice::setPermissions(stateDirectory,QFileDevice::ReadOwner|QFileDevice::WriteOwner|QFileDevice::ExeOwner),"Cannot protect worktree state",ErrorCode::StorageFailure);
     }
     QString statePath(const QString& owner)const{
         static const QRegularExpression id("\\A[A-Za-z0-9_-]{1,128}\\z");require(id.match(owner).hasMatch(),"Invalid worktree owner");
-        return QDir(stateDirectory).filePath(owner+".json");
+        return iiFileProvider::Directory(stateDirectory).filePath(owner+".json");
     }
-    std::unique_ptr<QLockFile> lock(const QString& owner)const{
-        directory(stateDirectory,false);auto result=std::make_unique<QLockFile>(statePath(owner)+".lock");result->setStaleLockTime(0);
+    std::unique_ptr<iiFileProvider::LockFile> lock(const QString& owner)const{
+        directory(stateDirectory,false);auto result=std::make_unique<iiFileProvider::LockFile>(statePath(owner)+".lock");result->setStaleLockTime(0);
         require(result->tryLock(0),"Worktree owner is busy",ErrorCode::ModelInUse);return result;
     }
     QJsonObject load(const QString& owner)const{
         directory(stateDirectory,false);const auto path=statePath(owner);const QFileInfo info(path);
         require(!info.isSymLink(),"Worktree state must not be a symbolic link",ErrorCode::Unauthorized);
         if(!info.exists())return {{"schema","iisacc.worktrees/1"},{"owner",owner},{"revision",0},{"active",""},{"owned",QJsonObject{}}};
-        QFile file(path);require(info.isFile()&&info.size()<=1024*1024&&file.open(QIODevice::ReadOnly),"Cannot read worktree state",ErrorCode::StorageFailure);
+        iiFileProvider::FileDevice file(path);require(info.isFile()&&info.size()<=1024*1024&&file.open(QIODevice::ReadOnly),"Cannot read worktree state",ErrorCode::StorageFailure);
         QJsonParseError error;auto value=QJsonDocument::fromJson(file.readAll(),&error);
         require(error.error==QJsonParseError::NoError&&value.isObject(),"Invalid worktree state",ErrorCode::ProtocolError);const auto object=value.object();
         require(object["schema"]=="iisacc.worktrees/1"&&object["owner"]==owner&&object["revision"].isDouble()&&object["revision"].toInteger()>=0&&object["revision"].toDouble()==object["revision"].toInteger()&&object["revision"].toInteger()<9007199254740991LL
@@ -88,8 +85,8 @@ public:
             require(record["sessionId"]==owner&&record["worktreeName"]==it.key()&&record["hookBased"].isBool()
                 &&QStringList{"creating","active","kept","failed","branch_retained"}.contains(record["phase"].toString()),"Invalid worktree record identity",ErrorCode::ProtocolError);
             for(const auto& key:{"originalCwd","worktreePath","repoRoot","commonDirectory","gitDirectory"})if(record.contains(key))
-                require(record[key].isString()&&QDir::isAbsolutePath(record[key].toString())&&!record[key].toString().contains(QChar::Null)
-                    &&QDir::cleanPath(record[key].toString())==record[key].toString()&&!QDir(record[key].toString()).isRoot(),"Invalid worktree record path",ErrorCode::ProtocolError);
+                require(record[key].isString()&&iiFileProvider::Directory::isAbsolutePath(record[key].toString())&&!record[key].toString().contains(QChar::Null)
+                    &&iiFileProvider::Directory::cleanPath(record[key].toString())==record[key].toString()&&!iiFileProvider::Directory(record[key].toString()).isRoot(),"Invalid worktree record path",ErrorCode::ProtocolError);
             require(record.contains("originalCwd"),"Missing original worktree directory",ErrorCode::ProtocolError);
             if(record["phase"]=="active"||record["phase"]=="kept")require(record.contains("worktreePath")&&(record["hookBased"].toBool()
                 ||(record["worktreeBranch"]=="worktree-"+flat(it.key())&&record.contains("gitDirectory")&&record.contains("commonDirectory")&&record.contains("repoRoot"))),"Incomplete owned worktree",ErrorCode::ProtocolError);
@@ -100,7 +97,7 @@ public:
         const auto path=statePath(value["owner"].toString());require(!QFileInfo(path).isSymLink(),"Worktree state changed path",ErrorCode::Unauthorized);
         const auto revision=value["revision"].toInteger();require(revision<9007199254740990LL,"Worktree revision exhausted",ErrorCode::ResourceLimit);value["revision"]=revision+1;
         const auto bytes=QJsonDocument(value).toJson(QJsonDocument::Compact);require(bytes.size()<=1024*1024,"Worktree state exceeds limit",ErrorCode::ResourceLimit);
-        QSaveFile file(path);require(file.open(QIODevice::WriteOnly)&&file.setPermissions(QFileDevice::ReadOwner|QFileDevice::WriteOwner)
+        iiFileProvider::SaveFile file(path);require(file.open(QIODevice::WriteOnly)&&file.setPermissions(QFileDevice::ReadOwner|QFileDevice::WriteOwner)
             &&file.write(bytes)==bytes.size()&&file.commit(),"Cannot persist worktree state",ErrorCode::StorageFailure);
     }
     struct Command {QByteArray out,error;int code;};
@@ -157,10 +154,10 @@ public:
     QByteArray contentFingerprint(const QString& root,const QStringList& changed,const CancellationToken& token) const {
         QStringList paths;QCryptographicHash hash(QCryptographicHash::Sha256);qint64 bytes=0;
         for(const auto& relative:changed) {
-            const auto path=QDir::cleanPath(QDir(root).absoluteFilePath(relative));
+            const auto path=iiFileProvider::Directory::cleanPath(iiFileProvider::Directory(root).absoluteFilePath(relative));
             require(path.startsWith(root+'/'),"Changed file escapes worktree",ErrorCode::Unauthorized);paths.append(path);
             if(QFileInfo(path).isDir()&&!QFileInfo(path).isSymLink()) {
-                QDirIterator it(path,QDir::AllEntries|QDir::Hidden|QDir::System|QDir::NoDotAndDotDot,QDirIterator::Subdirectories);
+                QDirIterator it(path,iiFileProvider::Directory::AllEntries|iiFileProvider::Directory::Hidden|iiFileProvider::Directory::System|iiFileProvider::Directory::NoDotAndDotDot,QDirIterator::Subdirectories);
                 while(it.hasNext()){token.throwIfCancelled();require(paths.size()<10000,"Worktree removal snapshot exceeds 10000 paths",ErrorCode::ResourceLimit);paths.append(it.next());}
             }
         }
@@ -172,7 +169,7 @@ public:
             else if(!info.exists())hash.addData("missing");
             else {
                 require(info.isFile(),"Cannot snapshot special worktree file",ErrorCode::InvalidArgument);
-                QFile file(path);require(file.open(QIODevice::ReadOnly),"Cannot snapshot changed worktree file",ErrorCode::StorageFailure);hash.addData("file");hash.addData(QByteArray::number(info.size())+'\0');
+                iiFileProvider::FileDevice file(path);require(file.open(QIODevice::ReadOnly),"Cannot snapshot changed worktree file",ErrorCode::StorageFailure);hash.addData("file");hash.addData(QByteArray::number(info.size())+'\0');
                 while(!file.atEnd()){token.throwIfCancelled();const auto part=file.read(65536);require(!part.isEmpty()||file.error()==QFileDevice::NoError,"Cannot read worktree snapshot",ErrorCode::StorageFailure);
                     bytes+=part.size();require(bytes<=64*1024*1024,"Worktree removal snapshot exceeds 64 MiB",ErrorCode::ResourceLimit);hash.addData(part);}
             }
@@ -230,8 +227,8 @@ public:
                 const auto path=canonical(options.create(name,context));require(!path.isEmpty()&&QFileInfo(path).isDir()&&path!=cwd&&!cwd.startsWith(path+'/')&&path!=stateDirectory&&!stateDirectory.startsWith(path+'/')&&!path.startsWith(stateDirectory+'/'),"Worktree hook returned an invalid directory",ErrorCode::RuntimeFailure);record["worktreePath"]=path;
             }else{
                 const auto repository=facts(cwd,context.cancellation);for(auto it=repository.begin();it!=repository.end();++it)record[it.key()]=it.value();
-                const auto repo=record["repoRoot"].toString();const auto root=options.directory.isEmpty()?QDir(QFileInfo(repo).absolutePath()).filePath(".iilocal-worktrees/"+digest(repo.toUtf8()).left(16)):QDir::cleanPath(options.directory);
-                directory(root,true);const auto path=QDir(root).filePath(leaf);const auto branch="worktree-"+leaf;
+                const auto repo=record["repoRoot"].toString();const auto root=options.directory.isEmpty()?iiFileProvider::Directory(QFileInfo(repo).absolutePath()).filePath(".iilocal-worktrees/"+digest(repo.toUtf8()).left(16)):iiFileProvider::Directory::cleanPath(options.directory);
+                directory(root,true);const auto path=iiFileProvider::Directory(root).filePath(leaf);const auto branch="worktree-"+leaf;
                 require(git(repo,{"check-ref-format","--branch",branch},context.cancellation,false).code==0,"Invalid Git worktree branch name");
                 require(!QFileInfo::exists(path)&&!QFileInfo(path).isSymLink(),"Worktree path already exists",ErrorCode::ModelInUse);
                 require(git(repo,{"show-ref","--verify","--quiet","refs/heads/"+branch},context.cancellation,false).code==1,"Worktree branch already exists or cannot be inspected",ErrorCode::ModelInUse);
@@ -315,10 +312,10 @@ WorktreeOptions worktreeOptionsFromJson(const QJsonObject& config) {
     keys(config,{"directory","base_ref","fetch_missing_base","sparse_paths","command_timeout_ms"});WorktreeOptions result;result.enabled=true;
     for(const auto& key:{"directory","base_ref"})if(config.contains(key))require(config[key].isString()&&!config[key].toString().contains(QChar::Null),"Invalid worktree configuration string");
     result.directory=config["directory"].toString();result.baseRef=config["base_ref"].toString();
-    require(result.directory.isEmpty()||QDir::isAbsolutePath(result.directory),"Worktree directory must be absolute");
+    require(result.directory.isEmpty()||iiFileProvider::Directory::isAbsolutePath(result.directory),"Worktree directory must be absolute");
     if(config.contains("fetch_missing_base")){require(config["fetch_missing_base"].isBool(),"fetch_missing_base must be boolean");result.fetchMissingBase=config["fetch_missing_base"].toBool();}
     if(config.contains("sparse_paths")){require(config["sparse_paths"].isArray()&&config["sparse_paths"].toArray().size()<=128,"Invalid sparse_paths");
-        for(const auto& path:config["sparse_paths"].toArray()){require(path.isString()&&!path.toString().isEmpty()&&QDir::isRelativePath(path.toString())&&!path.toString().split('/').contains("..")&&!path.toString().contains(QChar::Null),"Invalid sparse path");result.sparsePaths.append(path.toString());}}
+        for(const auto& path:config["sparse_paths"].toArray()){require(path.isString()&&!path.toString().isEmpty()&&iiFileProvider::Directory::isRelativePath(path.toString())&&!path.toString().split('/').contains("..")&&!path.toString().contains(QChar::Null),"Invalid sparse path");result.sparsePaths.append(path.toString());}}
     if(config.contains("command_timeout_ms")){const auto value=config["command_timeout_ms"];require(value.isDouble()&&value.toInteger()==value.toDouble()&&value.toInteger()>=100&&value.toInteger()<=600000,"Invalid Git timeout");result.commandTimeoutMs=value.toInt();}
     return result;
 }

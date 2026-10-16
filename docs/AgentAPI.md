@@ -1,3 +1,7 @@
+# Native multimodal input (0.55)
+
+`agent.run` and `agent.inputs.enqueue` accept a typed `content` array. Content-only prompts are supported. Results include `selected_model` and `routing`, separate from run/tool `decision`. The input, private host route configuration and native model contract are documented in [MultimodalHarness.md](MultimodalHarness.md).
+
 # 에이전트 HTTP·native IPC API
 
 0.54의 agent.info.decision은 정책 활성화·스키마·입력/평가 절차 이름을 알린다. agent.run은 평가 부족이나 기준 미달 시 status:deferred와 decision 보고서를 반환한다. 호스트 정량 입력은 agent.procedures.respond의 decision_input 교체에서 제공하며 모델/wire run 인자로 받지 않는다. [DecisionGate.md](DecisionGate.md)를 따른다.

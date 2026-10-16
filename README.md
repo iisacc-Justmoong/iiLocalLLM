@@ -1,5 +1,7 @@
 # iiLocalLLM
 
+0.55.0 adds the [native multimodal harness](docs/MultimodalHarness.md): typed image/audio/video-frame input, package-owned projectors, native embedding budgets, media-aware compaction and per-turn iiDecision model routing. Source and staged-consumer verification are recorded separately in Verification.md. Consumers must rebuild against the 0.55 headers and library.
+
 A MVP module that provides local LLM conversations and C++ agent execution. The completed scope of 0.52.0 covers model loading, conversations, streaming, sessions, cancellation, tool execution, C++/native IPC/HTTP/MCP integration, and local plugin execution. For execution instructions, follow the CLI examples below; for the execution layers, follow [AgentHarness.md](docs/AgentHarness.md); for final verification with real models and a fresh installation, follow [Verification.md](docs/Verification.md).
 
 [HarnessParity.md](docs/HarnessParity.md)is reference data for comparison with the entire harness. Marketplace, running plugin updates, remote harness, and equivalence with all apps and platforms are not included in this MVP completion scope. The incomplete items in the version-specific records below are the scope at the time of that version.
@@ -44,7 +46,7 @@ A MVP module that provides local LLM conversations and C++ agent execution. The 
 
 0.24.0 provides initialization of C++ · API ·MCP conversations and immediate SessionStart(clear) . Background shell·child agent·completion notifications lead to new conversations. Contract and error recovery limits are recorded in [SessionClear .md](docs/SessionClear.md).
 
-C++23, Qt 6.8.3 Core/Network-based local LLM service SDK. The current version is 0.54.0. The app uses `model://id` for models. The service manages manifests and installation files, and automatically selects the execution device based on inspected hardware at startup. Model execution is delegated to llama.cpp or MLX, and it manages sessions, prompt budget, KV cache, FIFO scheduling, streaming, and local IPC. Existing `helloWorld()` and `iiLocalLLM::iiLocalLLM` CMake targets are maintained.
+C++23, Qt 6.8.3 Core/Network-based local LLM service SDK. The current version is 0.55.0. The app uses `model://id` for models. The service manages manifests and installation files, and automatically selects the execution device based on inspected hardware at startup. Model execution is delegated to llama.cpp or MLX, and it manages sessions, prompt budget, KV cache, FIFO scheduling, streaming, and local IPC. Existing `helloWorld()` and `iiLocalLLM::iiLocalLLM` CMake targets are maintained.
 
 The C++ stdio MCP client discovers external tools, resources, and prompts and connects them to the agent engine. The `iillm-mcp` server and C++ built-in API expose app tools and local agent execution to external MCP clients. Protocols, policies, material preservation, and current support boundaries are described in [MCP.md](docs/MCP.md) and [MCP server and app tool exposure](docs/MCPServer.md).
 
@@ -316,7 +318,7 @@ IILOCALLLM_WITH_LLAMA=ON INSTALL_PREFIX="$PWD/build/stage" ./install.sh
 Omitting IILOCALLLM_WITH_LLAMA maintains the existing CMake selection, and the default for the new configuration is ON. It activates build/ `IILOCALLLM_WITH_LLAMA=ON ./install.sh` which were previously configured as OFF. The path is set using INSTALL_PREFIX, QT_PREFIX_PATH, CMAKE_PREFIX_PATH. Qt and MLX Python environments are not copied to the package.
 
 ```cmake
-find_package(iiLocalLLM 0.54.0 CONFIG REQUIRED)
+find_package(iiLocalLLM 0.55.0 CONFIG REQUIRED)
 target_link_libraries(your_app PRIVATE iiLocalLLM::iiLocalLLM)
 ```
 

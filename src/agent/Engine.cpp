@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "../MediaContent.h"
 #include "Plugins.h"
 #include "HookAgent.h"
 #include "PermissionRules.h"
@@ -491,11 +492,12 @@ public:
                     // their stable ID/payload survives, but ordering is per queue.
                     if(input["kind"]=="notification"){recorded.remove("sequence");identity.remove("sequence");}
                     if(recorded!=identity||old.role!=MessageRole::User
-                        ||old.text!=text||!old.toolCalls.isEmpty()||!old.toolCallId.isEmpty())
+                        ||old.text!=text||old.content!=input["content"].toArray()||!old.toolCalls.isEmpty()||!old.toolCallId.isEmpty())
                         throw Error(ErrorCode::ProtocolError,"Queued input conflicts with a transcript identity");
                     return QJsonObject{{"message",toJson(old)},{"replay",true}};
                 }
                 Message message{id,MessageRole::User,text};message.metadata={{"iilocal.input",input}};
+                message.content=input["content"].toArray();
                 if(input["kind"]=="prompt")message=preparePrompt(std::move(message),input["text"].toString(),{{"input_id",id},{"input_source","queue"}});
                 if(!detail::rejectedPrompt(message)) {
                     QStringList paths;for(const auto& v:input["context_paths"].toArray())paths.append(v.toString());
@@ -536,6 +538,8 @@ public:
                 if(compactOnly||!decisionGate->options().enabled)return;
                 auto scope=permissionContext({request.sessionId,runId,lease->session().workingDirectory,{},token});scope.procedureId=runProcedure->id();
                 DecisionRequest candidate{"run",request.sessionId.toStdString(),runId.toStdString(),scope.procedureAgentId.toStdString(),goal.toStdString(),scope.workingDirectory.toStdString(),{{"run","run","Initial or continued agent inference",goal.toStdString()}}};
+                candidate.requiredModalities=contentModalities(request.content);
+                for(const auto& message:modelMessages(lease->session()))candidate.requiredModalities|=contentModalities(message.content);
                 result.decision=toJson(detail::decide(candidate,scope,send));
                 if(result.decision["action"]=="defer")throw detail::DeferredDecision{result.decision};
             };
@@ -550,6 +554,7 @@ public:
             auto paths = contextPaths(lease->session()); paths.append(request.contextPaths); paths.removeDuplicates();
             const auto initial = loadProjectContext(lease->session().workingDirectory, paths, options.projectContext, token);
             Message user{{}, MessageRole::User, request.prompt};
+            user.content=request.content;
             auto inputContext=permissionContext({request.sessionId,runId,lease->session().workingDirectory,{},token});inputContext.procedureId=runProcedure->id();
             ProcedureScope inputProcedure("input",inputContext,{{"prompt",request.prompt},{"skill",request.skill}},send);
             user.metadata = request.promptMetadata;
@@ -557,6 +562,7 @@ public:
             if (!request.skill.isEmpty()) {
                 user = loadSkill(lease->session().workingDirectory, request.skill, request.skillArguments,
                     request.sessionId, SkillInvocationSource::User, options.skills, token);
+                user.content=request.content;
                 if (!request.prompt.isEmpty()) user.text += "\n\nAdditional user request:\n" + request.prompt;
                 if (user.text.size() > options.maxInputCharacters) throw Error(ErrorCode::ResourceLimit, "Expanded skill exceeds engine input limit");
                 forkedSkill = user.metadata["iilocal.skill"].toObject()["context"] == "fork";
@@ -578,6 +584,7 @@ public:
                 // Queued input remains pending for the next parent run.
                 { std::lock_guard lock(mutex); active.at(runId).acceptsInput = false; }
                 Message invocation{{}, MessageRole::User, submittedPrompt};
+                invocation.content=user.content;
                 invocation.metadata = user.metadata; append(invocation);enforcePrompt(invocation);
                 checkpointPrompt(lease->session().messages.last().id);
                 const auto& session = lease->session();
@@ -686,6 +693,39 @@ public:
                     send({EventKind::InstructionsLoaded, runId, session.id, {}, {}, context.toJson(false)});
                 }
                 auto modelRequest = base; modelRequest.messages.append(modelMessages(session));
+                auto routeModel=[&] {
+                    Modalities required=modality(Modality::Text);
+                    QJsonArray media;QString goal=request.prompt;
+                    for(const auto& message:modelRequest.messages) {
+                        required|=contentModalities(message.content);
+                        const auto observed=mediaEvidence(message.content);
+                        if(!observed.isEmpty())media.append(QJsonObject{{"message_id",message.id},{"role",enumName(message.role)},{"media",observed}});
+                        if(detail::conversationInput(message))goal=message.text;
+                    }
+                    result.selectedModel=session.model;
+                    if(decisionGate->options().modelRoutes.empty())return;
+                    auto candidates=decisionGate->modelCandidates(required);
+                    const auto facts=QJsonDocument(QJsonObject{{"required_modalities",int(required)},{"media",media},
+                        {"message_count",modelRequest.messages.size()},{"tool_count",modelRequest.tools.size()}}).toJson(QJsonDocument::Compact).toStdString();
+                    for(auto& candidate:candidates)candidate.arguments=facts;
+                    if(candidates.empty()) {
+                        result.routing={{"action","defer"},{"stage","model_route"},{"reason","unsupported_modalities"},{"required_modalities",int(required)}};
+                        throw detail::DeferredDecision{result.routing};
+                    }
+                    DecisionReport report;
+                    if(decisionGate->options().enabled) {
+                        DecisionRequest routing{"model_route",session.id.toStdString(),runId.toStdString(),stepContext.procedureAgentId.toStdString(),
+                            goal.toStdString(),session.workingDirectory.toStdString(),candidates,required};
+                        report=detail::decide(routing,stepContext,send);
+                    } else {report.selectedCandidateId=candidates.front().id;report.reason="decision_disabled";}
+                    result.routing=toJson(report);result.routing["stage"]="model_route";result.routing["required_modalities"]=int(required);
+                    if(!report.execute())throw detail::DeferredDecision{result.routing};
+                    for(const auto& route:decisionGate->options().modelRoutes)if(route.id==report.selectedCandidateId) {
+                        modelRequest.model=QString::fromStdString(route.model);base.model=modelRequest.model;result.selectedModel=modelRequest.model;
+                        result.routing["model"]=modelRequest.model;break;
+                    }
+                };
+                routeModel();
                 QJsonArray visibleTools;for(const auto& definition:modelRequest.tools)visibleTools.append(definition.name);
                 contextProcedure.returned({{"model",modelRequest.model},{"context_id",modelRequest.contextId},{"message_count",modelRequest.messages.size()},
                     {"tools",visibleTools},{"instruction_fingerprint",context.fingerprint}});
@@ -706,6 +746,7 @@ public:
                     startSession("compact");
                     if (compactOnly) { result.text = checkpoint.summary; result.status = RunStatus::Completed; break; }
                     modelRequest = base; modelRequest.messages.append(modelMessages(session));
+                    routeModel();
                 }
                 const auto permissionRequests=request.permissionRequests?request.permissionRequests:options.permissionRequests;
                 const ToolRunner runner(turnRegistry, policy, {options.hooks, options.permission, 24000, options.permissionResponse, options.permissionUpdates, permissionRequests,model,session.model,detail::hookAgentExecutor(options,tasks),plans});
@@ -1568,6 +1609,10 @@ RunHandle Engine::run(RunRequest request, EventCallback callback) {
     return submit(std::move(request), std::move(callback), false);
 }
 QJsonObject Engine::enqueueInput(const QString& id, const QJsonObject& input, const CancellationToken& token) {
+    if(input.contains("content")) {
+        if(!input["content"].isArray())throw Error(ErrorCode::InvalidArgument,"Queued content must be an array");
+        (void)nativeContent(input["content"].toArray(),d->options.maxInputCharacters);
+    }
     const auto session = d->store.metadata(id);
     QStringList paths; for (const auto& v : input.value("context_paths").toArray()) paths.append(v.toString());
     if (input.value("text").toString().size() > d->options.maxInputCharacters || paths.size() > d->options.projectContext.maxTargetPaths)
@@ -1638,7 +1683,9 @@ RunHandle Engine::Impl::submit(RunRequest request, EventCallback callback, bool 
     auto promise = std::make_shared<std::promise<RunResult>>();
     RunHandle handle{uuid(), {}, promise->get_future().share()};
     try {
-        if ((!compactOnly && !queuedOnly && request.prompt.trimmed().isEmpty() && request.skill.isEmpty()) || (queuedOnly && !request.prompt.isEmpty()) || request.prompt.size() > options.maxInputCharacters
+        (void)nativeContent(request.content,options.maxInputCharacters);
+        if ((!compactOnly && !queuedOnly && request.prompt.trimmed().isEmpty() && request.skill.isEmpty() && request.content.isEmpty()) || (queuedOnly && (!request.prompt.isEmpty()||!request.content.isEmpty())) || request.prompt.size() > options.maxInputCharacters
+            || (compactOnly&&!request.content.isEmpty())
             || ((compactOnly || queuedOnly) && (!request.skill.isEmpty() || !request.skillArguments.isEmpty()))
             || (request.skill.isEmpty() && !request.skillArguments.isEmpty()) || request.skill.size() > 129 || request.skillArguments.size() > 65536
             || instructions.size() > options.maxInputCharacters
@@ -1717,11 +1764,6 @@ ConversationRequest conversationRequest(const ModelRequest& request) {
             "After finding a tool, call it to obtain the actual task data before giving your final answer.";
     conversation.messages.append(QJsonObject{{"role", "system"}, {"content", instruction}});
     for (const auto& message : request.messages) {
-        for (const auto& value : message.content) {
-            const auto block = value.toObject(); const auto type = block["type"].toString();
-            if (type == "image" || type == "audio" || (type == "resource" && block["resource"].toObject().contains("blob")))
-                throw Error(ErrorCode::RuntimeUnavailable, "This native model adapter cannot consume MCP media content; a multimodal Model adapter is required");
-        }
         QJsonObject wire{{"role", enumName(message.role)}, {"content", message.text}};
         if (message.role == MessageRole::Tool) {
             wire["tool_call_id"] = message.toolCallId;
@@ -1730,6 +1772,16 @@ ConversationRequest conversationRequest(const ModelRequest& request) {
             // measurement and generation use this same lossless observation.
             wire["content"] = QString::fromUtf8(QJsonDocument(QJsonObject{{"text", message.text},
                 {"data", message.data}, {"is_error", message.isError}}).toJson(QJsonDocument::Compact));
+        }
+        if(!message.content.isEmpty()) {
+            QJsonArray blocks;
+            const auto text=wire["content"].toString();
+            if(!text.isEmpty())blocks.append(QJsonObject{{"type","text"},{"text",text}});
+            for(const auto& block:nativeContent(message.content)) {
+                if(message.role==MessageRole::Tool&&block.toObject()["type"]=="text"&&block.toObject()["text"]==message.text)continue;
+                blocks.append(block);
+            }
+            wire["content"]=blocks;
         }
         if (!message.toolCalls.isEmpty()) {
             QJsonArray calls;

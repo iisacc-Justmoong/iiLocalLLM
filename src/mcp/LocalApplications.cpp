@@ -1,7 +1,8 @@
+#include <iiFileProviderDevice.h>
+#include <iiFileProviderStorage.h>
 #include "LocalApplications.h"
 #include <QtCore/QCoreApplication>
 #include <QtCore/QCryptographicHash>
-#include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
@@ -37,9 +38,9 @@ QString serverName(const LocalApplicationIdentity& identity, const QString& inst
     return "app." + identity.id + '.' + QString(instance).remove('-');
 }
 QString checkedDirectory(const QString& directory) {
-    if (directory.isEmpty() || !QDir::isAbsolutePath(directory) || directory.contains(QChar(0)))
+    if (directory.isEmpty() || !iiFileProvider::Directory::isAbsolutePath(directory) || directory.contains(QChar(0)))
         throw Error(ErrorCode::InvalidArgument, "Local application registry requires an absolute directory");
-    return QDir::cleanPath(directory);
+    return iiFileProvider::Directory::cleanPath(directory);
 }
 #if defined(Q_OS_UNIX) && !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
 struct Descriptor {
@@ -54,7 +55,7 @@ bool privateStat(const struct stat& info, bool directory) {
         && (directory ? S_ISDIR(info.st_mode) : S_ISREG(info.st_mode) && info.st_nlink == 1);
 }
 int openDirectory(const QString& path, ErrorCode& error) {
-    const int fd = ::open(QFile::encodeName(path).constData(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    const int fd = iiFileProvider::native::openFile(QFile::encodeName(path).constData(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
     if (fd < 0) {
         error = errno == ENOENT ? ErrorCode::None : ErrorCode::StorageFailure;
         return -1;
@@ -66,7 +67,7 @@ int openDirectory(const QString& path, ErrorCode& error) {
     return fd;
 }
 QByteArray readRecord(int directory, const QByteArray& name) {
-    Descriptor file(openat(directory, name.constData(), O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC));
+    Descriptor file(iiFileProvider::native::openFileAt(directory, name.constData(), O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC));
     struct stat info{};
     if (file.value < 0 || fstat(file.value, &info) || !privateStat(info, false)
         || info.st_size < 1 || info.st_size > recordLimit) return {};
@@ -87,7 +88,7 @@ QByteArray readRecord(int directory, const QByteArray& name) {
 QString localApplicationsDirectory() {
     const auto override = qEnvironmentVariable("IILOCALLLM_APP_ENDPOINTS");
     if (!override.isEmpty()) return checkedDirectory(override);
-    return QDir(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation))
+    return iiFileProvider::Directory(QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation))
         .filePath("iisacc/AgentEndpoints");
 }
 LocalApplicationDiscovery discoverLocalApplications(const QString& directory, int maxApplications) {
@@ -168,7 +169,7 @@ public:
         error.clear();
 #if defined(Q_OS_UNIX) && !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
         const auto path = QFile::encodeName(options.directory);
-        if (!QDir().mkpath(QFileInfo(options.directory).absolutePath())) {
+        if (!iiFileProvider::Directory().mkpath(QFileInfo(options.directory).absolutePath())) {
             error = "Cannot create the local application registry parent"; return false;
         }
         if (::mkdir(path.constData(), 0700) && errno != EEXIST) {
@@ -205,7 +206,7 @@ public:
         const auto bytes = QJsonDocument(object).toJson(QJsonDocument::Compact);
         const auto temporary = ('.' + instance + ".tmp").toLatin1();
         const auto published = (instance + ".json").toLatin1();
-        Descriptor file(openat(directory->value, temporary.constData(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600));
+        Descriptor file(iiFileProvider::native::openFileAt(directory->value, temporary.constData(), O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600));
         bool ok = file.value >= 0; qsizetype offset = 0;
         while (ok && offset < bytes.size()) {
             const auto count = ::write(file.value, bytes.constData() + offset, bytes.size() - offset);
@@ -219,7 +220,7 @@ public:
         if (file.value >= 0) unlinkat(directory->value, temporary.constData(), 0);
         if (!ok) { error = "Cannot publish the local application endpoint"; close(); return false; }
         recordInode = info.st_ino;
-        registration = QDir(options.directory).filePath(QString::fromLatin1(published));
+        registration = iiFileProvider::Directory(options.directory).filePath(QString::fromLatin1(published));
         return true;
 #else
         error = "Private local application discovery is not implemented on this platform";

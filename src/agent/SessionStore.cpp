@@ -1,11 +1,8 @@
+#include <iiFileProviderDevice.h>
 #include "SessionStore.h"
 #include "ProtocolState.h"
 #include "Compaction.h"
-#include <QtCore/QDir>
-#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
-#include <QtCore/QSaveFile>
-#include <QtCore/QLockFile>
 #include <QtCore/QUuid>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QRegularExpression>
@@ -47,16 +44,16 @@ QJsonValue mapStrings(const QJsonValue& value,const std::function<QString(QStrin
 }
 void cloneArtifacts(Session& value,const QString& source,const QString& destination,bool all) {
     if(source.isEmpty())return;
-    const auto from=QDir::cleanPath(QFileInfo(source).absoluteFilePath()),to=QDir(destination).filePath("artifacts");
+    const auto from=iiFileProvider::Directory::cleanPath(QFileInfo(source).absoluteFilePath()),to=iiFileProvider::Directory(destination).filePath("artifacts");
     plain(from);if(!QFileInfo::exists(from))return;readableDirectory(QFileInfo(from));
     QStringList references{value.systemPrompt};
     auto collect=[&](QString text){references.append(text);return text;};
     for(const auto& message:value.messages)(void)mapStrings(toJson(message),collect);
     for(const auto& checkpoint:value.compactions)references.append(checkpoint.summary);
     int entries=0;qint64 total=0;
-    QDirIterator files(from,QDir::AllEntries|QDir::NoDotAndDotDot|QDir::Hidden|QDir::System,QDirIterator::Subdirectories);
+    QDirIterator files(from,iiFileProvider::Directory::AllEntries|iiFileProvider::Directory::NoDotAndDotDot|iiFileProvider::Directory::Hidden|iiFileProvider::Directory::System,QDirIterator::Subdirectories);
     while(files.hasNext()) {
-        const auto path=files.next();const auto info=files.fileInfo();const auto relative=QDir(from).relativeFilePath(path);
+        const auto path=files.next();const auto info=files.fileInfo();const auto relative=iiFileProvider::Directory(from).relativeFilePath(path);
         if(++entries>4096||relative.count('/')>32)throw Error(ErrorCode::ResourceLimit,"Session artifact tree exceeds 4096 entries or 32 levels");
         plain(path);if(info.isDir()){readableDirectory(info);continue;}storage(info.isFile(),"Session artifact must be a regular file");
         if(!all&&!std::any_of(references.cbegin(),references.cend(),[&](const auto& s){
@@ -65,14 +62,14 @@ void cloneArtifacts(Session& value,const QString& source,const QString& destinat
         }))continue;
         constexpr qint64 fileLimit=64*1024*1024,totalLimit=256*1024*1024;
         if(info.size()>fileLimit||total>totalLimit-info.size())throw Error(ErrorCode::ResourceLimit,"Session artifact copy exceeds 64 MiB per file or 256 MiB total");
-        QFile input(path);storage(input.open(QIODevice::ReadOnly),"Cannot read session artifact");
+        iiFileProvider::FileDevice input(path);storage(input.open(QIODevice::ReadOnly),"Cannot read session artifact");
         const auto bytes=input.read(fileLimit+1);
         storage(input.error()==QFileDevice::NoError&&bytes.size()==info.size(),"Session artifact changed while copying");
         plain(path);const QFileInfo after(path);
         storage(after.isFile()&&after.size()==info.size()&&after.lastModified()==info.lastModified()
             &&after.metadataChangeTime()==info.metadataChangeTime()&&after.permissions()==info.permissions(),"Session artifact changed while copying");
-        const auto target=QDir(to).filePath(relative);storage(QDir().mkpath(QFileInfo(target).absolutePath()),"Cannot create fork artifact directory");
-        QSaveFile output(target);storage(output.open(QIODevice::WriteOnly)&&output.setPermissions(info.permissions())
+        const auto target=iiFileProvider::Directory(to).filePath(relative);storage(iiFileProvider::Directory().mkpath(QFileInfo(target).absolutePath()),"Cannot create fork artifact directory");
+        iiFileProvider::SaveFile output(target);storage(output.open(QIODevice::WriteOnly)&&output.setPermissions(info.permissions())
             &&output.write(bytes)==bytes.size()&&output.commit(),"Cannot copy session artifact");total+=bytes.size();
     }
     const auto remap=[&](QString text){if(text==from)return to;return text.replace(from+'/',to+'/');};
@@ -86,15 +83,15 @@ Session publish(const QString& root, qint64 maximum, Session value,
         safeId(value.parentSessionId);
         if(value.parentSessionId==value.id)throw Error(ErrorCode::InvalidArgument,"A session cannot be its own parent");
     }
-    const auto directory = QDir(root).filePath(value.id);
-    storage(QDir().mkdir(directory), "Cannot create agent session directory");
-    struct DirectoryGuard { QString path; bool keep = false; ~DirectoryGuard() { if (!keep) QDir(path).removeRecursively(); } } guard{directory};
+    const auto directory = iiFileProvider::Directory(root).filePath(value.id);
+    storage(iiFileProvider::Directory().mkdir(directory), "Cannot create agent session directory");
+    struct DirectoryGuard { QString path; bool keep = false; ~DirectoryGuard() { if (!keep) iiFileProvider::Directory(path).removeRecursively(); } } guard{directory};
     if(initialize)initialize(value,directory);
     const auto header = line({{"type", "session"}, {"version", 2}, {"id", value.id}, {"model", value.model},
         {"system_prompt", value.systemPrompt}, {"working_directory", value.workingDirectory},{"parent_session_id",value.parentSessionId}});
     if (header.size() > 4 * 1024 * 1024 || header.size() > maximum)
         throw Error(ErrorCode::ResourceLimit, "Agent transcript header exceeds limit");
-    QSaveFile file(QDir(directory).filePath("transcript.jsonl"));
+    iiFileProvider::SaveFile file(iiFileProvider::Directory(directory).filePath("transcript.jsonl"));
     storage(file.open(QIODevice::WriteOnly) && file.write(header) == header.size(), "Cannot create agent transcript");
     detail::ProtocolState state; QString parent; qint64 size = header.size();
     Session prefix = value; prefix.messages.clear(); prefix.compactions.clear(); qsizetype checkpoint = 0;
@@ -122,8 +119,8 @@ class SessionLease::Impl {
 public:
     Session value;
     QString directory;
-    std::unique_ptr<QLockFile> lock;
-    QFile file;
+    std::unique_ptr<iiFileProvider::LockFile> lock;
+    iiFileProvider::FileDevice file;
     qint64 maximum = 0;
     detail::ProtocolState state;
     int version = 2;
@@ -136,7 +133,7 @@ void SessionLease::setExecutionDirectory(QString path) {
     if(root.isEmpty()||!QFileInfo(root).isDir())throw Error(ErrorCode::InvalidArgument,"Execution workspace must exist");
     d->value.workingDirectory=root;
 }
-QString SessionLease::artifactsDirectory() const { return QDir(d->directory).filePath("artifacts"); }
+QString SessionLease::artifactsDirectory() const { return iiFileProvider::Directory(d->directory).filePath("artifacts"); }
 void SessionLease::compact(Compaction c) {
     detail::validateCompaction(d->value, c);
     const auto bytes = line({{"type", "compaction"}, {"checkpoint", toJson(c)}});
@@ -146,7 +143,7 @@ void SessionLease::compact(Compaction c) {
         storage(d->file.seek(0), "Cannot seek legacy transcript");
         auto header = object(d->file.readLine()); header["version"] = 2;
         const auto remaining = d->file.readAll();
-        QSaveFile replacement(d->file.fileName());
+        iiFileProvider::SaveFile replacement(d->file.fileName());
         storage(replacement.open(QIODevice::WriteOnly), "Cannot migrate legacy transcript");
         const auto first = line(header);
         storage(replacement.write(first) == first.size() && replacement.write(remaining) == remaining.size(),
@@ -186,7 +183,7 @@ void SessionLease::append(Message message) {
 }
 SessionStore::SessionStore(QString directory, qint64 maximum) : maxTranscriptBytes_(maximum) {
     if (directory.trimmed().isEmpty() || maximum < 1024) throw Error(ErrorCode::InvalidArgument, "Invalid agent transcript store");
-    storage(QDir().mkpath(directory), "Cannot create agent sessions directory");
+    storage(iiFileProvider::Directory().mkpath(directory), "Cannot create agent sessions directory");
     directory_ = QFileInfo(directory).canonicalFilePath();
     storage(!directory_.isEmpty(), "Cannot resolve agent sessions directory");
 }
@@ -228,15 +225,15 @@ Session SessionStore::createFromSnapshot(Session value,const std::function<void(
     return publish(directory_, maxTranscriptBytes_, std::move(value),[&](Session& target,const QString& directory){cloneArtifacts(target,artifacts,directory,false);});
 }
 std::unique_ptr<SessionLease> SessionStore::acquire(const QString& id) const {
-    const auto directory = QDir(directory_).filePath(safeId(id));
+    const auto directory = iiFileProvider::Directory(directory_).filePath(safeId(id));
     const QFileInfo info(directory);
     if (!info.isDir()) throw Error(ErrorCode::NotFound, "Agent session not found");
     storage(!info.isSymLink() && info.canonicalFilePath() == directory, "Agent session directory must not be a symlink");
     auto d = std::make_unique<SessionLease::Impl>(); d->directory = directory; d->maximum = maxTranscriptBytes_;
-    d->lock = std::make_unique<QLockFile>(QDir(directory).filePath("session.lock"));
+    d->lock = std::make_unique<iiFileProvider::LockFile>(iiFileProvider::Directory(directory).filePath("session.lock"));
     d->lock->setStaleLockTime(0);
     if (!d->lock->tryLock(0)) throw Error(ErrorCode::ModelInUse, "Agent session is already in use");
-    const auto path = QDir(directory).filePath("transcript.jsonl");
+    const auto path = iiFileProvider::Directory(directory).filePath("transcript.jsonl");
     storage(!QFileInfo(path).isSymLink(), "Transcript must not be a symlink");
     d->file.setFileName(path);
     storage(d->file.open(QIODevice::ReadWrite), "Cannot open agent transcript");
@@ -280,12 +277,12 @@ std::unique_ptr<SessionLease> SessionStore::acquire(const QString& id) const {
 }
 Session SessionStore::load(const QString& id) const { return acquire(id)->session(); }
 Session SessionStore::metadata(const QString& id) const {
-    const auto directory = QDir(directory_).filePath(safeId(id)); const QFileInfo info(directory);
+    const auto directory = iiFileProvider::Directory(directory_).filePath(safeId(id)); const QFileInfo info(directory);
     if (!info.isDir()) throw Error(ErrorCode::NotFound, "Agent session not found");
     storage(!info.isSymLink() && info.canonicalFilePath() == directory, "Agent session directory must not be a symlink");
-    const auto path = QDir(directory).filePath("transcript.jsonl"); const QFileInfo transcript(path);
+    const auto path = iiFileProvider::Directory(directory).filePath("transcript.jsonl"); const QFileInfo transcript(path);
     storage(!transcript.isSymLink() && transcript.isFile(), "Transcript must be a regular file");
-    QFile file(path); storage(file.open(QIODevice::ReadOnly), "Cannot read agent session metadata");
+    iiFileProvider::FileDevice file(path); storage(file.open(QIODevice::ReadOnly), "Cannot read agent session metadata");
     const auto bytes = file.readLine(4 * 1024 * 1024 + 1);
     if (!bytes.endsWith('\n') || bytes.size() > 4 * 1024 * 1024) throw Error(ErrorCode::ProtocolError, "Missing complete transcript header");
     const auto h = object(bytes);
@@ -301,8 +298,8 @@ Session SessionStore::metadata(const QString& id) const {
 }
 QStringList SessionStore::list() const {
     QStringList result;
-    for (const auto& name : QDir(directory_).entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
-        try { safeId(name); if (QFileInfo::exists(QDir(directory_).filePath(name + "/transcript.jsonl"))) result.append(name); }
+    for (const auto& name : iiFileProvider::Directory(directory_).entryList(iiFileProvider::Directory::Dirs | iiFileProvider::Directory::NoDotAndDotDot, iiFileProvider::Directory::Name)) {
+        try { safeId(name); if (QFileInfo::exists(iiFileProvider::Directory(directory_).filePath(name + "/transcript.jsonl"))) result.append(name); }
         catch (const Error&) {}
     }
     return result;

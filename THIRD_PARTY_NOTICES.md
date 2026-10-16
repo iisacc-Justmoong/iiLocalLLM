@@ -2,6 +2,10 @@
 
 서비스 고유 정책만 직접 구현하고 추론·토큰화·JSON·프로세스·IPC는 기존 라이브러리를 사용한다.
 
+## Native multimodal decoding (0.55.0)
+
+The existing pinned llama.cpp commit also supplies `libmtmd`, its `stb_image` image decoder, `miniaudio` audio decoder and `vendor/hash` implementation. The SDK links these native implementations in process. Original vendor files, including their embedded notices and license choices, are installed unchanged under `share/iiLocalLLM/licenses/llama-mtmd`. The existing llama.cpp MIT notice remains included. `MTMD_VIDEO` is disabled; supplied timestamped frames do not require a video-container subprocess. Hugging Face CLI was used only to obtain verification fixtures and is not a production dependency.
+
 ## 파일 패턴 매처 (0.19.0)
 
 2026-09-15 [libgit2 v1.9.7](https://github.com/libgit2/libgit2/releases/tag/v1.9.7)의 유지보수 릴리스와 원본 C wildmatch를 확인했다. 전체 Git·TLS·전송 의존성 대신 약 10KiB의 C/H만 private object로 포함한다. 라이선스는 MIT가 아니라 **GNU GPL v2 + libgit2 Linking Exception**이다. [원문](https://github.com/libgit2/libgit2/blob/v1.9.7/COPYING)을 보존하고 수정 C/H·날짜·소스 해시·빌드 설명까지 설치 패키지 `licenses/libgit2-wildmatch-source/`에 제공한다. 한도·취소·재귀 제한을 추가한 변경점은 `third_party/wildmatch/PATCHES.md`를 따른다. 원본 다운로드 SHA는 `source.json`에 있고 수정 소스와 구분한다.

@@ -202,9 +202,15 @@
         "tests/notebook_tests.cpp",
         "tests/notebook_runtime_smoke.cpp",
         "tests/notebook_wire.py",
-        "docs/Notebooks.md"
+        "docs/Notebooks.md",
+        "src/Multimodal.h",
+        "src/MediaContent.cpp",
+        "src/runtimes/LlamaRuntime.cpp",
+        "tests/multimodal_tests.cpp",
+        "tests/multimodal_runtime_smoke.cpp",
+        "docs/MultimodalHarness.md"
       ],
-      "remaining": "Native nbformat 4 NotebookEdit supports replace/insert/delete, cell IDs/index selectors, type conversion and execution-output clearing through workspace observations, permissions, atomic save and backups. Structured notebook Read, image outputs, PDF/image/audio model input, kernel execution and broader app/platform validation remain."
+      "remaining": "0.55 implements typed image/audio/timestamped video-frame input, package-owned native projector inference, media-aware budgets/compaction, recovery/fork/queue preservation and per-turn iiDecision model routing. PDF rasterization, video-container decoding/frame sampling, streaming media, generated media output, complete notebook/kernel support and full app/platform parity remain."
     },
     {
       "id": "context",
@@ -1112,10 +1118,14 @@
         "tests/decision_gate_tests.cpp",
         "tests/decision_engine_tests.cpp",
         "tests/decision_runtime_smoke.cpp",
-        "docs/DecisionGate.md"
+        "docs/DecisionGate.md",
+        "src/Multimodal.h",
+        "tests/multimodal_tests.cpp",
+        "docs/MultimodalHarness.md"
       ],
       "remaining": [
-        "호스트 확률의 경험적 보정 및 제품 앱의 실제 평가 저장소 연결"
+        "호스트 확률의 경험적 보정 및 제품 앱의 실제 평가 저장소 연결",
+        "Version 0.55 adds host-configured modality filtering and per-turn model_route posterior/expected-value optimization; global learned planning and empirical quality/economic calibration remain outside this contract."
       ]
     }
   ],

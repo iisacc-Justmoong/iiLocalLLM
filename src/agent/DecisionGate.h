@@ -1,5 +1,6 @@
 #pragma once
 #include "../Export.h"
+#include "../Multimodal.h"
 #include <iiDecision/ExactDecisionMaker.h>
 #include <functional>
 #include <optional>
@@ -25,6 +26,11 @@ struct DecisionInput {
 struct DecisionRequest {
     std::string stage, sessionId, runId, agentId, goal, workingDirectory;
     std::vector<DecisionCandidate> candidates;
+    Modalities requiredModalities = modality(Modality::Text);
+};
+struct ModelRoute {
+    std::string id, model;
+    Modalities inputModalities = modality(Modality::Text);
 };
 struct DecisionOptions {
     bool enabled=true; // Missing host estimates defer; they are never invented by the model.
@@ -35,6 +41,7 @@ struct DecisionOptions {
     // supply argument- and context-specific estimates for the candidate IDs.
     std::vector<DecisionEstimate> profiles;
     std::function<DecisionInput(const DecisionRequest&)> inputs;
+    std::vector<ModelRoute> modelRoutes; // Trusted host routes; profiles use "model:<id>".
 };
 struct DecisionAssessment {
     std::string candidateId, reason;
@@ -55,6 +62,7 @@ public:
     DecisionInput inputs(const DecisionRequest&) const;
     DecisionReport evaluate(std::span<const DecisionCandidate>,const DecisionInput&) const;
     const DecisionOptions& options()const noexcept{return options_;}
+    std::vector<DecisionCandidate> modelCandidates(Modalities required) const;
 private:
     DecisionOptions options_;
 };

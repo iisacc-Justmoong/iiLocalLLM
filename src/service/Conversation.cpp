@@ -1,5 +1,6 @@
 #include "Conversation.h"
 #include "../Parameters.h"
+#include "../MediaContent.h"
 #include <QtCore/QJsonDocument>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QSet>
@@ -55,8 +56,11 @@ void validateConversationRequest(const ConversationRequest& r, int maxCharacters
         fields(message, {"role", "content", "tool_calls", "tool_call_id", "reasoning_content", "name"});
         require(value.isObject() && (role == "system" || role == "user" || role == "assistant" || role == "tool"), code,
             "Unsupported conversation role");
-        require(!message.contains("content") || message["content"].isNull() || message["content"].isString(), code,
-            "Only text conversation content is supported");
+        require(!message.contains("content") || message["content"].isNull() || message["content"].isString()
+            || ((role == "user" || role == "tool") && message["content"].isArray()), code, "Invalid conversation content");
+        if (message["content"].isArray()) {
+            require(!nativeContent(message["content"].toArray(), maxCharacters).isEmpty(), code, "Empty native content");
+        }
         require(!message.contains("reasoning_content") || (role == "assistant" && message["reasoning_content"].isString()), code,
             "Only assistant messages may contain string reasoning_content");
         require(!message.contains("name") || (role == "tool" && message["name"].isString()), code, "Invalid tool result name");
@@ -66,7 +70,7 @@ void validateConversationRequest(const ConversationRequest& r, int maxCharacters
         require(role == "tool" || !message.contains("tool_call_id"), code, "Only tool messages may contain a result ID");
         if (role == "tool") {
             const auto id = message["tool_call_id"].toString();
-            require(pending.remove(id) && message["content"].isString(), code, "Orphan or duplicate tool result");
+            require(pending.remove(id) && (message["content"].isString() || message["content"].isArray()), code, "Orphan or duplicate tool result");
         } else if (role == "assistant" && message.contains("tool_calls")) {
             require(message["tool_calls"].isArray(), code, "tool_calls must be an array");
             const auto calls = message["tool_calls"].toArray();
@@ -76,7 +80,7 @@ void validateConversationRequest(const ConversationRequest& r, int maxCharacters
                 require(!ids.contains(id), code, "Duplicate tool call ID");
                 ids.insert(id); pending.insert(id);
             }
-        } else require(!message["content"].toString().trimmed().isEmpty(), code, "Empty conversation message");
+        } else require(!message["content"].toString().trimmed().isEmpty() || message["content"].isArray(), code, "Empty conversation message");
     }
     const auto lastRole = r.messages.last().toObject()["role"].toString();
     require(pending.isEmpty() && (lastRole == "user" || lastRole == "tool"), code,

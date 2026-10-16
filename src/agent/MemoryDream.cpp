@@ -1,10 +1,8 @@
+#include <iiFileProviderDevice.h>
 #include "MemoryDream.h"
 #include "MemoryWorker.h"
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
-#include <QtCore/QFile>
-#include <QtCore/QSaveFile>
-#include <QtCore/QLockFile>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QUuid>
 #include <QtCore/QSet>
@@ -32,7 +30,7 @@ struct ConsolidationState {
             &&(!state.exists()||state.isFile())&&(!lock.exists()||lock.isFile()),"Invalid consolidation state path",ErrorCode::StorageFailure);
     }
     qint64 last()const {
-        guard();if(!QFileInfo::exists(statePath))return 0;QFile file(statePath);
+        guard();if(!QFileInfo::exists(statePath))return 0;iiFileProvider::FileDevice file(statePath);
         require(file.open(QIODevice::ReadOnly)&&file.size()<=1024,"Cannot read consolidation state",ErrorCode::StorageFailure);
         QJsonParseError error;const auto doc=QJsonDocument::fromJson(file.readAll(),&error);const auto value=doc.object();
         const auto number=value["last_consolidated_ms"].toDouble(-1);
@@ -41,7 +39,7 @@ struct ConsolidationState {
         guard();return qint64(number);
     }
     void commit(qint64 started)const {
-        guard();QSaveFile file(statePath);const auto bytes=json({{"version",1},{"last_consolidated_ms",started}})+'\n';
+        guard();iiFileProvider::SaveFile file(statePath);const auto bytes=json({{"version",1},{"last_consolidated_ms",started}})+'\n';
         require(file.open(QIODevice::WriteOnly)&&file.setPermissions(QFileDevice::ReadOwner|QFileDevice::WriteOwner)
             &&file.write(bytes)==bytes.size(),"Cannot save consolidation timestamp",ErrorCode::StorageFailure);
         guard();require(file.commit(),"Cannot commit consolidation timestamp",ErrorCode::StorageFailure);
@@ -147,7 +145,7 @@ public:
             }
             scans[directory]=Clock::now();auto sessions=history->recent(snapshot.sessionId,snapshot.workspace,last,job->token);result["sessions_reviewing"]=sessions.size();
             if(!job->manual&&sessions.size()<options.minSessions){result["status"]="session_gate";return result;}
-            QLockFile lock(state.lockPath);lock.setStaleLockTime(0);state.guard();
+            iiFileProvider::LockFile lock(state.lockPath);lock.setStaleLockTime(0);state.guard();
             if(!lock.tryLock(0)){result["status"]="locked";return result;}
             state.guard();last=state.last();result["last_consolidated_ms"]=last;
             if(!job->manual&&gated()){result["status"]="time_gate";return result;}

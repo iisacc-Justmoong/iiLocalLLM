@@ -296,10 +296,11 @@ public:
         run.definition.metadata={{"source","builtin.agent.control"}};
         run.definition.description = "Run the configured local agent in this connection's private conversation and workspace. Use new_session to start a new conversation.";
         run.definition.inputSchema = {{"type", "object"}, {"additionalProperties", false},
-            {"anyOf", QJsonArray{QJsonObject{{"required", QJsonArray{"prompt"}}}, QJsonObject{{"required", QJsonArray{"skill"}}}}},
+            {"anyOf", QJsonArray{QJsonObject{{"required", QJsonArray{"prompt"}}}, QJsonObject{{"required", QJsonArray{"skill"}}}, QJsonObject{{"required", QJsonArray{"content"}}}}},
             {"properties", QJsonObject{{"prompt", QJsonObject{{"type", "string"}, {"minLength", 1}, {"maxLength", 1048576}}},
                 {"skill", QJsonObject{{"type", "string"}, {"minLength", 1}, {"maxLength", 129}}},
                 {"skill_arguments", QJsonObject{{"type", "string"}, {"maxLength", 65536}}},
+                {"content", QJsonObject{{"type", "array"}, {"minItems", 1}, {"maxItems", 64}, {"items", QJsonObject{{"type", "object"}}}}},
                 {"new_session", QJsonObject{{"type", "boolean"}}},
                 {"context_paths", QJsonObject{{"type", "array"}, {"maxItems", 128}, {"items", QJsonObject{{"type", "string"}, {"minLength", 1}, {"maxLength", 4096}}}}},
                 {"max_turns", QJsonObject{{"type", "integer"}, {"minimum", 1}, {"maximum", options.maxAgentTurns}}}}}};
@@ -322,6 +323,7 @@ public:
             }
             if (compactOnly && id.isEmpty()) throw Error(ErrorCode::NotFound, "This MCP connection has no conversation to compact");
             RunRequest request{id, args["prompt"].toString(), self->options.generation, args["max_turns"].toInt(self->options.maxAgentTurns)};
+            request.content=args["content"].toArray();
             request.permissionRequests=context.permissionRequests;
             request.skill = args["skill"].toString(); request.skillArguments = args["skill_arguments"].toString();
             for (const auto& path : args["context_paths"].toArray()) request.contextPaths.append(path.toString());
@@ -353,6 +355,7 @@ public:
         auto queuedProperties = run.definition.inputSchema["properties"].toObject();
         queuedProperties.remove("prompt"); queuedProperties.remove("new_session");
         queuedProperties.remove("skill"); queuedProperties.remove("skill_arguments");
+        queuedProperties.remove("content");
         queuedRun.definition.inputSchema = {{"type", "object"}, {"additionalProperties", false}, {"properties", queuedProperties}};
         queuedRun.execute = [executeAgent](const auto& args, const auto& context) { return executeAgent(args, context, false, true); };
         frozen->add(std::move(queuedRun));
@@ -407,12 +410,19 @@ public:
             if (action == "enqueue") {
                 properties = {{"text", text}, {"priority", QJsonObject{{"type", "string"}, {"enum", QJsonArray{"now", "next", "later"}}}},
                     {"kind", QJsonObject{{"type", "string"}, {"enum", QJsonArray{"prompt", "notification"}}}},
-                    {"context_paths", run.definition.inputSchema["properties"].toObject()["context_paths"]}};
+                    {"context_paths", run.definition.inputSchema["properties"].toObject()["context_paths"]},
+                    {"content", run.definition.inputSchema["properties"].toObject()["content"]}};
                 required.append("text");
             } else if (action == "remove") { properties = {{"input_id", inputId}}; required.append("input_id"); }
             else properties = {{"offset", QJsonObject{{"type", "integer"}, {"minimum", 0}, {"maximum", 1000000}}},
                 {"limit", QJsonObject{{"type", "integer"}, {"minimum", 1}, {"maximum", 100}}}};
             control.definition.inputSchema = {{"type", "object"}, {"additionalProperties", false}, {"properties", properties}, {"required", required}};
+            if(action=="enqueue") {
+                control.definition.inputSchema["required"]=QJsonArray{};
+                auto schemaText=properties["text"].toObject();schemaText.remove("minLength");properties["text"]=schemaText;
+                control.definition.inputSchema["properties"]=properties;
+                control.definition.inputSchema["anyOf"]=QJsonArray{QJsonObject{{"required",QJsonArray{"text"}}},QJsonObject{{"required",QJsonArray{"content"}}}};
+            }
             control.execute = [self, action](const QJsonObject& args, const ToolContext& context) {
                 const auto id = self->sessionId(self->conversation(context.sessionId), context.cancellation);
                 QJsonObject result;

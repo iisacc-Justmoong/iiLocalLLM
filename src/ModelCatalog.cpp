@@ -1,13 +1,9 @@
+#include <iiFileProviderDevice.h>
 #include "ModelCatalog.h"
 #include <QtCore/QCryptographicHash>
-#include <QtCore/QDir>
-#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
-#include <QtCore/QLockFile>
-#include <QtCore/QSaveFile>
 #include <QtCore/QSet>
-#include <QtCore/QTemporaryDir>
 #include <algorithm>
 #include <map>
 #include <optional>
@@ -19,23 +15,23 @@ void require(bool ok, ErrorCode code, const QString& message)
 { if (!ok) throw Error(code, message); }
 ModelManifest readManifest(const QString& directory)
 {
-    const QFileInfo info(QDir(directory).filePath(QStringLiteral("manifest.json")));
+    const QFileInfo info(iiFileProvider::Directory(directory).filePath(QStringLiteral("manifest.json")));
     require(info.isFile() && !info.isSymbolicLink(), ErrorCode::InvalidManifest, QStringLiteral("Package requires a regular manifest.json"));
     require(info.size() <= maxManifestBytes, ErrorCode::InvalidManifest, QStringLiteral("Manifest exceeds 4 MiB"));
-    QFile file(info.absoluteFilePath());
+    iiFileProvider::FileDevice file(info.absoluteFilePath());
     require(file.open(QIODevice::ReadOnly), ErrorCode::StorageFailure, file.errorString());
     QJsonParseError error;
     const auto document = QJsonDocument::fromJson(file.read(maxManifestBytes + 1), &error);
     require(error.error == QJsonParseError::NoError && document.isObject(), ErrorCode::InvalidManifest, QStringLiteral("Invalid manifest JSON"));
     return parseModelManifest(document.object());
 }
-void assetPaths(const QDir& root, const QString& relative, QStringList& files, const CancellationToken& token, int depth = 0)
+void assetPaths(const iiFileProvider::Directory& root, const QString& relative, QStringList& files, const CancellationToken& token, int depth = 0)
 {
     token.throwIfCancelled();
     require(depth <= 64, ErrorCode::InvalidManifest, QStringLiteral("Package directory nesting exceeds 64 levels"));
-    const QDir directory(relative.isEmpty() ? root.absolutePath() : root.filePath(relative));
+    const iiFileProvider::Directory directory(relative.isEmpty() ? root.absolutePath() : root.filePath(relative));
     require(directory.isReadable(), ErrorCode::StorageFailure, QStringLiteral("Package directory is unreadable"));
-    const auto entries = directory.entryInfoList(QDir::AllEntries | QDir::Hidden | QDir::System | QDir::NoDotAndDotDot, QDir::Name);
+    const auto entries = directory.entryInfoList(iiFileProvider::Directory::AllEntries | iiFileProvider::Directory::Hidden | iiFileProvider::Directory::System | iiFileProvider::Directory::NoDotAndDotDot, iiFileProvider::Directory::Name);
     for (const auto& entry : entries) {
         token.throwIfCancelled();
         const auto path = relative.isEmpty() ? entry.fileName() : relative + QLatin1Char('/') + entry.fileName();
@@ -49,14 +45,14 @@ void assetPaths(const QDir& root, const QString& relative, QStringList& files, c
         }
     }
 }
-ModelFile hashFile(const QDir& root, const QString& relative, const CancellationToken& token, const QString& outputDirectory = {})
+ModelFile hashFile(const iiFileProvider::Directory& root, const QString& relative, const CancellationToken& token, const QString& outputDirectory = {})
 {
-    QFile input(root.filePath(relative));
+    iiFileProvider::FileDevice input(root.filePath(relative));
     require(input.open(QIODevice::ReadOnly), ErrorCode::StorageFailure, input.errorString());
-    QFile output;
+    iiFileProvider::FileDevice output;
     if (!outputDirectory.isEmpty()) {
-        const auto path = QDir(outputDirectory).filePath(relative);
-        require(QDir().mkpath(QFileInfo(path).absolutePath()), ErrorCode::StorageFailure, QStringLiteral("Cannot create staging directory"));
+        const auto path = iiFileProvider::Directory(outputDirectory).filePath(relative);
+        require(iiFileProvider::Directory().mkpath(QFileInfo(path).absolutePath()), ErrorCode::StorageFailure, QStringLiteral("Cannot create staging directory"));
         output.setFileName(path);
         require(output.open(QIODevice::WriteOnly | QIODevice::NewOnly), ErrorCode::StorageFailure, output.errorString());
     }
@@ -77,18 +73,23 @@ ModelFile hashFile(const QDir& root, const QString& relative, const Cancellation
 }
 QString entryProblem(const QString& directory, const ModelManifest& manifest)
 {
-    const auto path = QDir(directory).filePath(manifest.entryPoint);
+    if (!manifest.projector.isEmpty()) {
+        iiFileProvider::FileDevice projector(iiFileProvider::Directory(directory).filePath(manifest.projector));
+        if (!projector.open(QIODevice::ReadOnly) || projector.read(4) != QByteArrayLiteral("GGUF"))
+            return QStringLiteral("Multimodal projector is missing or has invalid GGUF magic");
+    }
+    const auto path = iiFileProvider::Directory(directory).filePath(manifest.entryPoint);
     if (manifest.format == QStringLiteral("mlx")) {
-        QDir model(path);
+        iiFileProvider::Directory model(path);
         if (!model.exists() || !QFileInfo(model.filePath(QStringLiteral("config.json"))).isFile()
             || (!QFileInfo(model.filePath(QStringLiteral("tokenizer.json"))).isFile()
                 && !QFileInfo(model.filePath(QStringLiteral("tokenizer.model"))).isFile())
-            || model.entryList({QStringLiteral("*.safetensors")}, QDir::Files).isEmpty())
+            || model.entryList({QStringLiteral("*.safetensors")}, iiFileProvider::Directory::Files).isEmpty())
             return QStringLiteral("MLX entry_point requires config, tokenizer and safetensors files");
     } else {
         if (!QFileInfo(path).isFile()) return QStringLiteral("entry_point is not a model file");
         if (manifest.format == QStringLiteral("gguf")) {
-            QFile model(path);
+            iiFileProvider::FileDevice model(path);
             if (!model.open(QIODevice::ReadOnly) || model.read(4) != QByteArrayLiteral("GGUF")) return QStringLiteral("GGUF entry_point has invalid magic");
         }
     }
@@ -99,12 +100,12 @@ ModelVerification inspect(const QString& directory, const ModelManifest& manifes
 {
     ModelVerification result{modelUri(manifest.id)};
     QStringList paths;
-    assetPaths(QDir(directory), {}, paths, token);
+    assetPaths(iiFileProvider::Directory(directory), {}, paths, token);
     std::sort(paths.begin(), paths.end());
     std::map<QString, ModelFile> expected;
     for (const auto& file : manifest.files) expected.emplace(file.path, file);
     for (const auto& path : paths) {
-        const auto file = hashFile(QDir(directory), path, token, outputDirectory);
+        const auto file = hashFile(iiFileProvider::Directory(directory), path, token, outputDirectory);
         ++result.checkedFiles;
         result.checkedBytes += file.size;
         if (inventory) inventory->append(file);
@@ -130,16 +131,16 @@ public:
     {
         require(!directory.trimmed().isEmpty() && !directory.startsWith(':'), ErrorCode::InvalidArgument, QStringLiteral("Models directory is required"));
         root = QFileInfo(directory).absoluteFilePath();
-        require(!QDir(root).isRoot(), ErrorCode::InvalidArgument, QStringLiteral("Models directory cannot be a filesystem root"));
+        require(!iiFileProvider::Directory(root).isRoot(), ErrorCode::InvalidArgument, QStringLiteral("Models directory cannot be a filesystem root"));
     }
     QString root;
-    std::unique_ptr<QLockFile> lock;
+    std::unique_ptr<iiFileProvider::LockFile> lock;
     void own()
     {
         if (lock) return;
-        require(QDir().mkpath(root), ErrorCode::StorageFailure, QStringLiteral("Cannot create Models directory"));
-        root = QDir(root).canonicalPath();
-        auto candidate = std::make_unique<QLockFile>(QDir(root).filePath(QStringLiteral(".iilocal-llm.lock")));
+        require(iiFileProvider::Directory().mkpath(root), ErrorCode::StorageFailure, QStringLiteral("Cannot create Models directory"));
+        root = iiFileProvider::Directory(root).canonicalPath();
+        auto candidate = std::make_unique<iiFileProvider::LockFile>(iiFileProvider::Directory(root).filePath(QStringLiteral(".iilocal-llm.lock")));
         candidate->setStaleLockTime(0);
         require(candidate->tryLock(0), ErrorCode::ModelInUse, QStringLiteral("Models directory is owned by another catalog/service"));
         lock = std::move(candidate);
@@ -149,7 +150,7 @@ public:
         own();
         QList<ResolvedModel> models;
         QSet<QString> ids;
-        const auto entries = QDir(root).entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::System, QDir::Name);
+        const auto entries = iiFileProvider::Directory(root).entryInfoList(iiFileProvider::Directory::Dirs | iiFileProvider::Directory::NoDotAndDotDot | iiFileProvider::Directory::System, iiFileProvider::Directory::Name);
         for (const auto& entry : entries) {
             if (entry.fileName().startsWith('.')) continue; // Staging/trash never appears in the public catalog.
             try {
@@ -158,7 +159,7 @@ public:
                 require(!manifest.files.isEmpty(), ErrorCode::InvalidManifest, QStringLiteral("Package has no integrity inventory; use install()"));
                 if (ids.contains(manifest.id)) issues.append({entry.fileName(), ErrorCode::AlreadyExists, QStringLiteral("Duplicate manifest id: ") + manifest.id});
                 ids.insert(manifest.id);
-                models.append({{modelUri(manifest.id), manifest}, entry.absoluteFilePath(), QDir(entry.absoluteFilePath()).filePath(manifest.entryPoint)});
+                models.append({{modelUri(manifest.id), manifest}, entry.absoluteFilePath(), iiFileProvider::Directory(entry.absoluteFilePath()).filePath(manifest.entryPoint)});
             } catch (const Error& error) { issues.append({entry.fileName(), error.code(), QString::fromUtf8(error.what())}); }
         }
         return models;
@@ -208,9 +209,9 @@ ModelRecord ModelCatalog::install(const QString& packageDirectory, const Cancell
             QStringLiteral("Models storage must not be inside the installation source"));
     QList<CatalogIssue> issues;
     for (const auto& model : d->scan(issues)) require(model.record.manifest.id != manifest.id, ErrorCode::AlreadyExists, QStringLiteral("Model id is already installed"));
-    const auto destination = QDir(d->root).filePath(manifest.id);
+    const auto destination = iiFileProvider::Directory(d->root).filePath(manifest.id);
     require(!QFileInfo::exists(destination) && !QFileInfo(destination).isSymbolicLink(), ErrorCode::AlreadyExists, QStringLiteral("Installation directory already exists"));
-    QTemporaryDir staging(QDir(d->root).filePath(QStringLiteral(".install-XXXXXX")));
+    iiFileProvider::TemporaryDirectory staging(iiFileProvider::Directory(d->root).filePath(QStringLiteral(".install-XXXXXX")));
     require(staging.isValid(), ErrorCode::StorageFailure, QStringLiteral("Cannot create installation staging directory"));
     QList<ModelFile> inventory;
     const auto result = inspect(sourcePath, manifest, token, &inventory, staging.path());
@@ -221,22 +222,22 @@ ModelRecord ModelCatalog::install(const QString& packageDirectory, const Cancell
     require(!manifest.files.isEmpty(), ErrorCode::InvalidManifest, QStringLiteral("Empty model package"));
     const auto bytes = QJsonDocument(manifestObject(manifest)).toJson();
     require(bytes.size() <= maxManifestBytes, ErrorCode::ResourceLimit, QStringLiteral("Generated manifest exceeds 4 MiB"));
-    QSaveFile file(QDir(staging.path()).filePath(QStringLiteral("manifest.json")));
+    iiFileProvider::SaveFile file(iiFileProvider::Directory(staging.path()).filePath(QStringLiteral("manifest.json")));
     require(file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size() && file.commit(), ErrorCode::StorageFailure,
             QStringLiteral("Cannot commit installed manifest"));
     const auto copied = inspect(staging.path(), manifest, token);
     require(copied.valid, ErrorCode::IntegrityFailure, QStringLiteral("Copied package verification failed: ") + copied.issues.join(QStringLiteral("; ")));
     token.throwIfCancelled();
-    require(QDir().rename(staging.path(), destination), ErrorCode::StorageFailure, QStringLiteral("Cannot publish staged model directory"));
+    require(iiFileProvider::Directory().rename(staging.path(), destination), ErrorCode::StorageFailure, QStringLiteral("Cannot publish staged model directory"));
     staging.setAutoRemove(false);
     return {modelUri(manifest.id), manifest};
 }
 void ModelCatalog::remove(const QString& uri)
 {
     const auto model = d->find(uri);
-    QTemporaryDir trash(QDir(d->root).filePath(QStringLiteral(".remove-XXXXXX")));
+    iiFileProvider::TemporaryDirectory trash(iiFileProvider::Directory(d->root).filePath(QStringLiteral(".remove-XXXXXX")));
     require(trash.isValid(), ErrorCode::StorageFailure, QStringLiteral("Cannot create removal staging directory"));
-    require(QDir().rename(model.directory, QDir(trash.path()).filePath(QStringLiteral("package"))),
+    require(iiFileProvider::Directory().rename(model.directory, iiFileProvider::Directory(trash.path()).filePath(QStringLiteral("package"))),
             ErrorCode::StorageFailure, QStringLiteral("Cannot detach model directory for removal"));
     if (!trash.remove()) {
         trash.setAutoRemove(false);

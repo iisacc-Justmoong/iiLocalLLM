@@ -109,7 +109,7 @@ ParsedCompletion parse(const std::string& body)
     bool structured = !object["tools"].toArray().isEmpty() || toolChoice == "required";
     for (const auto& value : messages) {
         const auto m = value.toObject();
-        structured |= m["role"] == "tool" || m.contains("tool_calls") || m.contains("tool_call_id") || m.contains("reasoning_content");
+        structured |= m["role"] == "tool" || m.contains("tool_calls") || m.contains("tool_call_id") || m.contains("reasoning_content") || m["content"].isArray();
     }
     for (const auto& value : messages) {
         require(value.isObject(), QStringLiteral("Each message must be an object"));

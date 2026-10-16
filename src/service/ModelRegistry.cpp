@@ -1,13 +1,11 @@
+#include <iiFileProviderDevice.h>
 #include "ModelRegistry.h"
 #include <QtCore/QCryptographicHash>
-#include <QtCore/QDir>
 #include <QtCore/QEventLoop>
-#include <QtCore/QFile>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QStorageInfo>
-#include <QtCore/QTemporaryDir>
 #include <QtCore/QTimer>
 #include <QtNetwork/QHostAddress>
 #include <QtNetwork/QNetworkAccessManager>
@@ -26,7 +24,7 @@ bool allowedUrl(const QUrl& url)
 void download(const QUrl& url, const ModelFile& file, const QString& destination,
               const QString& uri, const CancellationToken& token, const PullCallback& progress)
 {
-    QFile output(destination);
+    iiFileProvider::FileDevice output(destination);
     if (!output.open(QIODevice::WriteOnly | QIODevice::NewOnly)) throw Error(ErrorCode::StorageFailure, output.errorString());
     QNetworkAccessManager network;
     QNetworkRequest request(url);
@@ -84,7 +82,7 @@ void download(const QUrl& url, const ModelFile& file, const QString& destination
 }
 ModelRegistry::ModelRegistry(const QString& path)
 {
-    QFile file(path.isEmpty() ? QStringLiteral(":/iiLocalLLM/registry.json") : path);
+    iiFileProvider::FileDevice file(path.isEmpty() ? QStringLiteral(":/iiLocalLLM/registry.json") : path);
     if (!file.open(QIODevice::ReadOnly)) throw Error(ErrorCode::StorageFailure, file.errorString());
     require(file.size() <= 1024 * 1024, QStringLiteral("Registry exceeds 1 MiB"));
     QJsonParseError error;
@@ -142,16 +140,16 @@ ModelRecord ModelRegistry::pull(const QString& reference, ModelCatalog& catalog,
     const QStorageInfo storage(root);
     if (storage.isValid() && storage.bytesAvailable() >= 0 && storage.bytesAvailable() < bytes)
         throw Error(ErrorCode::StorageFailure, QStringLiteral("Insufficient disk space for download and atomic installation"));
-    QTemporaryDir stage(QDir(root).filePath(QStringLiteral(".pull-XXXXXX")));
+    iiFileProvider::TemporaryDirectory stage(iiFileProvider::Directory(root).filePath(QStringLiteral(".pull-XXXXXX")));
     if (!stage.isValid()) throw Error(ErrorCode::StorageFailure, QStringLiteral("Cannot create pull staging directory"));
     for (qsizetype i = 0; i < package.manifest.files.size(); ++i) {
         token.throwIfCancelled();
         const auto& file = package.manifest.files[i];
         const auto destination = stage.filePath(file.path);
-        if (!QDir().mkpath(QFileInfo(destination).absolutePath())) throw Error(ErrorCode::StorageFailure, QStringLiteral("Cannot create model asset directory"));
+        if (!iiFileProvider::Directory().mkpath(QFileInfo(destination).absolutePath())) throw Error(ErrorCode::StorageFailure, QStringLiteral("Cannot create model asset directory"));
         download(package.urls[i], file, destination, uri, token, progress);
     }
-    QFile manifest(stage.filePath(QStringLiteral("manifest.json")));
+    iiFileProvider::FileDevice manifest(stage.filePath(QStringLiteral("manifest.json")));
     if (!manifest.open(QIODevice::WriteOnly | QIODevice::NewOnly)) throw Error(ErrorCode::StorageFailure, manifest.errorString());
     const auto json = QJsonDocument(manifestObject(package.manifest)).toJson();
     if (manifest.write(json) != json.size() || !manifest.flush()) throw Error(ErrorCode::StorageFailure, manifest.errorString());

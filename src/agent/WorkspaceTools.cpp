@@ -1,15 +1,13 @@
+#include <iiFileProviderDevice.h>
 #include "Tools.h"
 #include "ShellTasks.h"
 #include "ShellProcess.h"
 #include "PermissionRulesInternal.h"
 #include "Notebook.h"
 #include <QtCore/QCryptographicHash>
-#include <QtCore/QDir>
 #include <QtCore/QDirIterator>
-#include <QtCore/QFile>
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
-#include <QtCore/QSaveFile>
 #include <QtCore/QStringConverter>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QUuid>
@@ -39,7 +37,7 @@ QRegularExpression globExpression(const QString& pattern) {
     return QRegularExpression(QRegularExpression::anchoredPattern(expression));
 }
 QByteArray readFile(const QString& path) {
-    QFile file(path);
+    iiFileProvider::FileDevice file(path);
     if (!file.open(QIODevice::ReadOnly)) throw Error(ErrorCode::StorageFailure, "Cannot read file: " + path);
     const auto bytes = file.read(maxFileBytes + 1);
     if (bytes.size() > maxFileBytes) throw Error(ErrorCode::ResourceLimit, "Text file exceeds 1 MiB");
@@ -84,7 +82,7 @@ public:
         for(const auto& denied:context.protectedPaths)
             if(inside(path,denied)||inside(path,QFileInfo(denied).canonicalFilePath()))return true;
         return std::any_of(privatePaths.cbegin(),privatePaths.cend(),[&](const auto& denied) {
-            const auto active=rootFor(context);const auto rebound=inside(denied,root)?QDir(active).filePath(QDir(root).relativeFilePath(denied)):denied;
+            const auto active=rootFor(context);const auto rebound=inside(denied,root)?iiFileProvider::Directory(active).filePath(iiFileProvider::Directory(root).relativeFilePath(denied)):denied;
             return inside(path,denied)||inside(path,QFileInfo(denied).canonicalFilePath())||inside(path,rebound)||inside(path,QFileInfo(rebound).canonicalFilePath());
         });
     }
@@ -95,8 +93,8 @@ public:
     QString resolve(QString path, const ToolContext& c, bool write = false) const {
         const auto root=rootFor(c);
         require(!path.isEmpty() && !path.contains(QChar(0)), "A nonempty path is required");
-        if (QDir::isRelativePath(path)) path = QDir(root).absoluteFilePath(path);
-        path = QDir::cleanPath(path);
+        if (iiFileProvider::Directory::isRelativePath(path)) path = iiFileProvider::Directory(root).absoluteFilePath(path);
+        path = iiFileProvider::Directory::cleanPath(path);
         QFileInfo info(path);
         QString canonical;
         if (info.exists()) canonical = info.canonicalFilePath();
@@ -111,7 +109,7 @@ public:
                 require(parent != ancestor.absoluteFilePath(), "Cannot resolve path ancestor");
                 ancestor = QFileInfo(parent);
             }
-            canonical = QDir(ancestor.canonicalFilePath()).filePath(tail.join('/'));
+            canonical = iiFileProvider::Directory(ancestor.canonicalFilePath()).filePath(tail.join('/'));
         }
         const auto artifactRoot=c.artifactsDirectory.isEmpty()?QString():QFileInfo(c.artifactsDirectory).absoluteFilePath();
         const auto canonicalArtifacts=artifactRoot.isEmpty()?QString():QFileInfo(artifactRoot).canonicalFilePath();
@@ -151,8 +149,8 @@ public:
     }
     QString artifact(const ToolContext& c,const QByteArray& bytes,const QString& extension) const {
         if(c.artifactsDirectory.isEmpty())return {};
-        require(QDir().mkpath(c.artifactsDirectory),"Cannot create backup directory");
-        const auto path=QDir(c.artifactsDirectory).filePath(uuid()+'.'+extension);QSaveFile file(path);
+        require(iiFileProvider::Directory().mkpath(c.artifactsDirectory),"Cannot create backup directory");
+        const auto path=iiFileProvider::Directory(c.artifactsDirectory).filePath(uuid()+'.'+extension);iiFileProvider::SaveFile file(path);
         if(!file.open(QIODevice::WriteOnly)||file.write(bytes)!=bytes.size()||!file.commit())
             throw Error(ErrorCode::StorageFailure,"Cannot save file edit artifact");
         return path;
@@ -162,7 +160,7 @@ public:
         if(path==c.planFilePath)require(bytes.size()<=c.maxPlanBytes&&!bytes.contains('\0'),"Plan text exceeds its byte limit or contains NUL");
         QString backup;
         if(before)backup=artifact(c,*before,"before");
-        require(QDir().mkpath(QFileInfo(path).absolutePath()), "Cannot create parent directory");
+        require(iiFileProvider::Directory().mkpath(QFileInfo(path).absolutePath()), "Cannot create parent directory");
         require(resolve(path, c, true) == path, "File path changed before writing");
         if (before) require(readFile(path) == *before, "File changed before writing");
         else require(!QFileInfo::exists(path), "File appeared before writing; read it first");
@@ -170,7 +168,7 @@ public:
         require(resolve(path,c,true)==path,"File path changed while checkpointing");
         if(before)require(readFile(path)==*before,"File changed while checkpointing");
         else require(!QFileInfo::exists(path),"File appeared while checkpointing");
-        QSaveFile file(path);
+        iiFileProvider::SaveFile file(path);
         if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size() || !file.commit())
             throw Error(ErrorCode::StorageFailure, "Cannot write file: " + path);
         remember(c, path, bytes); return backup;
@@ -208,7 +206,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
     require(privatePaths.size()<=128,"Too many host-private paths");
     for(const auto& path:privatePaths) {
         require(!path.isEmpty()&&!path.contains(QChar::Null)&&path.size()<=4096,"Invalid host-private path");
-        workspace->privatePaths.append(QDir::cleanPath(QFileInfo(path).absoluteFilePath()));
+        workspace->privatePaths.append(iiFileProvider::Directory::cleanPath(QFileInfo(path).absoluteFilePath()));
         const auto canonical=QFileInfo(path).canonicalFilePath();if(!canonical.isEmpty())workspace->privatePaths.append(canonical);
     }
     workspace->privatePaths.removeDuplicates();
@@ -318,9 +316,9 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         const auto root=workspace->resolve(a["path"].toString("."),c);require(QFileInfo(root).isDir(),"Glob path must be a directory");
         const auto regex = globExpression(a["pattern"].toString());
         require(regex.isValid(), "Invalid glob pattern"); QStringList paths;
-        QDirIterator iterator(root, QDir::Files | QDir::NoSymLinks, QDirIterator::Subdirectories);int visited=0;
+        QDirIterator iterator(root, iiFileProvider::Directory::Files | iiFileProvider::Directory::NoSymLinks, QDirIterator::Subdirectories);int visited=0;
         while (iterator.hasNext() && paths.size() < 1000 && visited++<10000) {
-            c.cancellation.throwIfCancelled(); const auto path = iterator.next(); const auto relative = QDir(root).relativeFilePath(path);
+            c.cancellation.throwIfCancelled(); const auto path = iterator.next(); const auto relative = iiFileProvider::Directory(root).relativeFilePath(path);
             if(workspace->isPrivate(path,c)||(workspace->shells&&workspace->shells->containsStatePath(path)))continue;
             try { workspace->resolve(path,c); } catch(const Error&) { continue; }
             if (regex.match(relative).hasMatch()) paths.append(relative);
@@ -336,7 +334,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
         const auto root = workspace->resolve(a["path"].toString("."), c);
         QStringList files;
         if (QFileInfo(root).isFile()) files.append(root);
-        else { QDirIterator iterator(root, QDir::Files | QDir::NoSymLinks, QDirIterator::Subdirectories);
+        else { QDirIterator iterator(root, iiFileProvider::Directory::Files | iiFileProvider::Directory::NoSymLinks, QDirIterator::Subdirectories);
             while (iterator.hasNext() && files.size() < 10000) { c.cancellation.throwIfCancelled(); files.append(iterator.next()); } }
         QStringList matches; QJsonArray values;
         for (const auto& path : files) {
@@ -347,7 +345,7 @@ void registerWorkspaceTools(ToolRegistry& registry, const QString& workspaceRoot
             QString text; try { text = decode(readFile(path)); } catch (const Error&) { continue; }
             const auto lines = text.split('\n');
             for (qsizetype n = 0; n < lines.size() && matches.size() < 100; ++n) if (regex.match(lines[n]).hasMatch()) {
-                const auto relative = QDir(workspace->rootFor(c)).relativeFilePath(path);
+                const auto relative = iiFileProvider::Directory(workspace->rootFor(c)).relativeFilePath(path);
                 matches.append(relative + ':' + QString::number(n + 1) + ':' + lines[n]);
                 values.append(QJsonObject{{"path", relative}, {"line", n + 1}, {"text", lines[n]}});
             }

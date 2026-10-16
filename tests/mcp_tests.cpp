@@ -230,11 +230,14 @@ private slots:
     void nativeAdapterDoesNotDropMedia() {
         QTemporaryDir directory; ServiceOptions options; options.modelsDirectory = directory.path();
         Service service(options); agent::ServiceModel model(service); agent::ModelRequest request;
-        request.model = "not-loaded";
-        agent::Message message; message.role = agent::MessageRole::Tool;
+        request.model = "model://not-loaded";
+        agent::Message call;call.role=agent::MessageRole::Assistant;call.toolCalls={{"media","camera",{}}};request.messages.append(call);
+        agent::Message message; message.role = agent::MessageRole::Tool;message.toolCallId="media";
         message.content = {QJsonObject{{"type", "image"}, {"mimeType", "image/png"}, {"data", "AA=="}}};
         request.messages.append(message);
-        checkError([&] { model.generate(request, {}, {}); }, ErrorCode::RuntimeUnavailable);
+        checkError([&] { model.generate(request, {}, {}); }, ErrorCode::NotFound);
+        request.messages.last().content[0]=QJsonObject{{"type","image"},{"mimeType","image/png"},{"data","AA="}};
+        checkError([&] { model.generate(request, {}, {}); }, ErrorCode::InvalidArgument);
     }
 };
 QTEST_GUILESS_MAIN(McpTests)
