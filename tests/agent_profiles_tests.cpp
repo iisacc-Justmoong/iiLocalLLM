@@ -2,8 +2,8 @@
 #include "agent/AgentProfiles.h"
 #include "agent/Subagents.h"
 #include "../tools/AgentProfileConfig.h"
+#include <iiFileProviderDevice.h>
 #include <QtTest/QtTest>
-#include <QtCore/QTemporaryDir>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 using namespace iiLocalLLM;
@@ -21,7 +21,7 @@ class AgentProfileTests final:public QObject {
     Q_OBJECT
 private slots:
     void hostConfigValidationAndCatalogPrivacy() {
-        QTemporaryDir root;const auto path=root.filePath("host.json");
+        iiFileProvider::TemporaryDirectory root;const auto path=root.filePath("host.json");
         put(path,"{\"directories\":[\"profiles\"],\"include_builtins\":false,\"model_aliases\":{\"small\":\"local\"},\"allowed_models\":[\"other\"]}");
         QVERIFY(QFile::setPermissions(path,QFileDevice::ReadOwner|QFileDevice::WriteOwner));
         const auto configured=iiLocalLLMClient::profileConfig(path,false);
@@ -39,8 +39,9 @@ private slots:
         options.overrides={{"reviewer",false}};QCOMPARE(a::discoverAgentProfiles(root.path(),options).find("reviewer").source,"managed");
     }
     void missingPreloadLeavesNoChildAndProfileBackgroundIsHonored() {
+        QString stage = "setup";
         try {
-        QTemporaryDir root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
+        iiFileProvider::TemporaryDirectory root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
         class Model final:public a::Model { a::ModelReply generate(const a::ModelRequest&,const CancellationToken&,const TextCallback&) override{return {"done",{}};} };
         auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
         a::EngineOptions eo{.decision={.enabled=false}};eo.sessionsDirectory=root.filePath("parents");eo.projectContext.enabled=false;eo.compaction.automatic=false;
@@ -50,17 +51,31 @@ private slots:
         QVERIFY(engine.runSubagentTool(p.id,"Agent",{{"prompt","go"},{"subagent_type","reviewer"}}).isError);
         QVERIFY(agents->list(p.id).isEmpty());QVERIFY(a::SessionStore(so.stateDirectory+"/sessions").list().isEmpty());
         put(path,profile("background","background: true\n"));
-        auto result=engine.runSubagentTool(p.id,"Agent",{{"prompt","go"},{"subagent_type","reviewer"},{"run_in_background",false}});
-        QVERIFY(!result.isError);QCOMPARE(result.data["status"],"async_launched");
-        const auto id=result.data["agentId"].toString();QCOMPARE(agents->output(p.id,id,true,2000)["status"],"completed");
+        QString id;
+        // Inspect every accepted background job while its worker starts. The
+        // owner must remain visible throughout queued/running/completed changes.
+        for (int attempt = 0; attempt < 32; ++attempt) {
+            stage = QString("launch background profile %1").arg(attempt);
+            const auto result=engine.runSubagentTool(p.id,"Agent",{{"prompt","go"},{"subagent_type","reviewer"},{"run_in_background",false}});
+            QVERIFY2(!result.isError,qPrintable(result.text));QCOMPARE(result.data["status"],"async_launched");
+            stage = QString("wait for background profile %1").arg(attempt);
+            id=result.data["agentId"].toString();
+            const auto output=agents->output(p.id,id,true,2000);
+            QCOMPARE(output["status"],"completed");QVERIFY(output["finished"].toBool());
+            QCOMPARE(output["owner_session_id"],p.id);
+        }
+        QCOMPARE(agents->list(p.id).size(),32);
         // A fatal catalog error cannot prevent lifecycle cleanup or inspection.
         QVERIFY(QFile::remove(path));QDir(workspace+"/.claude/agents").removeRecursively();
         QVERIFY(createNativeTestLink(root.path(),workspace+"/.claude/agents"));
-        engine.stopSubagents(p.id);QVERIFY(!engine.runSubagentTool(p.id,"AgentOutput",{{"agent_id",id}}).isError);
-        } catch (const std::exception &error) { QFAIL(error.what()); }
+        stage = "stop with invalid profile catalog";
+        engine.stopSubagents(p.id);
+        stage = "inspect with invalid profile catalog";
+        QVERIFY(!engine.runSubagentTool(p.id,"AgentOutput",{{"agent_id",id}}).isError);
+        } catch (const std::exception &error) { QFAIL(qPrintable(stage + ": " + QString::fromUtf8(error.what()))); }
     }
     void actualExecutionFreezesPromptAndIntersectsCurrentScope() {
-        QTemporaryDir root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
+        iiFileProvider::TemporaryDirectory root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
         class Model final:public a::Model {
         public:std::function<a::ModelReply(const a::ModelRequest&)> next;
             a::ModelReply generate(const a::ModelRequest& r,const CancellationToken&,const TextCallback&) override{return next(r);}
@@ -95,7 +110,7 @@ private slots:
         const auto denied=engine.runSubagentTool(parent.id,"Agent",{{"prompt","run"},{"subagent_type","reviewer"}});QVERIFY(denied.isError);QCOMPARE(agents->list(parent.id).size(),1);
     }
     void liveModelCatalogPreloadAndModelAuthorization() {
-        QTemporaryDir root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
+        iiFileProvider::TemporaryDirectory root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
         class Model final:public a::Model { public:std::function<a::ModelReply(const a::ModelRequest&)> next;
             a::ModelReply generate(const a::ModelRequest& r,const CancellationToken&,const TextCallback&) override{return next(r);} };
         auto model=std::make_shared<Model>();auto registry=std::make_shared<a::ToolRegistry>();auto policy=std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass);
@@ -123,7 +138,7 @@ private slots:
         const auto catalog=engine.runSubagentTool(parent.id,"AgentProfiles");QVERIFY(!catalog.isError);QVERIFY(!catalog.data["profiles"].toArray().isEmpty());
     }
     void precedenceAndLiveFileUpdates() {
-        QTemporaryDir root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
+        iiFileProvider::TemporaryDirectory root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace);
         a::AgentProfileOptions options;options.projectBoundary=workspace;
         options.userDirectory=root.filePath("user");options.managedDirectory=root.filePath("managed");
         options.pluginDirectories={root.filePath("plugin")};options.directories={root.filePath("flags")};
@@ -141,7 +156,7 @@ private slots:
         for(const auto& item:catalog.toJson()["profiles"].toArray())QVERIFY(!item.toObject().contains("system_prompt"));
     }
     void metadataValidationAndUnsupportedExecutionAreVisible() {
-        QTemporaryDir root;a::AgentProfileOptions options;options.projectBoundary=root.path();
+        iiFileProvider::TemporaryDirectory root;a::AgentProfileOptions options;options.projectBoundary=root.path();
         put(root.filePath(".claude/agents/read.md"),profile("Read specialist","tools: Read, Grep\nmodel: inherit\nmaxTurns: 3\nbackground: true\npermissionMode: plan\nskills: [inspect]\ninitialPrompt: Verify evidence first.\n"));
         auto catalog=a::discoverAgentProfiles(root.path(),options);auto p=catalog.find("reviewer");
         QCOMPARE(p.tools,QStringList({"Read","Grep"}));QVERIFY(p.model.isEmpty());QCOMPARE(p.maxTurns,3);
@@ -153,7 +168,7 @@ private slots:
         QVERIFY_THROWS_EXCEPTION(Error,catalog.find("reviewer"));
     }
     void projectHierarchyAndHostOverrides() {
-        QTemporaryDir root;const auto workspace=root.filePath("repo/child");QDir().mkpath(workspace);
+        iiFileProvider::TemporaryDirectory root;const auto workspace=root.filePath("repo/child");QDir().mkpath(workspace);
         a::AgentProfileOptions options;options.projectBoundary=root.filePath("repo");
         put(root.filePath("repo/.claude/agents/p.md"),profile("ancestor"));
         put(workspace+"/.claude/agents/p.md",profile("nearest"));
@@ -164,7 +179,7 @@ private slots:
         const auto p=a::discoverAgentProfiles(workspace,options,{host}).find("reviewer");QCOMPARE(p.description,"json");QVERIFY(p.tools.isEmpty());QCOMPARE(p.systemPrompt,"JSON system");
     }
     void scanConfinementCancellationAndFileLimits() {
-        QTemporaryDir root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace+"/.claude/agents");
+        iiFileProvider::TemporaryDirectory root;const auto workspace=root.filePath("workspace");QDir().mkpath(workspace+"/.claude/agents");
         a::AgentProfileOptions options;options.projectBoundary=workspace;
         put(root.filePath("outside.md"),profile("external"));QVERIFY(createNativeTestLink(root.filePath("outside.md"),workspace+"/.claude/agents/link.md"));
         auto catalog=a::discoverAgentProfiles(workspace,options);QVERIFY(!catalog.failedFiles.isEmpty());

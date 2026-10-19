@@ -1,14 +1,15 @@
 #include "native_link.h"
 #include "agent/TaskStore.h"
 #include "agent/Engine.h"
+#include <iiFileProviderDevice.h>
 #include <QtTest/QtTest>
-#include <QtCore/QTemporaryDir>
 #include <QtCore/QFile>
 #include <QtCore/QLockFile>
 #include <QtCore/QDir>
 #include <QtCore/QProcess>
 #include <QtCore/QJsonDocument>
 #include <iostream>
+#include <atomic>
 #include <future>
 #include <thread>
 #include <set>
@@ -34,8 +35,83 @@ public:
 class TaskTests : public QObject {
     Q_OBJECT
 private slots:
+#ifdef Q_OS_WIN
+    void nativeLockSharingWaitsWithoutLosingTaskState() {
+        iiFileProvider::TemporaryDirectory root;
+        a::TaskStore store(root.filePath("tasks")); create(store,"one");
+        const auto path=root.filePath("tasks/one/board.lock").toStdWString();
+        // Delete on close avoids a second close/delete race with QLockFile's
+        // probes while guaranteeing the native handle denies lock acquisition.
+        const auto handle=CreateFileW(path.c_str(),GENERIC_READ|GENERIC_WRITE|DELETE,
+            0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL|FILE_FLAG_DELETE_ON_CLOSE,nullptr);
+        QVERIFY(handle!=INVALID_HANDLE_VALUE);
+        std::atomic_bool released=false;
+        std::jthread release([&,handle] { std::this_thread::sleep_for(100ms); released=true; CloseHandle(handle); });
+        try { create(store,"one","After deletion"); }
+        catch(const Error& error) { QFAIL(error.what()); }
+        QVERIFY(released.load());
+        release.join();
+        const auto board=store.snapshot("one");
+        QCOMPARE(board["revision"].toInt(),2); QCOMPARE(board["tasks"].toArray().size(),2);
+    }
+    void nativeLockSharingCanBeCancelled() {
+        iiFileProvider::TemporaryDirectory root;
+        a::TaskStore store(root.filePath("tasks")); create(store,"one");
+        const auto path=root.filePath("tasks/one/board.lock").toStdWString();
+        const auto handle=CreateFileW(path.c_str(),GENERIC_READ|GENERIC_WRITE|DELETE,
+            0,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL|FILE_FLAG_DELETE_ON_CLOSE,nullptr);
+        QVERIFY(handle!=INVALID_HANDLE_VALUE);
+        CancellationToken token;
+        std::jthread cancel([&] { std::this_thread::sleep_for(50ms); token.cancel(); });
+        bool cancelled=false; QString observed="Lock acquisition completed before cancellation";
+        try { store.snapshot("one",token); }
+        catch(const Error& error) { cancelled=error.code()==ErrorCode::Cancelled; observed=QString::fromUtf8(error.what()); }
+        cancel.join(); CloseHandle(handle); QVERIFY2(cancelled,qPrintable(observed));
+        QCOMPARE(store.snapshot("one")["revision"].toInt(),1);
+    }
+    void atomicTaskPublicationWaitsForAReader() {
+        iiFileProvider::TemporaryDirectory root;
+        a::TaskStore store(root.filePath("tasks")); create(store,"one");
+        const auto path=root.filePath("tasks/one/board.json").toStdWString();
+        const auto handle=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE,
+            nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+        QVERIFY(handle!=INVALID_HANDLE_VALUE);
+        std::jthread release([handle] { std::this_thread::sleep_for(100ms); CloseHandle(handle); });
+        try { create(store,"one","After reader"); }
+        catch(const Error& error) { QFAIL(error.what()); }
+        release.join(); QCOMPARE(store.snapshot("one")["revision"].toInt(),2);
+    }
+    void persistentTaskSharingFailurePreservesTheOriginalBoard() {
+        iiFileProvider::TemporaryDirectory root; a::TaskStoreOptions options; options.lockTimeoutMs=100;
+        a::TaskStore store(root.filePath("tasks"),options); create(store,"one");
+        const auto before=store.snapshot("one");
+        const auto path=root.filePath("tasks/one/board.json").toStdWString();
+        const auto handle=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE,
+            nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+        QVERIFY(handle!=INVALID_HANDLE_VALUE);
+        bool rejected=false;
+        try { create(store,"one","Must not be published"); }
+        catch(const Error& error) { rejected=error.code()==ErrorCode::StorageFailure; }
+        CloseHandle(handle); QVERIFY(rejected); QCOMPARE(store.snapshot("one"),before);
+    }
+    void taskPublicationCanBeCancelledWithoutChangingTheBoard() {
+        iiFileProvider::TemporaryDirectory root;
+        a::TaskStore store(root.filePath("tasks")); create(store,"one");
+        const auto before=store.snapshot("one");
+        const auto path=root.filePath("tasks/one/board.json").toStdWString();
+        const auto handle=CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE,
+            nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+        QVERIFY(handle!=INVALID_HANDLE_VALUE);
+        CancellationToken token;
+        std::jthread cancel([&] { std::this_thread::sleep_for(50ms); token.cancel(); });
+        bool cancelled=false;
+        try { store.execute("one","TaskCreate",{{"subject","Cancelled"},{"description","Must not publish"}},token); }
+        catch(const Error& error) { cancelled=error.code()==ErrorCode::Cancelled; }
+        cancel.join(); CloseHandle(handle); QVERIFY(cancelled); QCOMPARE(store.snapshot("one"),before);
+    }
+#endif
     void retiredNamespaceCannotBeRecreatedByStaleOwners() {
-        QTemporaryDir root;a::TaskStore first(root.filePath("tasks")),stale(root.filePath("tasks"));
+        iiFileProvider::TemporaryDirectory root;a::TaskStore first(root.filePath("tasks")),stale(root.filePath("tasks"));
         create(first,"team");first.retire("team");
         QVERIFY(!QFileInfo::exists(root.filePath("tasks/team/board.json")));
         fails([&]{stale.snapshot("team");},ErrorCode::NotFound);
@@ -46,7 +122,7 @@ private slots:
         fails([&]{stale.snapshot("team");},ErrorCode::StorageFailure);
     }
     void verificationCanReadTheBoardBeforePublication() {
-        QTemporaryDir root; a::TaskStoreOptions options; options.lockTimeoutMs=150;
+        iiFileProvider::TemporaryDirectory root; a::TaskStoreOptions options; options.lockTimeoutMs=150;
         a::TaskStore store(root.filePath("tasks"),options);create(store,"s","EXISTING");
         bool inspected=false;
         try {
@@ -60,7 +136,7 @@ private slots:
         QVERIFY(inspected);QCOMPARE(store.snapshot("s")["tasks"].toArray().size(),2);
     }
     void verificationSideEffectsCannotBeOverwrittenByAStaleCommit() {
-        QTemporaryDir root;a::TaskStoreOptions options;options.lockTimeoutMs=150;
+        iiFileProvider::TemporaryDirectory root;a::TaskStoreOptions options;options.lockTimeoutMs=150;
         a::TaskStore store(root.filePath("tasks"),options);create(store,"s","EXISTING");int calls=0;
         fails([&] {store.execute("s","TaskCreate",{{"subject","STALE"},{"description","must not overwrite"}}, {},
             [&](const a::TaskChange&,const CancellationToken& token) {
@@ -70,7 +146,7 @@ private slots:
         QCOMPARE(board["tasks"].toArray().size(),1);QCOMPARE(board["tasks"].toArray().first().toObject()["subject"],"VERIFIED_UPDATE");
     }
     void persistentLifecycleAndDependencies() {
-        QTemporaryDir root; a::TaskStore store(root.filePath("tasks"));
+        iiFileProvider::TemporaryDirectory root; a::TaskStore store(root.filePath("tasks"));
         const auto one = create(store, "session"); QCOMPARE(one["task"].toObject()["id"], "1");
         QCOMPARE(one["revision"].toInt(), 1);
         create(store, "session", "Package application");
@@ -99,7 +175,7 @@ private slots:
         QVERIFY(reopened.snapshot("another")["tasks"].toArray().isEmpty());
     }
     void validationTransactionsAndHooks() {
-        QTemporaryDir root; a::TaskStore store(root.filePath("tasks")); create(store, "a");
+        iiFileProvider::TemporaryDirectory root; a::TaskStore store(root.filePath("tasks")); create(store, "a");
         auto before = store.snapshot("a");
         for (const auto& invalid : QList<QJsonObject>{
             {{"taskId", "1"}, {"status", "bogus"}},
@@ -129,7 +205,7 @@ private slots:
         QCOMPARE(store.snapshot("a"), before);
     }
     void concurrentCreationAndAtomicClaim() {
-        QTemporaryDir root;
+        iiFileProvider::TemporaryDirectory root;
         a::TaskStoreOptions options; options.lockTimeoutMs = 15000;
         auto store = std::make_shared<a::TaskStore>(root.filePath("tasks"), options);
         std::vector<std::future<QString>> creates;
@@ -137,19 +213,29 @@ private slots:
             a::TaskStore independent(root.filePath("tasks"), options);
             return create(independent, "shared", QString::number(n))["task"].toObject()["id"].toString();
         }));
-        std::set<QString> ids; for (auto& result : creates) ids.insert(result.get());
+        std::set<QString> ids; QStringList failures;
+        for (auto& result : creates) {
+            try { ids.insert(result.get()); }
+            catch (const std::exception& error) { failures.append(QString::fromUtf8(error.what())); }
+        }
+        QVERIFY2(failures.isEmpty(),qPrintable(failures.join('\n')));
         QCOMPARE(ids.size(), size_t(16)); QCOMPARE(store->snapshot("shared")["revision"].toInt(), 16);
         std::vector<std::future<bool>> claims;
         for (int n = 0; n < 12; ++n) claims.emplace_back(std::async(std::launch::async, [&, n] {
             return store->execute("shared", "TaskClaim", {{"taskId", "1"}, {"owner", "agent-" + QString::number(n)}}).data["success"].toBool();
         }));
-        int won = 0; for (auto& result : claims) if (result.get()) ++won; QCOMPARE(won, 1);
+        int won = 0;
+        for (auto& result : claims) {
+            try { if (result.get()) ++won; }
+            catch (const std::exception& error) { failures.append(QString::fromUtf8(error.what())); }
+        }
+        QVERIFY2(failures.isEmpty(),qPrintable(failures.join('\n'))); QCOMPARE(won, 1);
         const auto owner = store->execute("shared", "TaskGet", {{"taskId", "1"}}).data["task"].toObject()["owner"].toString();
         const auto busy = store->execute("shared", "TaskClaim", {{"taskId", "2"}, {"owner", owner}, {"checkOwnerBusy", true}}).data;
         QCOMPARE(busy["reason"], "owner_busy"); QVERIFY(!busy["success"].toBool());
     }
     void unicodeOwnerSurvivesPersistentReload() {
-        QTemporaryDir root; a::TaskStore store(root.filePath("tasks")); create(store, "a");
+        iiFileProvider::TemporaryDirectory root; a::TaskStore store(root.filePath("tasks")); create(store, "a");
         const auto owner = QString::fromUtf8("\xf0\x9f\x9b\xa0").repeated(128);
         store.execute("a", "TaskClaim", {{"taskId", "1"}, {"owner", owner}});
         a::TaskStore reopened(root.filePath("tasks"));
@@ -159,7 +245,7 @@ private slots:
         QCOMPARE(reopened.snapshot("a"), before);
     }
     void todosIsolationAndCorruptStorage() {
-        QTemporaryDir root; a::TaskStore store(root.filePath("tasks"));
+        iiFileProvider::TemporaryDirectory root; a::TaskStore store(root.filePath("tasks"));
         const QJsonArray todos{QJsonObject{{"content", "Verify build"}, {"activeForm", "Verifying build"}, {"status", "in_progress"}}};
         QCOMPARE(store.execute("a", "TodoWrite", {{"todos", todos}}).data["newTodos"].toArray(), todos);
         QCOMPARE(store.execute("a", "TodoRead", {}).data["todos"].toArray(), todos);
@@ -175,21 +261,37 @@ private slots:
         QVERIFY(file.open(QIODevice::ReadOnly)); QCOMPARE(file.readAll(), QByteArray("{broken"));
     }
     void processesCoordinateAndWaitingCanBeCancelled() {
-        QTemporaryDir root; a::TaskStore store(root.filePath("tasks"));
+        iiFileProvider::TemporaryDirectory root; a::TaskStore store(root.filePath("tasks"));
         std::vector<std::unique_ptr<QProcess>> children;
         for (int n = 0; n < 8; ++n) {
             auto process = std::make_unique<QProcess>();
             process->start(QCoreApplication::applicationFilePath(), {"--task-worker", root.filePath("tasks"), "shared", "create", QString::number(n)});
             QVERIFY(process->waitForStarted(5000)); children.push_back(std::move(process));
         }
-        for (auto& child : children) { QVERIFY(child->waitForFinished(15000)); QCOMPARE(child->exitCode(), 0); }
+        for (auto& child : children) {
+            QVERIFY(child->state()==QProcess::NotRunning || child->waitForFinished(15000));
+            const auto diagnostics=child->readAllStandardError();
+            QVERIFY2(child->exitStatus()==QProcess::NormalExit && child->exitCode()==0,diagnostics.constData());
+            QJsonParseError error;
+            const auto output=child->readAllStandardOutput();
+            const auto document=QJsonDocument::fromJson(output,&error);
+            QVERIFY2(error.error==QJsonParseError::NoError && document.isObject(),output.constData());
+            QVERIFY(document.object()["task"].isObject());
+        }
         QCOMPARE(store.snapshot("shared")["tasks"].toArray().size(), 8);
         for (int n = 0; n < 8; ++n)
             children[n]->start(QCoreApplication::applicationFilePath(), {"--task-worker", root.filePath("tasks"), "shared", "claim", QString::number(n)});
         int wins = 0;
         for (auto& child : children) {
-            QVERIFY(child->waitForFinished(15000)); QCOMPARE(child->exitCode(), 0);
-            if (QJsonDocument::fromJson(child->readAllStandardOutput()).object()["success"].toBool()) ++wins;
+            QVERIFY(child->state()==QProcess::NotRunning || child->waitForFinished(15000));
+            const auto diagnostics=child->readAllStandardError();
+            QVERIFY2(child->exitStatus()==QProcess::NormalExit && child->exitCode()==0,diagnostics.constData());
+            QJsonParseError error;
+            const auto output=child->readAllStandardOutput();
+            const auto document=QJsonDocument::fromJson(output,&error);
+            QVERIFY2(error.error==QJsonParseError::NoError && document.isObject(),output.constData());
+            QVERIFY(document.object()["success"].isBool());
+            if (document.object()["success"].toBool()) ++wins;
         }
         QCOMPARE(wins, 1);
         QLockFile lock(root.filePath("tasks/shared/board.lock")); lock.setStaleLockTime(0); QVERIFY(lock.tryLock(0));
@@ -207,7 +309,7 @@ private slots:
 #endif
     }
     void modelToolsResumeContextPolicyAndFork() {
-        QTemporaryDir root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
+        iiFileProvider::TemporaryDirectory root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         options.taskToolsEnabled = true; options.projectContext.enabled = false; options.compaction.automatic = false;
         int createdHooks = 0; bool rejectCompletion = false;
         options.hooks.append([&](const a::HookInput& input, const CancellationToken&) {
@@ -250,7 +352,9 @@ int main(int argc, char** argv) {
             a::TaskStore store(args[2]);
             auto value = args[4] == "create" ? create(store, args[3], args[5])
                 : store.execute(args[3], "TaskClaim", {{"taskId", "1"}, {"owner", args[5]}}).data;
-            std::cout << QJsonDocument(value).toJson(QJsonDocument::Compact).constData() << '\n'; return 0;
+            std::cout << QJsonDocument(value).toJson(QJsonDocument::Compact).constData() << std::endl;
+            if (!std::cout) { std::cerr << "Cannot flush task worker response" << std::endl; return 2; }
+            return 0;
         } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 1; }
     }
     TaskTests tests; return QTest::qExec(&tests, argc, argv);

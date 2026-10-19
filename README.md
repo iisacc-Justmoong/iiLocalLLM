@@ -1,5 +1,7 @@
 # iiLocalLLM
 
+[Windows 빌드 및 실행](docs/WindowsBuildAndRun.md)
+
 See [Windows validation](docs/Windows-validation.md) for the MSVC header-linkage
 regression and the current full-suite validation limits.
 

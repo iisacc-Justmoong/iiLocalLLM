@@ -1,6 +1,7 @@
 #include <mcp/HttpClient.h>
 #include <agent/McpTools.h>
 #include <QtCore/QProcess>
+#include <QtCore/QFileInfo>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QTemporaryDir>
 #include <QtNetwork/QSslConfiguration>
@@ -37,6 +38,9 @@ template<class F> void checkError(F f, ErrorCode code) {
 class McpHttpTests : public QObject {
     Q_OBJECT
 private slots:
+    void initTestCase() {
+        QVERIFY2(QFileInfo(QString::fromUtf8(MCP_TEST_PYTHON)).isExecutable(), MCP_TEST_PYTHON);
+    }
     void jsonLifecycleAndToolAdapter() {
         Peer peer; auto client = std::make_shared<m::HttpClient>(peer.options());
         QVERIFY(client->isConnected()); QCOMPARE(client->protocolVersion(), "2025-11-25");

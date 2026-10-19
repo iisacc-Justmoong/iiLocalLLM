@@ -1,7 +1,9 @@
 #include "agent/ShellTasks.h"
+#include <iiFileProviderDevice.h>
 #include <QtTest/QtTest>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QFile>
+#include <QtCore/QFileInfo>
 #include <QtCore/QDir>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QProcess>
@@ -13,7 +15,7 @@ namespace a = iiLocalLLM::agent;
 using namespace std::chrono_literals;
 namespace {
 struct Fixture {
-    QTemporaryDir root;
+    iiFileProvider::TemporaryDirectory root{QDir::current().filePath("shell-tasks-XXXXXX")};
     std::shared_ptr<a::ShellTasks> tasks;
     std::shared_ptr<a::ToolRegistry> registry = std::make_shared<a::ToolRegistry>();
     a::ToolContext context;
@@ -44,7 +46,13 @@ bool executing(const QByteArray& pid) {
     if (pid.toLongLong() < 2) throw std::runtime_error("Invalid process fixture PID");
     QProcess process;
 #ifdef Q_OS_WIN
-    process.start(QStandardPaths::findExecutable("ps"), {"-p", QString::fromLatin1(pid)});
+    auto executable = QStandardPaths::findExecutable("ps");
+    if (executable.isEmpty()) {
+        const auto shell = QStandardPaths::findExecutable("sh");
+        executable = QDir(QFileInfo(shell).absolutePath()).absoluteFilePath("../usr/bin/ps.exe");
+    }
+    if (!QFileInfo(executable).isExecutable()) throw std::runtime_error("Git for Windows ps.exe is required to inspect the MSYS process ID");
+    process.start(executable, {"-p", QString::fromLatin1(pid)});
 #else
     process.start(QStandardPaths::findExecutable("ps"), {"-o", "stat=", "-p", QString::fromLatin1(pid)});
 #endif
@@ -62,6 +70,7 @@ class ShellTaskTests : public QObject {
     Q_OBJECT
 private slots:
     void liveTasksTransferOwnershipWithoutRestartingTheirProcess() {
+        try {
         Fixture f;const auto id=f.start("printf $$ > worker.pid; printf before; while [ ! -f release ]; do sleep .02; done; printf after");
         const auto pidPath=f.context.workingDirectory+"/worker.pid";QTRY_VERIFY(!read(pidPath).isEmpty());const auto pid=read(pidPath);
         const auto moved=f.tasks->transferSession(f.context.sessionId,"session-b");QCOMPARE(moved,QJsonArray{id});
@@ -74,6 +83,7 @@ private slots:
         f.tasks->close();a::ShellTasks reopened(f.context.workingDirectory,f.root.filePath("state"));
         QCOMPARE(reopened.list("session-b").size(),1);QVERIFY(reopened.list(f.context.sessionId).isEmpty());
         QCOMPARE(reopened.output("session-b",id,false)["task"].toObject()["output"],"beforeafter");
+        } catch (const std::exception& error) { QFAIL(error.what()); }
     }
     void initTestCase() {
 #if (!defined(Q_OS_UNIX) && !defined(Q_OS_WIN)) || defined(Q_OS_IOS) || defined(Q_OS_ANDROID)

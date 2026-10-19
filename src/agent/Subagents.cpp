@@ -281,12 +281,19 @@ public:
         const auto started=Clock::now(); RunResult result;result.sessionId=request.sessionId;
         try {
             QJsonObject original,current=profileJson(definition),hookContext;
-            {std::lock_guard lock(mutex);job->state["status"]="running";original=job->state["profile"].toObject();write(*job);
-                hookContext={{"agent_id",job->state["agentId"]},{"agent_type",definition.name},{"parent_session_id",job->state["parent_session_id"]}};}
+            const auto invocation = [&] {
+                std::lock_guard lock(mutex);
+                job->state["status"]="running";original=job->state["profile"].toObject();write(*job);
+                return job->state;
+            }();
+            // Even a non-const JSON subscript used for reading may insert a
+            // missing key. Read the immutable invocation snapshot outside the
+            // mutex while output/list inspect the shared ownership record.
+            hookContext={{"agent_id",invocation["agentId"]},{"agent_type",definition.name},{"parent_session_id",invocation["parent_session_id"]}};
             hookContext["transcript_path"]=iiFileProvider::Directory(options.stateDirectory).filePath("sessions/"+request.sessionId+"/transcript.jsonl");
-            if(job->state["parent_plan_mode"].toBool()){original["permission_mode"]="plan";current["permission_mode"]="plan";}
+            if(invocation["parent_plan_mode"].toBool()){original["permission_mode"]="plan";current["permission_mode"]="plan";}
             auto scopedPolicy=std::make_shared<ScopedPolicy>(policy,original,current);
-            const auto planDirectory=job->state["parent_plans_directory"].toString(
+            const auto planDirectory=invocation["parent_plans_directory"].toString(
                 parent.planToolsEnabled?iiFileProvider::Directory(parent.sessionsDirectory).absoluteFilePath("plans"):QString());
             auto scoped=std::make_shared<ToolRegistry>();const auto source=registry->snapshot();
             for(const auto& t:source->definitions()) if(allowed(t,original)&&allowed(t,current)) {
@@ -294,7 +301,7 @@ public:
             }
             auto eo=parent;eo.sessionsDirectory=iiFileProvider::Directory(options.stateDirectory).filePath("sessions");eo.maxConcurrentRuns=1;eo.maxQueuedRuns=0;
             eo.procedures=job->procedures;eo.procedureOwnerSessionId=job->procedureOwner;
-            eo.parentProcedureId=job->state["parent_procedure_id"].toString();eo.procedureAgentId=job->state["agentId"].toString();
+            eo.parentProcedureId=invocation["parent_procedure_id"].toString();eo.procedureAgentId=invocation["agentId"].toString();
             eo.sessionStartHooks=false;eo.maxAsyncHookWakeRuns=0;eo.planToolsEnabled=false;eo.userQuestionsEnabled=false;request.userPrompt=false;
             eo.memoryExtraction.enabled=false;
             eo.sessionHistoryEnabled=false;
@@ -346,9 +353,9 @@ public:
             }
             job->token.throwIfCancelled();
             require(Clock::now()-started<std::chrono::milliseconds(options.maxRuntimeMs),"Subagent runtime deadline exceeded",ErrorCode::Timeout);
-            auto handle=engine.run(request,[&](const Event& event){
+            auto handle=engine.run(request,[&,agentId=invocation["agentId"].toString()](const Event& event){
                 if(event.kind==EventKind::ToolStarted) {std::lock_guard lock(mutex);job->state["tool_uses"]=job->state["tool_uses"].toInt()+1;}
-                if(progress) progress(QJsonObject{{"agentId",job->state["agentId"]},{"event",toJson(event)}});
+                if(progress) progress(QJsonObject{{"agentId",agentId},{"event",toJson(event)}});
             });
             bool deadline=false;
             while(handle.result.wait_for(5ms)!=std::future_status::ready) {

@@ -2,7 +2,7 @@
 
 include(CMakeFindDependencyMacro)
 find_dependency(iiFileProvider 0.6 CONFIG HINTS "$ENV{IIFILEPROVIDER_PREFIX}" "$ENV{HOME}/.local/SDK/iiFileProvider")
-find_dependency(iiFileProviderNative 0.6 CONFIG HINTS "$ENV{IIFILEPROVIDER_PREFIX}" "$ENV{HOME}/.local/SDK/iiFileProvider")
+find_dependency(iiFileProviderNative 0.8.2 CONFIG HINTS "$ENV{IIFILEPROVIDER_PREFIX}" "$ENV{HOME}/.local/SDK/iiFileProvider")
 
 
 

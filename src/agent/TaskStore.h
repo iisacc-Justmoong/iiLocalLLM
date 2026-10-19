@@ -6,7 +6,7 @@ struct TaskStoreOptions {
     int maxTasks = 1000;
     int maxTodos = 1000;
     qint64 maxBytes = 4 * 1024 * 1024;
-    int lockTimeoutMs = 5000;
+    int lockTimeoutMs = 5000; // Also bounds transient Windows atomic-publish sharing failures.
 };
 struct TaskChange {
     QString listId;

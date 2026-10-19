@@ -2,6 +2,7 @@
 #include <agent/Api.h>
 #include <agent/McpServer.h>
 #include <mcp/Server.h>
+#include <iiFileProviderDevice.h>
 #include <QtTest/QTest>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QJsonDocument>
@@ -22,7 +23,7 @@ public:
     }
 };
 struct Fixture {
-    QTemporaryDir root{QDir::current().filePath("history-engine-XXXXXX")};QString work=root.filePath("work");
+    iiFileProvider::TemporaryDirectory root{QDir::current().filePath("history-engine-XXXXXX")};QString work=root.filePath("work");
     std::shared_ptr<Model> model=std::make_shared<Model>();std::shared_ptr<a::ToolRegistry> tools=std::make_shared<a::ToolRegistry>();
     std::shared_ptr<a::RulePolicy> policy=std::make_shared<a::RulePolicy>();a::EngineOptions options{.decision={.enabled=false}};
     Fixture(){QDir().mkpath(work);a::registerWorkspaceTools(*tools,work);options.sessionsDirectory=root.filePath("sessions");

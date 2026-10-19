@@ -1,5 +1,11 @@
 #include <iiFileProviderDevice.h>
 #include "InputQueue.h"
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 #include "../MediaContent.h"
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
@@ -17,6 +23,12 @@ constexpr qint64 maximum = 9007199254740991LL;
 const auto filePermissions = QFileDevice::ReadOwner | QFileDevice::WriteOwner;
 const auto directoryPermissions = filePermissions | QFileDevice::ExeOwner;
 void require(bool ok, const QString& text, ErrorCode code = ErrorCode::InvalidArgument) { if (!ok) throw Error(code, text); }
+#ifdef Q_OS_WIN
+bool transientSharingError(DWORD error) {
+    return error == ERROR_ACCESS_DENIED || error == ERROR_SHARING_VIOLATION
+        || error == ERROR_LOCK_VIOLATION || error == ERROR_DELETE_PENDING;
+}
+#endif
 bool validId(const QString& id) {
     static const QRegularExpression pattern("\\A[A-Za-z0-9][A-Za-z0-9_.-]{0,127}\\z");
     return pattern.match(id).hasMatch();
@@ -71,8 +83,24 @@ public:
         require(!QFileInfo(iiFileProvider::Directory(path).filePath(lockName)).isSymLink(),"Input queue lock is a symlink",ErrorCode::StorageFailure);
         token.throwIfCancelled(); lock.setStaleLockTime(0); const auto start = std::chrono::steady_clock::now();
         while (!lock.tryLock(0)) {
-            token.throwIfCancelled(); require(lock.error() == iiFileProvider::LockFile::LockFailedError, "Cannot lock input queue", ErrorCode::StorageFailure);
-            require(std::chrono::steady_clock::now() - start < std::chrono::milliseconds(o.lockTimeoutMs), "Input queue lock timed out", ErrorCode::Timeout);
+            token.throwIfCancelled();
+#ifdef Q_OS_WIN
+            const auto nativeError = GetLastError();
+            const auto message = QString("Cannot lock input queue (Win32 %1)").arg(nativeError);
+            const QFileInfo parent(path);
+            const bool disappeared = nativeError == ERROR_FILE_NOT_FOUND && parent.isDir()
+                && !parent.isSymLink() && parent.canonicalFilePath() == path;
+            const bool pendingDelete = disappeared
+                || (lock.error() == iiFileProvider::LockFile::PermissionError && transientSharingError(nativeError));
+#else
+            const auto message = QString("Cannot lock input queue");
+            const bool pendingDelete = false;
+#endif
+            const bool contended = lock.error() == iiFileProvider::LockFile::LockFailedError;
+            require(contended || pendingDelete, message, ErrorCode::StorageFailure);
+            if (std::chrono::steady_clock::now() - start >= std::chrono::milliseconds(o.lockTimeoutMs))
+                throw Error(contended ? ErrorCode::Timeout : ErrorCode::StorageFailure,
+                            contended ? QString("Input queue lock timed out") : message);
             QThread::msleep(5);
         }
         token.throwIfCancelled();
@@ -115,11 +143,36 @@ public:
             {"next_sequence", double(state.nextSequence)}, {"inputs", items}};
         const auto bytes = QJsonDocument(data).toJson(QJsonDocument::Compact) + '\n';
         require(bytes.size() <= options.maxBytes, "Input queue byte limit exceeded", ErrorCode::ResourceLimit);
-        iiFileProvider::SaveFile file(iiFileProvider::Directory(path).filePath("queue.json")); file.setDirectWriteFallback(false);
-        require(!QFileInfo(file.fileName()).isSymLink(), "Input queue is a symlink", ErrorCode::StorageFailure);
-        require(file.open(QIODevice::WriteOnly) && file.setPermissions(filePermissions) && file.write(bytes) == bytes.size(),
-            "Cannot write input queue", ErrorCode::StorageFailure);
-        token.throwIfCancelled(); require(file.commit(), "Cannot publish input queue", ErrorCode::StorageFailure); ++state.revision;
+        const auto started = std::chrono::steady_clock::now();
+        for (;;) {
+            token.throwIfCancelled();
+            iiFileProvider::SaveFile file(iiFileProvider::Directory(path).filePath("queue.json")); file.setDirectWriteFallback(false);
+            require(!QFileInfo(file.fileName()).isSymLink(), "Input queue is a symlink", ErrorCode::StorageFailure);
+            require(file.open(QIODevice::WriteOnly) && file.setPermissions(filePermissions) && file.write(bytes) == bytes.size(),
+                "Cannot write input queue", ErrorCode::StorageFailure);
+            token.throwIfCancelled();
+            const bool committed = file.commit();
+#ifdef Q_OS_WIN
+            const auto nativeError = GetLastError();
+#else
+            (void)started;
+#endif
+            if (committed) { ++state.revision; return; }
+#ifdef Q_OS_WIN
+            // Windows can reject replacement while another producer's short
+            // lived reader or preview handle is closing. Keep queue.lock and
+            // retry a fresh atomic save; never fall back to in-place writing.
+            if (file.error() == QFileDevice::RenameError && transientSharingError(nativeError)
+                && std::chrono::steady_clock::now() - started < std::chrono::milliseconds(options.lockTimeoutMs)) {
+                QThread::msleep(5);
+                continue;
+            }
+            throw Error(ErrorCode::StorageFailure,
+                        QString("Cannot publish input queue (Win32 %1): ").arg(nativeError) + file.errorString());
+#else
+            throw Error(ErrorCode::StorageFailure, "Cannot publish input queue: " + file.errorString());
+#endif
+        }
     }
 };
 }

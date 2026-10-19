@@ -9,6 +9,14 @@
 #include <QtCore/QProcess>
 #include <atomic>
 #include <thread>
+#include <cstdio>
+#include <iiFileProviderDevice.h>
+#ifdef Q_OS_WIN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 using namespace iiLocalLLM;
 namespace a = iiLocalLLM::agent;
 using namespace std::chrono_literals;
@@ -21,12 +29,72 @@ public:
 class InputQueueTests : public QObject {
     Q_OBJECT
 private slots:
+#ifdef Q_OS_WIN
+    void pendingLockDeletionWaitsForTheOwningHandle() {
+        iiFileProvider::TemporaryDirectory root; a::InputQueue queue(root.path(), {256,65536,8*1024*1024,1000});
+        queue.enqueue("one", {{"text","first"}});
+        const auto path=root.filePath("one/queue.lock").toStdWString();
+        const auto handle=CreateFileW(path.c_str(), GENERIC_READ|GENERIC_WRITE|DELETE,
+            FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,nullptr,CREATE_NEW,FILE_ATTRIBUTE_NORMAL,nullptr);
+        QVERIFY(handle!=INVALID_HANDLE_VALUE);
+        QVERIFY(DeleteFileW(path.c_str()));
+        std::jthread release([handle] { std::this_thread::sleep_for(100ms); CloseHandle(handle); });
+        try { queue.enqueue("one", {{"text","after deletion"}}); }
+        catch (const Error& error) { QFAIL(error.what()); }
+        release.join();
+        QCOMPARE(queue.snapshot("one")["count"].toInt(),2);
+    }
+    void atomicPublicationWaitsForAReaderToReleaseDeleteSharing() {
+        iiFileProvider::TemporaryDirectory root; a::InputQueue queue(root.path(), {256,65536,8*1024*1024,1000});
+        queue.enqueue("one", {{"text","first"}});
+        const auto path=root.filePath("one/queue.json").toStdWString();
+        const auto handle=CreateFileW(path.c_str(), GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE,
+            nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+        QVERIFY(handle!=INVALID_HANDLE_VALUE);
+        std::jthread release([handle] { std::this_thread::sleep_for(100ms); CloseHandle(handle); });
+        try { queue.enqueue("one", {{"text","after reader"}}); }
+        catch (const Error& error) { QFAIL(error.what()); }
+        release.join();
+        QCOMPARE(queue.snapshot("one")["count"].toInt(),2);
+    }
+    void persistentSharingFailureKeepsTheOriginalQueue() {
+        iiFileProvider::TemporaryDirectory root; a::InputQueue queue(root.path(), {256,65536,8*1024*1024,100});
+        queue.enqueue("one", {{"text","original"}});
+        const auto path=root.filePath("one/queue.json").toStdWString();
+        const auto handle=CreateFileW(path.c_str(), GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE,
+            nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+        QVERIFY(handle!=INVALID_HANDLE_VALUE);
+        bool rejected=false;
+        try { queue.enqueue("one", {{"text","must not be published"}}); }
+        catch (const Error& error) { rejected=error.code()==ErrorCode::StorageFailure; }
+        CloseHandle(handle);
+        QVERIFY(rejected);
+        QCOMPARE(queue.snapshot("one")["count"].toInt(),1);
+        QCOMPARE(queue.snapshot("one")["inputs"].toArray().first().toObject()["text"], "original");
+    }
+    void cancellationDuringPublicationPreservesTheOriginalQueue() {
+        iiFileProvider::TemporaryDirectory root; a::InputQueue queue(root.path());
+        queue.enqueue("one", {{"text","original"}});
+        const auto path=root.filePath("one/queue.json").toStdWString();
+        const auto handle=CreateFileW(path.c_str(), GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE,
+            nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+        QVERIFY(handle!=INVALID_HANDLE_VALUE);
+        CancellationToken cancellation;
+        std::jthread cancel([&] { std::this_thread::sleep_for(50ms); cancellation.cancel(); });
+        bool cancelled=false;
+        try { queue.enqueue("one", {{"text","must not be published"}},cancellation); }
+        catch (const Error& error) { cancelled=error.code()==ErrorCode::Cancelled; }
+        cancel.join(); CloseHandle(handle);
+        QVERIFY(cancelled);
+        QCOMPARE(queue.snapshot("one")["count"].toInt(),1);
+    }
+#endif
     void perRunInputLimitKeepsOtherAssignmentsForLaterRuns_data(){
         QTest::addColumn<int>("limit");QTest::addColumn<int>("remaining");
         QTest::newRow("default-batch")<<0<<0;QTest::newRow("one-assignment")<<1<<2;
     }
     void perRunInputLimitKeepsOtherAssignmentsForLaterRuns(){
-        QFETCH(int,limit);QFETCH(int,remaining);QTemporaryDir root;
+        QFETCH(int,limit);QFETCH(int,remaining);iiFileProvider::TemporaryDirectory root;
         auto model=std::make_shared<QueueModel>();auto registry=std::make_shared<a::ToolRegistry>();
         a::Tool tool;tool.definition={"Observe","Complete the first turn",QJsonObject{{"type","object"}}};tool.execute=[](const auto&,const auto&){return a::ToolResult{"observed"};};registry->add(tool);
         int calls=0;model->action=[&](const auto&,const auto&)->a::ModelReply{
@@ -42,7 +110,7 @@ private slots:
         if(remaining){QCOMPARE(engine.runQueued({session,{}}).result.get().status,a::RunStatus::Completed);QCOMPARE(engine.queuedInputs(session)["count"].toInt(),1);}
     }
     void identifiedReplayAfterAcknowledgementDoesNotDuplicateTranscriptInput(){
-        QTemporaryDir root;auto model=std::make_shared<QueueModel>();model->action=[](const auto&,const auto&){return a::ModelReply{"done"};};
+        iiFileProvider::TemporaryDirectory root;auto model=std::make_shared<QueueModel>();model->action=[](const auto&,const auto&){return a::ModelReply{"done"};};
         a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");
         a::Engine engine(model,std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(),options);
         const auto session=engine.createSession("fixture",root.path()).id;a::InputQueue queue(options.sessionsDirectory+"/inputs");
@@ -53,7 +121,7 @@ private slots:
         QCOMPARE(copies,1);QCOMPARE(queue.snapshot(session)["count"].toInt(),0);
     }
     void trustedProducerRetriesKeepOnePendingIdentity(){
-        QTemporaryDir root; a::InputQueue queue(root.path());
+        iiFileProvider::TemporaryDirectory root; a::InputQueue queue(root.path());
         const QJsonObject input{{"text","team message"},{"kind","notification"},{"priority","next"}};
         const auto first=queue.enqueueIdentified("owner","message-one",input);
         const auto again=queue.enqueueIdentified("owner","message-one",input);
@@ -64,7 +132,7 @@ private slots:
         QCOMPARE(queue.snapshot("owner")["count"].toInt(),1);
     }
     void notificationTransferPreservesIdentityAndNeverMovesPrompts() {
-        QTemporaryDir root;a::InputQueue queue(root.path(),{4,128,8192,1000});
+        iiFileProvider::TemporaryDirectory root;a::InputQueue queue(root.path(),{4,128,8192,1000});
         const auto prompt=queue.enqueue("old",{{"text","stay"}})["input"].toObject();
         const auto notice=queue.enqueue("old",{{"text","finished"},{"kind","notification"},{"priority","later"}})["input"].toObject();
         queue.enqueue("new",{{"text","existing"}});queue.enqueue("new",{{"text","existing 2"}});
@@ -79,14 +147,14 @@ private slots:
         QCOMPARE(queue.transferNotifications("old","new",{notice["id"].toString()}),0);
     }
     void fullDestinationLeavesNotificationsAtTheirSource() {
-        QTemporaryDir root;a::InputQueue queue(root.path(),{1,128,8192,1000});
+        iiFileProvider::TemporaryDirectory root;a::InputQueue queue(root.path(),{1,128,8192,1000});
         const auto input=queue.enqueue("old",{{"text","finished"},{"kind","notification"}})["input"].toObject();
         queue.enqueue("new",{{"text","full"}});
         QVERIFY_THROWS_EXCEPTION(Error,queue.transferNotifications("old","new",{input["id"].toString()}));
         QCOMPARE(queue.snapshot("old")["inputs"].toArray(),QJsonArray{input});QCOMPARE(queue.snapshot("new")["count"].toInt(),1);
     }
     void transferredNotificationReplayIgnoresOnlyQueueLocalOrdering() {
-        QTemporaryDir root;auto model=std::make_shared<QueueModel>();int calls=0;
+        iiFileProvider::TemporaryDirectory root;auto model=std::make_shared<QueueModel>();int calls=0;
         model->action=[&](const auto&,const auto&){++calls;return a::ModelReply{"received once"};};
         a::EngineOptions options{.decision={.enabled=false}};options.sessionsDirectory=root.filePath("sessions");
         a::Engine engine(model,std::make_shared<a::ToolRegistry>(),std::make_shared<a::RulePolicy>(),options);
@@ -103,7 +171,7 @@ private slots:
         QCOMPARE(calls,1);QCOMPARE(engine.session(to).messages.size(),2);QCOMPARE(queue.snapshot(to)["count"].toInt(),0);
     }
     void preparationCanInspectPublishAndWithdrawWithoutHoldingQueueLock() {
-        QTemporaryDir root;a::InputQueue queue(root.path(),{8,128,8192,200});
+        iiFileProvider::TemporaryDirectory root;a::InputQueue queue(root.path(),{8,128,8192,200});
         const auto first=queue.enqueue("one",{{"text","first"}})["input"].toObject();
         const auto withdrawn=queue.enqueue("one",{{"text","withdrawn"}})["input"].toObject();
         QStringList prepared,committed;
@@ -123,7 +191,7 @@ private slots:
         QCOMPARE(queue.snapshot("one")["inputs"].toArray()[0].toObject()["text"].toString(),QString("published during preparation"));
     }
     void preparationFailureAndCancellationLeaveTheInputPending() {
-        QTemporaryDir root;a::InputQueue queue(root.path());queue.enqueue("one",{{"text","original"}});int commits=0;
+        iiFileProvider::TemporaryDirectory root;a::InputQueue queue(root.path());queue.enqueue("one",{{"text","original"}});int commits=0;
         auto persist=[&](const QJsonObject&,const QJsonObject&){++commits;return true;};
         QVERIFY_THROWS_EXCEPTION(Error,queue.deliver("one",true,16,[](const QJsonObject&)->QJsonObject {
             throw Error(ErrorCode::RuntimeFailure,"prepare failed");
@@ -133,7 +201,7 @@ private slots:
         QCOMPARE(commits,0);QCOMPARE(queue.snapshot("one")["count"].toInt(),1);
     }
     void preparedRejectionAcknowledgesOnlyTheCurrentItem() {
-        QTemporaryDir root;a::InputQueue queue(root.path());
+        iiFileProvider::TemporaryDirectory root;a::InputQueue queue(root.path());
         queue.enqueue("one",{{"text","rejected"}});queue.enqueue("one",{{"text","next"}});
         QStringList prepared,committed;
         QCOMPARE(queue.deliver("one",true,16,[&](const QJsonObject& input) {
@@ -145,7 +213,7 @@ private slots:
         QCOMPARE(queue.snapshot("one")["inputs"].toArray()[0].toObject()["text"],"next");
     }
     void preparedAndLegacyConsumersShareTheDeliveryLock() {
-        QTemporaryDir root;a::InputQueue queue(root.path());
+        iiFileProvider::TemporaryDirectory root;a::InputQueue queue(root.path());
         for(int n=0;n<32;++n)queue.enqueue("one",{{"text",QString::number(n)}});
         std::mutex mutex;QStringList committed;std::vector<std::future<int>> workers;
         for(int n=0;n<8;++n)workers.push_back(std::async(std::launch::async,[&,n] {
@@ -160,7 +228,7 @@ private slots:
         QCOMPARE(queue.snapshot("one")["count"].toInt(),0);
     }
     void orderedPersistentAndBounded() {
-        QTemporaryDir root; a::InputQueue queue(root.path(), {4, 128, 4096, 1000});
+        iiFileProvider::TemporaryDirectory root; a::InputQueue queue(root.path(), {4, 128, 4096, 1000});
         const auto later = queue.enqueue("one", {{"text", "notice"}, {"kind", "notification"}})["input"].toObject();
         const auto first = queue.enqueue("one", {{"text", "first"}})["input"].toObject();
         queue.enqueue("one", {{"text", "urgent"}, {"priority", "now"}});
@@ -184,25 +252,37 @@ private slots:
         QVERIFY(resumed.snapshot("one")["inputs"].toArray().isEmpty());
     }
     void concurrentPublicationAndLinkedCancellation() {
-        QTemporaryDir root; a::InputQueue queue(root.path());
+        iiFileProvider::TemporaryDirectory root; a::InputQueue queue(root.path());
         std::vector<std::thread> writers; std::atomic_int failures = 0;
-        for (int n = 0; n < 12; ++n) writers.emplace_back([&, n] { try { queue.enqueue("one", {{"text", QString::number(n)}}); } catch (...) { ++failures; } });
+        std::mutex failureMutex; QStringList publicationErrors;
+        for (int n = 0; n < 12; ++n) writers.emplace_back([&, n] {
+            try { queue.enqueue("one", {{"text", QString::number(n)}}); }
+            catch (const std::exception& error) {
+                ++failures; std::lock_guard lock(failureMutex); publicationErrors.append(QString::fromUtf8(error.what()));
+            }
+            catch (...) { ++failures; std::lock_guard lock(failureMutex); publicationErrors.append("Unknown publication exception"); }
+        });
         for (auto& t : writers) t.join();
-        QCOMPARE(failures.load(), 0);
+        QVERIFY2(failures.load() == 0, qPrintable(publicationErrors.join('\n')));
         QCOMPARE(queue.snapshot("one")["count"].toInt(), 12);
         std::vector<std::unique_ptr<QProcess>> children;
         for (int n = 0; n < 4; ++n) {
             auto child = std::make_unique<QProcess>(); child->start(QCoreApplication::applicationFilePath(), {"--queue-publish", root.path(), "one", QString::number(n)});
             QVERIFY(child->waitForStarted(3000)); children.push_back(std::move(child));
         }
-        for (const auto& child : children) { QVERIFY(child->waitForFinished(10000)); QCOMPARE(child->exitCode(), 0); }
+        QStringList childErrors;
+        for (const auto& child : children) {
+            if (child->state()!=QProcess::NotRunning && !child->waitForFinished(10000)) childErrors.append("Producer did not finish");
+            else if (child->exitCode() != 0) childErrors.append(QString::fromUtf8(child->readAllStandardError()));
+        }
+        QVERIFY2(childErrors.isEmpty(), qPrintable(childErrors.join('\n')));
         QCOMPARE(queue.snapshot("one")["count"].toInt(), 16);
         CancellationToken run; auto step = CancellationToken::linkedTo(run); step.cancel();
         QVERIFY(step.isCancelled()); QVERIFY(!run.isCancelled());
         auto next = CancellationToken::linkedTo(run); QVERIFY(!next.isCancelled()); run.cancel(); QVERIFY(next.isCancelled());
     }
     void messageKindsAreNotMixedInOneDelivery() {
-        QTemporaryDir root; a::InputQueue queue(root.path());
+        iiFileProvider::TemporaryDirectory root; a::InputQueue queue(root.path());
         queue.enqueue("one", {{"text", "first prompt"}});
         queue.enqueue("one", {{"text", "notification"}, {"kind", "notification"}, {"priority", "next"}});
         queue.enqueue("one", {{"text", "second prompt"}});
@@ -212,7 +292,7 @@ private slots:
         QCOMPARE(queue.snapshot("one")["inputs"].toArray()[0].toObject()["text"], "notification");
     }
     void interruptedAcknowledgementDoesNotDuplicateTheTranscript() {
-        QTemporaryDir root; auto model = std::make_shared<QueueModel>(); int calls = 0;
+        iiFileProvider::TemporaryDirectory root; auto model = std::make_shared<QueueModel>(); int calls = 0;
         model->action = [&](const a::ModelRequest& r, const auto&) { ++calls; return a::ModelReply{r.messages.last().text}; };
         a::EngineOptions o{.decision={.enabled=false}}; o.sessionsDirectory = root.filePath("sessions");int submitted=0;
         o.hooks.append([&](const a::HookInput& input,const CancellationToken&){submitted+=input.kind==a::HookKind::UserPromptSubmit;return a::HookResult{};});
@@ -235,7 +315,7 @@ private slots:
         QCOMPARE(engine->queuedInputs(id)["count"].toInt(), 0);
     }
     void conflictingTranscriptIdentityIsNotAcknowledged() {
-        QTemporaryDir root; auto model = std::make_shared<QueueModel>(); int calls = 0;
+        iiFileProvider::TemporaryDirectory root; auto model = std::make_shared<QueueModel>(); int calls = 0;
         model->action = [&](const auto&, const auto&) { ++calls; return a::ModelReply{"must not run"}; };
         a::EngineOptions o{.decision={.enabled=false}}; o.sessionsDirectory = root.filePath("sessions");
         a::Engine engine(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), o);
@@ -248,7 +328,7 @@ private slots:
         QCOMPARE(calls, 0); QCOMPARE(engine.queuedInputs(id)["count"].toInt(), 1);
     }
     void nextWaitsForToolAndLaterWaitsForAnswer() {
-        QTemporaryDir root; auto model = std::make_shared<QueueModel>();
+        iiFileProvider::TemporaryDirectory root; auto model = std::make_shared<QueueModel>();
         auto registry = std::make_shared<a::ToolRegistry>();
         a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         a::Engine engine(model, registry, std::make_shared<a::RulePolicy>(), options);
@@ -275,7 +355,7 @@ private slots:
         QVERIFY(a::pendingToolCalls(messages).isEmpty());
     }
     void urgentCancelsToolAndPreservesPairedHistory() {
-        QTemporaryDir root; auto model = std::make_shared<QueueModel>(); auto registry = std::make_shared<a::ToolRegistry>();
+        iiFileProvider::TemporaryDirectory root; auto model = std::make_shared<QueueModel>(); auto registry = std::make_shared<a::ToolRegistry>();
         a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         a::Engine engine(model, registry, std::make_shared<a::RulePolicy>(), options);
         const auto session = engine.createSession("model://fixture", root.path());
@@ -296,7 +376,7 @@ private slots:
         QCOMPARE(messages[3].text, "new direction");
     }
     void turnLimitAndObserverReentryPreservePendingInput() {
-        QTemporaryDir root; auto model = std::make_shared<QueueModel>();
+        iiFileProvider::TemporaryDirectory root; auto model = std::make_shared<QueueModel>();
         model->action = [](const a::ModelRequest& r, const auto&) { return a::ModelReply{r.messages.last().text}; };
         a::EngineOptions o{.decision={.enabled=false}}; o.sessionsDirectory = root.filePath("sessions");
         a::Engine engine(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), o);
@@ -315,7 +395,7 @@ private slots:
         QVERIFY(reentered); QCOMPARE(engine.queuedInputs(id)["count"].toInt(), 0);
     }
     void explicitCancellationLeavesUnconsumedInputForResume() {
-        QTemporaryDir root; auto model = std::make_shared<QueueModel>(); std::atomic_bool entered = false;
+        iiFileProvider::TemporaryDirectory root; auto model = std::make_shared<QueueModel>(); std::atomic_bool entered = false;
         model->action = [&](const auto&, const CancellationToken& c) -> a::ModelReply {
             entered = true; while (!c.isCancelled()) std::this_thread::sleep_for(1ms); c.throwIfCancelled(); return {};
         };
@@ -330,7 +410,7 @@ private slots:
         QCOMPARE(engine.runQueued({id, {}}).result.get().text, "resume later");
     }
     void rejectsCorruptAndRedirectedStorageWithoutReplacingIt() {
-        QTemporaryDir root; a::InputQueue queue(root.filePath("queues")); queue.enqueue("one", {{"text", "original"}});
+        iiFileProvider::TemporaryDirectory root; a::InputQueue queue(root.filePath("queues")); queue.enqueue("one", {{"text", "original"}});
         const auto fileName = root.filePath("queues/one/queue.json"); QFile file(fileName);
         QVERIFY(file.open(QIODevice::WriteOnly)); file.write("{broken"); file.close();
         QVERIFY_THROWS_EXCEPTION(Error, queue.enqueue("one", {{"text", "new"}}));
@@ -347,7 +427,8 @@ int main(int argc, char** argv) {
     QCoreApplication app(argc, argv);
     if (argc == 5 && QString::fromLocal8Bit(argv[1]) == "--queue-publish") {
         try { a::InputQueue(QString::fromLocal8Bit(argv[2])).enqueue(QString::fromLocal8Bit(argv[3]), {{"text", QString::fromLocal8Bit(argv[4])}}); return 0; }
-        catch (...) { return 1; }
+        catch (const std::exception& error) { std::fprintf(stderr, "Queue publication failed: %s\n", error.what()); return 1; }
+        catch (...) { std::fprintf(stderr, "Queue publication failed with an unknown exception\n"); return 1; }
     }
     InputQueueTests tests; return QTest::qExec(&tests, argc, argv);
 }

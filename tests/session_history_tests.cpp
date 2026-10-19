@@ -1,6 +1,8 @@
 #include "native_link.h"
 #include <agent/SessionHistory.h>
 #include <agent/SessionStore.h>
+#include <iiFileProviderDevice.h>
+#include <iiFileProviderPresentation.h>
 #include <QtTest/QTest>
 #include <QtCore/QTemporaryDir>
 #include <QtCore/QFile>
@@ -10,7 +12,7 @@ using namespace iiLocalLLM;
 namespace a=iiLocalLLM::agent;
 namespace {
 struct Fixture {
-    QTemporaryDir root{QDir::current().filePath("history-XXXXXX")};
+    iiFileProvider::TemporaryDirectory root{QDir::current().filePath("history-XXXXXX")};
     QString work=root.filePath("work"),other=root.filePath("other"),directory=root.filePath("sessions");
     a::SessionStore store{directory};QString viewer;
     Fixture(){QDir().mkpath(work);QDir().mkpath(other);viewer=store.create("fixture","private owner header",work).id;}
@@ -25,7 +27,29 @@ QJsonArray matches(const QJsonObject& page){return page["matches"].toArray();}
 class SessionHistoryTests:public QObject {
     Q_OBJECT
 private slots:
+    void previewPublicationKeepsCursorButContentEditsInvalidateIt() {
+        Fixture f;
+        const auto id=f.session("needle first");
+        {auto lease=f.store.acquire(id);lease->append({{},a::MessageRole::User,"needle second"});}
+        a::SessionHistory history(f.directory);
+        const auto first=history.search(f.viewer,f.work,{{"query","needle"},{"limit",1}});
+        const auto cursor=first["next_cursor"].toString();QVERIFY(!cursor.isEmpty());
+        const auto native=std::filesystem::path(f.path(id).toStdU16String());
+        (void)iiFileProvider::native::Presentation::prepare(native);
+        const auto next=history.search(f.viewer,f.work,{{"cursor",cursor}});
+        QCOMPARE(matches(next).size(),1);
+        const auto changed=history.search(f.viewer,f.work,{{"query","needle"},{"limit",1}})["next_cursor"].toString();
+        QVERIFY(!changed.isEmpty());
+        iiFileProvider::native::Presentation::cancelPending(native);
+        QFile file(f.path(id));QVERIFY(file.open(QIODevice::ReadWrite));
+        const auto modified=file.fileTime(QFileDevice::FileModificationTime);
+        auto bytes=file.readAll();QVERIFY(bytes.contains("needle first"));bytes.replace("needle first","needle other");
+        QVERIFY(file.seek(0));QCOMPARE(file.write(bytes),bytes.size());QVERIFY(file.flush());
+        QVERIFY(file.setFileTime(modified,QFileDevice::FileModificationTime));file.close();
+        QVERIFY_THROWS_EXCEPTION(Error,history.search(f.viewer,f.work,{{"cursor",changed}}));
+    }
     void literalUnicodeSearchAndOwnedWorkspace() {
+        try {
         Fixture f;const auto own=f.session("Use 한글 and Qt 6.8 [ready].");f.session("foreign 한글",f.other);
         a::SessionHistory history(f.directory);
         auto page=history.search(f.viewer,f.work,{{"query","한글"}});QCOMPARE(matches(page).size(),1);
@@ -37,6 +61,7 @@ private slots:
         QCOMPARE(matches(history.search(f.viewer,f.work,{{"query","private-system-needle"}})).size(),0);
         QCOMPARE(matches(history.search(f.viewer,f.work,{{"query","private-metadata-needle"}})).size(),0);
         QVERIFY_THROWS_EXCEPTION(Error,history.search(f.viewer,f.other,{{"query","한글"}}));
+        } catch (const std::exception& error) { QFAIL(error.what()); }
     }
     void paginatesLargeHistoryWithoutWriterLeaseOrDuplicateResults() {
         Fixture f;const auto id=f.session("begin needle");auto lease=f.store.acquire(id);

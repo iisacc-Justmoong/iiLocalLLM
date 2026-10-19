@@ -3,7 +3,7 @@ project(iiLocalLLM VERSION 0.55.1 LANGUAGES CXX)
 # File creation is owned by iiFileProvider.
 find_package(iiFileProvider 0.6 CONFIG REQUIRED HINTS "$ENV{IIFILEPROVIDER_PREFIX}" "$ENV{HOME}/.local/SDK/iiFileProvider")
 link_libraries(iiFileProvider::iiFileProvider)
-find_package(iiFileProviderNative 0.6 CONFIG REQUIRED HINTS "$ENV{IIFILEPROVIDER_PREFIX}" "$ENV{HOME}/.local/SDK/iiFileProvider")
+find_package(iiFileProviderNative 0.8.2 CONFIG REQUIRED HINTS "$ENV{IIFILEPROVIDER_PREFIX}" "$ENV{HOME}/.local/SDK/iiFileProvider")
 link_libraries(iiFileProvider::Native)
 
 
@@ -340,7 +340,9 @@ if(BUILD_TESTING)
     add_executable(iiLocalLLMInputQueueTests tests/input_queue_tests.cpp)
     target_link_libraries(iiLocalLLMInputQueueTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
     set_target_properties(iiLocalLLMInputQueueTests PROPERTIES AUTOMOC ON)
-    add_test(NAME iiLocalLLM.input_queue COMMAND iiLocalLLMInputQueueTests)
+    # Keep file diagnostics as well: some Windows Qt launchers have no stdout.
+    add_test(NAME iiLocalLLM.input_queue COMMAND iiLocalLLMInputQueueTests
+        -o -,txt -o "${CMAKE_CURRENT_BINARY_DIR}/input-queue-tests.txt,txt")
     set_tests_properties(iiLocalLLM.input_queue PROPERTIES TIMEOUT 90)
     add_executable(iiLocalLLMPlanModeRuntimeSmoke tests/plan_mode_runtime_smoke.cpp)
     target_link_libraries(iiLocalLLMPlanModeRuntimeSmoke PRIVATE iiLocalLLM)
@@ -490,7 +492,8 @@ if(BUILD_TESTING)
     add_executable(iiLocalLLMTaskTests tests/task_tests.cpp)
     target_link_libraries(iiLocalLLMTaskTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
     set_target_properties(iiLocalLLMTaskTests PROPERTIES AUTOMOC ON)
-    add_test(NAME iiLocalLLM.tasks COMMAND iiLocalLLMTaskTests)
+    add_test(NAME iiLocalLLM.tasks COMMAND iiLocalLLMTaskTests
+        -o -,txt -o "${CMAKE_CURRENT_BINARY_DIR}/task-tests.txt,txt")
     set_tests_properties(iiLocalLLM.tasks PROPERTIES TIMEOUT 90)
     add_executable(iiLocalLLMLocalApplicationTests tests/local_applications_tests.cpp)
     target_link_libraries(iiLocalLLMLocalApplicationTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
@@ -505,7 +508,8 @@ if(BUILD_TESTING)
     add_executable(iiLocalLLMCompactionTests tests/compaction_tests.cpp)
     target_link_libraries(iiLocalLLMCompactionTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
     set_target_properties(iiLocalLLMCompactionTests PROPERTIES AUTOMOC ON)
-    add_test(NAME iiLocalLLM.compaction COMMAND iiLocalLLMCompactionTests)
+    add_test(NAME iiLocalLLM.compaction COMMAND iiLocalLLMCompactionTests
+        -o -,txt -o "${CMAKE_CURRENT_BINARY_DIR}/compaction-tests.txt,txt")
     set_tests_properties(iiLocalLLM.compaction PROPERTIES TIMEOUT 60)
     add_executable(iiLocalLLMContextTests tests/context_tests.cpp)
     target_link_libraries(iiLocalLLMContextTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
@@ -611,7 +615,8 @@ if(BUILD_TESTING)
     add_executable(iiLocalLLMAgentProfileTests tests/agent_profiles_tests.cpp)
     target_link_libraries(iiLocalLLMAgentProfileTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
     set_target_properties(iiLocalLLMAgentProfileTests PROPERTIES AUTOMOC ON)
-    add_test(NAME iiLocalLLM.agent_profiles COMMAND iiLocalLLMAgentProfileTests)
+    add_test(NAME iiLocalLLM.agent_profiles COMMAND iiLocalLLMAgentProfileTests
+        -o -,txt -o "${CMAKE_CURRENT_BINARY_DIR}/agent-profile-tests.txt,txt")
     set_tests_properties(iiLocalLLM.agent_profiles PROPERTIES TIMEOUT 60)
     add_executable(iiLocalLLMSubagentTests tests/subagent_tests.cpp)
     target_link_libraries(iiLocalLLMSubagentTests PRIVATE iiLocalLLM::iiLocalLLM Qt6::Test)
@@ -624,6 +629,9 @@ if(BUILD_TESTING)
     add_test(NAME iiLocalLLM.agent_transport COMMAND iiLocalLLMAgentTransportTests)
     set_tests_properties(iiLocalLLM.agent_transport PROPERTIES TIMEOUT 60)
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    # The interpreter is also embedded in C++ test definitions. Native Windows
+    # backslashes must not become C++ escape sequences such as \t or \U.
+    file(TO_CMAKE_PATH "${Python3_EXECUTABLE}" Python3_EXECUTABLE)
     add_test(NAME iiLocalLLM.web_fetch_tls COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/web_fetch_tls.py $<TARGET_FILE:iiLocalLLMWebFetchProbe>)
     set_tests_properties(iiLocalLLM.web_fetch_tls PROPERTIES TIMEOUT 90)
     set(_versioned_executables)
@@ -998,6 +1006,17 @@ install(EXPORT iiLocalLLMTargets
     NAMESPACE iiLocalLLM::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/iiLocalLLM
 )
+
+if(WIN32 AND COMMAND onnxruntime_deploy)
+    get_property(_iillm_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(_iillm_target IN LISTS _iillm_targets)
+        get_target_property(_iillm_type "${_iillm_target}" TYPE)
+        if(_iillm_type STREQUAL "EXECUTABLE")
+            onnxruntime_deploy("${_iillm_target}")
+        endif()
+    endforeach()
+    install(FILES "$<TARGET_FILE:ONNXRuntime::ONNXRuntime>" DESTINATION ${CMAKE_INSTALL_BINDIR})
+endif()
 configure_package_config_file(cmake/iiLocalLLMConfig.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/iiLocalLLMConfig.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/iiLocalLLM

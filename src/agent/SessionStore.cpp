@@ -151,6 +151,12 @@ void SessionLease::compact(Compaction c) {
             "Cannot write migrated transcript");
         // Windows denies replacement while this lease still holds the old file.
         d->file.close();
+#ifdef Q_OS_WIN
+        // Closing a writable provider device schedules a preview. Cancel that
+        // reader after closing, so it cannot race the atomic legacy replacement.
+        iiFileProvider::native::Presentation::cancelPending(
+            std::filesystem::path(d->file.fileName().toStdU16String()));
+#endif
         if (!replacement.commit()) {
             (void)d->file.open(QIODevice::ReadWrite);
             throw Error(ErrorCode::StorageFailure, "Cannot atomically migrate legacy transcript");

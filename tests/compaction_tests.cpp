@@ -1,6 +1,6 @@
 #include "agent/Engine.h"
+#include <iiFileProviderDevice.h>
 #include <QtTest/QtTest>
-#include <QtCore/QTemporaryDir>
 #include <QtCore/QFile>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QUuid>
@@ -58,7 +58,7 @@ class CompactionTests : public QObject {
     Q_OBJECT
 private slots:
     void automaticMicroCompactionAndRecall() {
-        QTemporaryDir root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
+        iiFileProvider::TemporaryDirectory root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         auto model = std::make_shared<BudgetModel>(); model->window = 2048; model->recall = true;
         a::Engine engine(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), options);
         auto session = engine.createSession("model://test", root.path());
@@ -74,7 +74,7 @@ private slots:
         QVERIFY(a::pendingToolCalls(a::modelMessages(session)).isEmpty());
     }
     void rollingSummaryAndExactLatestInput() {
-        QTemporaryDir root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
+        iiFileProvider::TemporaryDirectory root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         auto model = std::make_shared<BudgetModel>();
         a::Engine engine(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), options);
         auto session = engine.createSession("model://test", root.path());
@@ -102,7 +102,7 @@ private slots:
         QCOMPARE(continued.status, a::RunStatus::Completed); QCOMPARE(model->requests.last().messages.last().text, "Resume from the summary");
     }
     void summaryCancellationAndInvalidOutputDoNotCommit() {
-        QTemporaryDir root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
+        iiFileProvider::TemporaryDirectory root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         auto model = std::make_shared<BudgetModel>(); model->waitOnSummary = true;
         a::Engine engine(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), options);
         const auto session = engine.createSession("model://test", root.path());
@@ -117,7 +117,7 @@ private slots:
         QVERIFY(engine.session(session.id).compactions.isEmpty());
     }
     void compactedReadsCannotAuthorizeEdits() {
-        QTemporaryDir root; auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, root.path());
+        iiFileProvider::TemporaryDirectory root; auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, root.path());
         a::ToolRunner runner(registry, std::make_shared<a::RulePolicy>(a::PermissionMode::Bypass));
         a::ToolContext context; context.sessionId = "read-session"; context.workingDirectory = root.path(); context.artifactsDirectory = root.filePath("artifacts");
         QVERIFY(!runner.run({"w", "Write", {{"path", "file.txt"}, {"content", "before"}}}, context).isError);
@@ -128,7 +128,7 @@ private slots:
         QVERIFY(!runner.run({"w3", "Write", {{"path", "file.txt"}, {"content", "after"}}}, context).isError);
     }
     void automaticSummaryPreservesCurrentPrompt() {
-        QTemporaryDir root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
+        iiFileProvider::TemporaryDirectory root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         auto model = std::make_shared<BudgetModel>();
         a::Engine engine(model, std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), options);
         const auto session = engine.createSession("model://test", root.path());
@@ -142,7 +142,7 @@ private slots:
         QCOMPARE(engine.session(session.id).messages.size(), 9);
     }
     void boundedFailuresHooksAndDisabledAutomatic() {
-        QTemporaryDir root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
+        iiFileProvider::TemporaryDirectory root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         bool reject = true; int beforeHooks = 0, afterHooks = 0;
         options.hooks.append([&](const a::HookInput& input, const CancellationToken&) {
             a::HookResult result;
@@ -172,7 +172,7 @@ private slots:
         class Unmeasured : public a::Model {
         public: a::ModelReply generate(const a::ModelRequest&, const CancellationToken&, const TextCallback&) override { return {"answer", {}}; }
         };
-        QTemporaryDir root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
+        iiFileProvider::TemporaryDirectory root; a::EngineOptions options{.decision={.enabled=false}}; options.sessionsDirectory = root.filePath("sessions");
         a::Engine engine(std::make_shared<Unmeasured>(), std::make_shared<a::ToolRegistry>(), std::make_shared<a::RulePolicy>(), options);
         const auto session = engine.createSession("model://test", root.path());
         QCOMPARE(engine.run({session.id, "hello"}).result.get().status, a::RunStatus::Completed);
@@ -184,7 +184,7 @@ private slots:
         QCOMPARE(restored.messages.last().text.size(), 5000); QVERIFY(restored.compactions.isEmpty());
     }
     void durableViewRetainsOriginalAndToolPairs() {
-        QTemporaryDir root; a::SessionStore store(root.path()); auto s = store.create("model://test", {}, root.path());
+        iiFileProvider::TemporaryDirectory root; a::SessionStore store(root.path()); auto s = store.create("model://test", {}, root.path());
         {
             auto lease = store.acquire(s.id); populate(*lease); const auto original = lease->session().messages;
             lease->compact(checkpoint(lease->session()));
@@ -200,7 +200,7 @@ private slots:
         QVERIFY_THROWS_EXCEPTION(Error, store.fork(s.id, "a1"));
     }
     void summaryBoundaryAndCheckpointValidation() {
-        QTemporaryDir root; a::SessionStore store(root.path()); auto s = store.create("model://test", {}, root.path());
+        iiFileProvider::TemporaryDirectory root; a::SessionStore store(root.path()); auto s = store.create("model://test", {}, root.path());
         auto lease = store.acquire(s.id); populate(*lease);
         auto c = checkpoint(lease->session(), true); c.throughMessageId = "a1";
         QVERIFY_THROWS_EXCEPTION(Error, lease->compact(c)); // Cannot split call1 from its result.
@@ -216,17 +216,31 @@ private slots:
         QVERIFY_THROWS_EXCEPTION(Error, lease->compact(bad));
     }
     void versionOneMigrationAndTornCheckpoint() {
-        QTemporaryDir root; a::SessionStore store(root.path()); auto s = store.create("model://test", {}, root.path());
-        { auto lease = store.acquire(s.id); populate(*lease); }
-        QFile file(root.filePath(s.id + "/transcript.jsonl")); QVERIFY(file.open(QIODevice::ReadOnly));
-        auto bytes = file.readAll(); file.close(); bytes.replace("\"version\":2", "\"version\":1");
-        QVERIFY(file.open(QIODevice::WriteOnly)); QCOMPARE(file.write(bytes), bytes.size()); file.close();
-        { auto lease = store.acquire(s.id); lease->compact(checkpoint(lease->session(), true)); }
-        QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readLine().contains("\"version\":2")); file.close();
-        QVERIFY(file.open(QIODevice::Append)); file.write("{\"type\":\"compaction\""); file.close();
-        s = store.load(s.id); QCOMPARE(s.compactions.size(), 1); QCOMPARE(s.messages.size(), 5);
-        QVERIFY(file.open(QIODevice::Append)); file.write("{\"type\":\"compaction\",\"checkpoint\":{}}\n"); file.close();
-        QVERIFY_THROWS_EXCEPTION(Error, store.load(s.id)); // Complete corrupt records are never silently discarded.
+        QString stage = "create";
+        try {
+            iiFileProvider::TemporaryDirectory root;
+            a::SessionStore store(root.path());
+            auto s = store.create("model://test", {}, root.path());
+            QList<a::Message> originalMessages;
+            {
+                auto lease = store.acquire(s.id); populate(*lease);
+                originalMessages = lease->session().messages;
+            }
+            QFile file(root.filePath(s.id + "/transcript.jsonl")); QVERIFY(file.open(QIODevice::ReadOnly));
+            auto bytes = file.readAll(); file.close(); bytes.replace("\"version\":2", "\"version\":1");
+            QVERIFY(file.open(QIODevice::WriteOnly)); QCOMPARE(file.write(bytes), bytes.size()); file.close();
+            stage = "migrate and compact";
+            { auto lease = store.acquire(s.id); lease->compact(checkpoint(lease->session(), true)); }
+            QVERIFY(file.open(QIODevice::ReadOnly)); QVERIFY(file.readLine().contains("\"version\":2")); file.close();
+            QVERIFY(file.open(QIODevice::Append)); file.write("{\"type\":\"compaction\""); file.close();
+            stage = "recover torn checkpoint";
+            s = store.load(s.id); QCOMPARE(s.compactions.size(), 1); QCOMPARE(s.messages, originalMessages);
+            QCOMPARE(store.load(s.id).messages, originalMessages);
+            QVERIFY(file.open(QIODevice::Append)); file.write("{\"type\":\"compaction\",\"checkpoint\":{}}\n"); file.close();
+            QVERIFY_THROWS_EXCEPTION(Error, store.load(s.id)); // Complete corrupt records are never silently discarded.
+        } catch (const std::exception& error) {
+            QFAIL(qPrintable(stage + ": " + QString::fromUtf8(error.what())));
+        }
     }
 };
 QTEST_GUILESS_MAIN(CompactionTests)

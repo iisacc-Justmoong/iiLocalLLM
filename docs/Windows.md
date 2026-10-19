@@ -4,3 +4,5 @@ Qt 6.8의 MinGW-w64 헤더에 없는 Windows 10 스레드 전력 제어 ABI를 �
 # 네이티브 메모리 조회
 
 Windows의 RAM 조회는 최소 Windows 헤더를 사용한다. Qt 헤더와 전체 RPC 헤더의 중복 정의를 피하면서 `GlobalMemoryStatusEx`를 실제로 호출하며, Windows 런타임 테스트는 사용 가능한 RAM 값이 존재하고 양수인지 확인한다.
+
+최신 구성·실행 결과와 복구 조치는 [Windows 빌드 및 실행](WindowsBuildAndRun.md)에 기록한다.

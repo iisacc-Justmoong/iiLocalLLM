@@ -1,4 +1,5 @@
 #include "SessionHistory.h"
+#include <iiFileProviderPresentation.h>
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
@@ -85,8 +86,11 @@ QByteArray fingerprint(QFile& file) {
     return QByteArray::number(opened.st_dev)+':'+QByteArray::number(opened.st_ino)+':'+QByteArray::number(opened.st_size)+':'
         +QByteArray::number(m.tv_sec)+':'+QByteArray::number(m.tv_nsec)+':'+QByteArray::number(c.tv_sec)+':'+QByteArray::number(c.tv_nsec);
 #else
-    const QFileInfo info(file.fileName());
-    return QByteArray::number(file.size())+':'+QByteArray::number(info.lastModified().toMSecsSinceEpoch())+':'+QByteArray::number(info.birthTime().toMSecsSinceEpoch());
+    // NTFS preview streams temporarily update and restore file timestamps.
+    // Read the normalized native change clock under the provider's publication
+    // lock; real content changes still invalidate an existing search cursor.
+    return QByteArray::number(file.size())+':'+QByteArray::fromStdString(
+        iiFileProvider::native::Presentation::cacheChangeToken(std::filesystem::path(file.fileName().toStdU16String())));
 #endif
 }
 struct FileSnapshot {
