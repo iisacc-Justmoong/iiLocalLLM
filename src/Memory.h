@@ -1,4 +1,7 @@
 #pragma once
+// Windows CRT <memory.h> can find this header through a case-insensitive path.
+// This API always has C++ linkage, including when reached from an extern-C block.
+extern "C++" {
 #include "Types.h"
 #include <optional>
 
@@ -16,3 +19,4 @@ IILOCALLLM_EXPORT std::optional<quint64> availableRamBytes();
 IILOCALLLM_EXPORT qint64 parseKeepAlive(const QJsonValue& value);
 IILOCALLLM_EXPORT QJsonObject memoryEstimateObject(const MemoryEstimate& estimate);
 } // namespace iiLocalLLM
+}

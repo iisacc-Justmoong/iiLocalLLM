@@ -1,5 +1,13 @@
 # iiLocalLLM
 
+See [Windows validation](docs/Windows-validation.md) for the MSVC header-linkage
+regression and the current full-suite validation limits.
+
+Memory.h explicitly preserves C++ linkage when a case-insensitive Windows CRT
+include reaches it from an extern-C block. The memory-header interoperability
+test includes that context, uses standard memory functions, and invokes the
+exported available-RAM function through the library.
+
 The pinned ggml Metal target privately includes the standard `<memory>` header
 for its unique_ptr declarations. This preserves the pinned dependency and Metal
 backend with current libc++, without changing consumers' compile options.
