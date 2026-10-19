@@ -9,6 +9,7 @@
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QLockFile>
 #include <QtTest/QTest>
+#include <iiFileProviderPresentation.h>
 #include <thread>
 using namespace iiLocalLLM;
 namespace a=iiLocalLLM::agent;
@@ -20,6 +21,7 @@ struct Fixture {
     QString work=root.filePath("work"),state=root.filePath("sessions");
     a::SessionStore store{state};
     Fixture(){if(!QDir().mkpath(work))throw std::runtime_error("work");}
+    ~Fixture(){try{iiFileProvider::native::Presentation::cancelPending(std::filesystem::path(root.path().toStdU16String()));}catch(...){}}
     QString artifacts(const QString& id)const{return state+'/'+id+"/artifacts";}
 };
 class EditModel:public a::Model {public:
@@ -102,7 +104,12 @@ private slots:
     auto disabled=options(f);disabled.fileCheckpointsEnabled=false;a::Engine paused(std::make_shared<EditModel>(),registry(f),policy,disabled);
     const auto preserved=paused.forkSession(parent);QCOMPARE(engine.fileCheckpoints(preserved.id)["snapshots"].toArray().size(),2);
     const auto prefix=engine.forkSession(parent,message);QCOMPARE(prefix.messages.size(),1);QCOMPARE(engine.fileCheckpoints(prefix.id)["snapshots"].toArray().size(),1);
-    QVERIFY(QDir(f.state+"/file-checkpoints/"+parent).removeRecursively());QVERIFY(QDir(f.artifacts(parent)).removeRecursively());
+    for(const auto& path:QStringList{f.state+"/file-checkpoints/"+parent,f.artifacts(parent)}) {
+        // Simulate removal after the provider has stopped publishing derived
+        // information into these parent-owned directories.
+        iiFileProvider::native::Presentation::cancelPending(std::filesystem::path(path.toStdU16String()));
+        QVERIFY(QDir(path).removeRecursively());
+    }
     QVERIFY(!engine.rewindFiles(child.id,message).isError);QCOMPARE(read(f.work+"/file"),"original\r\n");
     QVERIFY(!engine.rewindFiles(child.id,manual).isError);QCOMPARE(read(f.work+"/file"),"edited");
     a::Engine reopened(std::make_shared<EditModel>(),registry(f),policy,options(f));QVERIFY(!reopened.rewindFiles(child.id,message).isError);QCOMPARE(read(f.work+"/file"),"original\r\n");
@@ -142,6 +149,7 @@ private slots:
     Fixture f;auto policy=std::make_shared<Policy>();a::Engine engine(std::make_shared<EditModel>(),registry(f),policy,options(f));const auto parent=engine.createSession("fixture",f.work).id;
     engine.checkpointFiles(parent);write(f.artifacts(parent)+"/file","backup");QVERIFY_THROWS_EXCEPTION(Error,engine.forkSession(parent));
     QVERIFY(!policy->child.isEmpty());QCOMPARE(policy->forgotten,policy->child);QCOMPARE(engine.sessions(),QStringList{parent});
+    QVERIFY(iiFileProvider::native::Presentation::waitForIdle(std::chrono::seconds(5)));
     QVERIFY(!QFileInfo::exists(f.state+'/'+policy->child));QVERIFY(!QFileInfo::exists(f.state+"/file-checkpoints/"+policy->child));QCOMPARE(read(f.artifacts(parent)+"/file"),"backup");
  }
  void checkpointLockAndCancellationLeaveDestinationAbsent(){

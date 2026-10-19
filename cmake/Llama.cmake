@@ -44,6 +44,13 @@ function(iilocal_add_llama)
             EXCLUDE_FROM_ALL)
         FetchContent_MakeAvailable(iilocal_llama)
     endif()
+    if(TARGET ggml-metal)
+        # Pinned ggml uses std::unique_ptr without directly including <memory>.
+        target_compile_options(ggml-metal PRIVATE
+            "$<$<COMPILE_LANGUAGE:CXX>:-include>" "$<$<COMPILE_LANGUAGE:CXX>:memory>")
+    endif()
+    include("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/LlamaDflash.cmake")
+    iilocal_fix_dflash_specializations()
     include("${CMAKE_CURRENT_LIST_DIR}/LlamaToolCalls.cmake")
     iilocal_fix_llama_tool_grammars()
     if(WIN32 AND MINGW)

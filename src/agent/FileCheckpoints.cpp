@@ -1,5 +1,6 @@
 #include <iiFileProviderDevice.h>
 #include "FileCheckpoints.h"
+#include "StorageCleanup.h"
 #include <QtCore/QCryptographicHash>
 #include <QtCore/QDateTime>
 #include <QtCore/QFileInfo>
@@ -165,7 +166,7 @@ void FileCheckpoints::fork(const ToolContext& c,const QString& destination,const
     }
     state["snapshots"]=snapshots;state["session_id"]=destination;
     check(iiFileProvider::Directory().mkdir(path),"Checkpoint fork target already exists or cannot be created");
-    struct Guard{QString path;bool keep=false;~Guard(){if(!keep)iiFileProvider::Directory(path).removeRecursively();}} guard{path};
+    struct Guard{QString path;bool keep=false;~Guard(){if(!keep)detail::removeOwnedDirectory(path);}} guard{path};
     auto context=c;context.sessionId=destination;Journal targetJournal(directory_,context);targetJournal.state=state;targetJournal.validate(context);
     QJsonObject blobs;auto collect=[&](const QJsonObject& files){for(const auto& v:files){const auto b=v.toObject();if(!b["exists"].toBool())continue;
         const auto id=b["sha256"].toString();check(!blobs.contains(id)||blobs[id]==b["bytes"],"Conflicting checkpoint blob sizes",ErrorCode::ProtocolError);blobs[id]=b["bytes"];}};

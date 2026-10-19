@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "StorageCleanup.h"
 #include "../MediaContent.h"
 #include "Plugins.h"
 #include "HookAgent.h"
@@ -1192,7 +1193,7 @@ Session Engine::forkSession(const QString& id, const QString& throughMessageId) 
     });} catch(...) {
         const auto failure=std::current_exception();QStringList errors;
         if(!child.isEmpty())try{d->policy->forgetSession({child,{},workspace});}catch(...){errors.append("permission state");}
-        for(const auto& path:ownedState)if(QFileInfo::exists(path)&&!QDir(path).removeRecursively())errors.append(path);
+        for(const auto& path:ownedState)if(QFileInfo::exists(path)&&!detail::removeOwnedDirectory(path))errors.append(path);
         if(!errors.isEmpty())throw Error(ErrorCode::StorageFailure,"Fork was not published; cleanup failed: "+errors.join(", "));
         std::rethrow_exception(failure);
     }

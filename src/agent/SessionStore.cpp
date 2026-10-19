@@ -1,4 +1,5 @@
 #include <iiFileProviderDevice.h>
+#include "StorageCleanup.h"
 #include "SessionStore.h"
 #include "ProtocolState.h"
 #include "Compaction.h"
@@ -85,7 +86,7 @@ Session publish(const QString& root, qint64 maximum, Session value,
     }
     const auto directory = iiFileProvider::Directory(root).filePath(value.id);
     storage(iiFileProvider::Directory().mkdir(directory), "Cannot create agent session directory");
-    struct DirectoryGuard { QString path; bool keep = false; ~DirectoryGuard() { if (!keep) iiFileProvider::Directory(path).removeRecursively(); } } guard{directory};
+    struct DirectoryGuard { QString path; bool keep = false; ~DirectoryGuard() { if (!keep) detail::removeOwnedDirectory(path); } } guard{directory};
     if(initialize)initialize(value,directory);
     const auto header = line({{"type", "session"}, {"version", 2}, {"id", value.id}, {"model", value.model},
         {"system_prompt", value.systemPrompt}, {"working_directory", value.workingDirectory},{"parent_session_id",value.parentSessionId}});
