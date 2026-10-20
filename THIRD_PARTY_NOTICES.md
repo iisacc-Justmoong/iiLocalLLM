@@ -1,28 +1,13 @@
-# 외부 의존성 검토
+# Third-party notices
 
-서비스 고유 정책만 직접 구현하고 추론·토큰화·JSON·프로세스·IPC는 기존 라이브러리를 사용한다.
+The inference package retains Qt 6.8.3 Core/Network, pinned llama.cpp/libmtmd,
+mlx-lm sampling sources, cpp-httplib, and platform hardware API notices.
+Original dependency licenses are installed in `share/iiLocalLLM/licenses`.
 
-## Native multimodal decoding (0.55.0)
-
-The existing pinned llama.cpp commit also supplies `libmtmd`, its `stb_image` image decoder, `miniaudio` audio decoder and `vendor/hash` implementation. The SDK links these native implementations in process. Original vendor files, including their embedded notices and license choices, are installed unchanged under `share/iiLocalLLM/licenses/llama-mtmd`. The existing llama.cpp MIT notice remains included. `MTMD_VIDEO` is disabled; supplied timestamped frames do not require a video-container subprocess. Hugging Face CLI was used only to obtain verification fixtures and is not a production dependency.
-
-## 파일 패턴 매처 (0.19.0)
-
-2026-09-15 [libgit2 v1.9.7](https://github.com/libgit2/libgit2/releases/tag/v1.9.7)의 유지보수 릴리스와 원본 C wildmatch를 확인했다. 전체 Git·TLS·전송 의존성 대신 약 10KiB의 C/H만 private object로 포함한다. 라이선스는 MIT가 아니라 **GNU GPL v2 + libgit2 Linking Exception**이다. [원문](https://github.com/libgit2/libgit2/blob/v1.9.7/COPYING)을 보존하고 수정 C/H·날짜·소스 해시·빌드 설명까지 설치 패키지 `licenses/libgit2-wildmatch-source/`에 제공한다. 한도·취소·재귀 제한을 추가한 변경점은 `third_party/wildmatch/PATCHES.md`를 따른다. 원본 다운로드 SHA는 `source.json`에 있고 수정 소스와 구분한다.
-
-매처는 외부 Git 상태를 읽지 않는다. 설정 병합·경로·권한 수명은 C++ 도메인 코드이며 Qt JSON을 재사용한다. [node-ignore 7.0.5](https://github.com/kaelzhang/node-ignore/tree/7.0.5)는 독립 검사 기준으로만 사용했다. SDK에 JavaScript·Node 의존성을 추가하지 않았다. 독립 사례와 차이는 [PermissionSettings.md](docs/PermissionSettings.md)를 따른다.
-
-## Bash 구문 파서 (0.18.0)
-
-2026-09-15 공식 릴리스·소스·MIT 고지를 확인하고 [tree-sitter v0.27.0](https://github.com/tree-sitter/tree-sitter/releases/tag/v0.27.0)과 [tree-sitter-bash v0.25.1](https://github.com/tree-sitter/tree-sitter-bash/releases/tag/v0.25.1)을 선택했다. 유지되는 C runtime과 생성된 Bash C grammar를 private object로 포함한다. TypeScript, Rust/Node CLI, Python, 추가 공유 라이브러리는 생산 실행에 필요하지 않다. 라이브러리가 Bash AST를 만들고 iiLocalLLM 고유의 규칙·권한 수명·보수적 판정을 C++에서 처리한다.
-
-- tree-sitter 압축 원본 1,020,259 bytes, SHA-256 `d35c96e68736bd9569d2757c3cc71052485f33082c3825f1aed9d0e86013a159`.
-- tree-sitter-bash 압축 원본 543,006 bytes, SHA-256 `2e785a761225b6c433410ef9c7b63cfb0a4e83a35a19e0f2aec140b42c06b52d`.
-- `cmake/PermissionParsers.cmake`에서 버전·해시를 고정하고 원본 MIT 라이선스를 `share/iiLocalLLM/licenses/tree-sitter.LICENSE` 및 `tree-sitter-bash.LICENSE`로 설치한다. 외부 파서 타입은 공개 SDK 헤더에 노출하지 않는다.
-- 업스트림의 `TREE_SITTER_HIDE_SYMBOLS` 설정으로 런타임·문법 C 심볼의 공개를 막는다. 같은 호스트의 다른 tree-sitter 버전과 결합되지 않도록 macOS `nm` 회귀 검사에서 공개 심볼 부재를 확인한다.
-- 문법 파서는 명령의 실제 부작용을 판정하는 샌드박스가 아니다. 지원하는 정적 구문과 입력·시간 상한은 [Permissions.md](docs/Permissions.md)를 따른다.
-
-2026-09-14 에이전트 입력/출력 검증에 [jsoncons 1.9.0](https://github.com/danielaparker/jsoncons/releases/tag/v1.9.0)을 추가했다. 2026-08-07 릴리스와 JSON Schema 2020-12 지원을 공식 소스에서 확인했다. 약 1.7 MB 압축 아카이브의 header-only C++ 의존성이며 실행 프로세스·Python·네트워크 서비스는 추가하지 않는다. CMake는 아카이브 SHA-256 `f1017b36e4e034acd5c0f5f616bacf5d7a161d6d3a43ff9ddb73fd8dca4d3cd9`를 고정한다. Boost Software License 1.0 및 포함된 A5HASH의 MIT 고지를 `third_party/jsoncons`와 설치 패키지 licenses에 보존한다. 외부 공개 헤더에는 jsoncons 타입이 없다.
+Harness parser notices (jsoncons, tree-sitter/bash, wildmatch, md4c, libyaml and
+Lexbor) moved with their source to
+[ iiMultimodalAgent third-party notices](../iiMultimodalAgent/THIRD_PARTY_NOTICES.md).
+Their headers and implementations are no longer linked into iiLocalLLM.
 
 | 의존성 | 도입 이유·규모 | 라이선스·유지보수 |
 | --- | --- | --- |

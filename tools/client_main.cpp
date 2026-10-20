@@ -101,7 +101,7 @@ int main(int argc, char** argv)
         {"auth-file", "Private file containing the app token for rpc.", "file"},
         {"defaults", "Include literal defaults in parameter exports"},
         {"redact", "Redact sensitive fields in parameter exports"}});
-    parser.addPositionalArgument("command", "run MODEL [PROMPT] | models | pull MODEL | ps | parameters [GROUP [FILE]] | rpc METHOD [FILE] | agent mcp | agent tasks/todos/shell/inputs ACTION SESSION [FILE]");
+    parser.addPositionalArgument("command", "run MODEL [PROMPT] | models | pull MODEL | ps | parameters [GROUP [FILE]] | rpc METHOD [FILE]");
     parser.addPositionalArgument("arguments", "Model reference and optional prompt", "[arguments...]");
     parser.process(app);
     const auto args = parser.positionalArguments();
@@ -122,49 +122,7 @@ int main(int argc, char** argv)
                 throw std::runtime_error("Configuration file must contain a JSON object");
             return document.object();
         };
-        if (command == "agent") {
-            if(args.size()>=3&&args[1]=="procedures"){
-                if(!parser.isSet("auth-file")||args.size()!=4||!QStringList{"list","respond"}.contains(args[2]))throw std::runtime_error("Usage: iillm --auth-file FILE agent procedures list/respond PARAMS_JSON_FILE");
-                const auto token=QString::fromUtf8(iiLocalLLMClient::readPrivateFile(parser.value("auth-file"),512)).trimmed();
-                printJson(client.call("agent.procedures."+args[2],readObject(args[3]),{},300000,token));return 0;
-            }
-            const bool mcp = args.size() == 2 && args[1] == "mcp";
-            const bool plugins = args.size() == 2 && args[1] == "plugins";
-            const bool permissions=args.size()>=3&&args.size()<=4&&args[1]=="permissions"
-                &&(args[2]=="pending"||(args[2]=="respond"&&args.size()==4));
-            const bool tasks = args.size() >= 4 && args.size() <= 5 && (args[1] == "tasks" || args[1] == "todos" || args[1] == "shell" || args[1] == "inputs" || args[1] == "skills" || args[1] == "agents" || args[1] == "teams" || args[1] == "permissions" || args[1] == "memory" || args[1] == "sessions" || args[1] == "web" || args[1] == "lsp" || args[1] == "worktrees" || args[1] == "notebooks" || args[1] == "checkpoints");
-            if ((!mcp && !plugins && !tasks && !permissions) || !parser.isSet("auth-file"))
-                throw std::runtime_error("Usage: iillm --auth-file FILE agent mcp/plugins | agent permissions pending [FILE] | agent permissions respond FILE | agent tasks/todos/shell/inputs/skills/agents/teams/permissions/memory/sessions/web/lsp/worktrees/notebooks/checkpoints ACTION SESSION [PARAMS_JSON_FILE]");
-            const auto token = QString::fromUtf8(iiLocalLLMClient::readPrivateFile(parser.value("auth-file"), 512)).trimmed();
-            if (token.size() < 32 || token.size() > 256) throw std::runtime_error("Invalid app token length");
-            if (mcp) printJson(client.call("agent.mcp.status", {}, {}, 300000, token));
-            else if(plugins)printJson(client.call("agent.plugins.list",{},{},300000,token));
-            else if(permissions)printJson(client.call("agent.permissions."+args[2],args.size()==4?readObject(args[3]):QJsonObject{},{},300000,token));
-            else {
-                const auto allowed = args[1] == "tasks" ? QStringList{"create", "get", "list", "update", "claim"}
-                    : args[1] == "skills" ? QStringList{"list", "run"}
-                    : args[1] == "permissions" ? QStringList{"get"}
-                    : args[1] == "worktrees" ? QStringList{"enter","exit","status"}
-                    : args[1] == "notebooks" ? QStringList{"read","edit"}
-                    : args[1] == "checkpoints" ? QStringList{"list","create","rewind"}
-                    : args[1] == "lsp" ? QStringList{"query","status"}
-                    : args[1] == "web" ? QStringList{"fetch"}
-                    : args[1] == "sessions" ? QStringList{"search","fork"}
-                    : args[1] == "memory" ? QStringList{"get","read","write","edit","glob","grep","forget","recall","extract","extraction.status","extraction.cancel","dream","dream.status","dream.cancel"}
-                    : args[1] == "teams" ? QStringList{"create","delete","status","spawn","send","inbox","wait","stop"}
-                    : args[1] == "agents" ? QStringList{"run", "output", "stop", "list", "profiles"}
-                    : args[1] == "inputs" ? QStringList{"enqueue", "list", "remove", "run"}
-                    : args[1] == "shell" ? QStringList{"start", "output", "stop", "list"} : QStringList{"get", "write"};
-                if (!allowed.contains(args[2])) throw std::runtime_error("Unknown agent action");
-                auto params = args.size() == 5 ? readObject(args[4]) : QJsonObject{};
-                if (params.contains("session_id")) throw std::runtime_error("Specify the session ID only as a positional argument");
-                params["session_id"] = args[3];
-                const auto method = args[1] == "skills" && args[2] == "run" ? QStringLiteral("agent.run") : "agent." + args[1] + '.' + args[2];
-                const auto value = client.call(method, params, {}, 300000, token);
-                printJson(value); if (value.toObject()["is_error"].toBool()
-                    || ((args[1] == "inputs" || args[1] == "skills") && args[2] == "run" && value.toObject()["status"] != "completed")) return 1;
-            }
-        } else if (command == "rpc") {
+        if (command == "rpc") {
             if (args.size() < 2 || args.size() > 3 || !parser.isSet("auth-file"))
                 throw std::runtime_error("Usage: iillm --auth-file FILE rpc METHOD [PARAMS_JSON_FILE]");
             const auto token = QString::fromUtf8(iiLocalLLMClient::readPrivateFile(parser.value("auth-file"), 512)).trimmed();

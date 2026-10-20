@@ -1,3 +1,5 @@
+> Since 0.56.0 this package provides inference only. Agent/MCP commands and their historical verification moved to [iiMultimodalAgent](../../iiMultimodalAgent/docs/Migration.md). Current extraction evidence is in [the agent verification report](../../iiMultimodalAgent/docs/Verification.md).
+
 # iillm과 iiLocalLLMD
 
 0.54의 daemon --agent-decision FILE 및 agent-enabled MCP --decision FILE은 성공 확률·수익·손실·비용의 private host 설정이다. 미지정 시 정책은 활성화되고 평가가 없어 실행을 보류한다. 반환 채널로 동적 평가를 제공할 수 있다. [DecisionGate.md](DecisionGate.md)를 따른다.

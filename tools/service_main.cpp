@@ -1,17 +1,6 @@
 #include <iiLocalLLM.h>
 #include "IpcEndpoint.h"
 #include "PrivateFile.h"
-#include "AgentProfileConfig.h"
-#include "PermissionSettingsConfig.h"
-#include "PermissionRequestsConfig.h"
-#include "ProceduresConfig.h"
-#include "DecisionConfig.h"
-#include "CommandHookConfig.h"
-#include <agent/Api.h>
-#include <agent/McpConnections.h>
-#include <agent/PluginRuntime.h>
-#include <agent/ShellTasks.h>
-#include <mcp/LocalApplications.h>
 #include <QtCore/QCommandLineParser>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
@@ -57,51 +46,6 @@ int main(int argc, char** argv)
         {QStringLiteral("http-port"), QStringLiteral("Enable HTTP on 127.0.0.1; 0 selects an available port"), QStringLiteral("port")},
         {"http-workers", "Maximum ordinary HTTP responses in flight (1..64).", "count", "8"},
         {"http-control-requests", "Separate HTTP control responses in flight (1..16).", "count", "2"},
-        {"agent-workspace", "Enable the agent API for this existing workspace.", "directory"},
-        {"agent-state", "Private agent state directory outside the workspace.", "directory"},
-        {"agent-credentials", "Private JSON object mapping client IDs to distinct random tokens (32..256 URL-safe characters).", "file"},
-        {"agent-allow", "Allow a tool permission rule, e.g. Write(src/**), Bash(git status:*) or Skill(review); repeat for more rules. Read-only tools except WebFetch are allowed by default.", "pattern"},
-        {"agent-permission-settings", "Private host configuration outside the workspace for layered permission settings.", "file"},
-        {"agent-permission-requests", "Private host JSON outside the workspace enabling app permission requests.", "file"},
-        {"agent-procedures", "Private host JSON selecting procedure returns for app intervention.", "file"},
-        {"agent-decision", "Private host JSON with quantitative success, gain, loss and cost profiles.", "file"},
-        {"agent-add-dir", "Additional file working directory; repeat. Does not enable disk settings without --agent-permission-settings.", "directory"},
-        {"agent-hooks", "Private command/HTTP/prompt/agent hook JSON configuration outside the workspace.", "file"},
-        {"agent-mcp-config", "Host-authorized MCP configuration file; repeat in increasing priority.", "file"},
-        {"agent-plugins", "Private local plugin store; applies its selected snapshot at startup.", "directory"},
-        {"agent-mcp-project", "Load workspace/.mcp.json after explicit MCP configuration files."},
-        {"agent-mcp-eager", "Publish all configured MCP tools to the model without ToolSearch."},
-        {"agent-apps-dir", "Private registry of running local application MCP endpoints.", "directory"},
-        {"agent-no-apps", "Disable discovery of running local applications."},
-        {"agent-no-plan-mode", "Disable session planning and review tools."},
-        {"agent-no-user-questions", "Disable AskUserQuestion."},
-        {"agent-no-memory", "Disable persistent project memory context and file access."},
-        {"agent-no-memory-recall", "Disable model-ranked project memory recall."},
-        {"agent-no-memory-extraction", "Disable automatic project memory extraction after main-agent responses."},
-        {"agent-no-session-history", "Disable owned session transcript search."},
-        {"agent-no-file-checkpoints", "Disable native file checkpoints and rewind controls."},
-        {"agent-no-worktrees", "Disable owned worktree lifecycle tools."},
-        {"agent-worktree-config", "Private host JSON for worktree storage, base ref and sparse paths.", "file"},
-        {"agent-lsp-config", "Private host JSON configuring local language servers.", "file"},
-        {"agent-no-web-fetch", "Disable anonymous web page fetching and local extraction."},
-        {"agent-web-model", "Local WebFetch extraction model (default: session model).", "model"},
-        {"agent-web-private-origin", "Trusted exact private web origin; repeat. Still requires WebFetch domain permission.", "origin"},
-        {"agent-auto-dream", "Enable automatic project memory consolidation after eligible main-agent responses."},
-        {"agent-memory-recall-model", "Local selector model (default: conversation model).", "model"},
-        {"agent-question-preview", "User question preview format (markdown or html).", "format", "markdown"},
-        {"agent-no-tasks", "Disable persistent task and todo tools for the agent API."},
-        {"agent-no-skills", "Disable local skill discovery and invocation."},
-        {"agent-no-subagents", "Disable delegated local agent execution."},
-        {"agent-no-teams", "Disable persistent local teammates and team messaging."},
-        {"agent-no-team-task-claim", "Disable automatic shared-task assignment to local teammates."},
-        {"agent-profiles", "Private JSON host configuration for profile directories, overrides and model grants.", "file"},
-        {"no-agent-profiles", "Disable agent profile file discovery; retain general-purpose."},
-        {"agent-subagent-options", "Private JSON file of host-owned child GenerationOptions (temperature, max_tokens, etc.).", "file"},
-        {"agent-skills-dir", "Additional host-authorized skills directory; repeat in highest-priority-first order.", "directory"},
-        {"agent-no-background", "Disable background shell execution and its control tools."},
-        {"agent-no-auto-compact", "Disable automatic agent conversation compaction; explicit compact requests remain available."},
-        {"agent-no-project-context", "Disable automatic project instruction loading for the agent API."},
-        {"agent-context-exclude", "Exclude a workspace-relative instruction glob; repeat for more patterns.", "pattern"},
         {QStringLiteral("install"), QStringLiteral("Install a local manifest bundle; repeat for multiple bundles"), QStringLiteral("directory")},
         {QStringLiteral("hardware"), QStringLiteral("Inspect startup hardware as JSON and exit")}});
     parser.process(app);
@@ -129,98 +73,6 @@ int main(int argc, char** argv)
             throw std::runtime_error("HTTP capacity options require --http-port");
         if (parser.isSet("keep-alive")) options.keepAliveMs = iiLocalLLM::parseKeepAlive(parser.value("keep-alive"));
         // Validate private credentials before hardware/driver initialization.
-        namespace a = iiLocalLLM::agent;
-        std::optional<a::ApiOptions> agentConfig;
-        std::shared_ptr<const a::PermissionPolicy> agentPolicy;
-        if (parser.isSet("agent-workspace") || parser.isSet("agent-state") || parser.isSet("agent-credentials") || parser.isSet("agent-allow")
-            || parser.isSet("agent-no-auto-compact") || parser.isSet("agent-no-project-context") || parser.isSet("agent-context-exclude") || parser.isSet("agent-no-memory")
-            || parser.isSet("agent-no-memory-recall") || parser.isSet("agent-memory-recall-model") || parser.isSet("agent-no-memory-extraction") || parser.isSet("agent-no-session-history") || parser.isSet("agent-no-file-checkpoints") || parser.isSet("agent-auto-dream") || parser.isSet("agent-no-web-fetch") || parser.isSet("agent-web-model") || parser.isSet("agent-web-private-origin") || parser.isSet("agent-lsp-config") || parser.isSet("agent-worktree-config") || parser.isSet("agent-no-worktrees")
-            || parser.isSet("agent-plugins") || parser.isSet("agent-mcp-config") || parser.isSet("agent-mcp-project") || parser.isSet("agent-mcp-eager")
-            || parser.isSet("agent-apps-dir") || parser.isSet("agent-no-apps") || parser.isSet("agent-no-plan-mode") || parser.isSet("agent-no-user-questions") || parser.isSet("agent-question-preview") || parser.isSet("agent-no-tasks") || parser.isSet("agent-no-background")
-            || parser.isSet("agent-no-skills") || parser.isSet("agent-skills-dir") || parser.isSet("agent-no-subagents") || parser.isSet("agent-no-teams") || parser.isSet("agent-no-team-task-claim") || parser.isSet("agent-subagent-options")
-            || parser.isSet("agent-profiles") || parser.isSet("no-agent-profiles") || parser.isSet("agent-permission-settings") || parser.isSet("agent-permission-requests") || parser.isSet("agent-procedures") || parser.isSet("agent-decision") || parser.isSet("agent-add-dir") || parser.isSet("agent-hooks")) {
-            if (parser.isSet("agent-apps-dir") && parser.isSet("agent-no-apps"))
-                throw std::runtime_error("--agent-apps-dir and --agent-no-apps cannot be combined");
-            if (parser.isSet("agent-apps-dir") && parser.value("agent-apps-dir").isEmpty())
-                throw std::runtime_error("--agent-apps-dir requires a nonempty directory");
-            if (!parser.isSet("agent-workspace") || !parser.isSet("agent-state") || !parser.isSet("agent-credentials"))
-                throw std::runtime_error("Agent API requires --agent-workspace, --agent-state and --agent-credentials together");
-            a::ApiOptions config; config.workingDirectory = QFileInfo(parser.value("agent-workspace")).canonicalFilePath();
-            const auto credentials = QFileInfo(parser.value("agent-credentials")).canonicalFilePath();
-            const auto prefix = config.workingDirectory.endsWith('/') ? config.workingDirectory : config.workingDirectory + '/';
-            if (config.workingDirectory.isEmpty() || credentials == config.workingDirectory || credentials.startsWith(prefix))
-                throw std::runtime_error("Agent workspace must exist and the credential file must be outside it");
-            QJsonParseError error;
-            const auto document = QJsonDocument::fromJson(iiLocalLLMClient::readPrivateFile(parser.value("agent-credentials")), &error);
-            if (error.error != QJsonParseError::NoError || !document.isObject()) throw std::runtime_error("Agent credentials must be a JSON object");
-            const auto entries = document.object();
-            for (auto it = entries.begin(); it != entries.end(); ++it) {
-                if (!it.value().isString()) throw std::runtime_error("Agent credentials must map client IDs to strings");
-                config.clientTokens.insert(it.key(), it.value().toString());
-            }
-            config.stateDirectory = parser.value("agent-state");
-            config.engine.compaction.automatic = !parser.isSet("agent-no-auto-compact");
-            config.engine.taskToolsEnabled = !parser.isSet("agent-no-tasks");
-            config.engine.planToolsEnabled = !parser.isSet("agent-no-plan-mode");
-            config.engine.userQuestionsEnabled = !parser.isSet("agent-no-user-questions");
-            config.engine.projectMemoryEnabled = !parser.isSet("agent-no-memory");
-            config.engine.memoryRecall.enabled = !parser.isSet("agent-no-memory-recall");
-            config.engine.memoryExtraction.enabled = !parser.isSet("agent-no-memory-extraction");
-            config.engine.sessionHistoryEnabled = !parser.isSet("agent-no-session-history");
-            config.engine.fileCheckpointsEnabled = !parser.isSet("agent-no-file-checkpoints");
-            config.engine.worktrees.enabled=!parser.isSet("agent-no-worktrees");
-            if(parser.isSet("agent-worktree-config")) {
-                if(parser.isSet("agent-no-worktrees"))throw std::runtime_error("Worktree configuration conflicts with disabled worktrees");
-                QJsonParseError parse;const auto json=QJsonDocument::fromJson(iiLocalLLMClient::readPrivateFile(parser.value("agent-worktree-config")),&parse);
-                if(parse.error!=QJsonParseError::NoError||!json.isObject())throw std::runtime_error("Invalid worktree host configuration");
-                config.engine.worktrees=a::worktreeOptionsFromJson(json.object());
-            }
-            if(parser.isSet("agent-lsp-config")) {
-                QJsonParseError parse;const auto json=QJsonDocument::fromJson(iiLocalLLMClient::readPrivateFile(parser.value("agent-lsp-config")),&parse);
-                if(parse.error!=QJsonParseError::NoError||!json.isObject())throw std::runtime_error("Invalid LSP host configuration");
-                config.engine.lsp=a::lspOptionsFromJson(json.object());
-            }
-            config.engine.webFetchEnabled = !parser.isSet("agent-no-web-fetch");
-            config.engine.webFetch.model = parser.value("agent-web-model");
-            config.engine.webFetch.privateOrigins = parser.values("agent-web-private-origin");
-            config.engine.memoryDream.automatic = parser.isSet("agent-auto-dream");
-            config.engine.memoryRecall.model = parser.value("agent-memory-recall-model");
-            config.engine.userQuestions.previewFormat = parser.value("agent-question-preview");
-            config.engine.skills.enabled = !parser.isSet("agent-no-skills");
-            config.engine.skills.directories = parser.values("agent-skills-dir");
-            config.subagentsEnabled = !parser.isSet("agent-no-subagents");
-            config.subagents = iiLocalLLMClient::profileConfig(parser.value("agent-profiles"),parser.isSet("no-agent-profiles"));
-            a::discoverAgentProfiles(config.workingDirectory,config.subagents.profiles);
-            if (parser.isSet("agent-subagent-options")) {
-                QJsonParseError parse;
-                const auto generation = QJsonDocument::fromJson(iiLocalLLMClient::readPrivateFile(parser.value("agent-subagent-options")), &parse);
-                if (parse.error != QJsonParseError::NoError || !generation.isObject())
-                    throw std::runtime_error("--agent-subagent-options must contain a JSON GenerationOptions object");
-                config.subagents.generation = iiLocalLLM::generationOptionsFromJson(generation.object());
-            }
-            config.teamsEnabled=!parser.isSet("agent-no-teams");
-            config.teams.autoClaimTasks=!parser.isSet("agent-no-team-task-claim");
-            config.teams.profiles=config.subagents.profiles;config.teams.definitions=config.subagents.definitions;
-            config.teams.allowedModels=config.subagents.allowedModels;config.teams.modelAliases=config.subagents.modelAliases;config.teams.generation=config.subagents.generation;
-            config.engine.projectContext.enabled = !parser.isSet("agent-no-project-context");
-            config.engine.projectContext.excludes = parser.values("agent-context-exclude");
-            // Bound agent dispatch separately from HTTP response admission.
-            config.maxConcurrentRequests = 6; config.maxQueuedRequests = 0;
-            if(parser.isSet("agent-permission-settings")&&parser.value("agent-permission-settings").isEmpty())
-                throw std::runtime_error("--agent-permission-settings requires a file");
-            QList<a::PermissionRule> rules;
-            for(const auto& value:parser.values("agent-allow"))rules.append({value,a::PermissionBehavior::Allow});
-            if(parser.isSet("agent-permission-requests")&&parser.value("agent-permission-requests").isEmpty())throw std::runtime_error("--agent-permission-requests requires a file");
-            config.permissionRequests=iiLocalLLMClient::permissionRequestsConfig(parser.value("agent-permission-requests"),config.workingDirectory);
-            if(parser.isSet("agent-procedures")&&parser.value("agent-procedures").isEmpty())throw std::runtime_error("--agent-procedures requires a file");
-            config.procedures=iiLocalLLMClient::proceduresConfig(parser.value("agent-procedures"),config.workingDirectory);
-            if(parser.isSet("agent-decision")&&parser.value("agent-decision").isEmpty())throw std::runtime_error("--agent-decision requires a file");
-            config.engine.decision=iiLocalLLMClient::decisionConfig(parser.value("agent-decision"),config.workingDirectory);
-            agentPolicy=iiLocalLLMClient::permissionConfig(parser.value("agent-permission-settings"),config.workingDirectory,rules,{},parser.values("agent-add-dir"),config.permissionRequests?a::PermissionMode::Default:a::PermissionMode::DontAsk);
-            if(parser.isSet("agent-hooks")&&parser.value("agent-hooks").isEmpty())throw std::runtime_error("--agent-hooks requires a file");
-            config.engine.hooks=iiLocalLLMClient::commandHookConfig(parser.value("agent-hooks"),config.workingDirectory);
-            agentConfig = std::move(config);
-        }
         iiLocalLLM::Service service(options, {parser.value(QStringLiteral("mlx-python")), worker});
         if (parser.isSet(QStringLiteral("hardware"))) {
             std::cout << QJsonDocument(iiLocalLLM::hardwareObject(service.hardware())).toJson().constData();
@@ -261,46 +113,12 @@ int main(int argc, char** argv)
                     << QJsonDocument(iiLocalLLM::executionObject(model.execution)).toJson(QJsonDocument::Compact).constData() << std::endl;
             }
         }
-        std::shared_ptr<iiLocalLLM::agent::Api> agent;
-        if (agentConfig) {
-            std::shared_ptr<a::ShellTasks> shells;
-#if defined(Q_OS_UNIX) && !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
-            if (!parser.isSet("agent-no-background")) shells = std::make_shared<a::ShellTasks>(agentConfig->workingDirectory,
-                QDir(agentConfig->stateDirectory).filePath("shells"));
-#endif
-            a::McpConnectionOptions connections; connections.workingDirectory = agentConfig->workingDirectory;
-            for (const auto& path : parser.values("agent-mcp-config")) connections.configFiles.append(QFileInfo(path).absoluteFilePath());
-            if (parser.isSet("agent-mcp-project")) connections.configFiles.append(".mcp.json");
-            connections.deferTools = !parser.isSet("agent-mcp-eager");
-#if defined(Q_OS_UNIX) && !defined(Q_OS_IOS) && !defined(Q_OS_ANDROID)
-            if (!parser.isSet("agent-no-apps")) connections.localApplicationsDirectory = iiLocalLLM::mcp::localApplicationsDirectory();
-#endif
-            if (parser.isSet("agent-apps-dir")) connections.localApplicationsDirectory = QFileInfo(parser.value("agent-apps-dir")).absoluteFilePath();
-            QStringList privatePaths{agentConfig->stateDirectory};
-            if(parser.isSet("agent-plugins")){
-                if(parser.value("agent-plugins").isEmpty())throw std::runtime_error("--agent-plugins requires a store");
-                a::PluginStore store({QFileInfo(parser.value("agent-plugins")).absoluteFilePath()});
-                a::CommandHookOptions hooks;hooks.workingDirectory=agentConfig->workingDirectory;
-                auto runtime=std::make_shared<a::PluginRuntime>(store.snapshot(),hooks);
-                a::PluginRuntime::attach(agentConfig->engine,agentConfig->subagents.profiles,connections,runtime);
-                agentConfig->teams.profiles=agentConfig->subagents.profiles;privatePaths.append(store.directory());
-            }
-            for(const auto& key:{"agent-credentials","agent-permission-settings","agent-permission-requests","agent-procedures","agent-decision","agent-profiles","agent-subagent-options","agent-hooks","agent-lsp-config","agent-worktree-config"})
-                if(parser.isSet(key))privatePaths.append(parser.value(key));
-            for(const auto& file:connections.configFiles)privatePaths.append(QDir::isAbsolutePath(file)?file:QDir(agentConfig->workingDirectory).filePath(file));
-            if(!connections.localApplicationsDirectory.isEmpty())privatePaths.append(connections.localApplicationsDirectory);
-            agentConfig->engine.lsp.protectedPaths=privatePaths;
-            auto registry = std::make_shared<a::ToolRegistry>(); a::registerWorkspaceTools(*registry, agentConfig->workingDirectory, shells,privatePaths);
-            if (!connections.inlineServers.isEmpty() || !connections.configFiles.isEmpty() || !connections.localApplicationsDirectory.isEmpty())
-                agentConfig->mcp = std::make_shared<a::McpConnections>(registry, std::move(connections));
-            agent = std::make_shared<a::Api>(std::make_shared<a::ServiceModel>(service), registry, agentPolicy, std::move(*agentConfig));
-        }
-        iiLocalLLM::LocalIpcServer server(service); server.setRpcHandler(agent);
+        iiLocalLLM::LocalIpcServer server(service);
         if (parser.isSet(QStringLiteral("socket")) || !parser.isSet(QStringLiteral("http-port"))) {
             if (!server.listen(parser.isSet("socket") ? parser.value("socket") : iiLocalLLMClient::defaultEndpoint())) throw std::runtime_error(server.errorString().toStdString());
             std::cout << "iiLocalLLM listening: " << server.serverName().toStdString() << std::endl;
         }
-        iiLocalLLM::HttpApiServer http(service, httpOptions); http.setRpcHandler(agent);
+        iiLocalLLM::HttpApiServer http(service, httpOptions);
         if (parser.isSet(QStringLiteral("http-port"))) {
             bool valid = false;
             const auto port = parser.value(QStringLiteral("http-port")).toUInt(&valid);

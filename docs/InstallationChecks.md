@@ -1,3 +1,5 @@
+> Since 0.56.0 this package provides inference only. Agent/MCP commands and their historical verification moved to [iiMultimodalAgent](../../iiMultimodalAgent/docs/Migration.md). Current extraction evidence is in [the agent verification report](../../iiMultimodalAgent/docs/Verification.md).
+
 # 설치 검증
 
 호스트 재설치는 현재 소스를 빌드하고 기본 회귀 테스트 및 독립 설치 소비자를 실행한다.

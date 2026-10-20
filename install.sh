@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
+# Validate the selected CMake packages without login-shell dylib overrides.
+unset DYLD_LIBRARY_PATH DYLD_FRAMEWORK_PATH DYLD_FALLBACK_LIBRARY_PATH \
+    DYLD_VERSIONED_LIBRARY_PATH DYLD_VERSIONED_FRAMEWORK_PATH
 
 if [[ $# -ne 0 ]]; then
     echo "Usage: INSTALL_PREFIX=... QT_PREFIX_PATH=... CMAKE_PREFIX_PATH=... ./install.sh" >&2

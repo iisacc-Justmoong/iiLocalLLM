@@ -2,6 +2,7 @@
 #include <QtCore/QFile>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QSet>
+#include <QtCore/QHash>
 #include <QtCore/QRegularExpression>
 #include <algorithm>
 #include <cmath>
@@ -108,7 +109,13 @@ class ParameterCatalog::Impl {
 public:
     QJsonObject document;
     QMap<QString, ParameterGroupDefinition> groups;
-    void checkSchema(const QJsonObject& schema, int depth = 0) const
+    struct GroupIndex {
+        QHash<QString, qsizetype> fields;
+        QList<qsizetype> required;
+    };
+    QHash<QString, GroupIndex> indexes;
+    QHash<QString, QRegularExpression> patterns;
+    void checkSchema(const QJsonObject& schema, int depth = 0)
     {
         if (depth > 32) fail("Parameter schema exceeds nesting limit");
         static const QSet<QString> keys = {"type", "enum", "anyOf", "nullable", "ref", "items", "prefixItems",
@@ -144,7 +151,16 @@ public:
                 if (!it.value().isArray()) fail("required must be an array");
                 for (const auto& field : it.value().toArray()) if (!field.isString()) fail("required entries must be field names");
             }
-            if (it.key() == "pattern" && (!it.value().isString() || !QRegularExpression(it.value().toString()).isValid())) fail("Invalid string pattern");
+            if (it.key() == "pattern") {
+                if (!it.value().isString()) fail("Invalid string pattern");
+                const auto pattern = it.value().toString();
+                if (!patterns.contains(pattern)) {
+                    QRegularExpression expression(pattern);
+                    if (!expression.isValid()) fail("Invalid string pattern");
+                    expression.optimize();
+                    patterns.insert(pattern, expression);
+                }
+            }
             if (it.key().startsWith("min") || it.key().startsWith("max") || it.key().startsWith("exclusive")) {
                 if (!it.value().isDouble() || !std::isfinite(it.value().toDouble())) fail("Schema bounds must be finite numbers");
                 if ((it.key().endsWith("Length") || it.key().endsWith("Items"))
@@ -158,8 +174,9 @@ public:
         if (value.isNull() && schema.value("nullable").toBool()) return true;
         if (schema.contains("anyOf")) {
             bool matched = false;
-            for (const auto& branch : schema.value("anyOf").toArray())
-                matched |= accepts(branch.toObject(), value, depth + 1);
+            for (const auto& branch : schema.value("anyOf").toArray()) {
+                if (accepts(branch.toObject(), value, depth + 1)) { matched = true; break; }
+            }
             if (!matched) return false;
         }
         if (schema.contains("enum") && !schema.value("enum").toArray().contains(value)) return false;
@@ -212,13 +229,17 @@ public:
                 } else if (schema.value("additionalProperties") == false) return false;
             }
             const auto reference = schema.value("ref").toString();
-            if (groups.contains(reference)) {
-                const auto& fields = groups[reference].parameters;
-                for (const auto& field : fields)
-                    if (field.required && !field.hasDefault && !field.readOnly && !object.contains(field.name)) return false;
+            const auto group = groups.constFind(reference);
+            if (group != groups.cend()) {
+                const auto& fields = group->parameters;
+                const auto& index = indexes.constFind(reference).value();
+                for (auto position : index.required)
+                    if (!object.contains(fields[position].name)) return false;
                 for (auto it = object.begin(); it != object.end(); ++it) {
-                    const auto field = std::find_if(fields.begin(), fields.end(), [&](const auto& f) { return f.name == it.key(); });
-                    if (field == fields.end() || field->readOnly || !accepts(field->schema, it.value(), depth + 1)) return false;
+                    const auto position = index.fields.constFind(it.key());
+                    if (position == index.fields.cend()) return false;
+                    const auto& field = fields[position.value()];
+                    if (field.readOnly || !accepts(field.schema, it.value(), depth + 1)) return false;
                 }
             }
         }
@@ -226,7 +247,7 @@ public:
             const auto length = value.toString().size();
             if (schema.contains("minLength") && length < schema.value("minLength").toInt()) return false;
             if (schema.contains("maxLength") && length > schema.value("maxLength").toInt()) return false;
-            if (schema.contains("pattern") && !QRegularExpression(schema.value("pattern").toString()).match(value.toString()).hasMatch()) return false;
+            if (schema.contains("pattern") && !patterns.constFind(schema.value("pattern").toString()).value().match(value.toString()).hasMatch()) return false;
         }
         // Opaque backend values are retained as JSON, never interpreted as executable code.
         return true;
@@ -274,6 +295,14 @@ ParameterCatalog ParameterCatalog::fromJson(const QJsonObject& document)
             names.insert(p.name); result.parameters.append(p);
         }
         data->groups.insert(result.id, result);
+        Impl::GroupIndex index;
+        index.fields.reserve(result.parameters.size());
+        for (qsizetype i = 0; i < result.parameters.size(); ++i) {
+            const auto& field = result.parameters[i];
+            index.fields.insert(field.name, i);
+            if (field.required && !field.hasDefault && !field.readOnly) index.required.append(i);
+        }
+        data->indexes.insert(result.id, std::move(index));
     }
     for (const auto& group : data->groups)
         for (const auto& field : group.parameters) data->checkSchema(field.schema);
@@ -289,8 +318,11 @@ ParameterGroupDefinition ParameterCatalog::group(const QString& id) const
 }
 ParameterDefinition ParameterCatalog::parameter(const QString& id, const QString& name) const
 {
-    const auto definition = group(id);
-    for (const auto& field : definition.parameters) if (field.name == name) return field;
+    const auto found = d->groups.constFind(id);
+    if (found == d->groups.cend()) fail("Unknown parameter group: " + id);
+    const auto& index = d->indexes.constFind(id).value().fields;
+    const auto position = index.constFind(name);
+    if (position != index.cend()) return found->parameters[position.value()];
     fail("Unknown parameter: " + id + "." + name);
 }
 QJsonObject ParameterCatalog::toJson() const { return d->document; }

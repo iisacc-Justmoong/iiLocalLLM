@@ -2,12 +2,53 @@
 #include <QtTest/QtTest>
 #include <QtCore/QJsonArray>
 #include <limits>
+#include <future>
 
 using namespace iiLocalLLM;
 
 class ParameterTests : public QObject {
     Q_OBJECT
 private slots:
+    void immutableIndexesAndCompiledPatternsPreserveValidation()
+    {
+        auto field = [](const char* name, QJsonObject schema) {
+            return QJsonObject{{"name",name},{"native_type","custom"},{"description","Indexed field"},{"schema",schema}};
+        };
+        auto required = field("required", {{"type","string"},{"pattern","^[a-z]+$"}});
+        required["required"] = true;
+        auto derived = field("derived", {{"type","integer"}}); derived["read_only"] = true;
+        auto optional = field("optional", {{"type","integer"}}); optional["required"] = true; optional["default"] = 4;
+        const QJsonObject nested{{"id","nested"},{"parameters",QJsonArray{required,derived,optional}}};
+        const auto payload = field("payload", {{"ref","nested"}});
+        const auto unionField = field("union", {{"anyOf",QJsonArray{QJsonObject{{"type","string"}},QJsonObject{{"type","null"}}}},{"minLength",2}});
+        const QJsonObject root{{"id","root"},{"parameters",QJsonArray{payload,unionField}}};
+        const QJsonObject document{{"schema_version",1},{"groups",QJsonArray{nested,root}}};
+        const auto catalog = ParameterCatalog::fromJson(document);
+        QCOMPARE(catalog.toJson(),document);
+        const QJsonObject good{{"required","hello"}};
+        QVERIFY(catalog.validateValue("root","payload",good).isEmpty());
+        QVERIFY(!catalog.validateValue("root","payload",QJsonObject{}).isEmpty());
+        QVERIFY(!catalog.validateValue("root","payload",QJsonObject{{"required","123"}}).isEmpty());
+        QVERIFY(!catalog.validateValue("root","payload",QJsonObject{{"required","hello"},{"derived",1}}).isEmpty());
+        QVERIFY(!catalog.validateValue("root","payload",QJsonObject{{"required","hello"},{"unknown",1}}).isEmpty());
+        QVERIFY(!catalog.validateValue("root","union","x").isEmpty());
+        QVERIFY(catalog.validateValue("root","union","xx").isEmpty());
+        QVERIFY_THROWS_EXCEPTION(Error,catalog.parameter("root","missing"));
+        QVERIFY_THROWS_EXCEPTION(Error,catalog.parameter("missing","payload"));
+        std::vector<std::future<bool>> readers;
+        for (int worker=0; worker<4; ++worker) readers.push_back(std::async(std::launch::async,[catalog,good] {
+            for (int i=0;i<100;++i) if (!catalog.validateValue("root","payload",good).isEmpty()) return false;
+            return true;
+        }));
+        for (auto& reader:readers) QVERIFY(reader.get());
+        auto otherRequired=required;
+        otherRequired["schema"]=QJsonObject{{"type","string"},{"pattern","^[0-9]+$"}};
+        const auto other=ParameterCatalog::fromJson({{"schema_version",1},{"groups",QJsonArray{QJsonObject{{"id","nested"},{"parameters",QJsonArray{otherRequired}}},root}}});
+        QVERIFY(!other.validateValue("root","payload",good).isEmpty());
+        QVERIFY(catalog.validateValue("root","payload",good).isEmpty());
+        auto invalid=field("bad",{{"anyOf",QJsonArray{QJsonObject{{"type","string"}},QJsonObject{{"type","string"},{"pattern","["}}}}});
+        QVERIFY_THROWS_EXCEPTION(Error,ParameterCatalog::fromJson({{"schema_version",1},{"groups",QJsonArray{QJsonObject{{"id","invalid"},{"parameters",QJsonArray{invalid}}}}}}));
+    }
     void catalogCoversInferenceTrainingAndAdapters()
     {
         const auto catalog = ParameterCatalog::builtin();

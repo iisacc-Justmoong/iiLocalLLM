@@ -1,3 +1,5 @@
+> Since 0.56.0 this package provides inference only. Agent/MCP commands and their historical verification moved to [iiMultimodalAgent](../../iiMultimodalAgent/docs/Migration.md). Current extraction evidence is in [the agent verification report](../../iiMultimodalAgent/docs/Verification.md).
+
 # 구현 검증 기록
 
 ## 0.55 네이티브 멀티모달 하네스와 iiDecision 모델 경로
