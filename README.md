@@ -45,3 +45,11 @@ See [module migration](docs/ModuleExtraction.md), [architecture](docs/Architectu
 [parameters](docs/Parameters.md), [HTTP](docs/HTTP.md), [IPC](docs/IPC.md), and
 [Windows](docs/WindowsBuildAndRun.md). Old harness documentation links now point
 to their owning package; historical test counts are not new verification claims.
+
+## License
+
+SPDX-License-Identifier: MIT
+
+The original code and documentation in this repository are licensed under the
+[MIT License](LICENSE). Third-party code, libraries, fonts, tools, and model
+weights retain their respective licenses.
