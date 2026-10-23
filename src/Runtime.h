@@ -59,7 +59,14 @@ public:
 };
 
 IILOCALLLM_EXPORT bool llamaRuntimeAvailable() noexcept;
+// Host-owned limits. Model manifests and generation requests cannot override them.
+struct LlamaRuntimeOptions {
+    bool memoryMapWeights = true; // Allow upstream automatic mapping; false copies weights into owned memory.
+    int maxGpuLayers = -1;        // -1 retains the upstream default; otherwise caps native layer offload.
+    bool validateTensorData = false; // Ask the native loader to reject invalid tensor data.
+};
 IILOCALLLM_EXPORT std::shared_ptr<Runtime> createLlamaRuntime();
+IILOCALLLM_EXPORT std::shared_ptr<Runtime> createLlamaRuntime(LlamaRuntimeOptions options);
 struct MlxRuntimeOptions {
     QString pythonExecutable = QStringLiteral("python3");
     QString workerScript; // Explicit installed/source mlx_worker.py path; no working-directory lookup.

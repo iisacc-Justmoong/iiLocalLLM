@@ -46,6 +46,16 @@ See [module migration](docs/ModuleExtraction.md), [architecture](docs/Architectu
 [Windows](docs/WindowsBuildAndRun.md). Old harness documentation links now point
 to their owning package; historical test counts are not new verification claims.
 
+Pruned Nemotron Bolt GGUFs use a guarded upstream backport for per-layer expert
+dimensions. [Nemotron Bolt](docs/NemotronBolt.md) documents the native CPU
+regression fixture and the separate service residency-budget boundary.
+
+Hosts can use `createLlamaRuntime(LlamaRuntimeOptions)` to copy weights into owned
+memory and cap GPU layer offload without exposing device selection to model
+manifests or clients. The native Metal regression covers batched top-9 expert
+routing. See [Nemotron Bolt](docs/NemotronBolt.md) for the verified agent greeting,
+memory limits, and residency settings.
+
 ## License
 
 SPDX-License-Identifier: MIT

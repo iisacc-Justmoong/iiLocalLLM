@@ -13,7 +13,8 @@ int main(int argc, char** argv)
         std::shared_ptr<Runtime> runtime;
         ModelSpec spec{"cpu-test", args[2], 256};
         if (args[1] == QStringLiteral("llama.cpp")) {
-            runtime = createLlamaRuntime();
+            const bool resident = args.size() == 4 && args[3] == QStringLiteral("resident");
+            runtime = resident ? createLlamaRuntime({false, 0, true}) : createLlamaRuntime();
             spec.options.insert(QStringLiteral("chat_template"), QStringLiteral("chatml"));
         } else {
             if (args.size() != 5) return 2;

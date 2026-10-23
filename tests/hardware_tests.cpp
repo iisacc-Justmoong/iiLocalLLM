@@ -64,6 +64,17 @@ public:
 class HardwareTests : public QObject {
     Q_OBJECT
 private slots:
+    void nativeRuntimeLimits()
+    {
+        QVERIFY(createLlamaRuntime());
+        QVERIFY(createLlamaRuntime({false, 0, true}));
+        try {
+            createLlamaRuntime({true, -2});
+            QFAIL("A negative GPU layer limit below -1 must be rejected");
+        } catch (const Error& error) {
+            QCOMPARE(error.code(), ErrorCode::InvalidArgument);
+        }
+    }
     void policy_data()
     {
         QTest::addColumn<HardwareInfo>("hardware");

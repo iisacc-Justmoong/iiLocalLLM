@@ -457,6 +457,11 @@ private:
 #endif
 class LlamaRuntime final : public Runtime {
 public:
+    explicit LlamaRuntime(LlamaRuntimeOptions options = {}) : options_(options)
+    {
+        if (options.maxGpuLayers < -1)
+            throw Error(ErrorCode::InvalidArgument, "maxGpuLayers must be -1 or nonnegative");
+    }
     QString id() const override { return QStringLiteral("llama.cpp"); }
     bool supportsModel(const ModelSpec& spec) const override
     {
@@ -551,7 +556,12 @@ public:
         selected->push_back(nullptr); // Explicit empty list on CPU; nullptr would auto-select all GPUs.
         auto params = llama_model_default_params();
         params.devices = selected->data();
-        params.n_gpu_layers = accelerated ? -1 : 0;
+        params.n_gpu_layers = accelerated ? options_.maxGpuLayers : 0;
+        params.check_tensors = options_.validateTensorData;
+        if (!options_.memoryMapWeights) {
+            params.load_mode = LLAMA_LOAD_MODE_NONE;
+            params.lazy_mode = LLAMA_LAZY_MODE_OFF;
+        }
         params.split_mode = LLAMA_SPLIT_MODE_NONE;
         params.progress_callback = [](float, void* data) { return !static_cast<const CancellationToken*>(data)->isCancelled(); };
         params.progress_callback_user_data = const_cast<CancellationToken*>(&cancel);
@@ -559,15 +569,18 @@ public:
                        [selected](llama_model* model) { llama_model_free(model); });
         cancel.throwIfCancelled();
         if (!model) throw Error(ErrorCode::RuntimeFailure, QStringLiteral("llama.cpp could not load GGUF model"));
-        auto loaded = std::make_shared<LlamaModel>(std::move(model), spec, accelerated, selected->front());
+        const bool contextAccelerated = accelerated && params.n_gpu_layers != 0;
+        auto loaded = std::make_shared<LlamaModel>(std::move(model), spec, contextAccelerated, selected->front());
         // Check context/KV allocation before advertising a successful GPU selection.
-        if (accelerated) (void)loaded->createContext(cancel);
+        if (contextAccelerated) (void)loaded->createContext(cancel);
         return loaded;
 #else
         Q_UNUSED(spec); Q_UNUSED(device); Q_UNUSED(cancel);
         throw Error(ErrorCode::RuntimeUnavailable, QStringLiteral("Rebuild with IILOCALLLM_WITH_LLAMA=ON"));
 #endif
     }
+private:
+    LlamaRuntimeOptions options_;
 };
 }
 namespace detail {
@@ -621,5 +634,6 @@ bool llamaRuntimeAvailable() noexcept
     return false;
 #endif
 }
-std::shared_ptr<Runtime> createLlamaRuntime() { return std::make_shared<LlamaRuntime>(); }
+std::shared_ptr<Runtime> createLlamaRuntime() { return createLlamaRuntime({}); }
+std::shared_ptr<Runtime> createLlamaRuntime(LlamaRuntimeOptions options) { return std::make_shared<LlamaRuntime>(options); }
 } // namespace iiLocalLLM

@@ -46,6 +46,7 @@ set(IILOCALLLM_LLAMA_SOURCE_DIR "" CACHE PATH "Existing llama.cpp source checkou
 set(IILOCALLLM_TEST_GGUF "" CACHE FILEPATH "Local GGUF for optional real inference test")
 set(IILOCALLLM_TEST_CHAT_GGUF "" CACHE FILEPATH "Pinned Qwen2.5 0.5B Q4_K_M GGUF for optional offline chat acceptance test")
 set(IILOCALLLM_TEST_MLX_MODEL "" CACHE PATH "Local MLX model for optional real inference test")
+set(IILOCALLLM_TEST_NEMOTRON_BOLT_GGUF "" CACHE FILEPATH "Local pruned Nemotron Bolt GGUF for native regression")
 set(IILOCALLLM_MLX_PYTHON "python3" CACHE STRING "Python interpreter containing mlx-lm")
 
 # Official mlx-lm sampling helpers: dcbcf786c0cf56f9a12fabe9468c887781431ae2 (MIT).
@@ -228,11 +229,29 @@ if(BUILD_TESTING)
     target_link_libraries(iiLocalLLMRuntimeSmoke PRIVATE iiLocalLLM::iiLocalLLM)
     add_executable(iiLocalLLMCpuRuntimeSmoke tests/cpu_runtime_smoke.cpp)
     target_link_libraries(iiLocalLLMCpuRuntimeSmoke PRIVATE iiLocalLLM::iiLocalLLM)
+    if(TARGET ggml-metal)
+        add_executable(iiLocalLLMMetalTop9Smoke tests/metal_top9_smoke.cpp)
+        target_link_libraries(iiLocalLLMMetalTop9Smoke PRIVATE ggml-metal ggml-base)
+        add_test(NAME iiLocalLLM.metal_top9 COMMAND iiLocalLLMMetalTop9Smoke)
+        set_tests_properties(iiLocalLLM.metal_top9 PROPERTIES TIMEOUT 120
+            ENVIRONMENT "GGML_METAL_NO_RESIDENCY=1" SKIP_RETURN_CODE 77 RUN_SERIAL TRUE)
+    endif()
+    if(IILOCALLLM_WITH_LLAMA AND IILOCALLLM_TEST_NEMOTRON_BOLT_GGUF)
+        add_executable(iiLocalLLMNemotronBoltSmoke tests/nemotron_bolt_smoke.cpp)
+        target_link_libraries(iiLocalLLMNemotronBoltSmoke PRIVATE iiLocalLLM::iiLocalLLM)
+        add_test(NAME iiLocalLLM.nemotron_bolt COMMAND iiLocalLLMNemotronBoltSmoke
+            "${IILOCALLLM_TEST_NEMOTRON_BOLT_GGUF}")
+        set_tests_properties(iiLocalLLM.nemotron_bolt PROPERTIES TIMEOUT 1800 LABELS "inference")
+    endif()
     if(IILOCALLLM_WITH_LLAMA AND IILOCALLLM_TEST_GGUF)
         add_test(NAME iiLocalLLM.llama_inference COMMAND iiLocalLLMRuntimeSmoke llama.cpp "${IILOCALLLM_TEST_GGUF}" chatml)
         set_tests_properties(iiLocalLLM.llama_inference PROPERTIES TIMEOUT 180 LABELS "inference")
         add_test(NAME iiLocalLLM.llama_cpu_inference COMMAND iiLocalLLMCpuRuntimeSmoke llama.cpp "${IILOCALLLM_TEST_GGUF}")
         set_tests_properties(iiLocalLLM.llama_cpu_inference PROPERTIES TIMEOUT 180 LABELS "inference")
+        add_test(NAME iiLocalLLM.llama_resident_inference COMMAND iiLocalLLMCpuRuntimeSmoke
+            llama.cpp "${IILOCALLLM_TEST_GGUF}" resident)
+        set_tests_properties(iiLocalLLM.llama_resident_inference PROPERTIES TIMEOUT 180 LABELS "inference"
+            ENVIRONMENT "GGML_METAL_NO_RESIDENCY=1")
         if(UNIX)
             add_test(NAME iiLocalLLM.daemon COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/daemon_smoke.py
                 $<TARGET_FILE:iiLocalLLMService> "${IILOCALLLM_TEST_GGUF}")
