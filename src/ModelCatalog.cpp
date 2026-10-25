@@ -1,6 +1,7 @@
 #include <iiFileProviderDevice.h>
 #include "ModelCatalog.h"
 #include <QtCore/QCryptographicHash>
+#include "ModelDigest.h"
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QSet>
@@ -56,7 +57,7 @@ ModelFile hashFile(const iiFileProvider::Directory& root, const QString& relativ
         output.setFileName(path);
         require(output.open(QIODevice::WriteOnly | QIODevice::NewOnly), ErrorCode::StorageFailure, output.errorString());
     }
-    QCryptographicHash hash(QCryptographicHash::Sha256);
+    detail::ModelDigest hash;
     qint64 size = 0;
     QByteArray buffer(1024 * 1024, Qt::Uninitialized);
     for (;;) {

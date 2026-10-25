@@ -63,3 +63,9 @@ SPDX-License-Identifier: MIT
 The original code and documentation in this repository are licensed under the
 [MIT License](LICENSE). Third-party code, libraries, fonts, tools, and model
 weights retain their respective licenses.
+
+Related implementation contracts: [Native tool-turn contracts](docs/NativeToolTemplates.md).
+
+Managed MLX environments build a validated Transformers import index to avoid repeated model-source scans during worker startup. See [MLX import metadata](docs/MlxImportIndex.md) for preparation, invalidation and unchanged inference deadlines.
+
+Model integrity still verifies every byte; the macOS streaming SHA-256 path uses the system implementation. See [model integrity](docs/ModelIntegrity.md).

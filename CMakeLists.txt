@@ -49,6 +49,15 @@ set(IILOCALLLM_TEST_MLX_MODEL "" CACHE PATH "Local MLX model for optional real i
 set(IILOCALLLM_TEST_NEMOTRON_BOLT_GGUF "" CACHE FILEPATH "Local pruned Nemotron Bolt GGUF for native regression")
 set(IILOCALLLM_MLX_PYTHON "python3" CACHE STRING "Python interpreter containing mlx-lm")
 
+# Transformers 5 scans all model sources to build static import metadata. Build
+# that exact metadata once for managed MLX environments, outside request paths.
+if(BUILD_TESTING AND IILOCALLLM_TEST_MLX_MODEL)
+    add_custom_target(iiLocalLLMMLXImportIndex ALL
+        COMMAND "${IILOCALLLM_MLX_PYTHON}" -B
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/prepare_mlx_import_index.py" --if-venv
+        VERBATIM)
+endif()
+
 # Official mlx-lm sampling helpers: dcbcf786c0cf56f9a12fabe9468c887781431ae2 (MIT).
 file(SHA256 "${CMAKE_CURRENT_SOURCE_DIR}/src/runtimes/mlx_sample_utils.py" _mlx_sampler_sha)
 if(NOT _mlx_sampler_sha STREQUAL "c93c1eef794725f9f7ce77b6212f61eb6d0fe17b9cd87c06cec6470ee12b07f2")
@@ -137,6 +146,20 @@ foreach(_entrypoint IN LISTS _versioned_entrypoints)
     target_compile_definitions(${_entrypoint} PRIVATE IILOCALLLM_APP_VERSION="${PROJECT_VERSION}")
 endforeach()
 if(BUILD_TESTING)
+    add_executable(iiLocalLLMToolTemplateTests tests/tool_template_tests.cpp)
+    target_compile_features(iiLocalLLMToolTemplateTests PRIVATE cxx_std_23)
+    target_include_directories(iiLocalLLMToolTemplateTests PRIVATE src)
+    add_test(NAME iiLocalLLM.tool_template_contract COMMAND iiLocalLLMToolTemplateTests)
+    add_executable(iiLocalLLMToolTurnTests tests/tool_turn_tests.cpp)
+    target_compile_features(iiLocalLLMToolTurnTests PRIVATE cxx_std_23)
+    target_include_directories(iiLocalLLMToolTurnTests PRIVATE src)
+    target_link_libraries(iiLocalLLMToolTurnTests PRIVATE Qt6::Core)
+    add_test(NAME iiLocalLLM.tool_turn_contract COMMAND iiLocalLLMToolTurnTests)
+    add_executable(iiLocalLLMModelDigestTests tests/model_digest_tests.cpp)
+    target_compile_features(iiLocalLLMModelDigestTests PRIVATE cxx_std_23)
+    target_include_directories(iiLocalLLMModelDigestTests PRIVATE src)
+    target_link_libraries(iiLocalLLMModelDigestTests PRIVATE Qt6::Core)
+    add_test(NAME iiLocalLLM.model_digest COMMAND iiLocalLLMModelDigestTests)
     add_executable(iiLocalLLMMemoryHeaderInteropTests tests/memory_header_interop.cpp)
     target_link_libraries(iiLocalLLMMemoryHeaderInteropTests PRIVATE iiLocalLLM::iiLocalLLM)
     add_test(NAME iiLocalLLM.MemoryHeaderInterop COMMAND iiLocalLLMMemoryHeaderInteropTests)
@@ -225,6 +248,7 @@ if(BUILD_TESTING)
         endif()
     endif()
     add_test(NAME iiLocalLLM.mlx_cache_policy COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/mlx_worker_tests.py)
+    add_test(NAME iiLocalLLM.mlx_import_index COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/mlx_import_index_tests.py)
     add_executable(iiLocalLLMRuntimeSmoke tests/runtime_smoke.cpp)
     target_link_libraries(iiLocalLLMRuntimeSmoke PRIVATE iiLocalLLM::iiLocalLLM)
     add_executable(iiLocalLLMCpuRuntimeSmoke tests/cpu_runtime_smoke.cpp)
@@ -291,7 +315,7 @@ install(FILES catalog/parameters.json catalog/parameter-sources.json catalog/par
 install(FILES catalog/registry.json DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM)
 install(FILES README.md LICENSE THIRD_PARTY_NOTICES.md DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM)
 install(DIRECTORY docs/ DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/docs)
-install(FILES src/runtimes/mlx_worker.py src/runtimes/mlx_sample_utils.py src/runtimes/mlx-requirements.txt DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/runtimes)
+install(FILES src/runtimes/mlx_worker.py src/runtimes/mlx_sample_utils.py src/runtimes/mlx_import_index.py src/runtimes/mlx-requirements.txt DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/runtimes)
 install(FILES third_party/cpp-httplib/LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/licenses RENAME cpp-httplib.LICENSE)
 if(IILOCALLLM_WITH_LLAMA)
     get_target_property(_llama_source_dir llama SOURCE_DIR)

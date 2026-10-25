@@ -96,6 +96,8 @@ class Worker:
         if op == "load":
             import mlx.core as mx
             self.backend = select_device(mx, request["backend"])
+            from mlx_import_index import install
+            install()
             from mlx_lm import load
             path = Path(request["path"]).resolve(strict=True)
             if not path.is_dir():

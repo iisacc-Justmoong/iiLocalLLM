@@ -3,6 +3,8 @@
 #include "Utf8Stream.h"
 #include "MemoryEstimate.h"
 #include "MediaContent.h"
+#include "ToolTemplate.h"
+#include "ToolTurn.h"
 #include "hardware/Detection.h"
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
@@ -76,6 +78,7 @@ struct LlamaConversationState final : RuntimePromptState {
     common_chat_params chat;
     common_chat_parser_params parser;
     bool thinkingEnabled = true;
+    QStringList singleTurnTools;
     std::shared_ptr<NativeProjector> projector;
     std::vector<BitmapPtr> bitmaps;
     ChunksPtr chunks{nullptr, mtmd_input_chunks_free};
@@ -105,7 +108,16 @@ public:
     {
         const auto* state = dynamic_cast<const LlamaConversationState*>(prompt.state.get());
         if (!state) throw Error(ErrorCode::InvalidArgument, "Missing llama.cpp conversation template state");
-        return generateImpl(prompt.tokens, options, cancel, onText, state);
+        if(state->singleTurnTools.isEmpty())return generateImpl(prompt.tokens,options,cancel,onText,state);
+        QString generated;qsizetype delivered=0;bool yielded=false;const auto prefill=QString::fromStdString(state->parser.generation_prompt);
+        return generateImpl(prompt.tokens,options,cancel,[&](const QString& piece) {
+            if(yielded)return false;
+            generated+=piece;
+            const auto boundary=piece.contains('>')?detail::completeSingleToolTurn(prefill,generated,state->singleTurnTools):std::optional<qsizetype>{};
+            const auto end=boundary.value_or(generated.size());
+            const bool keepGoing=end==delivered||onText(generated.mid(delivered,end-delivered));delivered=end;
+            yielded=boundary.has_value();return keepGoing&&!yielded;
+        },state);
     }
 private:
     RuntimeResult generateImpl(const TokenList& prompt, const GenerationOptions& options,
@@ -313,7 +325,14 @@ public:
     RuntimeConversationPrompt prepareConversation(const ConversationRequest& request, const CancellationToken& cancel) override
     {
         cancel.throwIfCancelled();
-        if (!templates_) templates_ = common_chat_templates_init(model_.get(), spec_.options["chat_template"].toString().toStdString());
+        if (!templates_) {
+            auto selected=spec_.options["chat_template"].toString().toStdString();
+            if(selected.empty())if(const auto* embedded=llama_model_chat_template(model_.get(),nullptr)) {
+                const auto repaired=detail::normalizedToolTemplate(embedded);
+                if(repaired!=embedded)selected=repaired;
+            }
+            templates_=common_chat_templates_init(model_.get(),selected);
+        }
         common_chat_templates_inputs input;
         auto state = std::make_shared<LlamaConversationState>();state->projector=projector_;
         QJsonArray messages;std::vector<std::string> markers;
@@ -375,6 +394,18 @@ public:
         if(!request.responseSchema.isEmpty())input.json_schema=QJsonDocument(request.responseSchema).toJson(QJsonDocument::Compact).toStdString();
         state->thinkingEnabled = input.enable_thinking;
         state->chat = common_chat_templates_apply(templates_.get(), input);
+        if(!request.parallelToolCalls&&request.toolChoice=="required"&&request.responseSchema.isEmpty()) {
+            for(const auto& tool:request.tools)state->singleTurnTools.append(tool.toObject()["function"].toObject()["name"].toString());
+            const auto source=common_chat_templates_source(templates_.get());
+            const bool taggedJson=source.find("<tool_call>")!=std::string::npos&&source.find("\"arguments\"")!=std::string::npos
+                &&source.find("<function=")==std::string::npos&&source.find("<parameter=")==std::string::npos;
+            if(taggedJson&&(!state->chat.supports_thinking||!input.enable_thinking)
+                &&!QString::fromStdString(state->chat.generation_prompt).trimmed().endsWith("<tool_call>")) {
+                // Required calls must begin in the tool envelope, rather than
+                // spend the output budget on an unrestricted text preamble.
+                state->chat.prompt+="<tool_call>\n";state->chat.generation_prompt+="<tool_call>\n";
+            }
+        }
         if (!spec_.options.value("tool_grammar").toBool(true)&&request.responseSchema.isEmpty()) {
             // Upstream object grammars constrain optional property order. Hosts
             // can use natural tool output while keeping parsing and executor validation.

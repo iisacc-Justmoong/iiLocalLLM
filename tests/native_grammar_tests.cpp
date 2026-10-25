@@ -30,6 +30,19 @@ bool accepts(const std::string& source, const std::string& text)
 class NativeGrammarTests final : public QObject {
     Q_OBJECT
 private slots:
+    void requiredJsonToolPrefillStartsInsideTheCallEnvelope() {
+        QFile file(QString::fromUtf8(IILOCALLLM_LLAMA_TEMPLATES)+"/Qwen-Qwen2.5-7B-Instruct.jinja");QVERIFY(file.open(QIODevice::ReadOnly));
+        auto templates=common_chat_templates_init(nullptr,file.readAll().toStdString(),"","<|im_end|>");
+        common_chat_templates_inputs input;input.messages=common_chat_msgs_parse_oaicompat(common_json::array({{{"role","user"},{"content","Call Observe now."}}}));
+        input.tools=common_chat_tools_parse_oaicompat(common_json::array({{{"type","function"},{"function",{{"name","Observe"},{"parameters",common_json{{"type","object"},{"properties",common_json::object()}}}}}}}));
+        input.tool_choice=COMMON_CHAT_TOOL_CHOICE_REQUIRED;input.parallel_tool_calls=false;
+        auto prepared=common_chat_templates_apply(templates.get(),input);prepared.generation_prompt+="<tool_call>\n";
+        const std::string body=R"({"name":"Observe","arguments":{}})" "\n</tool_call>";
+        QVERIFY(accepts(prepared.grammar,prepared.generation_prompt+body));
+        QVERIFY(!accepts(prepared.grammar,prepared.generation_prompt+"The tool is not available."));
+        common_chat_parser_params parser(prepared);parser.parser.load(prepared.parser);
+        const auto parsed=common_chat_parse(body,false,parser);QCOMPARE(parsed.tool_calls.size(),size_t(1));QCOMPARE(parsed.tool_calls[0].name,std::string("Observe"));
+    }
     void conditionalArguments_data()
     {
         QTest::addColumn<QString>("filename");QTest::addColumn<bool>("required");
