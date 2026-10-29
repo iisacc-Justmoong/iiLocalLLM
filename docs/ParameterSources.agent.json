@@ -10,8 +10,8 @@
   },
   "source": {
     "path": "docs/ParameterSources.md",
-    "sha256": "815f513cc2227819fb616655f025de0bd0871004dac321ad2a5839c6f4751bdf",
-    "bytes": 4220,
+    "sha256": "f2b2c33fde5d26a6c00c1732be097173d3be9ce2c4b58a63ac8439e953bc6774",
+    "bytes": 4225,
     "line_count": 29,
     "encoding": "utf-8",
     "language": "ko"
@@ -213,7 +213,7 @@
       "kind": "paragraph",
       "start_line": 29,
       "end_line": 29,
-      "raw": "0.30.0에서 `src/Types.h`에 구조화 요청 필드가 추가되어 로컬 `iiLocalLLM.GenerationOptions` 16개 항목의 선언 행과 전체 헤더 SHA-256을 생성기로 다시 산출했다. 생성 제어 타입·기본값·검증 제약·백엔드 바인딩은 변경하지 않았다. 외부 공급자 고정 소스는 유지한다.\n"
+      "raw": "0.30.0에서 `src/core/Types.h`에 구조화 요청 필드가 추가되어 로컬 `iiLocalLLM.GenerationOptions` 16개 항목의 선언 행과 전체 헤더 SHA-256을 생성기로 다시 산출했다. 생성 제어 타입·기본값·검증 제약·백엔드 바인딩은 변경하지 않았다. 외부 공급자 고정 소스는 유지한다.\n"
     }
   ],
   "outline": [

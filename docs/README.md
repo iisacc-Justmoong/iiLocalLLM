@@ -74,6 +74,7 @@ Markdown is the maintained human source. Agent JSON is a structured, source-trac
 | [`docs/SessionFork.md`](SessionFork.md) | [JSON](SessionFork.agent.json) |
 | [`docs/SessionHistory.md`](SessionHistory.md) | [JSON](SessionHistory.agent.json) |
 | [`docs/Skills.md`](Skills.md) | [JSON](Skills.agent.json) |
+| [`docs/SourceLayout.md`](SourceLayout.md) | [JSON](SourceLayout.agent.json) |
 | [`docs/Subagents.md`](Subagents.md) | [JSON](Subagents.agent.json) |
 | [`docs/Tasks.md`](Tasks.md) | [JSON](Tasks.agent.json) |
 | [`docs/Teams.md`](Teams.md) | [JSON](Teams.agent.json) |

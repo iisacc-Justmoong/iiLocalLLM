@@ -1,6 +1,6 @@
 #include "Conversation.h"
-#include "../Parameters.h"
-#include "../MediaContent.h"
+#include "Parameters.h"
+#include "MediaContent.h"
 #include <QtCore/QJsonDocument>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QSet>

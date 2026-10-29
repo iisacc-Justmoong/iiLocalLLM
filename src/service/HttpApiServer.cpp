@@ -3,7 +3,7 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #endif
-#include "../third_party/cpp-httplib/httplib.h"
+#include <httplib.h>
 #include "HttpApiServer.h"
 #include "Parameters.h"
 #include <QtCore/QDateTime>

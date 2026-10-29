@@ -75,6 +75,8 @@ Managed MLX environments build a validated Transformers import index to avoid re
 
 Model integrity still verifies every byte; the macOS streaming SHA-256 path uses the system implementation. See [model integrity](docs/ModelIntegrity.md).
 
+Source and adjacent headers are grouped by responsibility under `src/`; installed flat include names remain unchanged. See [source layout](docs/SourceLayout.md).
+
 <!-- workspace-docs:readme:start -->
 ## Documentation entry points
 

@@ -1603,7 +1603,7 @@ Apple M1 Max / Qt 6.8.3에서 `agent::Api`, 전송 공통 `RpcHandler`, daemon �
 | 새 설치 패키지 | `build/agent-api-stage`를 이용한 별도 공개 헤더·CMake 소비자 **6/6 통과**, 52.77초. 새 RpcHandler/Api·두 transport setter 링크·실행 포함 |
 | 설치본 실제 모델 | 설치된 daemon·iillm으로 별도 임의 파일 값을 Read하고 답변, 분기·재시작·이어서 실행 통과. **40 생성 토큰·이벤트 9개** |
 | 설치본 로더·CLI 경계 | DYLD/QT/QML 경로 override 제거. `build/agent-api-stage/lib/libiiLocalLLM.0.4.0.dylib` 로딩 확인. 설치된 iillm에는 SDK/llama/ggml 링크 없음 |
-| 제어 카탈로그 | Unauthorized 오류 추가에 맞춰 src/Types.h provenance 해시만 재생성. **391그룹·9,183필드**와 설정 내용 유지, catalog 검사 통과 |
+| 제어 카탈로그 | Unauthorized 오류 추가에 맞춰 src/core/Types.h provenance 해시만 재생성. **391그룹·9,183필드**와 설정 내용 유지, catalog 검사 통과 |
 
 새 API 및 transport setter가 없는 상태에서 링크 실패, 이전 daemon에서 새 옵션 미인식을 먼저 확인했다. 취소 시험의 초기 충돌은 임시 QJsonObject에 대한 QJsonValueRef를 테스트가 보관한 원인이었고 값 복사로 고쳤다. Python 수락 시험의 HTTP 모듈 이름 가림도 수정했다. 새 코드의 최종 빌드는 경고 없이 통과했다. 최초 전체 재빌드에는 기존 `tests/service_tests.cpp`의 nodiscard 경고 4개가 있었으며 해당 테스트는 이번 변경 범위가 아니다.
 
@@ -1675,7 +1675,7 @@ Apple M1 Max / Qt 6.8.3 / Release 빌드에서 `agent::Engine`, 도구 스키마
 | HTTP 프로토콜 | tool_choice/parallel_tool_calls 전달, content:null, tool_calls 종료 이유, SSE 호출 index/ID/인자, usage, [DONE] 검증 |
 | 외부 설치 소비자 | `build/agent-stage`의 공개 패키지로 새 consumer를 빌드해 **3/3 통과**. DYLD_LIBRARY_PATH를 제거한 상태에서 앱 도구/모델/세션 ABI 실행 |
 | CLI 링크 경계 | 설치된 iillm의 의존성은 Qt Core/Network와 시스템 라이브러리. iiLocalLLM/llama/ggml 링크 없음 |
-| 파라미터 출처 | src/Types.h 변경 후 고정된 원본에서 카탈로그 재생성. native 소스 해시와 줄 번호를 제외한 전체 카탈로그의 의미 내용은 이전 설치본과 동일 |
+| 파라미터 출처 | src/core/Types.h 변경 후 고정된 원본에서 카탈로그 재생성. native 소스 해시와 줄 번호를 제외한 전체 카탈로그의 의미 내용은 이전 설치본과 동일 |
 
 처음 JSON-envelope 방식에서는 소형 모델이 도구를 생략했고, 네이티브 템플릿 연결 후에는 읽은 값을 예문으로 치환한 실패도 관측했다. 실패를 숨기거나 fixture 값을 프롬프트에 넣지 않았다. upstream Jinja/문법/PEG 경로를 연결하고 실제 관측값을 그대로 사용하도록 시스템 지침을 보완한 뒤 위 검증을 통과했다. 이 제한된 수락 테스트는 모든 모델·작업에서의 정확도 보증이 아니다.
 

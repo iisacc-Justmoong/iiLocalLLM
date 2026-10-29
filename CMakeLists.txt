@@ -27,6 +27,7 @@ find_package(Threads REQUIRED)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 include(CTest)
+include(cmake/SourceHeaders.cmake)
 # Qt and cpp-httplib are included in both library and executable targets.
 if(WIN32)
     add_compile_definitions(WIN32_LEAN_AND_MEAN NOMINMAX)
@@ -64,17 +65,17 @@ if(NOT _mlx_sampler_sha STREQUAL "c93c1eef794725f9f7ce77b6212f61eb6d0fe17b9cd87c
     message(FATAL_ERROR "Pinned MLX sampler checksum mismatch")
 endif()
 
-add_library(iiLocalLLM SHARED src/iiLocalLLM.h src/iiLocalLLM.cpp
-    src/Types.h src/Types.cpp src/Parameters.h src/Parameters.cpp src/Hardware.h src/Hardware.cpp src/Memory.h src/Memory.cpp src/Runtime.h src/Service.h src/Service.cpp src/LocalIpcServer.h src/LocalIpcServer.cpp
-    src/ModelManifest.h src/ModelManifest.cpp src/ModelCatalog.h src/ModelCatalog.cpp src/ModelInfo.h src/HttpApiServer.h src/HttpApiServer.cpp
+add_library(iiLocalLLM SHARED src/core/iiLocalLLM.h src/core/iiLocalLLM.cpp
+    src/core/Types.h src/core/Types.cpp src/core/Parameters.h src/core/Parameters.cpp src/hardware/Hardware.h src/hardware/Hardware.cpp src/hardware/Memory.h src/hardware/Memory.cpp src/runtimes/Runtime.h src/service/Service.h src/service/Service.cpp src/service/LocalIpcServer.h src/service/LocalIpcServer.cpp
+    src/models/ModelManifest.h src/models/ModelManifest.cpp src/models/ModelCatalog.h src/models/ModelCatalog.cpp src/models/ModelInfo.h src/service/HttpApiServer.h src/service/HttpApiServer.cpp
     src/service/Scheduler.h src/service/Scheduler.cpp
     src/service/Conversation.h src/service/Conversation.cpp
     src/service/Managers.h src/service/Managers.cpp
     src/service/ModelManager.h src/service/ModelManager.cpp
     src/service/ModelResidencyManager.h src/service/ModelResidencyManager.cpp
-    src/service/ModelRegistry.h src/service/ModelRegistry.cpp src/ModelPull.h catalog/catalog.qrc
+    src/service/ModelRegistry.h src/service/ModelRegistry.cpp src/models/ModelPull.h catalog/catalog.qrc
     src/runtimes/LlamaRuntime.cpp src/runtimes/MlxRuntime.cpp)
-target_sources(iiLocalLLM PRIVATE src/MediaContent.cpp src/MediaContent.h src/Multimodal.h)
+target_sources(iiLocalLLM PRIVATE src/media/MediaContent.cpp src/media/MediaContent.h src/media/Multimodal.h)
 add_library(iiLocalLLM::iiLocalLLM ALIAS iiLocalLLM)
 target_compile_features(iiLocalLLM PUBLIC cxx_std_23)
 target_compile_definitions(iiLocalLLM PRIVATE IILOCALLLM_BUILDING_LIBRARY)
@@ -104,8 +105,9 @@ else()
         target_link_libraries(iiLocalLLM PRIVATE dxgi)
     endif()
 endif()
+target_include_directories(iiLocalLLM PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party/cpp-httplib")
 target_include_directories(iiLocalLLM PUBLIC
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src> $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 set_target_properties(iiLocalLLM PROPERTIES
@@ -146,18 +148,19 @@ foreach(_entrypoint IN LISTS _versioned_entrypoints)
     target_compile_definitions(${_entrypoint} PRIVATE IILOCALLLM_APP_VERSION="${PROJECT_VERSION}")
 endforeach()
 if(BUILD_TESTING)
+    add_test(NAME iiLocalLLM.source_layout COMMAND ${CMAKE_COMMAND} -DSOURCE_ROOT=${CMAKE_CURRENT_SOURCE_DIR} -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/source_layout.cmake)
     add_executable(iiLocalLLMToolTemplateTests tests/tool_template_tests.cpp)
     target_compile_features(iiLocalLLMToolTemplateTests PRIVATE cxx_std_23)
-    target_include_directories(iiLocalLLMToolTemplateTests PRIVATE src)
+    target_include_directories(iiLocalLLMToolTemplateTests PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/include")
     add_test(NAME iiLocalLLM.tool_template_contract COMMAND iiLocalLLMToolTemplateTests)
     add_executable(iiLocalLLMToolTurnTests tests/tool_turn_tests.cpp)
     target_compile_features(iiLocalLLMToolTurnTests PRIVATE cxx_std_23)
-    target_include_directories(iiLocalLLMToolTurnTests PRIVATE src)
+    target_include_directories(iiLocalLLMToolTurnTests PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/include")
     target_link_libraries(iiLocalLLMToolTurnTests PRIVATE Qt6::Core)
     add_test(NAME iiLocalLLM.tool_turn_contract COMMAND iiLocalLLMToolTurnTests)
     add_executable(iiLocalLLMModelDigestTests tests/model_digest_tests.cpp)
     target_compile_features(iiLocalLLMModelDigestTests PRIVATE cxx_std_23)
-    target_include_directories(iiLocalLLMModelDigestTests PRIVATE src)
+    target_include_directories(iiLocalLLMModelDigestTests PRIVATE src "${CMAKE_CURRENT_BINARY_DIR}/include")
     target_link_libraries(iiLocalLLMModelDigestTests PRIVATE Qt6::Core)
     add_test(NAME iiLocalLLM.model_digest COMMAND iiLocalLLMModelDigestTests)
     add_executable(iiLocalLLMMemoryHeaderInteropTests tests/memory_header_interop.cpp)
@@ -308,9 +311,9 @@ install(TARGETS iiLocalLLM EXPORT iiLocalLLMTargets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
 )
 install(TARGETS iiLocalLLMService iiLocalLLMD iillm RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES src/iiLocalLLM.h src/Types.h src/Parameters.h src/Hardware.h src/Memory.h src/ModelManifest.h src/ModelCatalog.h src/ModelInfo.h src/ModelPull.h src/Runtime.h src/Service.h src/Rpc.h src/LocalIpcServer.h src/HttpApiServer.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES src/Multimodal.h src/MediaContent.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-install(FILES src/Export.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES src/core/iiLocalLLM.h src/core/Types.h src/core/Parameters.h src/hardware/Hardware.h src/hardware/Memory.h src/models/ModelManifest.h src/models/ModelCatalog.h src/models/ModelInfo.h src/models/ModelPull.h src/runtimes/Runtime.h src/service/Service.h src/service/Rpc.h src/service/LocalIpcServer.h src/service/HttpApiServer.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES src/media/Multimodal.h src/media/MediaContent.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES src/core/Export.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES catalog/parameters.json catalog/parameter-sources.json catalog/parameter-coverage.json DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM)
 install(FILES catalog/registry.json DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM)
 install(FILES README.md LICENSE THIRD_PARTY_NOTICES.md DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM)

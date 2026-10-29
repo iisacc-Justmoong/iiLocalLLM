@@ -26,4 +26,4 @@
 
 MLX 샘플링 파일은 위 mlx-lm 커밋의 `mlx_lm/sample_utils.py`를 수정 없이 `src/runtimes/mlx_sample_utils.py`로 포함했다. SHA-256은 `c93c1eef794725f9f7ce77b6212f61eb6d0fe17b9cd87c06cec6470ee12b07f2`이며 Apple의 MIT 고지를 보존한다. 이 파일은 min-p에서 bool 대신 MLX array를 전달하는 공식 수정을 포함한다.
 
-0.30.0에서 `src/Types.h`에 구조화 요청 필드가 추가되어 로컬 `iiLocalLLM.GenerationOptions` 16개 항목의 선언 행과 전체 헤더 SHA-256을 생성기로 다시 산출했다. 생성 제어 타입·기본값·검증 제약·백엔드 바인딩은 변경하지 않았다. 외부 공급자 고정 소스는 유지한다.
+0.30.0에서 `src/core/Types.h`에 구조화 요청 필드가 추가되어 로컬 `iiLocalLLM.GenerationOptions` 16개 항목의 선언 행과 전체 헤더 SHA-256을 생성기로 다시 산출했다. 생성 제어 타입·기본값·검증 제약·백엔드 바인딩은 변경하지 않았다. 외부 공급자 고정 소스는 유지한다.

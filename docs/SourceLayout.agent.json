@@ -1,0 +1,93 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:69eef8201666931ae3362e05bd1ac2379e21126de9887e771c73e6d5231a7b58",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "docs/SourceLayout.md",
+    "sha256": "e6ec473c68844735c575c469270990319f9e0cfe882decb188b4152c0f42ee5b",
+    "bytes": 736,
+    "line_count": 5,
+    "encoding": "utf-8",
+    "language": "ko"
+  },
+  "document": {
+    "title": "소스 구조",
+    "role": "guide",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "heading",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "# 소스 구조\n",
+      "level": 1,
+      "title": "소스 구조"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "paragraph",
+      "start_line": 3,
+      "end_line": 3,
+      "raw": "`src/core/`는 공통 API와 값·매개변수, `hardware/`는 장치와 메모리, `models/`는 모델 카탈로그와 메타데이터, `runtimes/`는 런타임 인터페이스·구현, `service/`는 서비스·전송, `media/`는 멀티모달 입력을 소유한다. 구현과 관련 헤더를 함께 둔다.\n"
+    },
+    {
+      "id": "b000004",
+      "kind": "blank",
+      "start_line": 4,
+      "end_line": 4,
+      "raw": "\n"
+    },
+    {
+      "id": "b000005",
+      "kind": "paragraph",
+      "start_line": 5,
+      "end_line": 5,
+      "raw": "빌드용 연결 헤더와 설치된 실제 헤더는 기존 평탄한 공개 include 이름과 CMake 타깃을 유지한다. 매개변수 카탈로그의 로컬 출처 경로도 `src/core/Types.h`로 갱신하며 헤더 내용·해시·선언 행은 변경하지 않는다. `iiLocalLLM.source_layout`은 소스 분류를 검사하고 실제 모델 추론은 별도의 명시적 검증 범위로 남긴다.\n"
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000001",
+      "parent_id": null,
+      "level": 1,
+      "title": "소스 구조",
+      "anchor": "소스-구조",
+      "start_line": 1
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [
+      {
+        "block_id": "b000005",
+        "line": 5,
+        "text": "빌드용 연결 헤더와 설치된 실제 헤더는 기존 평탄한 공개 include 이름과 CMake 타깃을 유지한다. 매개변수 카탈로그의 로컬 출처 경로도 `src/core/Types.h`로 갱신하며 헤더 내용·해시·선언 행은 변경하지 않는다. `iiLocalLLM.source_layout`은 소스 분류를 검사하고 실제 모델 추론은 별도의 명시적 검증 범위로 남긴다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      }
+    ],
+    "commands": [],
+    "links": [],
+    "tables": []
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

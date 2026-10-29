@@ -10,8 +10,8 @@
   },
   "source": {
     "path": "docs/Verification.md",
-    "sha256": "c4b0e2fc3d5ff0f17965a743751139228c1f0f097990c24324b3cbbe6cbaf542",
-    "bytes": 356920,
+    "sha256": "69b5e9ceba47866e10dc67274f1adcdb0aad69c77e9132c50cc737a2d564b4b6",
+    "bytes": 356930,
     "line_count": 1820,
     "encoding": "utf-8",
     "language": "ko"
@@ -10028,7 +10028,7 @@
       "kind": "table",
       "start_line": 1596,
       "end_line": 1606,
-      "raw": "| 검증 | 관측 결과 |\n|---|---|\n| 최종 Release 빌드·전체 CTest | **30/30 통과**, 123.31초. GGUF/MLX CPU·Metal, 기존 CLI/HTTP/MCP 및 새 API 실제 추론 포함 |\n| API·전송 회귀 | 잘못된 키, 앱 간 세션·요청 차단, 고정 workspace, state 소유 잠금, 큐·기한·세션 상한, 페이지·재시작·분기, 이벤트 순서, HTTP에서 IPC 실행 취소, 연결 해제·출력 초과·종료 검사 |\n| 실제 daemon·CLI | 키 파일 소유·권한 검사, 로그/CLI 출력에서 키 미노출, HTTP/native/CLI의 동일 세션, 다른 앱 차단, daemon 재시작 후 원본·분기 기록 복원 통과 |\n| 소스 빌드의 실제 모델 | HTTP SSE → Qwen2.5 0.5B Q4_K_M → Read → 관측값 답변. **41 생성 토큰·이벤트 9개**, 재시작 후 CLI에서 분기 세션 이어가기 통과 |\n|ASan + UBSan| Debug·llama 비활성화 빌드에서 기존 src/agent/service/http 및 새 API/전송/daemon **6/6 통과**, 9.01초 |\n| 새 설치 패키지 | `build/agent-api-stage`를 이용한 별도 공개 헤더·CMake 소비자 **6/6 통과**, 52.77초. 새 RpcHandler/Api·두 transport setter 링크·실행 포함 |\n| 설치본 실제 모델 | 설치된 daemon·iillm으로 별도 임의 파일 값을 Read하고 답변, 분기·재시작·이어서 실행 통과. **40 생성 토큰·이벤트 9개** |\n| 설치본 로더·CLI 경계 | DYLD/QT/QML 경로 override 제거. `build/agent-api-stage/lib/libiiLocalLLM.0.4.0.dylib` 로딩 확인. 설치된 iillm에는 SDK/llama/ggml 링크 없음 |\n| 제어 카탈로그 | Unauthorized 오류 추가에 맞춰 src/Types.h provenance 해시만 재생성. **391그룹·9,183필드**와 설정 내용 유지, catalog 검사 통과 |\n",
+      "raw": "| 검증 | 관측 결과 |\n|---|---|\n| 최종 Release 빌드·전체 CTest | **30/30 통과**, 123.31초. GGUF/MLX CPU·Metal, 기존 CLI/HTTP/MCP 및 새 API 실제 추론 포함 |\n| API·전송 회귀 | 잘못된 키, 앱 간 세션·요청 차단, 고정 workspace, state 소유 잠금, 큐·기한·세션 상한, 페이지·재시작·분기, 이벤트 순서, HTTP에서 IPC 실행 취소, 연결 해제·출력 초과·종료 검사 |\n| 실제 daemon·CLI | 키 파일 소유·권한 검사, 로그/CLI 출력에서 키 미노출, HTTP/native/CLI의 동일 세션, 다른 앱 차단, daemon 재시작 후 원본·분기 기록 복원 통과 |\n| 소스 빌드의 실제 모델 | HTTP SSE → Qwen2.5 0.5B Q4_K_M → Read → 관측값 답변. **41 생성 토큰·이벤트 9개**, 재시작 후 CLI에서 분기 세션 이어가기 통과 |\n|ASan + UBSan| Debug·llama 비활성화 빌드에서 기존 src/agent/service/http 및 새 API/전송/daemon **6/6 통과**, 9.01초 |\n| 새 설치 패키지 | `build/agent-api-stage`를 이용한 별도 공개 헤더·CMake 소비자 **6/6 통과**, 52.77초. 새 RpcHandler/Api·두 transport setter 링크·실행 포함 |\n| 설치본 실제 모델 | 설치된 daemon·iillm으로 별도 임의 파일 값을 Read하고 답변, 분기·재시작·이어서 실행 통과. **40 생성 토큰·이벤트 9개** |\n| 설치본 로더·CLI 경계 | DYLD/QT/QML 경로 override 제거. `build/agent-api-stage/lib/libiiLocalLLM.0.4.0.dylib` 로딩 확인. 설치된 iillm에는 SDK/llama/ggml 링크 없음 |\n| 제어 카탈로그 | Unauthorized 오류 추가에 맞춰 src/core/Types.h provenance 해시만 재생성. **391그룹·9,183필드**와 설정 내용 유지, catalog 검사 통과 |\n",
       "columns": [
         "검증",
         "관측 결과"
@@ -10068,7 +10068,7 @@
         ],
         [
           "제어 카탈로그",
-          "Unauthorized 오류 추가에 맞춰 src/Types.h provenance 해시만 재생성. **391그룹·9,183필드**와 설정 내용 유지, catalog 검사 통과"
+          "Unauthorized 오류 추가에 맞춰 src/core/Types.h provenance 해시만 재생성. **391그룹·9,183필드**와 설정 내용 유지, catalog 검사 통과"
         ]
       ]
     },
@@ -10454,7 +10454,7 @@
       "kind": "table",
       "start_line": 1668,
       "end_line": 1678,
-      "raw": "| 검증 | 관측 결과 |\n|---|---|\n| 전체 Release CTest | **19/19 통과**, 69.79초. GGUF Metal/CPU 및 MLX Metal/CPU의 기존 추론도 포함 |\n| 에이전트 코어 | 13개 동작 테스트 통과. 도구 루프, 정책/스키마, 훅 입력 재검증, 취소, 병렬/배타 순서, 잠금/중단 복원, registry 교체 중 스냅샷 일관성 포함 |\n| 실제 C++ 모델/도구 루프 | Qwen2.5 0.5B Q4_K_M이 Read를 스스로 선택하고 프롬프트에 없는 무작위 파일 값을 최종 답변에 반환. 서로 다른 값으로 **3회 연속 통과**, 이후 전체 suite에서도 통과 |\n| 실제 daemon HTTP 도구 왕복 | SSE로 Read 호출 수신 → 외부 클라이언트가 픽스처 파일을 실제 읽음 → 동일 ID의 tool 결과 입력 → JSON 최종 답변에서 파일 값 확인. CLI/HTTP 전체 과정 model_loads=1, 종료 후 sessions=0 |\n| 구조화 API 오류/캐시 | 잘못된 역할·호출 ID, required 도구 누락, 호출 재사용, 잘린 출력 거부. 모델별 contextId 격리 및 재사용, 소비자 실패 시 실행 가능한 호출 제거 |\n| HTTP 프로토콜 | tool_choice/parallel_tool_calls 전달, content:null, tool_calls 종료 이유, SSE 호출 index/ID/인자, usage, [DONE] 검증 |\n| 외부 설치 소비자 | `build/agent-stage`의 공개 패키지로 새 consumer를 빌드해 **3/3 통과**. DYLD_LIBRARY_PATH를 제거한 상태에서 앱 도구/모델/세션 ABI 실행 |\n| CLI 링크 경계 | 설치된 iillm의 의존성은 Qt Core/Network와 시스템 라이브러리. iiLocalLLM/llama/ggml 링크 없음 |\n| 파라미터 출처 | src/Types.h 변경 후 고정된 원본에서 카탈로그 재생성. native 소스 해시와 줄 번호를 제외한 전체 카탈로그의 의미 내용은 이전 설치본과 동일 |\n",
+      "raw": "| 검증 | 관측 결과 |\n|---|---|\n| 전체 Release CTest | **19/19 통과**, 69.79초. GGUF Metal/CPU 및 MLX Metal/CPU의 기존 추론도 포함 |\n| 에이전트 코어 | 13개 동작 테스트 통과. 도구 루프, 정책/스키마, 훅 입력 재검증, 취소, 병렬/배타 순서, 잠금/중단 복원, registry 교체 중 스냅샷 일관성 포함 |\n| 실제 C++ 모델/도구 루프 | Qwen2.5 0.5B Q4_K_M이 Read를 스스로 선택하고 프롬프트에 없는 무작위 파일 값을 최종 답변에 반환. 서로 다른 값으로 **3회 연속 통과**, 이후 전체 suite에서도 통과 |\n| 실제 daemon HTTP 도구 왕복 | SSE로 Read 호출 수신 → 외부 클라이언트가 픽스처 파일을 실제 읽음 → 동일 ID의 tool 결과 입력 → JSON 최종 답변에서 파일 값 확인. CLI/HTTP 전체 과정 model_loads=1, 종료 후 sessions=0 |\n| 구조화 API 오류/캐시 | 잘못된 역할·호출 ID, required 도구 누락, 호출 재사용, 잘린 출력 거부. 모델별 contextId 격리 및 재사용, 소비자 실패 시 실행 가능한 호출 제거 |\n| HTTP 프로토콜 | tool_choice/parallel_tool_calls 전달, content:null, tool_calls 종료 이유, SSE 호출 index/ID/인자, usage, [DONE] 검증 |\n| 외부 설치 소비자 | `build/agent-stage`의 공개 패키지로 새 consumer를 빌드해 **3/3 통과**. DYLD_LIBRARY_PATH를 제거한 상태에서 앱 도구/모델/세션 ABI 실행 |\n| CLI 링크 경계 | 설치된 iillm의 의존성은 Qt Core/Network와 시스템 라이브러리. iiLocalLLM/llama/ggml 링크 없음 |\n| 파라미터 출처 | src/core/Types.h 변경 후 고정된 원본에서 카탈로그 재생성. native 소스 해시와 줄 번호를 제외한 전체 카탈로그의 의미 내용은 이전 설치본과 동일 |\n",
       "columns": [
         "검증",
         "관측 결과"
@@ -10494,7 +10494,7 @@
         ],
         [
           "파라미터 출처",
-          "src/Types.h 변경 후 고정된 원본에서 카탈로그 재생성. native 소스 해시와 줄 번호를 제외한 전체 카탈로그의 의미 내용은 이전 설치본과 동일"
+          "src/core/Types.h 변경 후 고정된 원본에서 카탈로그 재생성. native 소스 해시와 줄 번호를 제외한 전체 카탈로그의 의미 내용은 이전 설치본과 동일"
         ]
       ]
     },
@@ -16243,7 +16243,7 @@
           ],
           [
             "제어 카탈로그",
-            "Unauthorized 오류 추가에 맞춰 src/Types.h provenance 해시만 재생성. **391그룹·9,183필드**와 설정 내용 유지, catalog 검사 통과"
+            "Unauthorized 오류 추가에 맞춰 src/core/Types.h provenance 해시만 재생성. **391그룹·9,183필드**와 설정 내용 유지, catalog 검사 통과"
           ]
         ]
       },
@@ -16378,7 +16378,7 @@
           ],
           [
             "파라미터 출처",
-            "src/Types.h 변경 후 고정된 원본에서 카탈로그 재생성. native 소스 해시와 줄 번호를 제외한 전체 카탈로그의 의미 내용은 이전 설치본과 동일"
+            "src/core/Types.h 변경 후 고정된 원본에서 카탈로그 재생성. native 소스 해시와 줄 번호를 제외한 전체 카탈로그의 의미 내용은 이전 설치본과 동일"
           ]
         ]
       },

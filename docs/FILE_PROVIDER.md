@@ -10,8 +10,8 @@ runtime validation are separate evidence.
 Changed boundaries:
 
 
-- `src/LocalIpcServer.cpp`
-- `src/ModelCatalog.cpp`
+- `src/service/LocalIpcServer.cpp`
+- `src/models/ModelCatalog.cpp`
 - `src/agent/Api.cpp`
 - `src/agent/FileCheckpoints.cpp`
 - `src/agent/HookAgent.cpp`

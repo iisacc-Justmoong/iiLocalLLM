@@ -10,8 +10,8 @@
   },
   "source": {
     "path": "docs/FILE_PROVIDER.md",
-    "sha256": "aef86ee6c7932d4bff417bc8bbcb0e61de6196438c1951efdd03db4cb0df0d8b",
-    "bytes": 1341,
+    "sha256": "517f08650225a6c1b69b6823434c8d511070fba90dbf7e2f1a0fa109cfc590ca",
+    "bytes": 1356,
     "line_count": 36,
     "encoding": "utf-8",
     "language": "en"
@@ -85,16 +85,16 @@
       "kind": "list",
       "start_line": 13,
       "end_line": 36,
-      "raw": "- `src/LocalIpcServer.cpp`\n- `src/ModelCatalog.cpp`\n- `src/agent/Api.cpp`\n- `src/agent/FileCheckpoints.cpp`\n- `src/agent/HookAgent.cpp`\n- `src/agent/InputQueue.cpp`\n- `src/agent/MemoryDream.cpp`\n- `src/agent/PermissionSettingsFile.h`\n- `src/agent/PlanMode.cpp`\n- `src/agent/Plugins.cpp`\n- `src/agent/ProjectMemory.cpp`\n- `src/agent/SessionOwners.h`\n- `src/agent/SessionStore.cpp`\n- `src/agent/ShellTasks.cpp`\n- `src/agent/Subagents.cpp`\n- `src/agent/TaskStore.cpp`\n- `src/agent/Teams.cpp`\n- `src/agent/Tools.cpp`\n- `src/agent/WebFetch.cpp`\n- `src/agent/WorkspaceTools.cpp`\n- `src/agent/Worktrees.cpp`\n- `src/mcp/LocalApplications.cpp`\n- `src/service/ModelRegistry.cpp`\n- `tools/mcp_main.cpp`\n",
+      "raw": "- `src/service/LocalIpcServer.cpp`\n- `src/models/ModelCatalog.cpp`\n- `src/agent/Api.cpp`\n- `src/agent/FileCheckpoints.cpp`\n- `src/agent/HookAgent.cpp`\n- `src/agent/InputQueue.cpp`\n- `src/agent/MemoryDream.cpp`\n- `src/agent/PermissionSettingsFile.h`\n- `src/agent/PlanMode.cpp`\n- `src/agent/Plugins.cpp`\n- `src/agent/ProjectMemory.cpp`\n- `src/agent/SessionOwners.h`\n- `src/agent/SessionStore.cpp`\n- `src/agent/ShellTasks.cpp`\n- `src/agent/Subagents.cpp`\n- `src/agent/TaskStore.cpp`\n- `src/agent/Teams.cpp`\n- `src/agent/Tools.cpp`\n- `src/agent/WebFetch.cpp`\n- `src/agent/WorkspaceTools.cpp`\n- `src/agent/Worktrees.cpp`\n- `src/mcp/LocalApplications.cpp`\n- `src/service/ModelRegistry.cpp`\n- `tools/mcp_main.cpp`\n",
       "items": [
         {
           "marker": "-",
-          "text": "`src/LocalIpcServer.cpp`",
+          "text": "`src/service/LocalIpcServer.cpp`",
           "checked": null
         },
         {
           "marker": "-",
-          "text": "`src/ModelCatalog.cpp`",
+          "text": "`src/models/ModelCatalog.cpp`",
           "checked": null
         },
         {
