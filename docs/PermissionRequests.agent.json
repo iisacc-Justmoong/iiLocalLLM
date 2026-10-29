@@ -1,0 +1,79 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:3490729a9b5b5c69c5b8041d902816ba24fd95b7477f6b8ced869868d93e1784",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "docs/PermissionRequests.md",
+    "sha256": "fdecaa148e2d2e21604ca23f84efc257f6b3defcf67028dafdc453097d564e06",
+    "bytes": 286,
+    "line_count": 5,
+    "encoding": "utf-8",
+    "language": "en"
+  },
+  "document": {
+    "title": "Moved to iiMultimodalAgent",
+    "role": "guide",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "heading",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "# Moved to iiMultimodalAgent\n",
+      "level": 1,
+      "title": "Moved to iiMultimodalAgent"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "paragraph",
+      "start_line": 3,
+      "end_line": 5,
+      "raw": "This agent feature is now owned by [iiMultimodalAgent](../../iiMultimodalAgent/docs/PermissionRequests.md).\nLink `iiMultimodalAgent::iiMultimodalAgent` and use `iiMultimodalAgent::agent`\nor `iiMultimodalAgent::mcp`; iiLocalLLM now provides inference only.\n"
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000001",
+      "parent_id": null,
+      "level": 1,
+      "title": "Moved to iiMultimodalAgent",
+      "anchor": "moved-to-iimultimodalagent",
+      "start_line": 1
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [],
+    "commands": [],
+    "links": [
+      {
+        "block_id": "b000003",
+        "label": "iiMultimodalAgent",
+        "target": "../../iiMultimodalAgent/docs/PermissionRequests.md",
+        "kind": "relative",
+        "line": 3
+      }
+    ],
+    "tables": []
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

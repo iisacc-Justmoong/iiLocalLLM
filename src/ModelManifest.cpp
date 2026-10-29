@@ -53,6 +53,7 @@ ModelManifest parseModelManifest(const QJsonObject& o)
     m.architecture = text(o, "architecture");
     m.format = text(o, "format", 32);
     require(QRegularExpression(QStringLiteral("^[a-z][a-z0-9-]*$")).match(m.format).hasMatch(), QStringLiteral("Invalid format name"));
+    require(m.format != QStringLiteral("onnx"), QStringLiteral("ONNX models are not supported"));
     m.quantization = text(o, "quantization", 64);
     const auto context = o.value(QStringLiteral("context_length"));
     require(context.isDouble() && context.toDouble() == context.toInt() && context.toInt() >= 2 && context.toInt() <= 1024 * 1024,
@@ -72,8 +73,10 @@ ModelManifest parseModelManifest(const QJsonObject& o)
     else throw Error(ErrorCode::InvalidManifest, QStringLiteral("Custom formats require an explicit entry_point"));
     require((m.entryPoint == QStringLiteral(".") && m.format == QStringLiteral("mlx")) || relativeFile(m.entryPoint),
             QStringLiteral("entry_point must remain inside the model package"));
+    require(!m.entryPoint.endsWith(QStringLiteral(".onnx"), Qt::CaseInsensitive), QStringLiteral("ONNX models are not supported"));
     if (o.contains("projector")) {
         m.projector = text(o, "projector", 1024);
+        require(!m.projector.endsWith(QStringLiteral(".onnx"), Qt::CaseInsensitive), QStringLiteral("ONNX models are not supported"));
         require(m.format == "gguf" && relativeFile(m.projector) && m.projector != m.entryPoint,
             "projector must be a separate GGUF inside the model package");
     }
@@ -87,6 +90,7 @@ ModelManifest parseModelManifest(const QJsonObject& o)
         require(file.size() == 3, QStringLiteral("File records require only path, size and sha256"));
         ModelFile f;
         f.path = text(file, "path", 1024);
+        require(!f.path.endsWith(QStringLiteral(".onnx"), Qt::CaseInsensitive), QStringLiteral("ONNX models are not supported"));
         require(relativeFile(f.path) && f.path != QStringLiteral("manifest.json") && !seen.contains(f.path.toCaseFolded()),
                 QStringLiteral("Invalid or colliding file path: ") + f.path);
         const auto size = file.value(QStringLiteral("size"));

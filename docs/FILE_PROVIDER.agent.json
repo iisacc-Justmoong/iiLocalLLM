@@ -1,0 +1,243 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:253f5abdedb6b0a3e180d648f7700e0ad3447d7207660bc04ee369ce7815b78d",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "docs/FILE_PROVIDER.md",
+    "sha256": "aef86ee6c7932d4bff417bc8bbcb0e61de6196438c1951efdd03db4cb0df0d8b",
+    "bytes": 1341,
+    "line_count": 36,
+    "encoding": "utf-8",
+    "language": "en"
+  },
+  "document": {
+    "title": "File creation ownership in iiLocalLLM",
+    "role": "guide",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "heading",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "# File creation ownership in iiLocalLLM\n",
+      "level": 1,
+      "title": "File creation ownership in iiLocalLLM"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "paragraph",
+      "start_line": 3,
+      "end_line": 3,
+      "raw": "Agent artifacts, workspace writes, checkpoints, session/task/permission state, plugin installation, web-fetch artifacts and model catalog/registry storage use provider devices and confined native descriptors. Agent authorization and model semantics remain here.\n"
+    },
+    {
+      "id": "b000004",
+      "kind": "blank",
+      "start_line": 4,
+      "end_line": 4,
+      "raw": "\n"
+    },
+    {
+      "id": "b000005",
+      "kind": "paragraph",
+      "start_line": 5,
+      "end_line": 8,
+      "raw": "The common [ownership contract](../../iiFileProvider/docs/FILE_OWNERSHIP.md) defines stream, staging, control-file and\ninstalled-package rules. Source regression tests remain with this module; the\nworkspace creation audit also checks these boundaries. Build/deployment and target\nruntime validation are separate evidence.\n"
+    },
+    {
+      "id": "b000006",
+      "kind": "blank",
+      "start_line": 9,
+      "end_line": 9,
+      "raw": "\n"
+    },
+    {
+      "id": "b000007",
+      "kind": "paragraph",
+      "start_line": 10,
+      "end_line": 10,
+      "raw": "Changed boundaries:\n"
+    },
+    {
+      "id": "b000008",
+      "kind": "blank",
+      "start_line": 11,
+      "end_line": 12,
+      "raw": "\n\n"
+    },
+    {
+      "id": "b000009",
+      "kind": "list",
+      "start_line": 13,
+      "end_line": 36,
+      "raw": "- `src/LocalIpcServer.cpp`\n- `src/ModelCatalog.cpp`\n- `src/agent/Api.cpp`\n- `src/agent/FileCheckpoints.cpp`\n- `src/agent/HookAgent.cpp`\n- `src/agent/InputQueue.cpp`\n- `src/agent/MemoryDream.cpp`\n- `src/agent/PermissionSettingsFile.h`\n- `src/agent/PlanMode.cpp`\n- `src/agent/Plugins.cpp`\n- `src/agent/ProjectMemory.cpp`\n- `src/agent/SessionOwners.h`\n- `src/agent/SessionStore.cpp`\n- `src/agent/ShellTasks.cpp`\n- `src/agent/Subagents.cpp`\n- `src/agent/TaskStore.cpp`\n- `src/agent/Teams.cpp`\n- `src/agent/Tools.cpp`\n- `src/agent/WebFetch.cpp`\n- `src/agent/WorkspaceTools.cpp`\n- `src/agent/Worktrees.cpp`\n- `src/mcp/LocalApplications.cpp`\n- `src/service/ModelRegistry.cpp`\n- `tools/mcp_main.cpp`\n",
+      "items": [
+        {
+          "marker": "-",
+          "text": "`src/LocalIpcServer.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/ModelCatalog.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/Api.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/FileCheckpoints.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/HookAgent.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/InputQueue.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/MemoryDream.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/PermissionSettingsFile.h`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/PlanMode.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/Plugins.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/ProjectMemory.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/SessionOwners.h`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/SessionStore.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/ShellTasks.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/Subagents.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/TaskStore.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/Teams.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/Tools.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/WebFetch.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/WorkspaceTools.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/agent/Worktrees.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/mcp/LocalApplications.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`src/service/ModelRegistry.cpp`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "`tools/mcp_main.cpp`",
+          "checked": null
+        }
+      ]
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000001",
+      "parent_id": null,
+      "level": 1,
+      "title": "File creation ownership in iiLocalLLM",
+      "anchor": "file-creation-ownership-in-iilocalllm",
+      "start_line": 1
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [],
+    "commands": [],
+    "links": [
+      {
+        "block_id": "b000005",
+        "label": "ownership contract",
+        "target": "../../iiFileProvider/docs/FILE_OWNERSHIP.md",
+        "kind": "relative",
+        "line": 5
+      }
+    ],
+    "tables": []
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

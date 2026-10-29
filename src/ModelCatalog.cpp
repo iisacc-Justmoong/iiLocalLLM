@@ -2,6 +2,7 @@
 #include "ModelCatalog.h"
 #include <QtCore/QCryptographicHash>
 #include "ModelDigest.h"
+#include "ModelReadAhead.h"
 #include <QtCore/QFileInfo>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QSet>
@@ -41,6 +42,8 @@ void assetPaths(const iiFileProvider::Directory& root, const QString& relative, 
         else {
             require(entry.isFile(), ErrorCode::IntegrityFailure, QStringLiteral("Package contains a non-regular file: ") + path);
             if (path == QStringLiteral("manifest.json")) continue;
+            require(!path.endsWith(QStringLiteral(".onnx"), Qt::CaseInsensitive), ErrorCode::InvalidManifest,
+                    QStringLiteral("ONNX model files are not supported: ") + path);
             files.append(path);
             require(files.size() <= 10000, ErrorCode::ResourceLimit, QStringLiteral("Package exceeds 10000 files"));
         }
@@ -58,10 +61,12 @@ ModelFile hashFile(const iiFileProvider::Directory& root, const QString& relativ
         require(output.open(QIODevice::WriteOnly | QIODevice::NewOnly), ErrorCode::StorageFailure, output.errorString());
     }
     detail::ModelDigest hash;
+    detail::ModelReadAhead readAhead(input);
     qint64 size = 0;
     QByteArray buffer(1024 * 1024, Qt::Uninitialized);
     for (;;) {
         token.throwIfCancelled();
+        readAhead.prepare(size);
         const auto count = input.read(buffer.data(), buffer.size());
         require(count >= 0, ErrorCode::StorageFailure, input.errorString());
         if (!count) break;

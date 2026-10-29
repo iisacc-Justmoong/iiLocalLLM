@@ -1,0 +1,121 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:4a87da82a70fe1a5185860c8cf963c3403b6f7363478446b3496e87c7943ae14",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "docs/PERFORMANCE.md",
+    "sha256": "51a876572cb5c4c3ac670bc6095a97cecbc57b5c526ffc07f5fe5fa8820c5d0f",
+    "bytes": 1114,
+    "line_count": 19,
+    "encoding": "utf-8",
+    "language": "en"
+  },
+  "document": {
+    "title": "Repeated parameter validation",
+    "role": "guide",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "heading",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "# Repeated parameter validation\n",
+      "level": 1,
+      "title": "Repeated parameter validation"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "paragraph",
+      "start_line": 3,
+      "end_line": 7,
+      "raw": "Imported catalogs build private field-name and required-field indexes once.\nPublic field order and exported JSON remain unchanged. Nested object validation\ndoes not linearly search the whole group for each supplied property, and direct\nfield lookup uses the same index. Required/default/read-only checks retain their\nexisting behavior.\n"
+    },
+    {
+      "id": "b000004",
+      "kind": "blank",
+      "start_line": 8,
+      "end_line": 8,
+      "raw": "\n"
+    },
+    {
+      "id": "b000005",
+      "kind": "paragraph",
+      "start_line": 9,
+      "end_line": 14,
+      "raw": "Schema regular expressions are validated and compiled at catalog construction,\nthen reused by const validation calls. The immutable catalog owns all indexes\nand expressions; there is no global unbounded cache or mutation during reads.\nAn `anyOf` stops evaluating alternatives after a match, while all constraints\noutside the union continue to be checked. Secret redaction still visits all\nbranches, since it has different semantics from acceptance.\n"
+    },
+    {
+      "id": "b000006",
+      "kind": "blank",
+      "start_line": 15,
+      "end_line": 15,
+      "raw": "\n"
+    },
+    {
+      "id": "b000007",
+      "kind": "paragraph",
+      "start_line": 16,
+      "end_line": 19,
+      "raw": "Parameter tests cover nested references, independent imported catalogs with the\nsame field names, required/default/read-only fields, regex failures, concurrent\nconst validation, and union constraints. Native inference settings and native\nbinding rejection remain part of the full module suite.\n"
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000001",
+      "parent_id": null,
+      "level": 1,
+      "title": "Repeated parameter validation",
+      "anchor": "repeated-parameter-validation",
+      "start_line": 1
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [
+      {
+        "block_id": "b000003",
+        "line": 3,
+        "text": "Imported catalogs build private field-name and required-field indexes once.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000003",
+        "line": 6,
+        "text": "field lookup uses the same index. Required/default/read-only checks retain their",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000007",
+        "line": 17,
+        "text": "same field names, required/default/read-only fields, regex failures, concurrent",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      }
+    ],
+    "commands": [],
+    "links": [],
+    "tables": []
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

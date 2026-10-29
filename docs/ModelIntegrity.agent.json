@@ -1,0 +1,113 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:e1878e7a3d88aa9442094967d0355bd33dacb29c18dce79e801b31fdcd491ad4",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "docs/ModelIntegrity.md",
+    "sha256": "094b893c6bc78133970c10a278233a62f27f3ffbce92b2c52cb2b2d110b0bb35",
+    "bytes": 1606,
+    "line_count": 10,
+    "encoding": "utf-8",
+    "language": "ko"
+  },
+  "document": {
+    "title": "전체 가중치 무결성 확인의 네이티브 해시",
+    "role": "guide",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "heading",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "# 전체 가중치 무결성 확인의 네이티브 해시\n",
+      "level": 1,
+      "title": "전체 가중치 무결성 확인의 네이티브 해시"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "paragraph",
+      "start_line": 3,
+      "end_line": 3,
+      "raw": "ModelCatalog는 설치와 로딩에서 모델 파일의 모든 바이트를 SHA-256으로 확인한다. 이 계약은 유지하면서 macOS의 스트리밍 계산을 시스템 CommonCrypto 구현으로 옮겼다. 다른 플랫폼의 기존 구현과 읽기·복사·취소 경계는 유지한다.\n"
+    },
+    {
+      "id": "b000004",
+      "kind": "blank",
+      "start_line": 4,
+      "end_line": 4,
+      "raw": "\n"
+    },
+    {
+      "id": "b000005",
+      "kind": "paragraph",
+      "start_line": 5,
+      "end_line": 5,
+      "raw": "변경은 파일 일부만 검사하거나 검증을 생략하는 캐시가 아니다. 기존 1 MiB 읽기마다 취소를 검사하고 같은 바이트 전체를 계산하며 결과와 파일 크기를 매니페스트와 비교한다. 큰 가중치의 시작 지연을 줄이되 기존 메모리 예산이나 요청 기한을 늘리지 않는다.\n"
+    },
+    {
+      "id": "b000006",
+      "kind": "blank",
+      "start_line": 6,
+      "end_line": 6,
+      "raw": "\n"
+    },
+    {
+      "id": "b000007",
+      "kind": "paragraph",
+      "start_line": 7,
+      "end_line": 7,
+      "raw": "model_digest 회귀 검사는 빈 입력·abc·백만 개의 a로 구성한 표준 벡터를 검사한다. 바이트별·31바이트·64 KiB 분할, 반복 결과 조회와 조회 이후 계속 갱신도 검사한다. 기존 카탈로그 및 실제 모델 검사는 설치·변조·전체 파일 검증을 별도로 확인한다.\n"
+    },
+    {
+      "id": "b000008",
+      "kind": "blank",
+      "start_line": 8,
+      "end_line": 9,
+      "raw": "\n\n"
+    },
+    {
+      "id": "b000009",
+      "kind": "paragraph",
+      "start_line": 10,
+      "end_line": 10,
+      "raw": "macOS의 순차 검증에는 커널 `F_RDADVISE`로 최대 8 MiB 읽기 범위를 예고한다. 4 MiB 진행마다 다음 범위를 요청하여 저장 장치가 읽기를 병합할 수 있게 한다. 실제 읽기는 기존 1 MiB 단위이고 전체 바이트의 해시와 취소 검사는 동일하다. 힌트 미지원·실패 시 원래 읽기로 계속하며 파일 위치·소유권을 바꾸지 않는다. `model_digest`는 힌트 적용 전후의 위치 불변과 전체 파일 해시 동일성, 범위 밖·닫힌 파일의 무해한 처리도 검사한다.\n"
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000001",
+      "parent_id": null,
+      "level": 1,
+      "title": "전체 가중치 무결성 확인의 네이티브 해시",
+      "anchor": "전체-가중치-무결성-확인의-네이티브-해시",
+      "start_line": 1
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [],
+    "commands": [],
+    "links": [],
+    "tables": []
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

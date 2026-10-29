@@ -1,0 +1,865 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:82718f99ef433f0549f97ae10d35748ac5cd7695e00ddd5c35ed3de6831f6135",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "docs/WindowsBuildAndRun.md",
+    "sha256": "cfb695a3f3d94f956a279288595e25837bcdeb734b3cee09d427857dc3295d28",
+    "bytes": 12402,
+    "line_count": 145,
+    "encoding": "utf-8",
+    "language": "ko"
+  },
+  "document": {
+    "title": "iiLocalLLM: Windows 빌드 및 실행",
+    "role": "guide",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "heading",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "# iiLocalLLM: Windows 빌드 및 실행\r\n",
+      "level": 1,
+      "title": "iiLocalLLM: Windows 빌드 및 실행"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "paragraph",
+      "start_line": 3,
+      "end_line": 3,
+      "raw": "llama.cpp 기반 로컬 언어 모델, 세션·메모리·shell·MCP 기능을 제공하는 Qt Core/Network SDK이다.\r\n"
+    },
+    {
+      "id": "b000004",
+      "kind": "blank",
+      "start_line": 4,
+      "end_line": 4,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000005",
+      "kind": "paragraph",
+      "start_line": 5,
+      "end_line": 5,
+      "raw": "검증 기록 갱신: `2026-10-20T02:45:37+09:00`. 변경 전 소스 기준 commit: `ac3ca099b8a9ab460c380784a41e2e34ea9031ae`. 아래 결과는 이번 변경을 포함한 작업 트리의 검증이다.\r\n"
+    },
+    {
+      "id": "b000006",
+      "kind": "blank",
+      "start_line": 6,
+      "end_line": 6,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000007",
+      "kind": "heading",
+      "start_line": 7,
+      "end_line": 7,
+      "raw": "## 현재 검증 상태\r\n",
+      "level": 2,
+      "title": "현재 검증 상태"
+    },
+    {
+      "id": "b000008",
+      "kind": "blank",
+      "start_line": 8,
+      "end_line": 8,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000009",
+      "kind": "paragraph",
+      "start_line": 9,
+      "end_line": 9,
+      "raw": "Release 빌드·실행 검사·설치를 완료하였다. 등록 검사 73개 중 73개 통과, 0개 실패, 0개 skip이다.\r\n"
+    },
+    {
+      "id": "b000010",
+      "kind": "blank",
+      "start_line": 10,
+      "end_line": 10,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000011",
+      "kind": "heading",
+      "start_line": 11,
+      "end_line": 11,
+      "raw": "## 이 프로젝트의 의존성과 실행 범위\r\n",
+      "level": 2,
+      "title": "이 프로젝트의 의존성과 실행 범위"
+    },
+    {
+      "id": "b000012",
+      "kind": "blank",
+      "start_line": 12,
+      "end_line": 12,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000013",
+      "kind": "paragraph",
+      "start_line": 13,
+      "end_line": 13,
+      "raw": "선행 workspace SDK는 다음과 같다. 각각의 Windows 지침에 따라 실행 검증과 설치를 완료한 뒤 진행한다.\r\n"
+    },
+    {
+      "id": "b000014",
+      "kind": "blank",
+      "start_line": 14,
+      "end_line": 14,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000015",
+      "kind": "list",
+      "start_line": 15,
+      "end_line": 16,
+      "raw": "- [iiDecision](../../../SDK/iiDecision/docs/WindowsBuildAndRun.md)\r\n- [iiFileProvider](../../../SDK/iiFileProvider/docs/WindowsBuildAndRun.md)\r\n",
+      "items": [
+        {
+          "marker": "-",
+          "text": "[iiDecision](../../../SDK/iiDecision/docs/WindowsBuildAndRun.md)",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "[iiFileProvider](../../../SDK/iiFileProvider/docs/WindowsBuildAndRun.md)",
+          "checked": null
+        }
+      ]
+    },
+    {
+      "id": "b000016",
+      "kind": "blank",
+      "start_line": 17,
+      "end_line": 17,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000017",
+      "kind": "list",
+      "start_line": 18,
+      "end_line": 19,
+      "raw": "- iiFileProvider와 Native, iiDecision 및 Qt Core/Network/Test 6.8.3 EXACT가 필요하다.\r\n- 기본 빌드는 고정된 llama.cpp를 준비한다. Git for Windows의 `sh`를 PATH에 포함한다. 실제 토큰 생성에는 호환 로컬 모델이 별도로 필요하다.\r\n",
+      "items": [
+        {
+          "marker": "-",
+          "text": "iiFileProvider와 Native, iiDecision 및 Qt Core/Network/Test 6.8.3 EXACT가 필요하다.",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "기본 빌드는 고정된 llama.cpp를 준비한다. Git for Windows의 `sh`를 PATH에 포함한다. 실제 토큰 생성에는 호환 로컬 모델이 별도로 필요하다.",
+          "checked": null
+        }
+      ]
+    },
+    {
+      "id": "b000018",
+      "kind": "blank",
+      "start_line": 20,
+      "end_line": 20,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000019",
+      "kind": "paragraph",
+      "start_line": 21,
+      "end_line": 21,
+      "raw": "프로젝트별 Windows 조건은 다음과 같다.\r\n"
+    },
+    {
+      "id": "b000020",
+      "kind": "blank",
+      "start_line": 22,
+      "end_line": 22,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000021",
+      "kind": "list",
+      "start_line": 23,
+      "end_line": 28,
+      "raw": "- 테스트 C++ 정의에 들어가는 Python 실행 경로는 CMake에서 `/` 구분자로 정규화한다. Windows의 `\\t`, `\\U`가 C++ escape로 해석되어 MCP peer를 시작하지 못하는 문제를 방지하며 HTTP MCP 테스트의 초기 검사로 실행 파일 경로를 확인한다.\r\n- 세션 검색 cursor는 Windows에서 iiFileProvider가 정규화한 native 변경 토큰을 사용한다. 미리보기 발행 뒤에도 cursor가 유효하며, 같은 크기의 본문을 바꾸고 mtime을 복원한 경우에는 cursor를 거부하는 회귀 검사를 포함한다.\r\n- background shell 검사는 Git for Windows의 MSYS PID를 해당 배포본의 `usr/bin/ps.exe`로 확인한다. 빌드 도구와 이름이 충돌할 수 있는 `usr/bin` 전체를 PATH 앞에 추가하지 않는다.\r\n- 현재 재현 구성은 CPU backend이다. SIMD 및 GPU 옵션을 변경하면 다시 빌드·실행 검증한다.\r\n- 선택적 LVRS 통합 테스트용 `IILOCALLLM_TEST_LVRS_DIR`은 이 구성에서 지정하지 않는다.\r\n- MSVC의 대소문자 비구분 header 탐색에서 `Memory.h`와 C runtime `memory.h`가 만나는 경로는 현재 extern C++ 회귀 검사로 보호한다.\r\n",
+      "items": [
+        {
+          "marker": "-",
+          "text": "테스트 C++ 정의에 들어가는 Python 실행 경로는 CMake에서 `/` 구분자로 정규화한다. Windows의 `\\t`, `\\U`가 C++ escape로 해석되어 MCP peer를 시작하지 못하는 문제를 방지하며 HTTP MCP 테스트의 초기 검사로 실행 파일 경로를 확인한다.",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "세션 검색 cursor는 Windows에서 iiFileProvider가 정규화한 native 변경 토큰을 사용한다. 미리보기 발행 뒤에도 cursor가 유효하며, 같은 크기의 본문을 바꾸고 mtime을 복원한 경우에는 cursor를 거부하는 회귀 검사를 포함한다.",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "background shell 검사는 Git for Windows의 MSYS PID를 해당 배포본의 `usr/bin/ps.exe`로 확인한다. 빌드 도구와 이름이 충돌할 수 있는 `usr/bin` 전체를 PATH 앞에 추가하지 않는다.",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "현재 재현 구성은 CPU backend이다. SIMD 및 GPU 옵션을 변경하면 다시 빌드·실행 검증한다.",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "선택적 LVRS 통합 테스트용 `IILOCALLLM_TEST_LVRS_DIR`은 이 구성에서 지정하지 않는다.",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "MSVC의 대소문자 비구분 header 탐색에서 `Memory.h`와 C runtime `memory.h`가 만나는 경로는 현재 extern C++ 회귀 검사로 보호한다.",
+          "checked": null
+        }
+      ]
+    },
+    {
+      "id": "b000022",
+      "kind": "blank",
+      "start_line": 29,
+      "end_line": 29,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000023",
+      "kind": "heading",
+      "start_line": 30,
+      "end_line": 30,
+      "raw": "## 환경 준비\r\n",
+      "level": 2,
+      "title": "환경 준비"
+    },
+    {
+      "id": "b000024",
+      "kind": "blank",
+      "start_line": 31,
+      "end_line": 31,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000025",
+      "kind": "paragraph",
+      "start_line": 32,
+      "end_line": 32,
+      "raw": "PowerShell에서 이 프로젝트 루트로 이동한 뒤 순서대로 실행한다. workspace 배치는 `Workspace/SDK/<이름>`을 전제로 한다.\r\n"
+    },
+    {
+      "id": "b000026",
+      "kind": "blank",
+      "start_line": 33,
+      "end_line": 33,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000027",
+      "kind": "paragraph",
+      "start_line": 34,
+      "end_line": 34,
+      "raw": "검증 도구는 MSVC 19.51 x64, Windows SDK 10.0.28000, CMake 4.4.4, Ninja 1.13.2이다. 개발 shell은 빌드 재현을 위해 Python 3.14.8을 선택하며 시스템 기본 Python 3.15.0과 구분한다.\r\n"
+    },
+    {
+      "id": "b000028",
+      "kind": "blank",
+      "start_line": 35,
+      "end_line": 35,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000029",
+      "kind": "fenced_code",
+      "start_line": 36,
+      "end_line": 48,
+      "raw": "```powershell\r\n$ErrorActionPreference = 'Stop'\r\n$project = (Get-Location).Path\r\n$workspace = (Resolve-Path -LiteralPath '../..').Path\r\n. (Join-Path $workspace 'SDK/Windows/Enter-DevEnvironment.ps1')\r\nSet-Location -LiteralPath $project\r\n$python = (Join-Path $workspace 'Tools/Python314/tools/python.exe').Replace('\\', '/')\r\n$compiler = (Get-Command cl.exe -ErrorAction Stop).Source.Replace('\\', '/')\r\n$toolchain = (Join-Path $workspace 'Tools/vcpkg/scripts/buildsystems/vcpkg.cmake').Replace('\\', '/')\r\n$msvcInclude = (Join-Path $workspace 'SDK/Windows/WindowsMsvcPrefix.cmake').Replace('\\', '/')\r\n$prefix = (Join-Path $env:USERPROFILE '.local/SDK/iiLocalLLM').Replace('\\', '/')\r\n$env:ONNXRuntime_ROOT = Join-Path $workspace 'Tools/ONNXRuntime/onnxruntime-win-x64-1.31.0'\r\n```\r\n",
+      "language": "powershell",
+      "code": "$ErrorActionPreference = 'Stop'\r\n$project = (Get-Location).Path\r\n$workspace = (Resolve-Path -LiteralPath '../..').Path\r\n. (Join-Path $workspace 'SDK/Windows/Enter-DevEnvironment.ps1')\r\nSet-Location -LiteralPath $project\r\n$python = (Join-Path $workspace 'Tools/Python314/tools/python.exe').Replace('\\', '/')\r\n$compiler = (Get-Command cl.exe -ErrorAction Stop).Source.Replace('\\', '/')\r\n$toolchain = (Join-Path $workspace 'Tools/vcpkg/scripts/buildsystems/vcpkg.cmake').Replace('\\', '/')\r\n$msvcInclude = (Join-Path $workspace 'SDK/Windows/WindowsMsvcPrefix.cmake').Replace('\\', '/')\r\n$prefix = (Join-Path $env:USERPROFILE '.local/SDK/iiLocalLLM').Replace('\\', '/')\r\n$env:ONNXRuntime_ROOT = Join-Path $workspace 'Tools/ONNXRuntime/onnxruntime-win-x64-1.31.0'\r\n",
+      "closed": true
+    },
+    {
+      "id": "b000030",
+      "kind": "blank",
+      "start_line": 49,
+      "end_line": 49,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000031",
+      "kind": "paragraph",
+      "start_line": 50,
+      "end_line": 50,
+      "raw": "`Enter-DevEnvironment.ps1`은 Qt MSVC kit, vcpkg, 설치된 SDK의 검색 경로와 UTF-8 설정을 준비한다. `CMAKE_PREFIX_PATH`의 디렉터리 존재만으로 의존성 검증을 대신하지 않는다. 선행 SDK의 실행 검사와 설치를 먼저 완료해야 한다.\r\n"
+    },
+    {
+      "id": "b000032",
+      "kind": "blank",
+      "start_line": 51,
+      "end_line": 51,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000033",
+      "kind": "heading",
+      "start_line": 52,
+      "end_line": 52,
+      "raw": "## 구성과 빌드\r\n",
+      "level": 2,
+      "title": "구성과 빌드"
+    },
+    {
+      "id": "b000034",
+      "kind": "blank",
+      "start_line": 53,
+      "end_line": 53,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000035",
+      "kind": "fenced_code",
+      "start_line": 54,
+      "end_line": 89,
+      "raw": "```powershell\r\n$configure = @(\r\n    '-S', '.', '-B', 'build', '-G', 'Ninja'\r\n    '-DCMAKE_BUILD_TYPE=Release'\r\n    \"-DCMAKE_C_COMPILER=$compiler\"\r\n    \"-DCMAKE_CXX_COMPILER=$compiler\"\r\n    \"-DCMAKE_INSTALL_PREFIX=$prefix\"\r\n    \"-DCMAKE_PREFIX_PATH=$env:CMAKE_PREFIX_PATH\"\r\n    \"-DCMAKE_TOOLCHAIN_FILE=$toolchain\"\r\n    '-DVCPKG_TARGET_TRIPLET=x64-windows'\r\n    \"-DCMAKE_PROJECT_INCLUDE=$msvcInclude\"\r\n    \"-DPython3_EXECUTABLE=$python\"\r\n    \"-DPython_EXECUTABLE=$python\"\r\n    '-DQt6_DIR=C:/Qt/6.8.3/msvc2022_64/lib/cmake/Qt6'\r\n    '-DBUILD_TESTING=ON'\r\n    \"-DONNXRuntime_ROOT=$($env:ONNXRuntime_ROOT.Replace('\\', '/'))\"\r\n    '-DIILOCALLLM_WITH_LLAMA=ON'\r\n    '-DGGML_CUDA=OFF'\r\n    '-DGGML_VULKAN=OFF'\r\n    '-DGGML_NATIVE=ON'\r\n    '-DGGML_AVX=OFF'\r\n    '-DGGML_AVX2=OFF'\r\n    '-DGGML_BMI2=OFF'\r\n    '-DGGML_SSE42=OFF'\r\n)\r\n& cmake @configure\r\nif ($LASTEXITCODE -ne 0) { throw 'CMake 구성 실패' }\r\n$cache = Get-Content -LiteralPath 'build/CMakeCache.txt' -Raw\r\nif ($cache -notmatch '(?m)^CMAKE_BUILD_TYPE:STRING=Release\\r?$') {\r\n    throw 'Release 구성이 유실되었음. 같은 구성 인수에 --fresh를 추가하여 다시 구성할 것'\r\n}\r\n& $python (Join-Path $workspace 'SDK/Windows/Configure-WindowsNinja.py') (Join-Path $project 'build')\r\nif ($LASTEXITCODE -ne 0) { throw 'Ninja MSVC 의존성 설정 실패' }\r\ncmake --build build --config Release --parallel 4\r\nif ($LASTEXITCODE -ne 0) { throw '빌드 실패' }\r\n```\r\n",
+      "language": "powershell",
+      "code": "$configure = @(\r\n    '-S', '.', '-B', 'build', '-G', 'Ninja'\r\n    '-DCMAKE_BUILD_TYPE=Release'\r\n    \"-DCMAKE_C_COMPILER=$compiler\"\r\n    \"-DCMAKE_CXX_COMPILER=$compiler\"\r\n    \"-DCMAKE_INSTALL_PREFIX=$prefix\"\r\n    \"-DCMAKE_PREFIX_PATH=$env:CMAKE_PREFIX_PATH\"\r\n    \"-DCMAKE_TOOLCHAIN_FILE=$toolchain\"\r\n    '-DVCPKG_TARGET_TRIPLET=x64-windows'\r\n    \"-DCMAKE_PROJECT_INCLUDE=$msvcInclude\"\r\n    \"-DPython3_EXECUTABLE=$python\"\r\n    \"-DPython_EXECUTABLE=$python\"\r\n    '-DQt6_DIR=C:/Qt/6.8.3/msvc2022_64/lib/cmake/Qt6'\r\n    '-DBUILD_TESTING=ON'\r\n    \"-DONNXRuntime_ROOT=$($env:ONNXRuntime_ROOT.Replace('\\', '/'))\"\r\n    '-DIILOCALLLM_WITH_LLAMA=ON'\r\n    '-DGGML_CUDA=OFF'\r\n    '-DGGML_VULKAN=OFF'\r\n    '-DGGML_NATIVE=ON'\r\n    '-DGGML_AVX=OFF'\r\n    '-DGGML_AVX2=OFF'\r\n    '-DGGML_BMI2=OFF'\r\n    '-DGGML_SSE42=OFF'\r\n)\r\n& cmake @configure\r\nif ($LASTEXITCODE -ne 0) { throw 'CMake 구성 실패' }\r\n$cache = Get-Content -LiteralPath 'build/CMakeCache.txt' -Raw\r\nif ($cache -notmatch '(?m)^CMAKE_BUILD_TYPE:STRING=Release\\r?$') {\r\n    throw 'Release 구성이 유실되었음. 같은 구성 인수에 --fresh를 추가하여 다시 구성할 것'\r\n}\r\n& $python (Join-Path $workspace 'SDK/Windows/Configure-WindowsNinja.py') (Join-Path $project 'build')\r\nif ($LASTEXITCODE -ne 0) { throw 'Ninja MSVC 의존성 설정 실패' }\r\ncmake --build build --config Release --parallel 4\r\nif ($LASTEXITCODE -ne 0) { throw '빌드 실패' }\r\n",
+      "closed": true
+    },
+    {
+      "id": "b000036",
+      "kind": "blank",
+      "start_line": 90,
+      "end_line": 90,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000037",
+      "kind": "paragraph",
+      "start_line": 91,
+      "end_line": 91,
+      "raw": "모든 생성 파일은 이 프로젝트의 `build/` 아래에 둔다. 컴파일러는 위에서 확인한 절대 경로를 사용한다. 기존 캐시가 다른 compiler 또는 generator를 사용한다면 같은 구성 인수에 `--fresh`를 추가하여 다시 구성한다. MSVC 키트와 MinGW 또는 Debug/Release 라이브러리를 혼합하지 않는다.\r\n"
+    },
+    {
+      "id": "b000038",
+      "kind": "blank",
+      "start_line": 92,
+      "end_line": 92,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000039",
+      "kind": "paragraph",
+      "start_line": 93,
+      "end_line": 93,
+      "raw": "`WindowsMsvcPrefix.cmake`와 `Configure-WindowsNinja.py`는 MSVC include 출력 언어를 Ninja에 맞추고 UTF-8 실행 manifest를 적용한다. 빌드 병렬도는 4로 제한하며 실행 검사는 직렬로 수행한다.\r\n"
+    },
+    {
+      "id": "b000040",
+      "kind": "blank",
+      "start_line": 94,
+      "end_line": 94,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000041",
+      "kind": "heading",
+      "start_line": 95,
+      "end_line": 95,
+      "raw": "## 실행과 확인\r\n",
+      "level": 2,
+      "title": "실행과 확인"
+    },
+    {
+      "id": "b000042",
+      "kind": "blank",
+      "start_line": 96,
+      "end_line": 96,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000043",
+      "kind": "paragraph",
+      "start_line": 97,
+      "end_line": 97,
+      "raw": "입력 대기열·compaction·agent profile·task 검사는 QtTest의 stdout logger와 파일 logger를 함께 사용한다. Windows launcher가 stdout을 연결하지 않는 경우에도 build/input-queue-tests.txt, build/compaction-tests.txt, build/agent-profile-tests.txt, build/task-tests.txt에 실제 assertion과 case 이름을 보존한다. 간헐 실패는 동일한 TEMP·작업 디렉터리·app endpoint 환경에서 반복 재현하며, 단독 재실행 성공만으로 전체 통과를 대신하지 않는다.\r\n"
+    },
+    {
+      "id": "b000044",
+      "kind": "blank",
+      "start_line": 98,
+      "end_line": 98,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000045",
+      "kind": "paragraph",
+      "start_line": 99,
+      "end_line": 99,
+      "raw": "Windows의 다른 프로세스가 읽기 핸들을 닫는 동안 원자적 이름 교체가 Win32 5·32·33·303 계열 오류를 반환할 수 있다. 대기열은 기존 `queue.lock`을 유지하며 `InputQueueOptions::lockTimeoutMs` 안에서 새 임시 파일의 원자적 게시만 재시도한다. 직접 덮어쓰기 fallback은 사용하지 않으며, 각 재시도에서 취소와 symlink 여부를 확인한다. 지속적인 공유·권한 오류는 `StorageFailure`로 반환하고 이전 JSON과 revision을 유지한다. 잠금 파일의 삭제 지연도 같은 제한 시간 안에서 처리한다. 회귀 검사는 잠금 삭제 대기, 짧은 읽기 핸들, 지속적인 공유 오류의 데이터 보존 및 게시 대기 중 취소를 실제 Windows 핸들로 검증한다.\r\n"
+    },
+    {
+      "id": "b000046",
+      "kind": "blank",
+      "start_line": 100,
+      "end_line": 100,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000047",
+      "kind": "paragraph",
+      "start_line": 101,
+      "end_line": 101,
+      "raw": "대기열 fixture의 임시 디렉터리는 iiFileProvider의 정리 adapter를 사용하여 preview 작업을 취소한 뒤 제거한다. 다중 프로세스 검사는 모든 producer를 회수한 후 각 오류를 검사하며, producer의 실제 오류 문자열을 보존한다.\r\n"
+    },
+    {
+      "id": "b000048",
+      "kind": "blank",
+      "start_line": 102,
+      "end_line": 102,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000049",
+      "kind": "paragraph",
+      "start_line": 103,
+      "end_line": 103,
+      "raw": "경합 중 다른 작성자가 잠금 파일을 제거하여 Qt 잠금 취득이 Win32 2를 반환하는 경우에는 부모 디렉터리가 여전히 디렉터리이고 symlink가 아니며 canonical 경로가 같은지 재확인한 뒤 같은 잠금 제한 시간 안에서 다시 시도한다. 부모 경로가 사라지거나 바뀐 경우에는 저장 실패로 반환한다.\r\n"
+    },
+    {
+      "id": "b000050",
+      "kind": "blank",
+      "start_line": 104,
+      "end_line": 104,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000051",
+      "kind": "paragraph",
+      "start_line": 105,
+      "end_line": 105,
+      "raw": "iiDecision의 ONNX/Laya 구성을 사용하는 Windows 빌드는 모든 CLI와 검사 실행 파일 옆에 일치하는 ONNX Runtime DLL을 배치하고 설치 `bin`에도 포함한다. 시스템 폴더의 이전 Windows ML DLL이 먼저 로드되는 일을 막는다.\r\n"
+    },
+    {
+      "id": "b000052",
+      "kind": "blank",
+      "start_line": 106,
+      "end_line": 106,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000053",
+      "kind": "paragraph",
+      "start_line": 107,
+      "end_line": 107,
+      "raw": "실제 네이티브 테스트 프로세스로 세션·메모리·shell·discovery·MCP·문법과 DLL header 호환성을 검증한다.\r\n"
+    },
+    {
+      "id": "b000054",
+      "kind": "blank",
+      "start_line": 108,
+      "end_line": 108,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000055",
+      "kind": "fenced_code",
+      "start_line": 109,
+      "end_line": 116,
+      "raw": "```powershell\r\n$dllDirectories = @(Get-ChildItem -LiteralPath build -Recurse -Filter '*.dll' -File |\r\n    Select-Object -ExpandProperty DirectoryName | Sort-Object -Unique)\r\n$env:PATH = (@($dllDirectories) + @($env:PATH)) -join ';'\r\n$env:QSG_RENDER_LOOP = 'basic'\r\nctest --test-dir build -C Release --output-on-failure --parallel 1 --no-tests=error\r\nif ($LASTEXITCODE -ne 0) { throw '전체 실행 검사 실패' }\r\n```\r\n",
+      "language": "powershell",
+      "code": "$dllDirectories = @(Get-ChildItem -LiteralPath build -Recurse -Filter '*.dll' -File |\r\n    Select-Object -ExpandProperty DirectoryName | Sort-Object -Unique)\r\n$env:PATH = (@($dllDirectories) + @($env:PATH)) -join ';'\r\n$env:QSG_RENDER_LOOP = 'basic'\r\nctest --test-dir build -C Release --output-on-failure --parallel 1 --no-tests=error\r\nif ($LASTEXITCODE -ne 0) { throw '전체 실행 검사 실패' }\r\n",
+      "closed": true
+    },
+    {
+      "id": "b000056",
+      "kind": "blank",
+      "start_line": 117,
+      "end_line": 117,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000057",
+      "kind": "paragraph",
+      "start_line": 118,
+      "end_line": 118,
+      "raw": "현재 빌드에 실제 등록된 실행 경로의 예는 `iiLocalLLM.MemoryHeaderInterop`, `iiLocalLLM.native_grammar`, `iiLocalLLM.teams`이다. 전체 목록은 `ctest --test-dir build -N`으로 확인한다.\r\n"
+    },
+    {
+      "id": "b000058",
+      "kind": "blank",
+      "start_line": 119,
+      "end_line": 119,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000059",
+      "kind": "heading",
+      "start_line": 120,
+      "end_line": 120,
+      "raw": "## 설치와 배포 범위\r\n",
+      "level": 2,
+      "title": "설치와 배포 범위"
+    },
+    {
+      "id": "b000060",
+      "kind": "blank",
+      "start_line": 121,
+      "end_line": 121,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000061",
+      "kind": "paragraph",
+      "start_line": 122,
+      "end_line": 122,
+      "raw": "전체 테스트가 통과한 구성만 설치한다. skip된 선택 기능은 지원·실행 범위를 별도 기록한다.\r\n"
+    },
+    {
+      "id": "b000062",
+      "kind": "blank",
+      "start_line": 123,
+      "end_line": 123,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000063",
+      "kind": "fenced_code",
+      "start_line": 124,
+      "end_line": 127,
+      "raw": "```powershell\r\ncmake --install build --config Release --prefix \"$prefix\"\r\nif ($LASTEXITCODE -ne 0) { throw '설치 실패' }\r\n```\r\n",
+      "language": "powershell",
+      "code": "cmake --install build --config Release --prefix \"$prefix\"\r\nif ($LASTEXITCODE -ne 0) { throw '설치 실패' }\r\n",
+      "closed": true
+    },
+    {
+      "id": "b000064",
+      "kind": "blank",
+      "start_line": 128,
+      "end_line": 128,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000065",
+      "kind": "paragraph",
+      "start_line": 129,
+      "end_line": 129,
+      "raw": "설치 파일은 `build/install_manifest.txt`와 실제 prefix의 파일을 대조한다. 소비자 실행 시 prefix의 `bin`과 필요한 vcpkg DLL을 검색할 수 있어야 한다.\r\n"
+    },
+    {
+      "id": "b000066",
+      "kind": "blank",
+      "start_line": 130,
+      "end_line": 130,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000067",
+      "kind": "heading",
+      "start_line": 131,
+      "end_line": 131,
+      "raw": "## 검증 근거\r\n",
+      "level": 2,
+      "title": "검증 근거"
+    },
+    {
+      "id": "b000068",
+      "kind": "blank",
+      "start_line": 132,
+      "end_line": 132,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000069",
+      "kind": "list",
+      "start_line": 133,
+      "end_line": 135,
+      "raw": "- 빌드 정의: [CMakeLists.txt](../CMakeLists.txt)와 프로젝트 테스트 등록이다.\r\n- 이번 실행 결과: [Windows SDK 전체 검증 기록](https://github.com/iisacc-Justmoong/SDK/blob/main/Windows/Verification-20261020.md)이다.\r\n- 프로젝트별 실행 로그와 JUnit은 같은 검증 디렉터리에 보관한다. 로그의 종료 코드, 실패·skip 목록과 실제 실행 범위를 함께 확인한다.\r\n",
+      "items": [
+        {
+          "marker": "-",
+          "text": "빌드 정의: [CMakeLists.txt](../CMakeLists.txt)와 프로젝트 테스트 등록이다.",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "이번 실행 결과: [Windows SDK 전체 검증 기록](https://github.com/iisacc-Justmoong/SDK/blob/main/Windows/Verification-20261020.md)이다.",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "프로젝트별 실행 로그와 JUnit은 같은 검증 디렉터리에 보관한다. 로그의 종료 코드, 실패·skip 목록과 실제 실행 범위를 함께 확인한다.",
+          "checked": null
+        }
+      ]
+    },
+    {
+      "id": "b000070",
+      "kind": "blank",
+      "start_line": 136,
+      "end_line": 136,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000071",
+      "kind": "paragraph",
+      "start_line": 137,
+      "end_line": 137,
+      "raw": "이전 세션 기록의 v1→v2 변환은 lease의 쓰기 파일을 닫은 뒤 해당 파일의 iiFileProvider preview를 취소하고 원자적으로 교체한다. 닫기 전에 preview를 취소하면 닫기 동작이 새 읽기 작업을 생성하여 Windows 이름 교체와 경합할 수 있다. 회귀 검사는 원본 메시지 전체 보존, 잘린 마지막 checkpoint 복구 및 완전하지만 손상된 기록의 거부를 확인한다. compaction fixture도 provider 임시 디렉터리 adapter로 preview 종료 후 정리한다.\r\n"
+    },
+    {
+      "id": "b000072",
+      "kind": "blank",
+      "start_line": 138,
+      "end_line": 138,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000073",
+      "kind": "paragraph",
+      "start_line": 139,
+      "end_line": 139,
+      "raw": "백그라운드 agent 작업은 실행 시작 시 mutex 안에서 JSON 상태 사본을 확보한 뒤 const 사본에서 실행 설정을 읽는다. 공유 QJsonObject의 비상수 subscript는 읽기 용도로 사용해도 누락된 key를 삽입할 수 있으므로 잠금 밖에서 사용하지 않는다. 회귀 검사는 32개 background 작업을 연속으로 시작하면서 즉시 상태·완료·소유권을 조회하고, 잘못된 profile catalog가 생긴 후에도 정리와 조회가 유지되는지 검사한다.\r\n"
+    },
+    {
+      "id": "b000074",
+      "kind": "blank",
+      "start_line": 140,
+      "end_line": 140,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000075",
+      "kind": "paragraph",
+      "start_line": 141,
+      "end_line": 141,
+      "raw": "TaskStore의 잠금도 Windows 삭제 지연과 잠금 파일 경로 소멸을 부모 canonical 경로 재검사 및 lockTimeoutMs 안에서 처리한다. 취소·영속 저장 오류·실제 소유권 경합의 Timeout 구분을 유지한다. task worker는 JSON 응답을 명시적으로 flush하며, 다중 프로세스 fixture는 생성 응답을 소비한 후 claim 단계로 넘어가고 JSON·정상 종료·단일 claim 성공을 모두 확인한다. Windows 핸들로 잠금 삭제 지연과 대기 중 취소를 회귀 검사한다.\r\n"
+    },
+    {
+      "id": "b000076",
+      "kind": "blank",
+      "start_line": 142,
+      "end_line": 142,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000077",
+      "kind": "paragraph",
+      "start_line": 143,
+      "end_line": 143,
+      "raw": "TaskStore의 board.json 원자적 게시도 다른 프로세스의 닫히는 읽기 핸들로 인한 Win32 공유 오류만 board.lock을 유지한 채 lockTimeoutMs 안에서 재시도한다. 직접 덮어쓰기 fallback은 사용하지 않으며 취소·symlink·영속 오류를 계속 검사한다. 짧은 읽기 핸들 해제, 영속 오류의 원본 board 보존, 게시 대기 중 취소를 Windows 회귀 검사로 확인한다.\r\n"
+    },
+    {
+      "id": "b000078",
+      "kind": "blank",
+      "start_line": 144,
+      "end_line": 144,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000079",
+      "kind": "paragraph",
+      "start_line": 145,
+      "end_line": 145,
+      "raw": "전체 SDK의 실행·설치와 커밋 조건은 [공통 Windows 검증 도구](https://github.com/iisacc-Justmoong/SDK/blob/main/Windows/README.md)에서 재현한다. 원본 JSON·JUnit·상세 로그는 로컬 `Workspace/build/maintenance/20261019-221920-sdk-recovery/final/`에 보관하며 Git에는 포함하지 않는다. 이 프로젝트의 성공은 제품·다른 플랫폼·별도 계정 및 물리 장치의 실연동을 대신하지 않는다.\r\n"
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000001",
+      "parent_id": null,
+      "level": 1,
+      "title": "iiLocalLLM: Windows 빌드 및 실행",
+      "anchor": "iilocalllm-windows-빌드-및-실행",
+      "start_line": 1
+    },
+    {
+      "block_id": "b000007",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "현재 검증 상태",
+      "anchor": "현재-검증-상태",
+      "start_line": 7
+    },
+    {
+      "block_id": "b000011",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "이 프로젝트의 의존성과 실행 범위",
+      "anchor": "이-프로젝트의-의존성과-실행-범위",
+      "start_line": 11
+    },
+    {
+      "block_id": "b000023",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "환경 준비",
+      "anchor": "환경-준비",
+      "start_line": 30
+    },
+    {
+      "block_id": "b000033",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "구성과 빌드",
+      "anchor": "구성과-빌드",
+      "start_line": 52
+    },
+    {
+      "block_id": "b000041",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "실행과 확인",
+      "anchor": "실행과-확인",
+      "start_line": 95
+    },
+    {
+      "block_id": "b000059",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "설치와 배포 범위",
+      "anchor": "설치와-배포-범위",
+      "start_line": 120
+    },
+    {
+      "block_id": "b000067",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "검증 근거",
+      "anchor": "검증-근거",
+      "start_line": 131
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [
+      {
+        "block_id": "b000021",
+        "line": 25,
+        "text": "- background shell 검사는 Git for Windows의 MSYS PID를 해당 배포본의 `usr/bin/ps.exe`로 확인한다. 빌드 도구와 이름이 충돌할 수 있는 `usr/bin` 전체를 PATH 앞에 추가하지 않는다.",
+        "basis": "lexical_match",
+        "context": "list"
+      },
+      {
+        "block_id": "b000021",
+        "line": 27,
+        "text": "- 선택적 LVRS 통합 테스트용 `IILOCALLLM_TEST_LVRS_DIR`은 이 구성에서 지정하지 않는다.",
+        "basis": "lexical_match",
+        "context": "list"
+      },
+      {
+        "block_id": "b000031",
+        "line": 50,
+        "text": "`Enter-DevEnvironment.ps1`은 Qt MSVC kit, vcpkg, 설치된 SDK의 검색 경로와 UTF-8 설정을 준비한다. `CMAKE_PREFIX_PATH`의 디렉터리 존재만으로 의존성 검증을 대신하지 않는다. 선행 SDK의 실행 검사와 설치를 먼저 완료해야 한다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000037",
+        "line": 91,
+        "text": "모든 생성 파일은 이 프로젝트의 `build/` 아래에 둔다. 컴파일러는 위에서 확인한 절대 경로를 사용한다. 기존 캐시가 다른 compiler 또는 generator를 사용한다면 같은 구성 인수에 `--fresh`를 추가하여 다시 구성한다. MSVC 키트와 MinGW 또는 Debug/Release 라이브러리를 혼합하지 않는다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000043",
+        "line": 97,
+        "text": "입력 대기열·compaction·agent profile·task 검사는 QtTest의 stdout logger와 파일 logger를 함께 사용한다. Windows launcher가 stdout을 연결하지 않는 경우에도 build/input-queue-tests.txt, build/compaction-tests.txt, build/agent-profile-tests.txt, build/task-tests.txt에 실제 assertion과 case 이름을 보존한다. 간헐 실패는 동일한 TEMP·작업 디렉터리·app endpoint 환경에서 반복 재현하며, 단독 재실행 성공만으로 전체 통과를 대신하지 않는다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000073",
+        "line": 139,
+        "text": "백그라운드 agent 작업은 실행 시작 시 mutex 안에서 JSON 상태 사본을 확보한 뒤 const 사본에서 실행 설정을 읽는다. 공유 QJsonObject의 비상수 subscript는 읽기 용도로 사용해도 누락된 key를 삽입할 수 있으므로 잠금 밖에서 사용하지 않는다. 회귀 검사는 32개 background 작업을 연속으로 시작하면서 즉시 상태·완료·소유권을 조회하고, 잘못된 profile catalog가 생긴 후에도 정리와 조회가 유지되는지 검사한다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000079",
+        "line": 145,
+        "text": "전체 SDK의 실행·설치와 커밋 조건은 [공통 Windows 검증 도구](https://github.com/iisacc-Justmoong/SDK/blob/main/Windows/README.md)에서 재현한다. 원본 JSON·JUnit·상세 로그는 로컬 `Workspace/build/maintenance/20261019-221920-sdk-recovery/final/`에 보관하며 Git에는 포함하지 않는다. 이 프로젝트의 성공은 제품·다른 플랫폼·별도 계정 및 물리 장치의 실연동을 대신하지 않는다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      }
+    ],
+    "commands": [
+      {
+        "block_id": "b000029",
+        "language": "powershell",
+        "code": "$ErrorActionPreference = 'Stop'\r\n$project = (Get-Location).Path\r\n$workspace = (Resolve-Path -LiteralPath '../..').Path\r\n. (Join-Path $workspace 'SDK/Windows/Enter-DevEnvironment.ps1')\r\nSet-Location -LiteralPath $project\r\n$python = (Join-Path $workspace 'Tools/Python314/tools/python.exe').Replace('\\', '/')\r\n$compiler = (Get-Command cl.exe -ErrorAction Stop).Source.Replace('\\', '/')\r\n$toolchain = (Join-Path $workspace 'Tools/vcpkg/scripts/buildsystems/vcpkg.cmake').Replace('\\', '/')\r\n$msvcInclude = (Join-Path $workspace 'SDK/Windows/WindowsMsvcPrefix.cmake').Replace('\\', '/')\r\n$prefix = (Join-Path $env:USERPROFILE '.local/SDK/iiLocalLLM').Replace('\\', '/')\r\n$env:ONNXRuntime_ROOT = Join-Path $workspace 'Tools/ONNXRuntime/onnxruntime-win-x64-1.31.0'\r\n"
+      },
+      {
+        "block_id": "b000035",
+        "language": "powershell",
+        "code": "$configure = @(\r\n    '-S', '.', '-B', 'build', '-G', 'Ninja'\r\n    '-DCMAKE_BUILD_TYPE=Release'\r\n    \"-DCMAKE_C_COMPILER=$compiler\"\r\n    \"-DCMAKE_CXX_COMPILER=$compiler\"\r\n    \"-DCMAKE_INSTALL_PREFIX=$prefix\"\r\n    \"-DCMAKE_PREFIX_PATH=$env:CMAKE_PREFIX_PATH\"\r\n    \"-DCMAKE_TOOLCHAIN_FILE=$toolchain\"\r\n    '-DVCPKG_TARGET_TRIPLET=x64-windows'\r\n    \"-DCMAKE_PROJECT_INCLUDE=$msvcInclude\"\r\n    \"-DPython3_EXECUTABLE=$python\"\r\n    \"-DPython_EXECUTABLE=$python\"\r\n    '-DQt6_DIR=C:/Qt/6.8.3/msvc2022_64/lib/cmake/Qt6'\r\n    '-DBUILD_TESTING=ON'\r\n    \"-DONNXRuntime_ROOT=$($env:ONNXRuntime_ROOT.Replace('\\', '/'))\"\r\n    '-DIILOCALLLM_WITH_LLAMA=ON'\r\n    '-DGGML_CUDA=OFF'\r\n    '-DGGML_VULKAN=OFF'\r\n    '-DGGML_NATIVE=ON'\r\n    '-DGGML_AVX=OFF'\r\n    '-DGGML_AVX2=OFF'\r\n    '-DGGML_BMI2=OFF'\r\n    '-DGGML_SSE42=OFF'\r\n)\r\n& cmake @configure\r\nif ($LASTEXITCODE -ne 0) { throw 'CMake 구성 실패' }\r\n$cache = Get-Content -LiteralPath 'build/CMakeCache.txt' -Raw\r\nif ($cache -notmatch '(?m)^CMAKE_BUILD_TYPE:STRING=Release\\r?$') {\r\n    throw 'Release 구성이 유실되었음. 같은 구성 인수에 --fresh를 추가하여 다시 구성할 것'\r\n}\r\n& $python (Join-Path $workspace 'SDK/Windows/Configure-WindowsNinja.py') (Join-Path $project 'build')\r\nif ($LASTEXITCODE -ne 0) { throw 'Ninja MSVC 의존성 설정 실패' }\r\ncmake --build build --config Release --parallel 4\r\nif ($LASTEXITCODE -ne 0) { throw '빌드 실패' }\r\n"
+      },
+      {
+        "block_id": "b000055",
+        "language": "powershell",
+        "code": "$dllDirectories = @(Get-ChildItem -LiteralPath build -Recurse -Filter '*.dll' -File |\r\n    Select-Object -ExpandProperty DirectoryName | Sort-Object -Unique)\r\n$env:PATH = (@($dllDirectories) + @($env:PATH)) -join ';'\r\n$env:QSG_RENDER_LOOP = 'basic'\r\nctest --test-dir build -C Release --output-on-failure --parallel 1 --no-tests=error\r\nif ($LASTEXITCODE -ne 0) { throw '전체 실행 검사 실패' }\r\n"
+      },
+      {
+        "block_id": "b000063",
+        "language": "powershell",
+        "code": "cmake --install build --config Release --prefix \"$prefix\"\r\nif ($LASTEXITCODE -ne 0) { throw '설치 실패' }\r\n"
+      }
+    ],
+    "links": [
+      {
+        "block_id": "b000015",
+        "label": "iiDecision",
+        "target": "../../../SDK/iiDecision/docs/WindowsBuildAndRun.md",
+        "kind": "relative",
+        "line": 15
+      },
+      {
+        "block_id": "b000015",
+        "label": "iiFileProvider",
+        "target": "../../../SDK/iiFileProvider/docs/WindowsBuildAndRun.md",
+        "kind": "relative",
+        "line": 16
+      },
+      {
+        "block_id": "b000069",
+        "label": "CMakeLists.txt",
+        "target": "../CMakeLists.txt",
+        "kind": "relative",
+        "line": 133
+      },
+      {
+        "block_id": "b000069",
+        "label": "Windows SDK 전체 검증 기록",
+        "target": "https://github.com/iisacc-Justmoong/SDK/blob/main/Windows/Verification-20261020.md",
+        "kind": "external",
+        "line": 134
+      },
+      {
+        "block_id": "b000079",
+        "label": "공통 Windows 검증 도구",
+        "target": "https://github.com/iisacc-Justmoong/SDK/blob/main/Windows/README.md",
+        "kind": "external",
+        "line": 145
+      }
+    ],
+    "tables": []
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

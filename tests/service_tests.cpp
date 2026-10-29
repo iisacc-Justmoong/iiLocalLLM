@@ -8,6 +8,7 @@
 #include <QtNetwork/QLocalSocket>
 #include <atomic>
 #include <chrono>
+#include <limits>
 #include <thread>
 
 using namespace iiLocalLLM;
@@ -21,6 +22,8 @@ struct Probe {
     QString answer = QStringLiteral("가나다");
     QList<ConversationRequest> preparedConversations;
     qint64 nativeInputTokens=0;
+    std::atomic<int> embeddingCalls{0};
+    bool invalidEmbedding = false;
 };
 class FakePromptState final : public RuntimePromptState {
 public:
@@ -63,7 +66,7 @@ private:
     TokenList previous;
 };
 
-class FakeModel final : public RuntimeModel {
+class FakeModel final : public RuntimeModel, public EmbeddingRuntimeModel {
 public:
     explicit FakeModel(std::shared_ptr<Probe> probe) : p(std::move(probe)) {}
     ~FakeModel() override { ++p->unloads; }
@@ -91,6 +94,11 @@ public:
     }
     std::unique_ptr<RuntimeContext> createContext(const CancellationToken&) override
     { return std::make_unique<FakeContext>(p); }
+    QList<float> embedText(const QString& text, const CancellationToken& cancel) override {
+        cancel.throwIfCancelled(); ++p->embeddingCalls;
+        if (p->invalidEmbedding) return {std::numeric_limits<float>::quiet_NaN(), 1.0f};
+        return {float(text.size()), 1.0f};
+    }
 private:
     std::shared_ptr<Probe> p;
 };
@@ -155,6 +163,37 @@ private slots:
         QVERIFY(storage->isValid());
     }
     void cleanup() { storage.reset(); }
+
+    void embeddingUsesDeclaredCapabilityAndReleasesTheModel() {
+        auto p = std::make_shared<Probe>(); Service service(options());
+        service.registerRuntime(std::make_shared<FakeRuntime>(p)).get();
+        installFixture(service, "embedding", 128, {"embedding"});
+        const auto values = service.embedText("model://embedding", "creative work").get();
+        QCOMPARE(values.size(), 2); QCOMPARE(values[0], 13.0f); QCOMPARE(values[1], 1.0f);
+        QCOMPARE(p->embeddingCalls.load(), 1);
+        CancellationToken cancelled; cancelled.cancel();
+        QVERIFY_THROWS_EXCEPTION(Error, (void)service.embedText("model://embedding", "test", cancelled).get());
+        QVERIFY_THROWS_EXCEPTION(Error, (void)service.embedText("model://embedding", " ").get());
+        p->invalidEmbedding = true;
+        QVERIFY_THROWS_EXCEPTION(Error, (void)service.embedText("model://embedding", "invalid").get());
+        service.unloadModel("model://embedding").get();
+        QCOMPARE(p->unloads.load(), 1);
+        installFixture(service, "chat-only", 128, {"chat"});
+        QVERIFY_THROWS_EXCEPTION(Error, (void)service.embedText("model://chat-only", "test").get());
+    }
+    void embeddingReleasesCachedContextsWithoutDeletingSessions() {
+        auto p = std::make_shared<Probe>(); Service service(options());
+        service.registerRuntime(std::make_shared<FakeRuntime>(p)).get();
+        installFixture(service, "both", 128, {"text-generation", "chat", "embedding"});
+        (void)service.loadModel({"model://both", 128}).get();
+        const auto session = service.createSession("model://both").get();
+        QCOMPARE(service.chat(request(session)).result.get().errorCode, ErrorCode::None);
+        QCOMPARE(service.stats().get().cachedContexts, 1);
+        (void)service.embedText("model://both", "original artwork").get();
+        const auto stats = service.stats().get();
+        QCOMPARE(stats.cachedContexts, 0); QCOMPARE(stats.sessions, 1);
+        QVERIFY(!service.session(session).get().messages.isEmpty());
+    }
 
     void conversationBudgetUsesTokenizerWithoutGeneration()
     {

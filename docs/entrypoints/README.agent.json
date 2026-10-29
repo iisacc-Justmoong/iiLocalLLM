@@ -1,0 +1,564 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:016439e270c53f2937ad52b3e5dd4ca28e72db1bee9e1d296574bf062925b47f",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "README.md",
+    "sha256": "3d093196b3a1becbdac38c18013718a4851e0848bcb8cf441313f81a09cb93ec",
+    "bytes": 4204,
+    "line_count": 85,
+    "encoding": "utf-8",
+    "language": "en"
+  },
+  "document": {
+    "title": "iiLocalLLM",
+    "role": "overview",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "heading",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "# iiLocalLLM\n",
+      "level": 1,
+      "title": "iiLocalLLM"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "paragraph",
+      "start_line": 3,
+      "end_line": 6,
+      "raw": "The service exposes a model-neutral text embedding interface for explicitly\ndeclared embedding models, including a native GGUF runtime implementation.\nSee [text embeddings](docs/Embeddings.md) for model capability, pooling,\nresource and verification boundaries.\n"
+    },
+    {
+      "id": "b000004",
+      "kind": "blank",
+      "start_line": 7,
+      "end_line": 7,
+      "raw": "\n"
+    },
+    {
+      "id": "b000005",
+      "kind": "paragraph",
+      "start_line": 8,
+      "end_line": 10,
+      "raw": "C++23 local model management and inference. Version **0.56.0** separates the\nagent/MCP harness into [iiMultimodalAgent](../iiMultimodalAgent/README.md).\niiLocalLLM no longer discovers, links or exports iiDecision or agent code.\n"
+    },
+    {
+      "id": "b000006",
+      "kind": "blank",
+      "start_line": 11,
+      "end_line": 11,
+      "raw": "\n"
+    },
+    {
+      "id": "b000007",
+      "kind": "paragraph",
+      "start_line": 12,
+      "end_line": 17,
+      "raw": "It retains model manifests/catalogs, pulling/verification, hardware and residency\npolicy, service scheduling, context caching, native llama.cpp/libmtmd\ntext/image/audio/timestamped-frame inference, optional MLX, parameters, IPC, HTTP\nand generic RpcHandler extension interfaces. Existing Qt 6.8.3 Core/Network public\ncontracts remain. Native llama.cpp runs in-process; the separately selected\nexisting MLX worker retains its Python requirement.\n"
+    },
+    {
+      "id": "b000008",
+      "kind": "blank",
+      "start_line": 18,
+      "end_line": 18,
+      "raw": "\n"
+    },
+    {
+      "id": "b000009",
+      "kind": "heading",
+      "start_line": 19,
+      "end_line": 19,
+      "raw": "## Build and consume\n",
+      "level": 2,
+      "title": "Build and consume"
+    },
+    {
+      "id": "b000010",
+      "kind": "blank",
+      "start_line": 20,
+      "end_line": 20,
+      "raw": "\n"
+    },
+    {
+      "id": "b000011",
+      "kind": "fenced_code",
+      "start_line": 21,
+      "end_line": 28,
+      "raw": "```sh\ncmake -S . -B build -DCMAKE_BUILD_TYPE=Release \\\n  -DCMAKE_PREFIX_PATH=\"<iiFileProvider and Qt prefixes>\" \\\n  -DCMAKE_INSTALL_PREFIX=\"$HOME/.local/SDK/iiLocalLLM\"\ncmake --build build --parallel 4\nctest --test-dir build --output-on-failure\ncmake --install build\n```\n",
+      "language": "sh",
+      "code": "cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \\\n  -DCMAKE_PREFIX_PATH=\"<iiFileProvider and Qt prefixes>\" \\\n  -DCMAKE_INSTALL_PREFIX=\"$HOME/.local/SDK/iiLocalLLM\"\ncmake --build build --parallel 4\nctest --test-dir build --output-on-failure\ncmake --install build\n",
+      "closed": true
+    },
+    {
+      "id": "b000012",
+      "kind": "blank",
+      "start_line": 29,
+      "end_line": 29,
+      "raw": "\n"
+    },
+    {
+      "id": "b000013",
+      "kind": "paragraph",
+      "start_line": 30,
+      "end_line": 32,
+      "raw": "`./install.sh` also verifies an independent installed consumer. Backend settings\nand inference fixtures retain their IILOCALLLM_* options. No iiDecision accelerator\npackages are required by an inference-only consumer.\n"
+    },
+    {
+      "id": "b000014",
+      "kind": "blank",
+      "start_line": 33,
+      "end_line": 33,
+      "raw": "\n"
+    },
+    {
+      "id": "b000015",
+      "kind": "fenced_code",
+      "start_line": 34,
+      "end_line": 37,
+      "raw": "```cmake\nfind_package(iiLocalLLM 0.56 CONFIG REQUIRED)\ntarget_link_libraries(MyApp PRIVATE iiLocalLLM::iiLocalLLM)\n```\n",
+      "language": "cmake",
+      "code": "find_package(iiLocalLLM 0.56 CONFIG REQUIRED)\ntarget_link_libraries(MyApp PRIVATE iiLocalLLM::iiLocalLLM)\n",
+      "closed": true
+    },
+    {
+      "id": "b000016",
+      "kind": "blank",
+      "start_line": 38,
+      "end_line": 38,
+      "raw": "\n"
+    },
+    {
+      "id": "b000017",
+      "kind": "paragraph",
+      "start_line": 39,
+      "end_line": 41,
+      "raw": "Use `<iiLocalLLM.h>` and `iiLocalLLM::Service`. Inference-only iiLocalLLMD,\niilocal-llm-service and iillm remain here. Agent startup and CLI commands move to\niiMultimodalAgentD, iimagent-service, iimagent, iimagent-mcp and iimagent-plugins.\n"
+    },
+    {
+      "id": "b000018",
+      "kind": "blank",
+      "start_line": 42,
+      "end_line": 42,
+      "raw": "\n"
+    },
+    {
+      "id": "b000019",
+      "kind": "paragraph",
+      "start_line": 43,
+      "end_line": 46,
+      "raw": "Agent users must rebuild against iiMultimodalAgent::iiMultimodalAgent, include\n`<iiMultimodalAgent.h>` or `<iiMultimodalAgent/agent/Engine.h>`, and use\n`iiMultimodalAgent::agent` / `iiMultimodalAgent::mcp`. Persisted schemas and wire\nmethods stay stable. The minor version advances because the combined ABI changes.\n"
+    },
+    {
+      "id": "b000020",
+      "kind": "blank",
+      "start_line": 47,
+      "end_line": 47,
+      "raw": "\n"
+    },
+    {
+      "id": "b000021",
+      "kind": "paragraph",
+      "start_line": 48,
+      "end_line": 52,
+      "raw": "See [module migration](docs/ModuleExtraction.md), [architecture](docs/Architecture.md),\n[model management](docs/ModelManagement.md), [hardware](docs/HardwarePolicy.md),\n[parameters](docs/Parameters.md), [HTTP](docs/HTTP.md), [IPC](docs/IPC.md), and\n[Windows](docs/WindowsBuildAndRun.md). Old harness documentation links now point\nto their owning package; historical test counts are not new verification claims.\n"
+    },
+    {
+      "id": "b000022",
+      "kind": "blank",
+      "start_line": 53,
+      "end_line": 53,
+      "raw": "\n"
+    },
+    {
+      "id": "b000023",
+      "kind": "paragraph",
+      "start_line": 54,
+      "end_line": 56,
+      "raw": "Pruned Nemotron Bolt GGUFs use a guarded upstream backport for per-layer expert\ndimensions. [Nemotron Bolt](docs/NemotronBolt.md) documents the native CPU\nregression fixture and the separate service residency-budget boundary.\n"
+    },
+    {
+      "id": "b000024",
+      "kind": "blank",
+      "start_line": 57,
+      "end_line": 57,
+      "raw": "\n"
+    },
+    {
+      "id": "b000025",
+      "kind": "paragraph",
+      "start_line": 58,
+      "end_line": 62,
+      "raw": "Hosts can use `createLlamaRuntime(LlamaRuntimeOptions)` to copy weights into owned\nmemory and cap GPU layer offload without exposing device selection to model\nmanifests or clients. The native Metal regression covers batched top-9 expert\nrouting. See [Nemotron Bolt](docs/NemotronBolt.md) for the verified agent greeting,\nmemory limits, and residency settings.\n"
+    },
+    {
+      "id": "b000026",
+      "kind": "blank",
+      "start_line": 63,
+      "end_line": 63,
+      "raw": "\n"
+    },
+    {
+      "id": "b000027",
+      "kind": "heading",
+      "start_line": 64,
+      "end_line": 64,
+      "raw": "## License\n",
+      "level": 2,
+      "title": "License"
+    },
+    {
+      "id": "b000028",
+      "kind": "blank",
+      "start_line": 65,
+      "end_line": 65,
+      "raw": "\n"
+    },
+    {
+      "id": "b000029",
+      "kind": "paragraph",
+      "start_line": 66,
+      "end_line": 66,
+      "raw": "SPDX-License-Identifier: MIT\n"
+    },
+    {
+      "id": "b000030",
+      "kind": "blank",
+      "start_line": 67,
+      "end_line": 67,
+      "raw": "\n"
+    },
+    {
+      "id": "b000031",
+      "kind": "paragraph",
+      "start_line": 68,
+      "end_line": 70,
+      "raw": "The original code and documentation in this repository are licensed under the\n[MIT License](LICENSE). Third-party code, libraries, fonts, tools, and model\nweights retain their respective licenses.\n"
+    },
+    {
+      "id": "b000032",
+      "kind": "blank",
+      "start_line": 71,
+      "end_line": 71,
+      "raw": "\n"
+    },
+    {
+      "id": "b000033",
+      "kind": "paragraph",
+      "start_line": 72,
+      "end_line": 72,
+      "raw": "Related implementation contracts: [Native tool-turn contracts](docs/NativeToolTemplates.md).\n"
+    },
+    {
+      "id": "b000034",
+      "kind": "blank",
+      "start_line": 73,
+      "end_line": 73,
+      "raw": "\n"
+    },
+    {
+      "id": "b000035",
+      "kind": "paragraph",
+      "start_line": 74,
+      "end_line": 74,
+      "raw": "Managed MLX environments build a validated Transformers import index to avoid repeated model-source scans during worker startup. See [MLX import metadata](docs/MlxImportIndex.md) for preparation, invalidation and unchanged inference deadlines.\n"
+    },
+    {
+      "id": "b000036",
+      "kind": "blank",
+      "start_line": 75,
+      "end_line": 75,
+      "raw": "\n"
+    },
+    {
+      "id": "b000037",
+      "kind": "paragraph",
+      "start_line": 76,
+      "end_line": 76,
+      "raw": "Model integrity still verifies every byte; the macOS streaming SHA-256 path uses the system implementation. See [model integrity](docs/ModelIntegrity.md).\n"
+    },
+    {
+      "id": "b000038",
+      "kind": "blank",
+      "start_line": 77,
+      "end_line": 77,
+      "raw": "\n"
+    },
+    {
+      "id": "b000039",
+      "kind": "html",
+      "start_line": 78,
+      "end_line": 78,
+      "raw": "<!-- workspace-docs:readme:start -->\n"
+    },
+    {
+      "id": "b000040",
+      "kind": "heading",
+      "start_line": 79,
+      "end_line": 79,
+      "raw": "## Documentation entry points\n",
+      "level": 2,
+      "title": "Documentation entry points"
+    },
+    {
+      "id": "b000041",
+      "kind": "blank",
+      "start_line": 80,
+      "end_line": 80,
+      "raw": "\n"
+    },
+    {
+      "id": "b000042",
+      "kind": "list",
+      "start_line": 81,
+      "end_line": 84,
+      "raw": "- Human overview: this English `README.md`.\n- Agent instructions: [AGENT.md](AGENT.md).\n- Human documentation: [documentation index](docs/README.md).\n- Structured agent documentation: [agent index](docs/agent-index.json).\n",
+      "items": [
+        {
+          "marker": "-",
+          "text": "Human overview: this English `README.md`.",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "Agent instructions: [AGENT.md](AGENT.md).",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "Human documentation: [documentation index](docs/README.md).",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "Structured agent documentation: [agent index](docs/agent-index.json).",
+          "checked": null
+        }
+      ]
+    },
+    {
+      "id": "b000043",
+      "kind": "html",
+      "start_line": 85,
+      "end_line": 85,
+      "raw": "<!-- workspace-docs:readme:end -->\n"
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000001",
+      "parent_id": null,
+      "level": 1,
+      "title": "iiLocalLLM",
+      "anchor": "iilocalllm",
+      "start_line": 1
+    },
+    {
+      "block_id": "b000009",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "Build and consume",
+      "anchor": "build-and-consume",
+      "start_line": 19
+    },
+    {
+      "block_id": "b000027",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "License",
+      "anchor": "license",
+      "start_line": 64
+    },
+    {
+      "block_id": "b000040",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "Documentation entry points",
+      "anchor": "documentation-entry-points",
+      "start_line": 79
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [
+      {
+        "block_id": "b000013",
+        "line": 32,
+        "text": "packages are required by an inference-only consumer.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000019",
+        "line": 43,
+        "text": "Agent users must rebuild against iiMultimodalAgent::iiMultimodalAgent, include",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      }
+    ],
+    "commands": [
+      {
+        "block_id": "b000011",
+        "language": "sh",
+        "code": "cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \\\n  -DCMAKE_PREFIX_PATH=\"<iiFileProvider and Qt prefixes>\" \\\n  -DCMAKE_INSTALL_PREFIX=\"$HOME/.local/SDK/iiLocalLLM\"\ncmake --build build --parallel 4\nctest --test-dir build --output-on-failure\ncmake --install build\n"
+      }
+    ],
+    "links": [
+      {
+        "block_id": "b000003",
+        "label": "text embeddings",
+        "target": "docs/Embeddings.md",
+        "kind": "relative",
+        "line": 5
+      },
+      {
+        "block_id": "b000005",
+        "label": "iiMultimodalAgent",
+        "target": "../iiMultimodalAgent/README.md",
+        "kind": "relative",
+        "line": 9
+      },
+      {
+        "block_id": "b000021",
+        "label": "module migration",
+        "target": "docs/ModuleExtraction.md",
+        "kind": "relative",
+        "line": 48
+      },
+      {
+        "block_id": "b000021",
+        "label": "architecture",
+        "target": "docs/Architecture.md",
+        "kind": "relative",
+        "line": 48
+      },
+      {
+        "block_id": "b000021",
+        "label": "model management",
+        "target": "docs/ModelManagement.md",
+        "kind": "relative",
+        "line": 49
+      },
+      {
+        "block_id": "b000021",
+        "label": "hardware",
+        "target": "docs/HardwarePolicy.md",
+        "kind": "relative",
+        "line": 49
+      },
+      {
+        "block_id": "b000021",
+        "label": "parameters",
+        "target": "docs/Parameters.md",
+        "kind": "relative",
+        "line": 50
+      },
+      {
+        "block_id": "b000021",
+        "label": "HTTP",
+        "target": "docs/HTTP.md",
+        "kind": "relative",
+        "line": 50
+      },
+      {
+        "block_id": "b000021",
+        "label": "IPC",
+        "target": "docs/IPC.md",
+        "kind": "relative",
+        "line": 50
+      },
+      {
+        "block_id": "b000021",
+        "label": "Windows",
+        "target": "docs/WindowsBuildAndRun.md",
+        "kind": "relative",
+        "line": 51
+      },
+      {
+        "block_id": "b000023",
+        "label": "Nemotron Bolt",
+        "target": "docs/NemotronBolt.md",
+        "kind": "relative",
+        "line": 55
+      },
+      {
+        "block_id": "b000025",
+        "label": "Nemotron Bolt",
+        "target": "docs/NemotronBolt.md",
+        "kind": "relative",
+        "line": 61
+      },
+      {
+        "block_id": "b000031",
+        "label": "MIT License",
+        "target": "LICENSE",
+        "kind": "relative",
+        "line": 69
+      },
+      {
+        "block_id": "b000033",
+        "label": "Native tool-turn contracts",
+        "target": "docs/NativeToolTemplates.md",
+        "kind": "relative",
+        "line": 72
+      },
+      {
+        "block_id": "b000035",
+        "label": "MLX import metadata",
+        "target": "docs/MlxImportIndex.md",
+        "kind": "relative",
+        "line": 74
+      },
+      {
+        "block_id": "b000037",
+        "label": "model integrity",
+        "target": "docs/ModelIntegrity.md",
+        "kind": "relative",
+        "line": 76
+      },
+      {
+        "block_id": "b000042",
+        "label": "AGENT.md",
+        "target": "AGENT.md",
+        "kind": "relative",
+        "line": 82
+      },
+      {
+        "block_id": "b000042",
+        "label": "documentation index",
+        "target": "docs/README.md",
+        "kind": "relative",
+        "line": 83
+      },
+      {
+        "block_id": "b000042",
+        "label": "agent index",
+        "target": "docs/agent-index.json",
+        "kind": "relative",
+        "line": 84
+      }
+    ],
+    "tables": []
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

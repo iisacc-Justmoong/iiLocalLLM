@@ -7,6 +7,7 @@
 #include <QtCore/QCryptographicHash>
 #include <optional>
 #include <mutex>
+#include <cmath>
 
 namespace iiLocalLLM {
 using namespace detail;
@@ -177,6 +178,48 @@ GenerationHandle Service::chat(ChatRequest request, StreamCallback callback)
 { return d->generate(std::move(request), std::nullopt, std::move(callback)); }
 GenerationHandle Service::complete(CompletionRequest request, StreamCallback callback)
 { return d->generate({}, std::move(request), std::move(callback)); }
+std::future<QList<float>> Service::embedText(QString model, QString text, CancellationToken token)
+{
+    auto promise = std::make_shared<std::promise<QList<float>>>();
+    auto future = promise->get_future();
+    d->scheduler.enqueue(token, [impl = d.get(), model = std::move(model), text = std::move(text), token, promise] {
+        QString acquired;
+        try {
+            token.throwIfCancelled();
+            const auto utf8 = text.toUtf8();
+            if (model.trimmed().isEmpty() || text.trimmed().isEmpty() || text.size() > impl->options.maxInputCharacters
+                || text.contains(QChar(0)) || QString::fromUtf8(utf8) != text)
+                throw Error(ErrorCode::InvalidArgument, "Invalid embedding input");
+            auto& state = *impl->state;
+            const auto record = state.models.resolve(model);
+            if (!record.manifest.capabilities.contains("embedding"))
+                throw Error(ErrorCode::RuntimeUnavailable, "Model does not declare embedding capability");
+            auto& loaded = state.models.acquire(record.manifest.id, -1, token);
+            acquired = loaded.spec.id;
+            auto* embedding = dynamic_cast<EmbeddingRuntimeModel*>(loaded.runtime.get());
+            if (!embedding) throw Error(ErrorCode::RuntimeUnavailable, "Selected runtime does not support embeddings");
+            // Reserve the model's existing context budget for the embedding context.
+            state.cache.eraseModel(acquired);
+            auto result = embedding->embedText(text, token);
+            token.throwIfCancelled();
+            if (result.isEmpty() || result.size() > 16384)
+                throw Error(ErrorCode::RuntimeFailure, "Runtime returned an invalid embedding dimension");
+            long double norm = 0;
+            for (float value : result) {
+                if (!std::isfinite(value)) throw Error(ErrorCode::RuntimeFailure, "Runtime returned a non-finite embedding");
+                norm += static_cast<long double>(value) * value;
+            }
+            if (!(norm > 0) || !std::isfinite(norm))
+                throw Error(ErrorCode::RuntimeFailure, "Runtime returned a zero or invalid embedding");
+            state.models.release(acquired); acquired.clear();
+            promise->set_value(std::move(result));
+        } catch (...) {
+            if (!acquired.isEmpty()) impl->state->models.release(acquired);
+            promise->set_exception(std::current_exception());
+        }
+    }, [promise](Error error) { promise->set_exception(std::make_exception_ptr(error)); });
+    return future;
+}
 std::future<ContextBudget> Service::measureConversation(ConversationRequest request, CancellationToken token)
 {
     auto promise = std::make_shared<std::promise<ContextBudget>>();

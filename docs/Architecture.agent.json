@@ -1,0 +1,149 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:5f81d23f294a41e9040ca6bd739082a7e289a827d573a3f4b28eed951418e717",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "docs/Architecture.md",
+    "sha256": "9d3621bd6a509ece1ec82b583c4a20c31c6beeaa0204c71f0ad4979ba2114679",
+    "bytes": 1247,
+    "line_count": 20,
+    "encoding": "utf-8",
+    "language": "en"
+  },
+  "document": {
+    "title": "Inference architecture (0.56)",
+    "role": "reference",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "heading",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "# Inference architecture (0.56)\n",
+      "level": 1,
+      "title": "Inference architecture (0.56)"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "paragraph",
+      "start_line": 3,
+      "end_line": 7,
+      "raw": "The public Service schedules model/catalog operations and generation through\nbounded native worker queues. ModelManager owns runtime/model loading; residency\nand context caches remain below the service. llama.cpp/libmtmd implement native\ntext and media inference; the explicitly selected MLX adapter retains its Python\nworker. Hardware/resource discovery and native media budgets remain here.\n"
+    },
+    {
+      "id": "b000004",
+      "kind": "blank",
+      "start_line": 8,
+      "end_line": 8,
+      "raw": "\n"
+    },
+    {
+      "id": "b000005",
+      "kind": "paragraph",
+      "start_line": 9,
+      "end_line": 12,
+      "raw": "IPC and HTTP expose inference and a generic RpcHandler extension interface.\nThey neither construct an agent nor link iiDecision. Agent ownership, tools,\nsessions, MCP, hooks, routing and decision policy belong to iiMultimodalAgent.\nServiceModel in that module adapts this Service without a reverse dependency.\n"
+    },
+    {
+      "id": "b000006",
+      "kind": "blank",
+      "start_line": 13,
+      "end_line": 13,
+      "raw": "\n"
+    },
+    {
+      "id": "b000007",
+      "kind": "paragraph",
+      "start_line": 14,
+      "end_line": 17,
+      "raw": "Public contracts remain C++23 and the existing Qt Core/Network API. This module\nextraction does not claim Qt removal. File creation retains iiFileProvider's\nnative/compatibility contracts. Installed inference consumers verify that neither\nagent nor iiDecision targets are imported by find_package(iiLocalLLM).\n"
+    },
+    {
+      "id": "b000008",
+      "kind": "blank",
+      "start_line": 18,
+      "end_line": 18,
+      "raw": "\n"
+    },
+    {
+      "id": "b000009",
+      "kind": "paragraph",
+      "start_line": 19,
+      "end_line": 20,
+      "raw": "See [module extraction](ModuleExtraction.md), [inference model management](ModelManagement.md),\n[HTTP](HTTP.md), [IPC](IPC.md), and the [agent migration](../../iiMultimodalAgent/docs/Migration.md).\n"
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000001",
+      "parent_id": null,
+      "level": 1,
+      "title": "Inference architecture (0.56)",
+      "anchor": "inference-architecture-056",
+      "start_line": 1
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [],
+    "commands": [],
+    "links": [
+      {
+        "block_id": "b000009",
+        "label": "module extraction",
+        "target": "ModuleExtraction.md",
+        "kind": "relative",
+        "line": 19
+      },
+      {
+        "block_id": "b000009",
+        "label": "inference model management",
+        "target": "ModelManagement.md",
+        "kind": "relative",
+        "line": 19
+      },
+      {
+        "block_id": "b000009",
+        "label": "HTTP",
+        "target": "HTTP.md",
+        "kind": "relative",
+        "line": 20
+      },
+      {
+        "block_id": "b000009",
+        "label": "IPC",
+        "target": "IPC.md",
+        "kind": "relative",
+        "line": 20
+      },
+      {
+        "block_id": "b000009",
+        "label": "agent migration",
+        "target": "../../iiMultimodalAgent/docs/Migration.md",
+        "kind": "relative",
+        "line": 20
+      }
+    ],
+    "tables": []
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

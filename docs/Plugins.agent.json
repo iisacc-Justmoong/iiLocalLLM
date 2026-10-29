@@ -1,0 +1,79 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:27769836852002ebd539c3b64860e0afeaa5cf4b19b67352d5e54f64dd6ec577",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "docs/Plugins.md",
+    "sha256": "83f63f5ce403cb230e3cc95543c26902c017840ecd67f5f9d88c81b5254c0038",
+    "bytes": 275,
+    "line_count": 5,
+    "encoding": "utf-8",
+    "language": "en"
+  },
+  "document": {
+    "title": "Moved to iiMultimodalAgent",
+    "role": "guide",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "heading",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "# Moved to iiMultimodalAgent\n",
+      "level": 1,
+      "title": "Moved to iiMultimodalAgent"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "paragraph",
+      "start_line": 3,
+      "end_line": 5,
+      "raw": "This agent feature is now owned by [iiMultimodalAgent](../../iiMultimodalAgent/docs/Plugins.md).\nLink `iiMultimodalAgent::iiMultimodalAgent` and use `iiMultimodalAgent::agent`\nor `iiMultimodalAgent::mcp`; iiLocalLLM now provides inference only.\n"
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000001",
+      "parent_id": null,
+      "level": 1,
+      "title": "Moved to iiMultimodalAgent",
+      "anchor": "moved-to-iimultimodalagent",
+      "start_line": 1
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [],
+    "commands": [],
+    "links": [
+      {
+        "block_id": "b000003",
+        "label": "iiMultimodalAgent",
+        "target": "../../iiMultimodalAgent/docs/Plugins.md",
+        "kind": "relative",
+        "line": 3
+      }
+    ],
+    "tables": []
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

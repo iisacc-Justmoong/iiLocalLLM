@@ -1,0 +1,186 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:b4ec6d7f8b5905bdea3388a54c3fa72ec80762ddf8ebd1d37aaeaf9ec3fa47f3",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "docs/MlxImportIndex.md",
+    "sha256": "9836a7b028de47a0177de74aaa20abdade2b46643a48ba15c802e36322e05033",
+    "bytes": 2088,
+    "line_count": 17,
+    "encoding": "utf-8",
+    "language": "ko"
+  },
+  "document": {
+    "title": "MLX 의존성의 정적 가져오기 목록",
+    "role": "guide",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "heading",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "# MLX 의존성의 정적 가져오기 목록\n",
+      "level": 1,
+      "title": "MLX 의존성의 정적 가져오기 목록"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "paragraph",
+      "start_line": 3,
+      "end_line": 3,
+      "raw": "Transformers 5는 가져오기 시 전체 모델 소스 트리를 읽어 공개 이름과 필요한 백엔드의 목록을 만든다. 외장 저장장치에서 매 요청용 작업자가 이 탐색을 반복하면 모델 연산 전에 기존 120초 기한을 넘길 수 있다.\n"
+    },
+    {
+      "id": "b000004",
+      "kind": "blank",
+      "start_line": 4,
+      "end_line": 4,
+      "raw": "\n"
+    },
+    {
+      "id": "b000005",
+      "kind": "paragraph",
+      "start_line": 5,
+      "end_line": 5,
+      "raw": "MLX 모델 검사를 구성한 CMake 빌드는 관리되는 Python 가상 환경에 대해 `iiLocalLLMMLXImportIndex`를 먼저 수행한다. 이 작업은 Transformers 자체 탐색 함수의 결과를 한 번 만들어 해당 환경의 `share/iiLocalLLM/transformers-import-index.json`에 원자적으로 저장한다. 모델, 토크나이저, 가중치와 연산 결과는 저장하거나 대체하지 않는다.\n"
+    },
+    {
+      "id": "b000006",
+      "kind": "blank",
+      "start_line": 6,
+      "end_line": 6,
+      "raw": "\n"
+    },
+    {
+      "id": "b000007",
+      "kind": "paragraph",
+      "start_line": 7,
+      "end_line": 7,
+      "raw": "일반 관리 환경에서도 의존성 설치 후 다음 명령으로 같은 목록을 만든다.\n"
+    },
+    {
+      "id": "b000008",
+      "kind": "blank",
+      "start_line": 8,
+      "end_line": 8,
+      "raw": "\n"
+    },
+    {
+      "id": "b000009",
+      "kind": "fenced_code",
+      "start_line": 9,
+      "end_line": 11,
+      "raw": "```sh\nbuild/mlx-env/bin/python -B tools/prepare_mlx_import_index.py\n```\n",
+      "language": "sh",
+      "code": "build/mlx-env/bin/python -B tools/prepare_mlx_import_index.py\n",
+      "closed": true
+    },
+    {
+      "id": "b000010",
+      "kind": "blank",
+      "start_line": 12,
+      "end_line": 12,
+      "raw": "\n"
+    },
+    {
+      "id": "b000011",
+      "kind": "paragraph",
+      "start_line": 13,
+      "end_line": 13,
+      "raw": "작업자는 목록을 읽기만 한다. Python 버전, Transformers 배포 이름과 RECORD 해시, 탐색 구현의 크기·수정 시각을 검사한 뒤 동일한 목록을 재구성한다. 접두사 처리와 백엔드별 집합을 보존하며, 호출마다 새 컨테이너를 반환하여 상위 패키지의 추가 등록이 원본 목록을 오염시키지 않게 한다. JSON 데이터만 사용하며 실행 가능한 직렬화 형식은 사용하지 않는다.\n"
+    },
+    {
+      "id": "b000012",
+      "kind": "blank",
+      "start_line": 14,
+      "end_line": 14,
+      "raw": "\n"
+    },
+    {
+      "id": "b000013",
+      "kind": "paragraph",
+      "start_line": 15,
+      "end_line": 15,
+      "raw": "목록 누락·손상·의존성 변경에는 기존 탐색을 그대로 사용한다. Transformers의 명시적 캐시 초기화도 라이브 소스 탐색으로 돌아간다. 배포 파일을 수동 편집한 개발 환경에서는 `--force`로 목록을 다시 만들거나 목록 파일을 제거한다. 전역 Python 환경은 CMake가 자동으로 변경하지 않는다.\n"
+    },
+    {
+      "id": "b000014",
+      "kind": "blank",
+      "start_line": 16,
+      "end_line": 16,
+      "raw": "\n"
+    },
+    {
+      "id": "b000015",
+      "kind": "paragraph",
+      "start_line": 17,
+      "end_line": 17,
+      "raw": "공개 C++23 API, CPU·Metal 선택, 출력 한도, 취소, KV 캐시와 요청 기한은 유지한다. 회귀 검사는 목록의 동일성·접두사·복사 격리·무효화·손상 거부를 검사하고, 기존 실제 추론 검사가 양쪽 장치에서 모델 로딩과 생성·캐시·취소를 검증한다.\n"
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000001",
+      "parent_id": null,
+      "level": 1,
+      "title": "MLX 의존성의 정적 가져오기 목록",
+      "anchor": "mlx-의존성의-정적-가져오기-목록",
+      "start_line": 1
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [
+      {
+        "block_id": "b000005",
+        "line": 5,
+        "text": "MLX 모델 검사를 구성한 CMake 빌드는 관리되는 Python 가상 환경에 대해 `iiLocalLLMMLXImportIndex`를 먼저 수행한다. 이 작업은 Transformers 자체 탐색 함수의 결과를 한 번 만들어 해당 환경의 `share/iiLocalLLM/transformers-import-index.json`에 원자적으로 저장한다. 모델, 토크나이저, 가중치와 연산 결과는 저장하거나 대체하지 않는다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000011",
+        "line": 13,
+        "text": "작업자는 목록을 읽기만 한다. Python 버전, Transformers 배포 이름과 RECORD 해시, 탐색 구현의 크기·수정 시각을 검사한 뒤 동일한 목록을 재구성한다. 접두사 처리와 백엔드별 집합을 보존하며, 호출마다 새 컨테이너를 반환하여 상위 패키지의 추가 등록이 원본 목록을 오염시키지 않게 한다. JSON 데이터만 사용하며 실행 가능한 직렬화 형식은 사용하지 않는다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000013",
+        "line": 15,
+        "text": "목록 누락·손상·의존성 변경에는 기존 탐색을 그대로 사용한다. Transformers의 명시적 캐시 초기화도 라이브 소스 탐색으로 돌아간다. 배포 파일을 수동 편집한 개발 환경에서는 `--force`로 목록을 다시 만들거나 목록 파일을 제거한다. 전역 Python 환경은 CMake가 자동으로 변경하지 않는다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      }
+    ],
+    "commands": [
+      {
+        "block_id": "b000009",
+        "language": "sh",
+        "code": "build/mlx-env/bin/python -B tools/prepare_mlx_import_index.py\n"
+      }
+    ],
+    "links": [],
+    "tables": []
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

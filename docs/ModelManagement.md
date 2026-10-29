@@ -47,6 +47,10 @@ service.removeModel(record.uri).get();
 
 ## 패키지와 manifest
 
+ONNX format declarations and `.onnx` entry points, projectors and package assets are rejected case-insensitively. Existing GGUF, MLX/safetensors and other non-ONNX format contracts remain available; actual architecture support depends on the selected runtime.
+
+On 2026-10-27, the macOS arm64 native llama.cpp CPU adapter generated text from `resources/stories15M-q4_0.gguf` and reused cached tokens on a second turn. The locally provisioned model is ignored by Git and is not bundled in the SDK; its SHA-256 is `66967fbece6dbe97886593fdbb73589584927e29119ec31f08090732d1861739`. Supply optional model fixtures via iiFileProvider under `resources/` and set `IILOCALLLM_TEST_GGUF` to that path. The catalog test separately checks GGUF acceptance and ONNX rejection. The installed consumer test used a build with the llama adapter disabled, so it is not an installed-model inference result.
+
 ```text
 Models/
 ├─ qwen3-8b-q4/

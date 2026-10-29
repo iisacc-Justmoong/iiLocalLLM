@@ -1,0 +1,145 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:e8a3a317cba58ec23f3709250caae564347f251cd73169ec52fe23bdaaf980e0",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "docs/InstallationChecks.md",
+    "sha256": "0b6ce6128140844fbda7785dcce9d30bd085733dbbba9f1a402afccccb77d2b7",
+    "bytes": 1183,
+    "line_count": 17,
+    "encoding": "utf-8",
+    "language": "ko"
+  },
+  "document": {
+    "title": "설치 검증",
+    "role": "guide",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "quote",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "> Since 0.56.0 this package provides inference only. Agent/MCP commands and their historical verification moved to [iiMultimodalAgent](../../iiMultimodalAgent/docs/Migration.md). Current extraction evidence is in [the agent verification report](../../iiMultimodalAgent/docs/Verification.md).\n"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "heading",
+      "start_line": 3,
+      "end_line": 3,
+      "raw": "# 설치 검증\n",
+      "level": 1,
+      "title": "설치 검증"
+    },
+    {
+      "id": "b000004",
+      "kind": "blank",
+      "start_line": 4,
+      "end_line": 4,
+      "raw": "\n"
+    },
+    {
+      "id": "b000005",
+      "kind": "paragraph",
+      "start_line": 5,
+      "end_line": 6,
+      "raw": "호스트 재설치는 현재 소스를 빌드하고 기본 회귀 테스트 및 독립 설치 소비자를 실행한다.\n실제 모델을 사용하는 `inference` 라벨 검사는 모델 응답 평가 결과로 따로 기록한다.\n"
+    },
+    {
+      "id": "b000006",
+      "kind": "blank",
+      "start_line": 7,
+      "end_line": 7,
+      "raw": "\n"
+    },
+    {
+      "id": "b000007",
+      "kind": "fenced_code",
+      "start_line": 8,
+      "end_line": 11,
+      "raw": "```sh\ncmake --build build --config Release --parallel 4\nctest --test-dir build -C Release -LE inference --output-on-failure\n```\n",
+      "language": "sh",
+      "code": "cmake --build build --config Release --parallel 4\nctest --test-dir build -C Release -LE inference --output-on-failure\n",
+      "closed": true
+    },
+    {
+      "id": "b000008",
+      "kind": "blank",
+      "start_line": 12,
+      "end_line": 12,
+      "raw": "\n"
+    },
+    {
+      "id": "b000009",
+      "kind": "paragraph",
+      "start_line": 13,
+      "end_line": 17,
+      "raw": "`AgentTransportTests::timeoutAndShutdown`은 실행 중인 요청의 HTTP 기한 만료와 서버\n종료 시 취소를 검사한다. 가짜 모델은 취소될 때까지 기다린다. 세션 생성은 기존\nIPC로 준비하여 디스크 작업과 검사 대상인 HTTP 실행의 100ms 제한을 분리한다.\nHTTP 504, 모델 취소 횟수, 후속 IPC 실행과 종료 취소에 대한 단언을 유지한다.\n이 기한은 테스트 fixture 설정이며 생산 서버의 기본값을 변경하지 않는다.\n"
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000003",
+      "parent_id": null,
+      "level": 1,
+      "title": "설치 검증",
+      "anchor": "설치-검증",
+      "start_line": 3
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [
+      {
+        "block_id": "b000009",
+        "line": 17,
+        "text": "이 기한은 테스트 fixture 설정이며 생산 서버의 기본값을 변경하지 않는다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      }
+    ],
+    "commands": [
+      {
+        "block_id": "b000007",
+        "language": "sh",
+        "code": "cmake --build build --config Release --parallel 4\nctest --test-dir build -C Release -LE inference --output-on-failure\n"
+      }
+    ],
+    "links": [
+      {
+        "block_id": "b000001",
+        "label": "iiMultimodalAgent",
+        "target": "../../iiMultimodalAgent/docs/Migration.md",
+        "kind": "relative",
+        "line": 1
+      },
+      {
+        "block_id": "b000001",
+        "label": "the agent verification report",
+        "target": "../../iiMultimodalAgent/docs/Verification.md",
+        "kind": "relative",
+        "line": 1
+      }
+    ],
+    "tables": []
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

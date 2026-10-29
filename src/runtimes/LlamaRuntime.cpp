@@ -272,7 +272,7 @@ private:
         }
     }
 };
-class LlamaModel final : public RuntimeModel {
+class LlamaModel final : public RuntimeModel, public EmbeddingRuntimeModel {
 public:
     LlamaModel(ModelPtr model, ModelSpec spec, bool accelerated, ggml_backend_dev_t device)
         : model_(std::move(model)), spec_(std::move(spec)), accelerated_(accelerated) {
@@ -322,6 +322,60 @@ public:
     }
     std::unique_ptr<RuntimeContext> createContext(const CancellationToken& cancel) override
     { cancel.throwIfCancelled(); return std::make_unique<LlamaContext>(model_, spec_, accelerated_); }
+    QList<float> embedText(const QString& text, const CancellationToken& cancel) override
+    {
+        cancel.throwIfCancelled();
+        if (llama_model_has_encoder(model_.get()) && llama_model_has_decoder(model_.get()))
+            throw Error(ErrorCode::RuntimeUnavailable, "Encoder-decoder embedding models are not supported");
+        const auto bytes = text.toUtf8();
+        const auto* vocab = llama_model_get_vocab(model_.get());
+        const int required = llama_tokenize(vocab, bytes.constData(), bytes.size(), nullptr, 0, true, true);
+        if (required >= 0) throw Error(ErrorCode::RuntimeFailure, "Embedding tokenization failed");
+        const int count = -required;
+        const int capacity = std::min(spec_.contextTokens, 4096);
+        if (count > capacity) throw Error(ErrorCode::ContextOverflow, "Embedding input exceeds the model context");
+        std::vector<llama_token> tokens(count);
+        if (llama_tokenize(vocab, bytes.constData(), bytes.size(), tokens.data(), count, true, true) != count)
+            throw Error(ErrorCode::RuntimeFailure, "Embedding tokenization changed unexpectedly");
+        auto params = llama_context_default_params();
+        params.n_ctx = capacity; params.n_batch = capacity; params.n_ubatch = capacity;
+        params.n_seq_max = 1; params.embeddings = true;
+        params.n_threads = optionInt(spec_, "threads", 4, 1, 512); params.n_threads_batch = params.n_threads;
+        params.offload_kqv = accelerated_; params.op_offload = accelerated_;
+        params.abort_callback = abortDecode; params.abort_callback_data = const_cast<CancellationToken*>(&cancel);
+        const auto pooling = spec_.options.value("embedding_pooling").toString("model");
+        if (pooling == "mean") params.pooling_type = LLAMA_POOLING_TYPE_MEAN;
+        else if (pooling == "last") params.pooling_type = LLAMA_POOLING_TYPE_LAST;
+        else if (pooling == "cls") params.pooling_type = LLAMA_POOLING_TYPE_CLS;
+        ContextPtr context(llama_init_from_model(model_.get(), params), llama_free);
+        cancel.throwIfCancelled();
+        if (!context) throw Error(ErrorCode::RuntimeFailure, "Cannot create embedding context");
+        const auto actualPooling = llama_pooling_type(context.get());
+        if (actualPooling != LLAMA_POOLING_TYPE_MEAN && actualPooling != LLAMA_POOLING_TYPE_LAST
+            && actualPooling != LLAMA_POOLING_TYPE_CLS)
+            throw Error(ErrorCode::RuntimeUnavailable, "Embedding model requires mean, last, or CLS pooling");
+        auto batch = llama_batch_init(count, 0, 1);
+        struct FreeBatch { llama_batch value; ~FreeBatch() { llama_batch_free(value); } } cleanup{batch};
+        if (!batch.token || !batch.pos || !batch.n_seq_id || !batch.seq_id || !batch.logits)
+            throw Error(ErrorCode::ResourceLimit, "Cannot allocate embedding batch");
+        batch.n_tokens = count;
+        for (int i = 0; i < count; ++i) {
+            if (!batch.seq_id[i]) throw Error(ErrorCode::ResourceLimit, "Cannot allocate embedding sequence IDs");
+            batch.token[i] = tokens[i]; batch.pos[i] = i; batch.n_seq_id[i] = 1;
+            batch.seq_id[i][0] = 0; batch.logits[i] = 1;
+        }
+        const int status = llama_model_has_encoder(model_.get())
+            ? llama_encode(context.get(), batch) : llama_decode(context.get(), batch);
+        cancel.throwIfCancelled();
+        if (status != 0) throw Error(ErrorCode::RuntimeFailure, QString("Embedding evaluation failed: %1").arg(status));
+        const int dimension = llama_model_n_embd_out(model_.get());
+        const float* values = llama_get_embeddings_seq(context.get(), 0);
+        if (!values || dimension <= 0 || dimension > 16384)
+            throw Error(ErrorCode::RuntimeFailure, "Embedding output is unavailable");
+        QList<float> result; result.reserve(dimension);
+        for (int i = 0; i < dimension; ++i) result.append(values[i]);
+        return result;
+    }
     RuntimeConversationPrompt prepareConversation(const ConversationRequest& request, const CancellationToken& cancel) override
     {
         cancel.throwIfCancelled();
@@ -551,7 +605,8 @@ public:
         if (!QFileInfo(spec.path).isFile()) throw Error(ErrorCode::NotFound, QStringLiteral("Local GGUF file not found"));
         for (auto it = spec.options.begin(); it != spec.options.end(); ++it) {
             if (it.key() != QStringLiteral("threads") && it.key() != QStringLiteral("chat_template")
-                && it.key() != QStringLiteral("tool_grammar") && it.key() != QStringLiteral("enable_thinking"))
+                && it.key() != QStringLiteral("tool_grammar") && it.key() != QStringLiteral("enable_thinking")
+                && it.key() != QStringLiteral("embedding_pooling"))
                 throw Error(ErrorCode::InvalidArgument, QStringLiteral("Unsupported model option: ") + it.key());
         }
         (void)optionInt(spec, "threads", 4, 1, 512);
@@ -561,6 +616,9 @@ public:
             throw Error(ErrorCode::InvalidArgument, "tool_grammar must be a boolean");
         if (spec.options.contains("enable_thinking") && !spec.options.value("enable_thinking").isBool())
             throw Error(ErrorCode::InvalidArgument, "enable_thinking must be a boolean");
+        if (spec.options.contains("embedding_pooling") && (!spec.options.value("embedding_pooling").isString()
+            || !QStringList{"model", "mean", "last", "cls"}.contains(spec.options.value("embedding_pooling").toString())))
+            throw Error(ErrorCode::InvalidArgument, "Invalid embedding_pooling option");
         initializeLlama();
         auto selected = std::make_shared<std::vector<ggml_backend_dev_t>>();
         const bool accelerated = device.backend != ComputeBackend::Cpu;

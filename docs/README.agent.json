@@ -1,0 +1,1922 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:7861f086a29fa5f40747fe32b95a2324bbffe94ced7ef0e7cf4271c0e1dc4c6c",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "docs/README.md",
+    "sha256": "21d95754b2b674bd3fa708c8aacf11fb1006d3805430297ab592d3644bbaa9c7",
+    "bytes": 6773,
+    "line_count": 91,
+    "encoding": "utf-8",
+    "language": "en"
+  },
+  "document": {
+    "title": "iiLocalLLM Documentation",
+    "role": "overview",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "heading",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "# iiLocalLLM Documentation\n",
+      "level": 1,
+      "title": "iiLocalLLM Documentation"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "html",
+      "start_line": 3,
+      "end_line": 3,
+      "raw": "<!-- workspace-docs:document-map:start -->\n"
+    },
+    {
+      "id": "b000004",
+      "kind": "heading",
+      "start_line": 4,
+      "end_line": 4,
+      "raw": "## Human and agent document map\n",
+      "level": 2,
+      "title": "Human and agent document map"
+    },
+    {
+      "id": "b000005",
+      "kind": "blank",
+      "start_line": 5,
+      "end_line": 5,
+      "raw": "\n"
+    },
+    {
+      "id": "b000006",
+      "kind": "paragraph",
+      "start_line": 6,
+      "end_line": 6,
+      "raw": "Markdown is the maintained human source. Agent JSON is a structured, source-traceable projection.\n"
+    },
+    {
+      "id": "b000007",
+      "kind": "blank",
+      "start_line": 7,
+      "end_line": 7,
+      "raw": "\n"
+    },
+    {
+      "id": "b000008",
+      "kind": "table",
+      "start_line": 8,
+      "end_line": 90,
+      "raw": "| Document | Agent JSON |\n| --- | --- |\n| [`AGENT.md`](../AGENT.md) | [JSON](entrypoints/AGENT.agent.json) |\n| [`README.md`](../README.md) | [JSON](entrypoints/README.agent.json) |\n| [`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md) | [JSON](entrypoints/THIRD_PARTY_NOTICES.agent.json) |\n| [`docs/AgentAPI.md`](AgentAPI.md) | [JSON](AgentAPI.agent.json) |\n| [`docs/AgentHarness.md`](AgentHarness.md) | [JSON](AgentHarness.agent.json) |\n| [`docs/AgentHooks.md`](AgentHooks.md) | [JSON](AgentHooks.agent.json) |\n| [`docs/AgentProfiles.md`](AgentProfiles.md) | [JSON](AgentProfiles.agent.json) |\n| [`docs/Architecture.md`](Architecture.md) | [JSON](Architecture.agent.json) |\n| [`docs/AsyncHooks.md`](AsyncHooks.md) | [JSON](AsyncHooks.agent.json) |\n| [`docs/BackgroundTasks.md`](BackgroundTasks.md) | [JSON](BackgroundTasks.agent.json) |\n| [`docs/CLI.md`](CLI.md) | [JSON](CLI.agent.json) |\n| [`docs/CommandHooks.md`](CommandHooks.md) | [JSON](CommandHooks.agent.json) |\n| [`docs/Compaction.md`](Compaction.md) | [JSON](Compaction.agent.json) |\n| [`docs/ControlCapacity.md`](ControlCapacity.md) | [JSON](ControlCapacity.agent.json) |\n| [`docs/DecisionGate.md`](DecisionGate.md) | [JSON](DecisionGate.agent.json) |\n| [`docs/Embeddings.md`](Embeddings.md) | [JSON](Embeddings.agent.json) |\n| [`docs/FILE_PROVIDER.md`](FILE_PROVIDER.md) | [JSON](FILE_PROVIDER.agent.json) |\n| [`docs/FileCheckpoints.md`](FileCheckpoints.md) | [JSON](FileCheckpoints.agent.json) |\n| [`docs/HTTP.md`](HTTP.md) | [JSON](HTTP.agent.json) |\n| [`docs/HTTPHooks.md`](HTTPHooks.md) | [JSON](HTTPHooks.agent.json) |\n| [`docs/HardwarePolicy.md`](HardwarePolicy.md) | [JSON](HardwarePolicy.agent.json) |\n| [`docs/HarnessParity.md`](HarnessParity.md) | [JSON](HarnessParity.agent.json) |\n| [`docs/IPC.md`](IPC.md) | [JSON](IPC.agent.json) |\n| [`docs/InputLifecycle.md`](InputLifecycle.md) | [JSON](InputLifecycle.agent.json) |\n| [`docs/InputQueue.md`](InputQueue.md) | [JSON](InputQueue.agent.json) |\n| [`docs/InstallationChecks.md`](InstallationChecks.md) | [JSON](InstallationChecks.agent.json) |\n| [`docs/LocalApplications.md`](LocalApplications.md) | [JSON](LocalApplications.agent.json) |\n| [`docs/Lsp.md`](Lsp.md) | [JSON](Lsp.agent.json) |\n| [`docs/MCP.md`](MCP.md) | [JSON](MCP.agent.json) |\n| [`docs/MCPHTTP.md`](MCPHTTP.md) | [JSON](MCPHTTP.agent.json) |\n| [`docs/MCPHTTPServer.md`](MCPHTTPServer.md) | [JSON](MCPHTTPServer.agent.json) |\n| [`docs/MCPServer.md`](MCPServer.md) | [JSON](MCPServer.agent.json) |\n| [`docs/McpOutputHooks.md`](McpOutputHooks.md) | [JSON](McpOutputHooks.agent.json) |\n| [`docs/MemoryDream.md`](MemoryDream.md) | [JSON](MemoryDream.agent.json) |\n| [`docs/MemoryExtraction.md`](MemoryExtraction.md) | [JSON](MemoryExtraction.agent.json) |\n| [`docs/MemoryRecall.md`](MemoryRecall.md) | [JSON](MemoryRecall.agent.json) |\n| [`docs/MlxImportIndex.md`](MlxImportIndex.md) | [JSON](MlxImportIndex.agent.json) |\n| [`docs/ModelIntegrity.md`](ModelIntegrity.md) | [JSON](ModelIntegrity.agent.json) |\n| [`docs/ModelManagement.md`](ModelManagement.md) | [JSON](ModelManagement.agent.json) |\n| [`docs/ModuleExtraction.md`](ModuleExtraction.md) | [JSON](ModuleExtraction.agent.json) |\n| [`docs/MultimodalHarness.md`](MultimodalHarness.md) | [JSON](MultimodalHarness.agent.json) |\n| [`docs/NativeThinking.md`](NativeThinking.md) | [JSON](NativeThinking.agent.json) |\n| [`docs/NativeToolTemplates.md`](NativeToolTemplates.md) | [JSON](NativeToolTemplates.agent.json) |\n| [`docs/NemotronBolt.md`](NemotronBolt.md) | [JSON](NemotronBolt.agent.json) |\n| [`docs/Notebooks.md`](Notebooks.md) | [JSON](Notebooks.agent.json) |\n| [`docs/PERFORMANCE.md`](PERFORMANCE.md) | [JSON](PERFORMANCE.agent.json) |\n| [`docs/ParameterSources.md`](ParameterSources.md) | [JSON](ParameterSources.agent.json) |\n| [`docs/Parameters.md`](Parameters.md) | [JSON](Parameters.agent.json) |\n| [`docs/PermissionRequest.md`](PermissionRequest.md) | [JSON](PermissionRequest.agent.json) |\n| [`docs/PermissionRequests.md`](PermissionRequests.md) | [JSON](PermissionRequests.agent.json) |\n| [`docs/PermissionSettings.md`](PermissionSettings.md) | [JSON](PermissionSettings.agent.json) |\n| [`docs/PermissionUpdates.md`](PermissionUpdates.md) | [JSON](PermissionUpdates.agent.json) |\n| [`docs/Permissions.md`](Permissions.md) | [JSON](Permissions.agent.json) |\n| [`docs/PlanMode.md`](PlanMode.md) | [JSON](PlanMode.agent.json) |\n| [`docs/Plugins.md`](Plugins.md) | [JSON](Plugins.agent.json) |\n| [`docs/Procedures.md`](Procedures.md) | [JSON](Procedures.agent.json) |\n| [`docs/ProjectContext.md`](ProjectContext.md) | [JSON](ProjectContext.agent.json) |\n| [`docs/ProjectMemory.md`](ProjectMemory.md) | [JSON](ProjectMemory.agent.json) |\n| [`docs/PromptHooks.md`](PromptHooks.md) | [JSON](PromptHooks.agent.json) |\n| [`docs/QuestionUI.md`](QuestionUI.md) | [JSON](QuestionUI.agent.json) |\n| [`docs/Residency.md`](Residency.md) | [JSON](Residency.agent.json) |\n| [`docs/RuntimeRetirement.md`](RuntimeRetirement.md) | [JSON](RuntimeRetirement.agent.json) |\n| [`docs/SessionClear.md`](SessionClear.md) | [JSON](SessionClear.agent.json) |\n| [`docs/SessionEnd.md`](SessionEnd.md) | [JSON](SessionEnd.agent.json) |\n| [`docs/SessionFork.md`](SessionFork.md) | [JSON](SessionFork.agent.json) |\n| [`docs/SessionHistory.md`](SessionHistory.md) | [JSON](SessionHistory.agent.json) |\n| [`docs/Skills.md`](Skills.md) | [JSON](Skills.agent.json) |\n| [`docs/Subagents.md`](Subagents.md) | [JSON](Subagents.agent.json) |\n| [`docs/Tasks.md`](Tasks.md) | [JSON](Tasks.agent.json) |\n| [`docs/Teams.md`](Teams.md) | [JSON](Teams.agent.json) |\n| [`docs/ToolDiscovery.md`](ToolDiscovery.md) | [JSON](ToolDiscovery.agent.json) |\n| [`docs/UserQuestions.md`](UserQuestions.md) | [JSON](UserQuestions.agent.json) |\n| [`docs/Verification.md`](Verification.md) | [JSON](Verification.agent.json) |\n| [`docs/WebFetch.md`](WebFetch.md) | [JSON](WebFetch.agent.json) |\n| [`docs/Windows-validation.md`](Windows-validation.md) | [JSON](Windows-validation.agent.json) |\n| [`docs/Windows.md`](Windows.md) | [JSON](Windows.agent.json) |\n| [`docs/WindowsBuildAndRun.md`](WindowsBuildAndRun.md) | [JSON](WindowsBuildAndRun.agent.json) |\n| [`docs/WindowsValidation.md`](WindowsValidation.md) | [JSON](WindowsValidation.agent.json) |\n| [`docs/WorkingDirectories.md`](WorkingDirectories.md) | [JSON](WorkingDirectories.agent.json) |\n| [`docs/Worktrees.md`](Worktrees.md) | [JSON](Worktrees.agent.json) |\n| [`docs/documentation-structure.md`](documentation-structure.md) | [JSON](documentation-structure.agent.json) |\n",
+      "columns": [
+        "Document",
+        "Agent JSON"
+      ],
+      "rows": [
+        [
+          "[`AGENT.md`](../AGENT.md)",
+          "[JSON](entrypoints/AGENT.agent.json)"
+        ],
+        [
+          "[`README.md`](../README.md)",
+          "[JSON](entrypoints/README.agent.json)"
+        ],
+        [
+          "[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md)",
+          "[JSON](entrypoints/THIRD_PARTY_NOTICES.agent.json)"
+        ],
+        [
+          "[`docs/AgentAPI.md`](AgentAPI.md)",
+          "[JSON](AgentAPI.agent.json)"
+        ],
+        [
+          "[`docs/AgentHarness.md`](AgentHarness.md)",
+          "[JSON](AgentHarness.agent.json)"
+        ],
+        [
+          "[`docs/AgentHooks.md`](AgentHooks.md)",
+          "[JSON](AgentHooks.agent.json)"
+        ],
+        [
+          "[`docs/AgentProfiles.md`](AgentProfiles.md)",
+          "[JSON](AgentProfiles.agent.json)"
+        ],
+        [
+          "[`docs/Architecture.md`](Architecture.md)",
+          "[JSON](Architecture.agent.json)"
+        ],
+        [
+          "[`docs/AsyncHooks.md`](AsyncHooks.md)",
+          "[JSON](AsyncHooks.agent.json)"
+        ],
+        [
+          "[`docs/BackgroundTasks.md`](BackgroundTasks.md)",
+          "[JSON](BackgroundTasks.agent.json)"
+        ],
+        [
+          "[`docs/CLI.md`](CLI.md)",
+          "[JSON](CLI.agent.json)"
+        ],
+        [
+          "[`docs/CommandHooks.md`](CommandHooks.md)",
+          "[JSON](CommandHooks.agent.json)"
+        ],
+        [
+          "[`docs/Compaction.md`](Compaction.md)",
+          "[JSON](Compaction.agent.json)"
+        ],
+        [
+          "[`docs/ControlCapacity.md`](ControlCapacity.md)",
+          "[JSON](ControlCapacity.agent.json)"
+        ],
+        [
+          "[`docs/DecisionGate.md`](DecisionGate.md)",
+          "[JSON](DecisionGate.agent.json)"
+        ],
+        [
+          "[`docs/Embeddings.md`](Embeddings.md)",
+          "[JSON](Embeddings.agent.json)"
+        ],
+        [
+          "[`docs/FILE_PROVIDER.md`](FILE_PROVIDER.md)",
+          "[JSON](FILE_PROVIDER.agent.json)"
+        ],
+        [
+          "[`docs/FileCheckpoints.md`](FileCheckpoints.md)",
+          "[JSON](FileCheckpoints.agent.json)"
+        ],
+        [
+          "[`docs/HTTP.md`](HTTP.md)",
+          "[JSON](HTTP.agent.json)"
+        ],
+        [
+          "[`docs/HTTPHooks.md`](HTTPHooks.md)",
+          "[JSON](HTTPHooks.agent.json)"
+        ],
+        [
+          "[`docs/HardwarePolicy.md`](HardwarePolicy.md)",
+          "[JSON](HardwarePolicy.agent.json)"
+        ],
+        [
+          "[`docs/HarnessParity.md`](HarnessParity.md)",
+          "[JSON](HarnessParity.agent.json)"
+        ],
+        [
+          "[`docs/IPC.md`](IPC.md)",
+          "[JSON](IPC.agent.json)"
+        ],
+        [
+          "[`docs/InputLifecycle.md`](InputLifecycle.md)",
+          "[JSON](InputLifecycle.agent.json)"
+        ],
+        [
+          "[`docs/InputQueue.md`](InputQueue.md)",
+          "[JSON](InputQueue.agent.json)"
+        ],
+        [
+          "[`docs/InstallationChecks.md`](InstallationChecks.md)",
+          "[JSON](InstallationChecks.agent.json)"
+        ],
+        [
+          "[`docs/LocalApplications.md`](LocalApplications.md)",
+          "[JSON](LocalApplications.agent.json)"
+        ],
+        [
+          "[`docs/Lsp.md`](Lsp.md)",
+          "[JSON](Lsp.agent.json)"
+        ],
+        [
+          "[`docs/MCP.md`](MCP.md)",
+          "[JSON](MCP.agent.json)"
+        ],
+        [
+          "[`docs/MCPHTTP.md`](MCPHTTP.md)",
+          "[JSON](MCPHTTP.agent.json)"
+        ],
+        [
+          "[`docs/MCPHTTPServer.md`](MCPHTTPServer.md)",
+          "[JSON](MCPHTTPServer.agent.json)"
+        ],
+        [
+          "[`docs/MCPServer.md`](MCPServer.md)",
+          "[JSON](MCPServer.agent.json)"
+        ],
+        [
+          "[`docs/McpOutputHooks.md`](McpOutputHooks.md)",
+          "[JSON](McpOutputHooks.agent.json)"
+        ],
+        [
+          "[`docs/MemoryDream.md`](MemoryDream.md)",
+          "[JSON](MemoryDream.agent.json)"
+        ],
+        [
+          "[`docs/MemoryExtraction.md`](MemoryExtraction.md)",
+          "[JSON](MemoryExtraction.agent.json)"
+        ],
+        [
+          "[`docs/MemoryRecall.md`](MemoryRecall.md)",
+          "[JSON](MemoryRecall.agent.json)"
+        ],
+        [
+          "[`docs/MlxImportIndex.md`](MlxImportIndex.md)",
+          "[JSON](MlxImportIndex.agent.json)"
+        ],
+        [
+          "[`docs/ModelIntegrity.md`](ModelIntegrity.md)",
+          "[JSON](ModelIntegrity.agent.json)"
+        ],
+        [
+          "[`docs/ModelManagement.md`](ModelManagement.md)",
+          "[JSON](ModelManagement.agent.json)"
+        ],
+        [
+          "[`docs/ModuleExtraction.md`](ModuleExtraction.md)",
+          "[JSON](ModuleExtraction.agent.json)"
+        ],
+        [
+          "[`docs/MultimodalHarness.md`](MultimodalHarness.md)",
+          "[JSON](MultimodalHarness.agent.json)"
+        ],
+        [
+          "[`docs/NativeThinking.md`](NativeThinking.md)",
+          "[JSON](NativeThinking.agent.json)"
+        ],
+        [
+          "[`docs/NativeToolTemplates.md`](NativeToolTemplates.md)",
+          "[JSON](NativeToolTemplates.agent.json)"
+        ],
+        [
+          "[`docs/NemotronBolt.md`](NemotronBolt.md)",
+          "[JSON](NemotronBolt.agent.json)"
+        ],
+        [
+          "[`docs/Notebooks.md`](Notebooks.md)",
+          "[JSON](Notebooks.agent.json)"
+        ],
+        [
+          "[`docs/PERFORMANCE.md`](PERFORMANCE.md)",
+          "[JSON](PERFORMANCE.agent.json)"
+        ],
+        [
+          "[`docs/ParameterSources.md`](ParameterSources.md)",
+          "[JSON](ParameterSources.agent.json)"
+        ],
+        [
+          "[`docs/Parameters.md`](Parameters.md)",
+          "[JSON](Parameters.agent.json)"
+        ],
+        [
+          "[`docs/PermissionRequest.md`](PermissionRequest.md)",
+          "[JSON](PermissionRequest.agent.json)"
+        ],
+        [
+          "[`docs/PermissionRequests.md`](PermissionRequests.md)",
+          "[JSON](PermissionRequests.agent.json)"
+        ],
+        [
+          "[`docs/PermissionSettings.md`](PermissionSettings.md)",
+          "[JSON](PermissionSettings.agent.json)"
+        ],
+        [
+          "[`docs/PermissionUpdates.md`](PermissionUpdates.md)",
+          "[JSON](PermissionUpdates.agent.json)"
+        ],
+        [
+          "[`docs/Permissions.md`](Permissions.md)",
+          "[JSON](Permissions.agent.json)"
+        ],
+        [
+          "[`docs/PlanMode.md`](PlanMode.md)",
+          "[JSON](PlanMode.agent.json)"
+        ],
+        [
+          "[`docs/Plugins.md`](Plugins.md)",
+          "[JSON](Plugins.agent.json)"
+        ],
+        [
+          "[`docs/Procedures.md`](Procedures.md)",
+          "[JSON](Procedures.agent.json)"
+        ],
+        [
+          "[`docs/ProjectContext.md`](ProjectContext.md)",
+          "[JSON](ProjectContext.agent.json)"
+        ],
+        [
+          "[`docs/ProjectMemory.md`](ProjectMemory.md)",
+          "[JSON](ProjectMemory.agent.json)"
+        ],
+        [
+          "[`docs/PromptHooks.md`](PromptHooks.md)",
+          "[JSON](PromptHooks.agent.json)"
+        ],
+        [
+          "[`docs/QuestionUI.md`](QuestionUI.md)",
+          "[JSON](QuestionUI.agent.json)"
+        ],
+        [
+          "[`docs/Residency.md`](Residency.md)",
+          "[JSON](Residency.agent.json)"
+        ],
+        [
+          "[`docs/RuntimeRetirement.md`](RuntimeRetirement.md)",
+          "[JSON](RuntimeRetirement.agent.json)"
+        ],
+        [
+          "[`docs/SessionClear.md`](SessionClear.md)",
+          "[JSON](SessionClear.agent.json)"
+        ],
+        [
+          "[`docs/SessionEnd.md`](SessionEnd.md)",
+          "[JSON](SessionEnd.agent.json)"
+        ],
+        [
+          "[`docs/SessionFork.md`](SessionFork.md)",
+          "[JSON](SessionFork.agent.json)"
+        ],
+        [
+          "[`docs/SessionHistory.md`](SessionHistory.md)",
+          "[JSON](SessionHistory.agent.json)"
+        ],
+        [
+          "[`docs/Skills.md`](Skills.md)",
+          "[JSON](Skills.agent.json)"
+        ],
+        [
+          "[`docs/Subagents.md`](Subagents.md)",
+          "[JSON](Subagents.agent.json)"
+        ],
+        [
+          "[`docs/Tasks.md`](Tasks.md)",
+          "[JSON](Tasks.agent.json)"
+        ],
+        [
+          "[`docs/Teams.md`](Teams.md)",
+          "[JSON](Teams.agent.json)"
+        ],
+        [
+          "[`docs/ToolDiscovery.md`](ToolDiscovery.md)",
+          "[JSON](ToolDiscovery.agent.json)"
+        ],
+        [
+          "[`docs/UserQuestions.md`](UserQuestions.md)",
+          "[JSON](UserQuestions.agent.json)"
+        ],
+        [
+          "[`docs/Verification.md`](Verification.md)",
+          "[JSON](Verification.agent.json)"
+        ],
+        [
+          "[`docs/WebFetch.md`](WebFetch.md)",
+          "[JSON](WebFetch.agent.json)"
+        ],
+        [
+          "[`docs/Windows-validation.md`](Windows-validation.md)",
+          "[JSON](Windows-validation.agent.json)"
+        ],
+        [
+          "[`docs/Windows.md`](Windows.md)",
+          "[JSON](Windows.agent.json)"
+        ],
+        [
+          "[`docs/WindowsBuildAndRun.md`](WindowsBuildAndRun.md)",
+          "[JSON](WindowsBuildAndRun.agent.json)"
+        ],
+        [
+          "[`docs/WindowsValidation.md`](WindowsValidation.md)",
+          "[JSON](WindowsValidation.agent.json)"
+        ],
+        [
+          "[`docs/WorkingDirectories.md`](WorkingDirectories.md)",
+          "[JSON](WorkingDirectories.agent.json)"
+        ],
+        [
+          "[`docs/Worktrees.md`](Worktrees.md)",
+          "[JSON](Worktrees.agent.json)"
+        ],
+        [
+          "[`docs/documentation-structure.md`](documentation-structure.md)",
+          "[JSON](documentation-structure.agent.json)"
+        ]
+      ]
+    },
+    {
+      "id": "b000009",
+      "kind": "html",
+      "start_line": 91,
+      "end_line": 91,
+      "raw": "<!-- workspace-docs:document-map:end -->\n"
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000001",
+      "parent_id": null,
+      "level": 1,
+      "title": "iiLocalLLM Documentation",
+      "anchor": "iilocalllm-documentation",
+      "start_line": 1
+    },
+    {
+      "block_id": "b000004",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "Human and agent document map",
+      "anchor": "human-and-agent-document-map",
+      "start_line": 4
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [],
+    "commands": [],
+    "links": [
+      {
+        "block_id": "b000008",
+        "label": "`AGENT.md`",
+        "target": "../AGENT.md",
+        "kind": "relative",
+        "line": 10
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "entrypoints/AGENT.agent.json",
+        "kind": "relative",
+        "line": 10
+      },
+      {
+        "block_id": "b000008",
+        "label": "`README.md`",
+        "target": "../README.md",
+        "kind": "relative",
+        "line": 11
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "entrypoints/README.agent.json",
+        "kind": "relative",
+        "line": 11
+      },
+      {
+        "block_id": "b000008",
+        "label": "`THIRD_PARTY_NOTICES.md`",
+        "target": "../THIRD_PARTY_NOTICES.md",
+        "kind": "relative",
+        "line": 12
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "entrypoints/THIRD_PARTY_NOTICES.agent.json",
+        "kind": "relative",
+        "line": 12
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/AgentAPI.md`",
+        "target": "AgentAPI.md",
+        "kind": "relative",
+        "line": 13
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "AgentAPI.agent.json",
+        "kind": "relative",
+        "line": 13
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/AgentHarness.md`",
+        "target": "AgentHarness.md",
+        "kind": "relative",
+        "line": 14
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "AgentHarness.agent.json",
+        "kind": "relative",
+        "line": 14
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/AgentHooks.md`",
+        "target": "AgentHooks.md",
+        "kind": "relative",
+        "line": 15
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "AgentHooks.agent.json",
+        "kind": "relative",
+        "line": 15
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/AgentProfiles.md`",
+        "target": "AgentProfiles.md",
+        "kind": "relative",
+        "line": 16
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "AgentProfiles.agent.json",
+        "kind": "relative",
+        "line": 16
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Architecture.md`",
+        "target": "Architecture.md",
+        "kind": "relative",
+        "line": 17
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Architecture.agent.json",
+        "kind": "relative",
+        "line": 17
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/AsyncHooks.md`",
+        "target": "AsyncHooks.md",
+        "kind": "relative",
+        "line": 18
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "AsyncHooks.agent.json",
+        "kind": "relative",
+        "line": 18
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/BackgroundTasks.md`",
+        "target": "BackgroundTasks.md",
+        "kind": "relative",
+        "line": 19
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "BackgroundTasks.agent.json",
+        "kind": "relative",
+        "line": 19
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/CLI.md`",
+        "target": "CLI.md",
+        "kind": "relative",
+        "line": 20
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "CLI.agent.json",
+        "kind": "relative",
+        "line": 20
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/CommandHooks.md`",
+        "target": "CommandHooks.md",
+        "kind": "relative",
+        "line": 21
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "CommandHooks.agent.json",
+        "kind": "relative",
+        "line": 21
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Compaction.md`",
+        "target": "Compaction.md",
+        "kind": "relative",
+        "line": 22
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Compaction.agent.json",
+        "kind": "relative",
+        "line": 22
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/ControlCapacity.md`",
+        "target": "ControlCapacity.md",
+        "kind": "relative",
+        "line": 23
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "ControlCapacity.agent.json",
+        "kind": "relative",
+        "line": 23
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/DecisionGate.md`",
+        "target": "DecisionGate.md",
+        "kind": "relative",
+        "line": 24
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "DecisionGate.agent.json",
+        "kind": "relative",
+        "line": 24
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Embeddings.md`",
+        "target": "Embeddings.md",
+        "kind": "relative",
+        "line": 25
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Embeddings.agent.json",
+        "kind": "relative",
+        "line": 25
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/FILE_PROVIDER.md`",
+        "target": "FILE_PROVIDER.md",
+        "kind": "relative",
+        "line": 26
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "FILE_PROVIDER.agent.json",
+        "kind": "relative",
+        "line": 26
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/FileCheckpoints.md`",
+        "target": "FileCheckpoints.md",
+        "kind": "relative",
+        "line": 27
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "FileCheckpoints.agent.json",
+        "kind": "relative",
+        "line": 27
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/HTTP.md`",
+        "target": "HTTP.md",
+        "kind": "relative",
+        "line": 28
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "HTTP.agent.json",
+        "kind": "relative",
+        "line": 28
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/HTTPHooks.md`",
+        "target": "HTTPHooks.md",
+        "kind": "relative",
+        "line": 29
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "HTTPHooks.agent.json",
+        "kind": "relative",
+        "line": 29
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/HardwarePolicy.md`",
+        "target": "HardwarePolicy.md",
+        "kind": "relative",
+        "line": 30
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "HardwarePolicy.agent.json",
+        "kind": "relative",
+        "line": 30
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/HarnessParity.md`",
+        "target": "HarnessParity.md",
+        "kind": "relative",
+        "line": 31
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "HarnessParity.agent.json",
+        "kind": "relative",
+        "line": 31
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/IPC.md`",
+        "target": "IPC.md",
+        "kind": "relative",
+        "line": 32
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "IPC.agent.json",
+        "kind": "relative",
+        "line": 32
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/InputLifecycle.md`",
+        "target": "InputLifecycle.md",
+        "kind": "relative",
+        "line": 33
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "InputLifecycle.agent.json",
+        "kind": "relative",
+        "line": 33
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/InputQueue.md`",
+        "target": "InputQueue.md",
+        "kind": "relative",
+        "line": 34
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "InputQueue.agent.json",
+        "kind": "relative",
+        "line": 34
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/InstallationChecks.md`",
+        "target": "InstallationChecks.md",
+        "kind": "relative",
+        "line": 35
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "InstallationChecks.agent.json",
+        "kind": "relative",
+        "line": 35
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/LocalApplications.md`",
+        "target": "LocalApplications.md",
+        "kind": "relative",
+        "line": 36
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "LocalApplications.agent.json",
+        "kind": "relative",
+        "line": 36
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Lsp.md`",
+        "target": "Lsp.md",
+        "kind": "relative",
+        "line": 37
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Lsp.agent.json",
+        "kind": "relative",
+        "line": 37
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/MCP.md`",
+        "target": "MCP.md",
+        "kind": "relative",
+        "line": 38
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "MCP.agent.json",
+        "kind": "relative",
+        "line": 38
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/MCPHTTP.md`",
+        "target": "MCPHTTP.md",
+        "kind": "relative",
+        "line": 39
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "MCPHTTP.agent.json",
+        "kind": "relative",
+        "line": 39
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/MCPHTTPServer.md`",
+        "target": "MCPHTTPServer.md",
+        "kind": "relative",
+        "line": 40
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "MCPHTTPServer.agent.json",
+        "kind": "relative",
+        "line": 40
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/MCPServer.md`",
+        "target": "MCPServer.md",
+        "kind": "relative",
+        "line": 41
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "MCPServer.agent.json",
+        "kind": "relative",
+        "line": 41
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/McpOutputHooks.md`",
+        "target": "McpOutputHooks.md",
+        "kind": "relative",
+        "line": 42
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "McpOutputHooks.agent.json",
+        "kind": "relative",
+        "line": 42
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/MemoryDream.md`",
+        "target": "MemoryDream.md",
+        "kind": "relative",
+        "line": 43
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "MemoryDream.agent.json",
+        "kind": "relative",
+        "line": 43
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/MemoryExtraction.md`",
+        "target": "MemoryExtraction.md",
+        "kind": "relative",
+        "line": 44
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "MemoryExtraction.agent.json",
+        "kind": "relative",
+        "line": 44
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/MemoryRecall.md`",
+        "target": "MemoryRecall.md",
+        "kind": "relative",
+        "line": 45
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "MemoryRecall.agent.json",
+        "kind": "relative",
+        "line": 45
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/MlxImportIndex.md`",
+        "target": "MlxImportIndex.md",
+        "kind": "relative",
+        "line": 46
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "MlxImportIndex.agent.json",
+        "kind": "relative",
+        "line": 46
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/ModelIntegrity.md`",
+        "target": "ModelIntegrity.md",
+        "kind": "relative",
+        "line": 47
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "ModelIntegrity.agent.json",
+        "kind": "relative",
+        "line": 47
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/ModelManagement.md`",
+        "target": "ModelManagement.md",
+        "kind": "relative",
+        "line": 48
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "ModelManagement.agent.json",
+        "kind": "relative",
+        "line": 48
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/ModuleExtraction.md`",
+        "target": "ModuleExtraction.md",
+        "kind": "relative",
+        "line": 49
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "ModuleExtraction.agent.json",
+        "kind": "relative",
+        "line": 49
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/MultimodalHarness.md`",
+        "target": "MultimodalHarness.md",
+        "kind": "relative",
+        "line": 50
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "MultimodalHarness.agent.json",
+        "kind": "relative",
+        "line": 50
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/NativeThinking.md`",
+        "target": "NativeThinking.md",
+        "kind": "relative",
+        "line": 51
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "NativeThinking.agent.json",
+        "kind": "relative",
+        "line": 51
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/NativeToolTemplates.md`",
+        "target": "NativeToolTemplates.md",
+        "kind": "relative",
+        "line": 52
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "NativeToolTemplates.agent.json",
+        "kind": "relative",
+        "line": 52
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/NemotronBolt.md`",
+        "target": "NemotronBolt.md",
+        "kind": "relative",
+        "line": 53
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "NemotronBolt.agent.json",
+        "kind": "relative",
+        "line": 53
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Notebooks.md`",
+        "target": "Notebooks.md",
+        "kind": "relative",
+        "line": 54
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Notebooks.agent.json",
+        "kind": "relative",
+        "line": 54
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/PERFORMANCE.md`",
+        "target": "PERFORMANCE.md",
+        "kind": "relative",
+        "line": 55
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "PERFORMANCE.agent.json",
+        "kind": "relative",
+        "line": 55
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/ParameterSources.md`",
+        "target": "ParameterSources.md",
+        "kind": "relative",
+        "line": 56
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "ParameterSources.agent.json",
+        "kind": "relative",
+        "line": 56
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Parameters.md`",
+        "target": "Parameters.md",
+        "kind": "relative",
+        "line": 57
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Parameters.agent.json",
+        "kind": "relative",
+        "line": 57
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/PermissionRequest.md`",
+        "target": "PermissionRequest.md",
+        "kind": "relative",
+        "line": 58
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "PermissionRequest.agent.json",
+        "kind": "relative",
+        "line": 58
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/PermissionRequests.md`",
+        "target": "PermissionRequests.md",
+        "kind": "relative",
+        "line": 59
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "PermissionRequests.agent.json",
+        "kind": "relative",
+        "line": 59
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/PermissionSettings.md`",
+        "target": "PermissionSettings.md",
+        "kind": "relative",
+        "line": 60
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "PermissionSettings.agent.json",
+        "kind": "relative",
+        "line": 60
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/PermissionUpdates.md`",
+        "target": "PermissionUpdates.md",
+        "kind": "relative",
+        "line": 61
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "PermissionUpdates.agent.json",
+        "kind": "relative",
+        "line": 61
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Permissions.md`",
+        "target": "Permissions.md",
+        "kind": "relative",
+        "line": 62
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Permissions.agent.json",
+        "kind": "relative",
+        "line": 62
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/PlanMode.md`",
+        "target": "PlanMode.md",
+        "kind": "relative",
+        "line": 63
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "PlanMode.agent.json",
+        "kind": "relative",
+        "line": 63
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Plugins.md`",
+        "target": "Plugins.md",
+        "kind": "relative",
+        "line": 64
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Plugins.agent.json",
+        "kind": "relative",
+        "line": 64
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Procedures.md`",
+        "target": "Procedures.md",
+        "kind": "relative",
+        "line": 65
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Procedures.agent.json",
+        "kind": "relative",
+        "line": 65
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/ProjectContext.md`",
+        "target": "ProjectContext.md",
+        "kind": "relative",
+        "line": 66
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "ProjectContext.agent.json",
+        "kind": "relative",
+        "line": 66
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/ProjectMemory.md`",
+        "target": "ProjectMemory.md",
+        "kind": "relative",
+        "line": 67
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "ProjectMemory.agent.json",
+        "kind": "relative",
+        "line": 67
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/PromptHooks.md`",
+        "target": "PromptHooks.md",
+        "kind": "relative",
+        "line": 68
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "PromptHooks.agent.json",
+        "kind": "relative",
+        "line": 68
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/QuestionUI.md`",
+        "target": "QuestionUI.md",
+        "kind": "relative",
+        "line": 69
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "QuestionUI.agent.json",
+        "kind": "relative",
+        "line": 69
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Residency.md`",
+        "target": "Residency.md",
+        "kind": "relative",
+        "line": 70
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Residency.agent.json",
+        "kind": "relative",
+        "line": 70
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/RuntimeRetirement.md`",
+        "target": "RuntimeRetirement.md",
+        "kind": "relative",
+        "line": 71
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "RuntimeRetirement.agent.json",
+        "kind": "relative",
+        "line": 71
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/SessionClear.md`",
+        "target": "SessionClear.md",
+        "kind": "relative",
+        "line": 72
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "SessionClear.agent.json",
+        "kind": "relative",
+        "line": 72
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/SessionEnd.md`",
+        "target": "SessionEnd.md",
+        "kind": "relative",
+        "line": 73
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "SessionEnd.agent.json",
+        "kind": "relative",
+        "line": 73
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/SessionFork.md`",
+        "target": "SessionFork.md",
+        "kind": "relative",
+        "line": 74
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "SessionFork.agent.json",
+        "kind": "relative",
+        "line": 74
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/SessionHistory.md`",
+        "target": "SessionHistory.md",
+        "kind": "relative",
+        "line": 75
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "SessionHistory.agent.json",
+        "kind": "relative",
+        "line": 75
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Skills.md`",
+        "target": "Skills.md",
+        "kind": "relative",
+        "line": 76
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Skills.agent.json",
+        "kind": "relative",
+        "line": 76
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Subagents.md`",
+        "target": "Subagents.md",
+        "kind": "relative",
+        "line": 77
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Subagents.agent.json",
+        "kind": "relative",
+        "line": 77
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Tasks.md`",
+        "target": "Tasks.md",
+        "kind": "relative",
+        "line": 78
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Tasks.agent.json",
+        "kind": "relative",
+        "line": 78
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Teams.md`",
+        "target": "Teams.md",
+        "kind": "relative",
+        "line": 79
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Teams.agent.json",
+        "kind": "relative",
+        "line": 79
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/ToolDiscovery.md`",
+        "target": "ToolDiscovery.md",
+        "kind": "relative",
+        "line": 80
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "ToolDiscovery.agent.json",
+        "kind": "relative",
+        "line": 80
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/UserQuestions.md`",
+        "target": "UserQuestions.md",
+        "kind": "relative",
+        "line": 81
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "UserQuestions.agent.json",
+        "kind": "relative",
+        "line": 81
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Verification.md`",
+        "target": "Verification.md",
+        "kind": "relative",
+        "line": 82
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Verification.agent.json",
+        "kind": "relative",
+        "line": 82
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/WebFetch.md`",
+        "target": "WebFetch.md",
+        "kind": "relative",
+        "line": 83
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "WebFetch.agent.json",
+        "kind": "relative",
+        "line": 83
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Windows-validation.md`",
+        "target": "Windows-validation.md",
+        "kind": "relative",
+        "line": 84
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Windows-validation.agent.json",
+        "kind": "relative",
+        "line": 84
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Windows.md`",
+        "target": "Windows.md",
+        "kind": "relative",
+        "line": 85
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Windows.agent.json",
+        "kind": "relative",
+        "line": 85
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/WindowsBuildAndRun.md`",
+        "target": "WindowsBuildAndRun.md",
+        "kind": "relative",
+        "line": 86
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "WindowsBuildAndRun.agent.json",
+        "kind": "relative",
+        "line": 86
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/WindowsValidation.md`",
+        "target": "WindowsValidation.md",
+        "kind": "relative",
+        "line": 87
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "WindowsValidation.agent.json",
+        "kind": "relative",
+        "line": 87
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/WorkingDirectories.md`",
+        "target": "WorkingDirectories.md",
+        "kind": "relative",
+        "line": 88
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "WorkingDirectories.agent.json",
+        "kind": "relative",
+        "line": 88
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/Worktrees.md`",
+        "target": "Worktrees.md",
+        "kind": "relative",
+        "line": 89
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "Worktrees.agent.json",
+        "kind": "relative",
+        "line": 89
+      },
+      {
+        "block_id": "b000008",
+        "label": "`docs/documentation-structure.md`",
+        "target": "documentation-structure.md",
+        "kind": "relative",
+        "line": 90
+      },
+      {
+        "block_id": "b000008",
+        "label": "JSON",
+        "target": "documentation-structure.agent.json",
+        "kind": "relative",
+        "line": 90
+      }
+    ],
+    "tables": [
+      {
+        "block_id": "b000008",
+        "columns": [
+          "Document",
+          "Agent JSON"
+        ],
+        "rows": [
+          [
+            "[`AGENT.md`](../AGENT.md)",
+            "[JSON](entrypoints/AGENT.agent.json)"
+          ],
+          [
+            "[`README.md`](../README.md)",
+            "[JSON](entrypoints/README.agent.json)"
+          ],
+          [
+            "[`THIRD_PARTY_NOTICES.md`](../THIRD_PARTY_NOTICES.md)",
+            "[JSON](entrypoints/THIRD_PARTY_NOTICES.agent.json)"
+          ],
+          [
+            "[`docs/AgentAPI.md`](AgentAPI.md)",
+            "[JSON](AgentAPI.agent.json)"
+          ],
+          [
+            "[`docs/AgentHarness.md`](AgentHarness.md)",
+            "[JSON](AgentHarness.agent.json)"
+          ],
+          [
+            "[`docs/AgentHooks.md`](AgentHooks.md)",
+            "[JSON](AgentHooks.agent.json)"
+          ],
+          [
+            "[`docs/AgentProfiles.md`](AgentProfiles.md)",
+            "[JSON](AgentProfiles.agent.json)"
+          ],
+          [
+            "[`docs/Architecture.md`](Architecture.md)",
+            "[JSON](Architecture.agent.json)"
+          ],
+          [
+            "[`docs/AsyncHooks.md`](AsyncHooks.md)",
+            "[JSON](AsyncHooks.agent.json)"
+          ],
+          [
+            "[`docs/BackgroundTasks.md`](BackgroundTasks.md)",
+            "[JSON](BackgroundTasks.agent.json)"
+          ],
+          [
+            "[`docs/CLI.md`](CLI.md)",
+            "[JSON](CLI.agent.json)"
+          ],
+          [
+            "[`docs/CommandHooks.md`](CommandHooks.md)",
+            "[JSON](CommandHooks.agent.json)"
+          ],
+          [
+            "[`docs/Compaction.md`](Compaction.md)",
+            "[JSON](Compaction.agent.json)"
+          ],
+          [
+            "[`docs/ControlCapacity.md`](ControlCapacity.md)",
+            "[JSON](ControlCapacity.agent.json)"
+          ],
+          [
+            "[`docs/DecisionGate.md`](DecisionGate.md)",
+            "[JSON](DecisionGate.agent.json)"
+          ],
+          [
+            "[`docs/Embeddings.md`](Embeddings.md)",
+            "[JSON](Embeddings.agent.json)"
+          ],
+          [
+            "[`docs/FILE_PROVIDER.md`](FILE_PROVIDER.md)",
+            "[JSON](FILE_PROVIDER.agent.json)"
+          ],
+          [
+            "[`docs/FileCheckpoints.md`](FileCheckpoints.md)",
+            "[JSON](FileCheckpoints.agent.json)"
+          ],
+          [
+            "[`docs/HTTP.md`](HTTP.md)",
+            "[JSON](HTTP.agent.json)"
+          ],
+          [
+            "[`docs/HTTPHooks.md`](HTTPHooks.md)",
+            "[JSON](HTTPHooks.agent.json)"
+          ],
+          [
+            "[`docs/HardwarePolicy.md`](HardwarePolicy.md)",
+            "[JSON](HardwarePolicy.agent.json)"
+          ],
+          [
+            "[`docs/HarnessParity.md`](HarnessParity.md)",
+            "[JSON](HarnessParity.agent.json)"
+          ],
+          [
+            "[`docs/IPC.md`](IPC.md)",
+            "[JSON](IPC.agent.json)"
+          ],
+          [
+            "[`docs/InputLifecycle.md`](InputLifecycle.md)",
+            "[JSON](InputLifecycle.agent.json)"
+          ],
+          [
+            "[`docs/InputQueue.md`](InputQueue.md)",
+            "[JSON](InputQueue.agent.json)"
+          ],
+          [
+            "[`docs/InstallationChecks.md`](InstallationChecks.md)",
+            "[JSON](InstallationChecks.agent.json)"
+          ],
+          [
+            "[`docs/LocalApplications.md`](LocalApplications.md)",
+            "[JSON](LocalApplications.agent.json)"
+          ],
+          [
+            "[`docs/Lsp.md`](Lsp.md)",
+            "[JSON](Lsp.agent.json)"
+          ],
+          [
+            "[`docs/MCP.md`](MCP.md)",
+            "[JSON](MCP.agent.json)"
+          ],
+          [
+            "[`docs/MCPHTTP.md`](MCPHTTP.md)",
+            "[JSON](MCPHTTP.agent.json)"
+          ],
+          [
+            "[`docs/MCPHTTPServer.md`](MCPHTTPServer.md)",
+            "[JSON](MCPHTTPServer.agent.json)"
+          ],
+          [
+            "[`docs/MCPServer.md`](MCPServer.md)",
+            "[JSON](MCPServer.agent.json)"
+          ],
+          [
+            "[`docs/McpOutputHooks.md`](McpOutputHooks.md)",
+            "[JSON](McpOutputHooks.agent.json)"
+          ],
+          [
+            "[`docs/MemoryDream.md`](MemoryDream.md)",
+            "[JSON](MemoryDream.agent.json)"
+          ],
+          [
+            "[`docs/MemoryExtraction.md`](MemoryExtraction.md)",
+            "[JSON](MemoryExtraction.agent.json)"
+          ],
+          [
+            "[`docs/MemoryRecall.md`](MemoryRecall.md)",
+            "[JSON](MemoryRecall.agent.json)"
+          ],
+          [
+            "[`docs/MlxImportIndex.md`](MlxImportIndex.md)",
+            "[JSON](MlxImportIndex.agent.json)"
+          ],
+          [
+            "[`docs/ModelIntegrity.md`](ModelIntegrity.md)",
+            "[JSON](ModelIntegrity.agent.json)"
+          ],
+          [
+            "[`docs/ModelManagement.md`](ModelManagement.md)",
+            "[JSON](ModelManagement.agent.json)"
+          ],
+          [
+            "[`docs/ModuleExtraction.md`](ModuleExtraction.md)",
+            "[JSON](ModuleExtraction.agent.json)"
+          ],
+          [
+            "[`docs/MultimodalHarness.md`](MultimodalHarness.md)",
+            "[JSON](MultimodalHarness.agent.json)"
+          ],
+          [
+            "[`docs/NativeThinking.md`](NativeThinking.md)",
+            "[JSON](NativeThinking.agent.json)"
+          ],
+          [
+            "[`docs/NativeToolTemplates.md`](NativeToolTemplates.md)",
+            "[JSON](NativeToolTemplates.agent.json)"
+          ],
+          [
+            "[`docs/NemotronBolt.md`](NemotronBolt.md)",
+            "[JSON](NemotronBolt.agent.json)"
+          ],
+          [
+            "[`docs/Notebooks.md`](Notebooks.md)",
+            "[JSON](Notebooks.agent.json)"
+          ],
+          [
+            "[`docs/PERFORMANCE.md`](PERFORMANCE.md)",
+            "[JSON](PERFORMANCE.agent.json)"
+          ],
+          [
+            "[`docs/ParameterSources.md`](ParameterSources.md)",
+            "[JSON](ParameterSources.agent.json)"
+          ],
+          [
+            "[`docs/Parameters.md`](Parameters.md)",
+            "[JSON](Parameters.agent.json)"
+          ],
+          [
+            "[`docs/PermissionRequest.md`](PermissionRequest.md)",
+            "[JSON](PermissionRequest.agent.json)"
+          ],
+          [
+            "[`docs/PermissionRequests.md`](PermissionRequests.md)",
+            "[JSON](PermissionRequests.agent.json)"
+          ],
+          [
+            "[`docs/PermissionSettings.md`](PermissionSettings.md)",
+            "[JSON](PermissionSettings.agent.json)"
+          ],
+          [
+            "[`docs/PermissionUpdates.md`](PermissionUpdates.md)",
+            "[JSON](PermissionUpdates.agent.json)"
+          ],
+          [
+            "[`docs/Permissions.md`](Permissions.md)",
+            "[JSON](Permissions.agent.json)"
+          ],
+          [
+            "[`docs/PlanMode.md`](PlanMode.md)",
+            "[JSON](PlanMode.agent.json)"
+          ],
+          [
+            "[`docs/Plugins.md`](Plugins.md)",
+            "[JSON](Plugins.agent.json)"
+          ],
+          [
+            "[`docs/Procedures.md`](Procedures.md)",
+            "[JSON](Procedures.agent.json)"
+          ],
+          [
+            "[`docs/ProjectContext.md`](ProjectContext.md)",
+            "[JSON](ProjectContext.agent.json)"
+          ],
+          [
+            "[`docs/ProjectMemory.md`](ProjectMemory.md)",
+            "[JSON](ProjectMemory.agent.json)"
+          ],
+          [
+            "[`docs/PromptHooks.md`](PromptHooks.md)",
+            "[JSON](PromptHooks.agent.json)"
+          ],
+          [
+            "[`docs/QuestionUI.md`](QuestionUI.md)",
+            "[JSON](QuestionUI.agent.json)"
+          ],
+          [
+            "[`docs/Residency.md`](Residency.md)",
+            "[JSON](Residency.agent.json)"
+          ],
+          [
+            "[`docs/RuntimeRetirement.md`](RuntimeRetirement.md)",
+            "[JSON](RuntimeRetirement.agent.json)"
+          ],
+          [
+            "[`docs/SessionClear.md`](SessionClear.md)",
+            "[JSON](SessionClear.agent.json)"
+          ],
+          [
+            "[`docs/SessionEnd.md`](SessionEnd.md)",
+            "[JSON](SessionEnd.agent.json)"
+          ],
+          [
+            "[`docs/SessionFork.md`](SessionFork.md)",
+            "[JSON](SessionFork.agent.json)"
+          ],
+          [
+            "[`docs/SessionHistory.md`](SessionHistory.md)",
+            "[JSON](SessionHistory.agent.json)"
+          ],
+          [
+            "[`docs/Skills.md`](Skills.md)",
+            "[JSON](Skills.agent.json)"
+          ],
+          [
+            "[`docs/Subagents.md`](Subagents.md)",
+            "[JSON](Subagents.agent.json)"
+          ],
+          [
+            "[`docs/Tasks.md`](Tasks.md)",
+            "[JSON](Tasks.agent.json)"
+          ],
+          [
+            "[`docs/Teams.md`](Teams.md)",
+            "[JSON](Teams.agent.json)"
+          ],
+          [
+            "[`docs/ToolDiscovery.md`](ToolDiscovery.md)",
+            "[JSON](ToolDiscovery.agent.json)"
+          ],
+          [
+            "[`docs/UserQuestions.md`](UserQuestions.md)",
+            "[JSON](UserQuestions.agent.json)"
+          ],
+          [
+            "[`docs/Verification.md`](Verification.md)",
+            "[JSON](Verification.agent.json)"
+          ],
+          [
+            "[`docs/WebFetch.md`](WebFetch.md)",
+            "[JSON](WebFetch.agent.json)"
+          ],
+          [
+            "[`docs/Windows-validation.md`](Windows-validation.md)",
+            "[JSON](Windows-validation.agent.json)"
+          ],
+          [
+            "[`docs/Windows.md`](Windows.md)",
+            "[JSON](Windows.agent.json)"
+          ],
+          [
+            "[`docs/WindowsBuildAndRun.md`](WindowsBuildAndRun.md)",
+            "[JSON](WindowsBuildAndRun.agent.json)"
+          ],
+          [
+            "[`docs/WindowsValidation.md`](WindowsValidation.md)",
+            "[JSON](WindowsValidation.agent.json)"
+          ],
+          [
+            "[`docs/WorkingDirectories.md`](WorkingDirectories.md)",
+            "[JSON](WorkingDirectories.agent.json)"
+          ],
+          [
+            "[`docs/Worktrees.md`](Worktrees.md)",
+            "[JSON](Worktrees.agent.json)"
+          ],
+          [
+            "[`docs/documentation-structure.md`](documentation-structure.md)",
+            "[JSON](documentation-structure.agent.json)"
+          ]
+        ]
+      }
+    ]
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

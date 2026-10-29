@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(iiLocalLLM VERSION 0.56.0 LANGUAGES CXX)
+project(iiLocalLLM VERSION 0.56.1 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -330,16 +330,6 @@ install(EXPORT iiLocalLLMTargets
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/iiLocalLLM
 )
 
-if(WIN32 AND COMMAND onnxruntime_deploy)
-    get_property(_iillm_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
-    foreach(_iillm_target IN LISTS _iillm_targets)
-        get_target_property(_iillm_type "${_iillm_target}" TYPE)
-        if(_iillm_type STREQUAL "EXECUTABLE")
-            onnxruntime_deploy("${_iillm_target}")
-        endif()
-    endforeach()
-    install(FILES "$<TARGET_FILE:ONNXRuntime::ONNXRuntime>" DESTINATION ${CMAKE_INSTALL_BINDIR})
-endif()
 configure_package_config_file(cmake/iiLocalLLMConfig.cmake.in
     ${CMAKE_CURRENT_BINARY_DIR}/iiLocalLLMConfig.cmake
     INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/iiLocalLLM

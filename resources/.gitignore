@@ -1,0 +1,5 @@
+/.iisacc-file-provider/
+/.iisacc-temporary.lock
+/*.iisacc.json
+/.*.iisacc-preview
+/stories15M-q4_0.gguf

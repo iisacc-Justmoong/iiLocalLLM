@@ -38,6 +38,8 @@ public:
     // Uses the same native template/tokenizer as converse, without allocating a KV context or generating.
     // Reports over-budget prompts too; request syntax and host input limits still apply.
     std::future<ContextBudget> measureConversation(ConversationRequest request, CancellationToken cancellation = {});
+    // The model manifest must explicitly declare "embedding". No model is downloaded.
+    std::future<QList<float>> embedText(QString model, QString text, CancellationToken cancellation = {});
 private:
     class Impl;
     std::unique_ptr<Impl> d;

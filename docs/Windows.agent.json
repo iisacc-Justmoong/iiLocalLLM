@@ -1,0 +1,124 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:5d90c757a36fc537ceebee2ec43849dd772b519a77d038375ba7e0ad3ae8510f",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "docs/Windows.md",
+    "sha256": "8a2b7a51858d6a58e8504e01f47202534fcfa5e6ff4d7086249b8556c0aa3d4f",
+    "bytes": 762,
+    "line_count": 8,
+    "encoding": "utf-8",
+    "language": "ko"
+  },
+  "document": {
+    "title": "Windows 실행",
+    "role": "guide",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "heading",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "# Windows 실행\r\n",
+      "level": 1,
+      "title": "Windows 실행"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "paragraph",
+      "start_line": 3,
+      "end_line": 3,
+      "raw": "Qt 6.8의 MinGW-w64 헤더에 없는 Windows 10 스레드 전력 제어 ABI를 호환 헤더로 제공한다. 새 Windows SDK에서는 기존 정의를 사용하며 CPU llama.cpp 런타임을 그대로 빌드한다. `build/`의 native grammar 및 CPU 런타임 테스트로 연결과 실행을 검증한다.\r\n"
+    },
+    {
+      "id": "b000004",
+      "kind": "heading",
+      "start_line": 4,
+      "end_line": 4,
+      "raw": "# 네이티브 메모리 조회\r\n",
+      "level": 1,
+      "title": "네이티브 메모리 조회"
+    },
+    {
+      "id": "b000005",
+      "kind": "blank",
+      "start_line": 5,
+      "end_line": 5,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000006",
+      "kind": "paragraph",
+      "start_line": 6,
+      "end_line": 6,
+      "raw": "Windows의 RAM 조회는 최소 Windows 헤더를 사용한다. Qt 헤더와 전체 RPC 헤더의 중복 정의를 피하면서 `GlobalMemoryStatusEx`를 실제로 호출하며, Windows 런타임 테스트는 사용 가능한 RAM 값이 존재하고 양수인지 확인한다.\r\n"
+    },
+    {
+      "id": "b000007",
+      "kind": "blank",
+      "start_line": 7,
+      "end_line": 7,
+      "raw": "\r\n"
+    },
+    {
+      "id": "b000008",
+      "kind": "paragraph",
+      "start_line": 8,
+      "end_line": 8,
+      "raw": "최신 구성·실행 결과와 복구 조치는 [Windows 빌드 및 실행](WindowsBuildAndRun.md)에 기록한다.\r\n"
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000001",
+      "parent_id": null,
+      "level": 1,
+      "title": "Windows 실행",
+      "anchor": "windows-실행",
+      "start_line": 1
+    },
+    {
+      "block_id": "b000004",
+      "parent_id": null,
+      "level": 1,
+      "title": "네이티브 메모리 조회",
+      "anchor": "네이티브-메모리-조회",
+      "start_line": 4
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [],
+    "commands": [],
+    "links": [
+      {
+        "block_id": "b000008",
+        "label": "Windows 빌드 및 실행",
+        "target": "WindowsBuildAndRun.md",
+        "kind": "relative",
+        "line": 8
+      }
+    ],
+    "tables": []
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

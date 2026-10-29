@@ -56,10 +56,28 @@ private slots:
             for (auto it = patch.begin(); it != patch.end(); ++it) object.insert(it.key(), it.value());
             QVERIFY_THROWS_EXCEPTION(Error, parseModelManifest(object));
         }
-        auto custom = minimal(); custom["format"] = "onnx";
-        QVERIFY_THROWS_EXCEPTION(Error, parseModelManifest(custom));
-        custom["entry_point"] = "model.onnx";
-        QCOMPARE(parseModelManifest(custom).format, QStringLiteral("onnx"));
+        auto custom = minimal(); custom["format"] = "safetensors"; custom["entry_point"] = "model.safetensors";
+        QCOMPARE(parseModelManifest(custom).format, QStringLiteral("safetensors"));
+        for (const auto& name : {QStringLiteral("model.onnx"), QStringLiteral("MODEL.ONNX")}) {
+            auto invalid = custom; invalid["entry_point"] = name;
+            QVERIFY_THROWS_EXCEPTION(Error, parseModelManifest(invalid));
+            invalid = minimal(); invalid["projector"] = name;
+            QVERIFY_THROWS_EXCEPTION(Error, parseModelManifest(invalid));
+            invalid = minimal(); invalid["files"] = QJsonArray{QJsonObject{{"path", name}, {"size", 1}, {"sha256", QString(64, 'a')}}};
+            QVERIFY_THROWS_EXCEPTION(Error, parseModelManifest(invalid));
+        }
+        auto onnx = custom; onnx["format"] = "onnx";
+        QVERIFY_THROWS_EXCEPTION(Error, parseModelManifest(onnx));
+    }
+    void installRejectsUnlistedOnnxWithoutChangingSource() {
+        QTemporaryDir root(QDir::current().filePath("catalog-onnx-XXXXXX")); QVERIFY(root.isValid());
+        const auto source = package(root.filePath("source"));
+        write(QDir(source).filePath("nested/unsafe.ONNX"), "fixture");
+        ModelCatalog catalog(root.filePath("Models"));
+        QVERIFY_THROWS_EXCEPTION(Error, catalog.install(source));
+        QVERIFY(QFileInfo::exists(QDir(source).filePath("model.gguf")));
+        QVERIFY(QFileInfo::exists(QDir(source).filePath("nested/unsafe.ONNX")));
+        QVERIFY(!QFileInfo::exists(root.filePath("Models/qwen3-8b-q4")));
     }
     void projectorIsPackageOwnedAndIntegrityChecked() {
         auto manifest=minimal();manifest["projector"]="mmproj.gguf";

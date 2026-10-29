@@ -1,5 +1,10 @@
 # iiLocalLLM
 
+The service exposes a model-neutral text embedding interface for explicitly
+declared embedding models, including a native GGUF runtime implementation.
+See [text embeddings](docs/Embeddings.md) for model capability, pooling,
+resource and verification boundaries.
+
 C++23 local model management and inference. Version **0.56.0** separates the
 agent/MCP harness into [iiMultimodalAgent](../iiMultimodalAgent/README.md).
 iiLocalLLM no longer discovers, links or exports iiDecision or agent code.
@@ -69,3 +74,12 @@ Related implementation contracts: [Native tool-turn contracts](docs/NativeToolTe
 Managed MLX environments build a validated Transformers import index to avoid repeated model-source scans during worker startup. See [MLX import metadata](docs/MlxImportIndex.md) for preparation, invalidation and unchanged inference deadlines.
 
 Model integrity still verifies every byte; the macOS streaming SHA-256 path uses the system implementation. See [model integrity](docs/ModelIntegrity.md).
+
+<!-- workspace-docs:readme:start -->
+## Documentation entry points
+
+- Human overview: this English `README.md`.
+- Agent instructions: [AGENT.md](AGENT.md).
+- Human documentation: [documentation index](docs/README.md).
+- Structured agent documentation: [agent index](docs/agent-index.json).
+<!-- workspace-docs:readme:end -->

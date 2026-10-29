@@ -1,0 +1,142 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:27828befc6579465d547714e4f0a9d7def2d474094ab265eca1907d16f99e98e",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "docs/ModuleExtraction.md",
+    "sha256": "608de635176052dac632f6194321a7501c6bb3fb2390da4c95143c182fc4e88d",
+    "bytes": 1476,
+    "line_count": 25,
+    "encoding": "utf-8",
+    "language": "en"
+  },
+  "document": {
+    "title": "Inference and agent module boundary",
+    "role": "guide",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "heading",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "# Inference and agent module boundary\n",
+      "level": 1,
+      "title": "Inference and agent module boundary"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "paragraph",
+      "start_line": 3,
+      "end_line": 7,
+      "raw": "iiLocalLLM 0.56.0 provides model/runtime services independently of iiDecision and\niiMultimodalAgent. Agent sources, MCP transports, decision adapters, private\nschema/context/web/permission parsers, question QML, agent executables, fixtures,\nfeature docs and regression tests move to\n[iiMultimodalAgent](../../iiMultimodalAgent/README.md).\n"
+    },
+    {
+      "id": "b000004",
+      "kind": "blank",
+      "start_line": 8,
+      "end_line": 8,
+      "raw": "\n"
+    },
+    {
+      "id": "b000005",
+      "kind": "paragraph",
+      "start_line": 9,
+      "end_line": 11,
+      "raw": "Its installed consumer asserts that `find_package(iiLocalLLM)` imports neither\niiDecision nor iiMultimodalAgent. ServiceModel adapter tests move with the agent;\nthe service suite keeps model/context/conversation/transport tests independently.\n"
+    },
+    {
+      "id": "b000006",
+      "kind": "blank",
+      "start_line": 12,
+      "end_line": 12,
+      "raw": "\n"
+    },
+    {
+      "id": "b000007",
+      "kind": "paragraph",
+      "start_line": 13,
+      "end_line": 15,
+      "raw": "Native media/projectors, modality masks, llama.cpp and MLX remain in inference.\nThe agent owns model selection, iiDecision evaluation, tools and transcript\nsemantics. Windows metadata and SDK install discovery follow this direction.\n"
+    },
+    {
+      "id": "b000008",
+      "kind": "blank",
+      "start_line": 16,
+      "end_line": 16,
+      "raw": "\n"
+    },
+    {
+      "id": "b000009",
+      "kind": "paragraph",
+      "start_line": 17,
+      "end_line": 20,
+      "raw": "Rebuild consumers using [the migration table](../../iiMultimodalAgent/docs/Migration.md).\nPersisted session/wire schemas stay stable. Existing uncommitted history and\nWindows fixes move with their implementations. This change does not remove the\ninherited Qt Core/Network API or the optional MLX Python worker.\n"
+    },
+    {
+      "id": "b000010",
+      "kind": "blank",
+      "start_line": 21,
+      "end_line": 21,
+      "raw": "\n"
+    },
+    {
+      "id": "b000011",
+      "kind": "paragraph",
+      "start_line": 22,
+      "end_line": 25,
+      "raw": "On Apple hosts, CTest and `install.sh` clear process-local `DYLD_LIBRARY_PATH`,\nframework, fallback and versioned overrides. This prevents login-shell SDK paths\nfrom replacing the packages selected by CMake. User shell profiles are unchanged.\nThe agent package additionally tests actual symbol-owner paths.\n"
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000001",
+      "parent_id": null,
+      "level": 1,
+      "title": "Inference and agent module boundary",
+      "anchor": "inference-and-agent-module-boundary",
+      "start_line": 1
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [],
+    "commands": [],
+    "links": [
+      {
+        "block_id": "b000003",
+        "label": "iiMultimodalAgent",
+        "target": "../../iiMultimodalAgent/README.md",
+        "kind": "relative",
+        "line": 7
+      },
+      {
+        "block_id": "b000009",
+        "label": "the migration table",
+        "target": "../../iiMultimodalAgent/docs/Migration.md",
+        "kind": "relative",
+        "line": 17
+      }
+    ],
+    "tables": []
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

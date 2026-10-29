@@ -1,0 +1,150 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:f0a79e82f06921c03ff4b18a8256c35725fcc77be8e98f91bc82c94cf0cb8284",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "docs/Windows-validation.md",
+    "sha256": "8d8326d80fbaaac9febd7651890f988fd36fd890a92a09a37c61bd7452f6dd25",
+    "bytes": 1006,
+    "line_count": 22,
+    "encoding": "utf-8",
+    "language": "en"
+  },
+  "document": {
+    "title": "Windows validation (2026-10-19)",
+    "role": "guide",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "heading",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "# Windows validation (2026-10-19)\n",
+      "level": 1,
+      "title": "Windows validation (2026-10-19)"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "paragraph",
+      "start_line": 3,
+      "end_line": 7,
+      "raw": "The MSVC x64 Release build completes with Qt 6.8.3 and CMake 4.4.4. On a\ncase-insensitive filesystem, the C runtime's `memory.h` lookup can reach the\nSDK's `Memory.h` inside an `extern \"C\"` block. Its C++ declarations now explicitly\nretain C++ linkage. The MemoryHeaderInterop regression includes that header\ninside C linkage and verifies both C memory functions and the native RAM query.\n"
+    },
+    {
+      "id": "b000004",
+      "kind": "blank",
+      "start_line": 8,
+      "end_line": 8,
+      "raw": "\n"
+    },
+    {
+      "id": "b000005",
+      "kind": "paragraph",
+      "start_line": 9,
+      "end_line": 10,
+      "raw": "The full build contains 73 CTest suites. After a complete run and a focused\nretry with Git for Windows available, 66 suites pass. Seven suites still fail:\n"
+    },
+    {
+      "id": "b000006",
+      "kind": "blank",
+      "start_line": 11,
+      "end_line": 11,
+      "raw": "\n"
+    },
+    {
+      "id": "b000007",
+      "kind": "list",
+      "start_line": 12,
+      "end_line": 18,
+      "raw": "- iiLocalLLM.memory_dream\n- iiLocalLLM.session_history\n- iiLocalLLM.session_history_engine\n- iiLocalLLM.shell_tasks\n- iiLocalLLM.discovery\n- iiLocalLLM.mcp_http_client\n- iiLocalLLM.mcp_stdio\n",
+      "items": [
+        {
+          "marker": "-",
+          "text": "iiLocalLLM.memory_dream",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "iiLocalLLM.session_history",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "iiLocalLLM.session_history_engine",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "iiLocalLLM.shell_tasks",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "iiLocalLLM.discovery",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "iiLocalLLM.mcp_http_client",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "iiLocalLLM.mcp_stdio",
+          "checked": null
+        }
+      ]
+    },
+    {
+      "id": "b000008",
+      "kind": "blank",
+      "start_line": 19,
+      "end_line": 19,
+      "raw": "\n"
+    },
+    {
+      "id": "b000009",
+      "kind": "paragraph",
+      "start_line": 20,
+      "end_line": 22,
+      "raw": "The MemoryHeaderInterop regression passes. The remaining full-suite failures\nprevent installation in this maintenance run. No tests are disabled. Native\nmodel inference that requires separately provisioned weights was not exercised.\n"
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000001",
+      "parent_id": null,
+      "level": 1,
+      "title": "Windows validation (2026-10-19)",
+      "anchor": "windows-validation-2026-10-19",
+      "start_line": 1
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [],
+    "commands": [],
+    "links": [],
+    "tables": []
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

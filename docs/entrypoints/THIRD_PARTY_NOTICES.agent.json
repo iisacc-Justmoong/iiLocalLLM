@@ -1,0 +1,991 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:e7f5d27e7047a40f7fc75e70f5989ab3fa002130e46006d0822efb5a8a1b3c1e",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "THIRD_PARTY_NOTICES.md",
+    "sha256": "68b236f8fc30b54664985d92e58116b4fb79d71c92240f8e99305fa054ba0bf2",
+    "bytes": 14383,
+    "line_count": 91,
+    "encoding": "utf-8",
+    "language": "ko"
+  },
+  "document": {
+    "title": "Third-party notices",
+    "role": "guide",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "heading",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "# Third-party notices\n",
+      "level": 1,
+      "title": "Third-party notices"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "paragraph",
+      "start_line": 3,
+      "end_line": 6,
+      "raw": "Nemotron-H의 레이어별 전문가 수 호환성 수정은 MIT 라이선스의\nggml-org/llama.cpp 커밋 `cd0a5b6a180dff0048e5fd993098b21c0b2c91b8`에서 가져왔다.\n`cmake/LlamaNemotronBolt.cmake`는 필요한 로더·그래프 변경을 빌드 사본에만 적용한다.\n출처와 검증 계약은 [NemotronBolt.md](docs/NemotronBolt.md)에 기록한다.\n"
+    },
+    {
+      "id": "b000004",
+      "kind": "blank",
+      "start_line": 7,
+      "end_line": 7,
+      "raw": "\n"
+    },
+    {
+      "id": "b000005",
+      "kind": "paragraph",
+      "start_line": 8,
+      "end_line": 10,
+      "raw": "The inference package retains Qt 6.8.3 Core/Network, pinned llama.cpp/libmtmd,\nmlx-lm sampling sources, cpp-httplib, and platform hardware API notices.\nOriginal dependency licenses are installed in `share/iiLocalLLM/licenses`.\n"
+    },
+    {
+      "id": "b000006",
+      "kind": "blank",
+      "start_line": 11,
+      "end_line": 11,
+      "raw": "\n"
+    },
+    {
+      "id": "b000007",
+      "kind": "paragraph",
+      "start_line": 12,
+      "end_line": 15,
+      "raw": "Harness parser notices (jsoncons, tree-sitter/bash, wildmatch, md4c, libyaml and\nLexbor) moved with their source to\n[ iiMultimodalAgent third-party notices](../iiMultimodalAgent/THIRD_PARTY_NOTICES.md).\nTheir headers and implementations are no longer linked into iiLocalLLM.\n"
+    },
+    {
+      "id": "b000008",
+      "kind": "blank",
+      "start_line": 16,
+      "end_line": 16,
+      "raw": "\n"
+    },
+    {
+      "id": "b000009",
+      "kind": "table",
+      "start_line": 17,
+      "end_line": 23,
+      "raw": "| 의존성 | 도입 이유·규모 | 라이선스·유지보수 |\n| --- | --- | --- |\n| Qt 6.8.3 Core/Network | 기존 Core에 Network 추가. Local Socket, QProcess, QJsonDocument, Unicode 변환, QCryptographicHash, QSaveFile, QLockFile 재사용 | 기존 Qt 설치 조건. 모듈별 LGPL/GPL/상용 배포 조건 적용 |\n| llama.cpp | GGUF, tokenizer, chat template, ggml 장치 검사, CPU/Metal/CUDA/Vulkan, sampler, KV. 기본 ON이며 명시적 OFF 가능, SDK에 정적 링크 | MIT. API 변경을 관리하기 위해 커밋·아카이브 SHA-256 고정 |\n| MLX / mlx-lm | Apple Silicon, sampler, prompt cache. 별도 Python 환경으로 기본 C++ 의존성 규모 제한 | MIT. 검증 릴리스 mlx 0.32.2 / mlx-lm 0.31.3 |\n| cpp-httplib 0.54.1 | HTTP/1.1 parsing, body 상한, thread pool, chunked streaming, disconnect 검사. 약 767 KiB 단일 헤더를 내부에서 사용 | MIT. 배포 태그와 SHA-256 고정, 원본 고지 설치. TLS·압축 외부 의존성 비활성화 |\n| OS 하드웨어 API | Metal/sysctl, DXGI, sysfs/sysconf. 별도 SDK 라이브러리 배포 없이 OS API를 재사용 | 플랫폼 제공 API. 추가 vendoring 없음 |\n",
+      "columns": [
+        "의존성",
+        "도입 이유·규모",
+        "라이선스·유지보수"
+      ],
+      "rows": [
+        [
+          "Qt 6.8.3 Core/Network",
+          "기존 Core에 Network 추가. Local Socket, QProcess, QJsonDocument, Unicode 변환, QCryptographicHash, QSaveFile, QLockFile 재사용",
+          "기존 Qt 설치 조건. 모듈별 LGPL/GPL/상용 배포 조건 적용"
+        ],
+        [
+          "llama.cpp",
+          "GGUF, tokenizer, chat template, ggml 장치 검사, CPU/Metal/CUDA/Vulkan, sampler, KV. 기본 ON이며 명시적 OFF 가능, SDK에 정적 링크",
+          "MIT. API 변경을 관리하기 위해 커밋·아카이브 SHA-256 고정"
+        ],
+        [
+          "MLX / mlx-lm",
+          "Apple Silicon, sampler, prompt cache. 별도 Python 환경으로 기본 C++ 의존성 규모 제한",
+          "MIT. 검증 릴리스 mlx 0.32.2 / mlx-lm 0.31.3"
+        ],
+        [
+          "cpp-httplib 0.54.1",
+          "HTTP/1.1 parsing, body 상한, thread pool, chunked streaming, disconnect 검사. 약 767 KiB 단일 헤더를 내부에서 사용",
+          "MIT. 배포 태그와 SHA-256 고정, 원본 고지 설치. TLS·압축 외부 의존성 비활성화"
+        ],
+        [
+          "OS 하드웨어 API",
+          "Metal/sysctl, DXGI, sysfs/sysconf. 별도 SDK 라이브러리 배포 없이 OS API를 재사용",
+          "플랫폼 제공 API. 추가 vendoring 없음"
+        ]
+      ]
+    },
+    {
+      "id": "b000010",
+      "kind": "blank",
+      "start_line": 24,
+      "end_line": 24,
+      "raw": "\n"
+    },
+    {
+      "id": "b000011",
+      "kind": "paragraph",
+      "start_line": 25,
+      "end_line": 25,
+      "raw": "가속 모듈 빌드에는 플랫폼에 따라 Apple SDK, NVIDIA CUDA Toolkit, 또는 Vulkan SDK(glslc/SPIRV-Headers)가 필요하다. 설치되어 있는 도구 체인만 탐지하며 자동 다운로드·설치는 하지 않는다. CUDA Toolkit 및 GPU 드라이버의 배포 조건은 각 공급자 조건을 따른다. 모델 장치 선택은 ggml의 고정된 API를 사용하므로 GPU 탐지 라이브러리를 별도로 추가하지 않는다.\n"
+    },
+    {
+      "id": "b000012",
+      "kind": "blank",
+      "start_line": 26,
+      "end_line": 26,
+      "raw": "\n"
+    },
+    {
+      "id": "b000013",
+      "kind": "paragraph",
+      "start_line": 27,
+      "end_line": 27,
+      "raw": "모델 관리에는 기존 Qt의 파일 복사·SHA-256·원자적 파일 저장·프로세스 간 잠금을 재사용한다. 모델 URI, manifest 필드, 설치/로드 수명은 iiLocalLLM의 도메인 계약으로 구현한다. 원격 pull은 이미 링크한 Qt Network의 QNetworkAccessManager를 사용한다. HTTPS/리다이렉트/전송 timeout은 Qt에 맡기고 서비스 고유 registry·별칭·해시 검증·원자적 설치만 구현한다. 추가 Hub SDK, HTTP 다운로드 구현, 데이터베이스를 도입하지 않아 유지보수·라이선스·의존성 규모를 유지한다. 엔진을 링크하지 않는 빌드에서도 ModelCatalog를 사용할 수 있다.\n"
+    },
+    {
+      "id": "b000014",
+      "kind": "blank",
+      "start_line": 28,
+      "end_line": 28,
+      "raw": "\n"
+    },
+    {
+      "id": "b000015",
+      "kind": "paragraph",
+      "start_line": 29,
+      "end_line": 29,
+      "raw": "HTTP 도입 전 설치된 Qt HttpServer 6.8.3의 chunked responder와 cpp-httplib를 검토했다. cpp-httplib는 요청 body 상한·고정 thread pool·연결 종료 검사를 공개 API로 제공하므로 HTTP 파서를 직접 구현하지 않고 서비스 future를 연결할 수 있다. Qt HttpServer 모듈을 추가하지 않고 MIT 단일 헤더를 선택했다. 헤더는 third_party/cpp-httplib에 원본 그대로 보관하고 CMake 구성 시 해시를 검사하므로 HTTP 의존성의 추가 다운로드가 없다. 서비스 고유 JSON 매핑과 SSE 이벤트 조합만 직접 구현했다.\n"
+    },
+    {
+      "id": "b000016",
+      "kind": "blank",
+      "start_line": 30,
+      "end_line": 30,
+      "raw": "\n"
+    },
+    {
+      "id": "b000017",
+      "kind": "paragraph",
+      "start_line": 31,
+      "end_line": 31,
+      "raw": "출처 확인일: 2026-09-07. 가중치를 SDK에 포함하거나 자동 설치하지 않으며 모델 라이선스는 별도로 적용한다.\n"
+    },
+    {
+      "id": "b000018",
+      "kind": "blank",
+      "start_line": 32,
+      "end_line": 32,
+      "raw": "\n"
+    },
+    {
+      "id": "b000019",
+      "kind": "list",
+      "start_line": 33,
+      "end_line": 41,
+      "raw": "- [llama.cpp 고정 커밋](https://github.com/ggml-org/llama.cpp/tree/5202104b59ada9005db079eea43882a2b7bf5802)\n- 아카이브 SHA-256: `58345c999af65b5dec07b71601eabbb0a30cc1f8842d4f00190b87b5a776fc7e`\n- [C API](https://github.com/ggml-org/llama.cpp/blob/5202104b59ada9005db079eea43882a2b7bf5802/include/llama.h), [llama.cpp MIT license](https://github.com/ggml-org/llama.cpp/blob/5202104b59ada9005db079eea43882a2b7bf5802/LICENSE)\n- [mlx-lm](https://github.com/ml-explore/mlx-lm), [generation](https://github.com/ml-explore/mlx-lm/blob/6d21ce4b065a2e163fa6de76a9936c61aeb5784a/mlx_lm/generate.py), [cache](https://github.com/ml-explore/mlx-lm/blob/6d21ce4b065a2e163fa6de76a9936c61aeb5784a/mlx_lm/models/cache.py), [MIT license](https://github.com/ml-explore/mlx-lm/blob/main/LICENSE)\n- [Qt licensing](https://doc.qt.io/qt-6/licensing.html), [QLocalServer](https://doc.qt.io/qt-6/qlocalserver.html)\n- [QCryptographicHash](https://doc.qt.io/qt-6/qcryptographichash.html), [QSaveFile](https://doc.qt.io/qt-6/qsavefile.html), [QLockFile](https://doc.qt.io/qt-6/qlockfile.html), [QDir::removeRecursively](https://doc.qt.io/qt-6/qdir.html#removeRecursively)\n- [cpp-httplib v0.54.1](https://github.com/yhirose/cpp-httplib/releases/tag/v0.54.1), [고정 헤더](https://github.com/yhirose/cpp-httplib/blob/v0.54.1/httplib.h), [MIT license](https://github.com/yhirose/cpp-httplib/blob/v0.54.1/LICENSE)\n- cpp-httplib httplib.h SHA-256: `5933c14b2d0f45212925ed18ca579841f5fce717f431fc20cec712423e905b10`\n- [Qt 6.8 chunked responder](https://doc.qt.io/qt-6.8/qhttpserverresponder.html), [OpenAI Chat Completions reference](https://developers.openai.com/api/reference/resources/chat)\n",
+      "items": [
+        {
+          "marker": "-",
+          "text": "[llama.cpp 고정 커밋](https://github.com/ggml-org/llama.cpp/tree/5202104b59ada9005db079eea43882a2b7bf5802)",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "아카이브 SHA-256: `58345c999af65b5dec07b71601eabbb0a30cc1f8842d4f00190b87b5a776fc7e`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "[C API](https://github.com/ggml-org/llama.cpp/blob/5202104b59ada9005db079eea43882a2b7bf5802/include/llama.h), [llama.cpp MIT license](https://github.com/ggml-org/llama.cpp/blob/5202104b59ada9005db079eea43882a2b7bf5802/LICENSE)",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "[mlx-lm](https://github.com/ml-explore/mlx-lm), [generation](https://github.com/ml-explore/mlx-lm/blob/6d21ce4b065a2e163fa6de76a9936c61aeb5784a/mlx_lm/generate.py), [cache](https://github.com/ml-explore/mlx-lm/blob/6d21ce4b065a2e163fa6de76a9936c61aeb5784a/mlx_lm/models/cache.py), [MIT license](https://github.com/ml-explore/mlx-lm/blob/main/LICENSE)",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "[Qt licensing](https://doc.qt.io/qt-6/licensing.html), [QLocalServer](https://doc.qt.io/qt-6/qlocalserver.html)",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "[QCryptographicHash](https://doc.qt.io/qt-6/qcryptographichash.html), [QSaveFile](https://doc.qt.io/qt-6/qsavefile.html), [QLockFile](https://doc.qt.io/qt-6/qlockfile.html), [QDir::removeRecursively](https://doc.qt.io/qt-6/qdir.html#removeRecursively)",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "[cpp-httplib v0.54.1](https://github.com/yhirose/cpp-httplib/releases/tag/v0.54.1), [고정 헤더](https://github.com/yhirose/cpp-httplib/blob/v0.54.1/httplib.h), [MIT license](https://github.com/yhirose/cpp-httplib/blob/v0.54.1/LICENSE)",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "cpp-httplib httplib.h SHA-256: `5933c14b2d0f45212925ed18ca579841f5fce717f431fc20cec712423e905b10`",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "[Qt 6.8 chunked responder](https://doc.qt.io/qt-6.8/qhttpserverresponder.html), [OpenAI Chat Completions reference](https://developers.openai.com/api/reference/resources/chat)",
+          "checked": null
+        }
+      ]
+    },
+    {
+      "id": "b000020",
+      "kind": "blank",
+      "start_line": 42,
+      "end_line": 42,
+      "raw": "\n"
+    },
+    {
+      "id": "b000021",
+      "kind": "paragraph",
+      "start_line": 43,
+      "end_line": 43,
+      "raw": "llama.cpp 정적 링크 시 원본 MIT 고지를 설치 패키지의 share/iiLocalLLM/licenses/llama.cpp.LICENSE에 포함한다. MLX 환경에는 원본 배포판의 고지를 유지한다. iiLocalLLM의 MIT 선언은 외부 라이선스를 대체하지 않는다.\n"
+    },
+    {
+      "id": "b000022",
+      "kind": "blank",
+      "start_line": 44,
+      "end_line": 44,
+      "raw": "\n"
+    },
+    {
+      "id": "b000023",
+      "kind": "paragraph",
+      "start_line": 45,
+      "end_line": 45,
+      "raw": "원격 pull/CLI 도입에는 이미 유지 중인 Qt 6.8.3 Core/Network를 재사용했다. CLI는 추론 SDK를 링크하지 않는다. Qt의 공유 라이브러리 라이선스 조건을 유지하며 추가 Hub 의존성은 없다. [QNetworkAccessManager](https://doc.qt.io/qt-6.8/qnetworkaccessmanager.html)와 [QNetworkRequest의 redirect/transfer timeout](https://doc.qt.io/qt-6.8/qnetworkrequest.html)을 사용한다.\n"
+    },
+    {
+      "id": "b000024",
+      "kind": "blank",
+      "start_line": 46,
+      "end_line": 46,
+      "raw": "\n"
+    },
+    {
+      "id": "b000025",
+      "kind": "paragraph",
+      "start_line": 47,
+      "end_line": 47,
+      "raw": "기본 Qwen registry는 [공식 GGUF 저장소의 고정 revision](https://huggingface.co/Qwen/Qwen3-8B-GGUF/tree/7c41481f57cb95916b40956ab2f0b139b296d974)을 참조한다. commit/파일 크기/LFS SHA-256을 공식 API로 확인했으며 실제 가중치는 번들에 포함하지 않는다. 모델 원본의 라이선스는 해당 저장소를 따른다. 사용자가 pull을 실행하기 전 SDK 빌드·설치에서 모델을 다운로드하지 않는다.\n"
+    },
+    {
+      "id": "b000026",
+      "kind": "blank",
+      "start_line": 48,
+      "end_line": 48,
+      "raw": "\n"
+    },
+    {
+      "id": "b000027",
+      "kind": "paragraph",
+      "start_line": 49,
+      "end_line": 49,
+      "raw": "2026-09-13 최소 대화용 모델로 [공식 Qwen2.5-0.5B-Instruct-GGUF](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/tree/9217f5db79a29953eb74d5343926648285ec7e67)의 Q4_K_M을 등록했다. 원본 모델 카드는 Apache-2.0을 선언한다. 491,400,032 bytes의 작은 모델로 최초 다운로드·메모리 비용을 낮추고, 기존 llama.cpp 어댑터와 Qt 다운로드 경로를 그대로 사용한다. 추가 런타임·Hub 라이브러리 의존성은 없다. 모델 revision·파일 크기·SHA-256은 공식 API와 대조하며 SDK에 가중치를 재배포하지 않는다. 모델 품질과 모델 계열의 업그레이드는 SDK 추론 인터페이스와 독립적으로 검토한다.\n"
+    },
+    {
+      "id": "b000028",
+      "kind": "blank",
+      "start_line": 50,
+      "end_line": 51,
+      "raw": "\n\n"
+    },
+    {
+      "id": "b000029",
+      "kind": "heading",
+      "start_line": 52,
+      "end_line": 52,
+      "raw": "## 0.3.0 제어 카탈로그와 MLX 샘플러\n",
+      "level": 2,
+      "title": "0.3.0 제어 카탈로그와 MLX 샘플러"
+    },
+    {
+      "id": "b000030",
+      "kind": "blank",
+      "start_line": 53,
+      "end_line": 53,
+      "raw": "\n"
+    },
+    {
+      "id": "b000031",
+      "kind": "paragraph",
+      "start_line": 54,
+      "end_line": 54,
+      "raw": "2026-09-13 공식 선언을 커밋·SHA-256으로 잠갔으며 [ParameterSources.md](docs/ParameterSources.md)에 13개 프로젝트의 버전·라이선스·규모를 기록했다. 변환한 주석·타입 선언의 고지는 docs/parameter-licenses에 보관하고 설치한다. Transformers/PEFT/TRL/Accelerate/DeepSpeed/vLLM/SGLang은 Apache-2.0, llama.cpp/Ollama/LM Studio/MLX/mlx-lm은 MIT, PyTorch는 원본 BSD 계열 고지와 포함된 NOTICE를 따른다. 학습 프레임워크는 링크·실행 의존성으로 추가하지 않았다. 정적 추출에는 Python 표준 AST를, 객체 처리에는 기존 Qt JSON을 재사용한다.\n"
+    },
+    {
+      "id": "b000032",
+      "kind": "blank",
+      "start_line": 55,
+      "end_line": 55,
+      "raw": "\n"
+    },
+    {
+      "id": "b000033",
+      "kind": "paragraph",
+      "start_line": 56,
+      "end_line": 56,
+      "raw": "MLX 0.32.2 + mlx-lm 0.31.3의 min-p 최소 후보 수 실행 오류를 실제 테스트에서 재현했다. 공식 커밋 `dcbcf786c0cf56f9a12fabe9468c887781431ae2`의 수정된 `sample_utils.py`를 변경 없이 `src/runtimes/mlx_sample_utils.py`에 포함하여 재사용한다. 파일 SHA-256은 `c93c1eef794725f9f7ce77b6212f61eb6d0fe17b9cd87c06cec6470ee12b07f2`이며 CMake에서 확인한다. 유지 중인 MIT 구현의 작은 단일 파일을 사용하며 샘플러 알고리즘을 별도로 재작성하지 않았다. 모델 로딩·생성·캐시는 검증된 기존 mlx-lm 0.31.3 의존성을 유지한다.\n"
+    },
+    {
+      "id": "b000034",
+      "kind": "blank",
+      "start_line": 57,
+      "end_line": 57,
+      "raw": "\n"
+    },
+    {
+      "id": "b000035",
+      "kind": "heading",
+      "start_line": 58,
+      "end_line": 58,
+      "raw": "## llama.cpp common conversation support\n",
+      "level": 2,
+      "title": "llama.cpp common conversation support"
+    },
+    {
+      "id": "b000036",
+      "kind": "blank",
+      "start_line": 59,
+      "end_line": 59,
+      "raw": "\n"
+    },
+    {
+      "id": "b000037",
+      "kind": "paragraph",
+      "start_line": 60,
+      "end_line": 60,
+      "raw": "The existing pinned llama.cpp source also supplies the native Jinja chat templates, tool grammar sampling and PEG output parser. No new inference process is introduced. The common static library is linked privately; its cpp-httplib symbols use a separate namespace to avoid collisions with the service HTTP server. OpenSSL downloads, LLGuidance and upstream subprocess support are disabled.\n"
+    },
+    {
+      "id": "b000038",
+      "kind": "blank",
+      "start_line": 61,
+      "end_line": 61,
+      "raw": "\n"
+    },
+    {
+      "id": "b000039",
+      "kind": "paragraph",
+      "start_line": 62,
+      "end_line": 62,
+      "raw": "Its bundled nlohmann/json 3.12.0 is MIT licensed. Copyright notices and the MIT text are preserved in `third_party/llama-common/nlohmann-json.LICENSE`; common/base64.hpp is Unlicense (`third_party/llama-common/base64.UNLICENSE`). The existing llama.cpp and cpp-httplib license notices continue to apply.\n"
+    },
+    {
+      "id": "b000040",
+      "kind": "blank",
+      "start_line": 63,
+      "end_line": 63,
+      "raw": "\n"
+    },
+    {
+      "id": "b000041",
+      "kind": "heading",
+      "start_line": 64,
+      "end_line": 64,
+      "raw": "## 프로젝트 지침 파서 (2026-09-14)\n",
+      "level": 2,
+      "title": "프로젝트 지침 파서 (2026-09-14)"
+    },
+    {
+      "id": "b000042",
+      "kind": "blank",
+      "start_line": 65,
+      "end_line": 65,
+      "raw": "\n"
+    },
+    {
+      "id": "b000043",
+      "kind": "paragraph",
+      "start_line": 66,
+      "end_line": 66,
+      "raw": "Markdown은 [MD4C release-0.5.3](https://github.com/mity/md4c/tree/472c417005c2c71b8617de4f7b8d6b30411d78f4), YAML은 [LibYAML 0.2.5](https://github.com/yaml/libyaml/tree/2c891fc7a770e8ba2fec34fc6b545c672beb37e6)를 사용한다. 둘 다 MIT 라이선스이며 공개 C++ 헤더로 외부 타입을 노출하지 않는다. 원본 C 파서를 private object로 정적 포함하므로 실행 프로세스·Python·추가 공유 라이브러리가 필요하지 않다. 원본 라이선스는 설치된 `share/iiLocalLLM/licenses/md4c.LICENSE`와 `libyaml.LICENSE`에 포함한다.\n"
+    },
+    {
+      "id": "b000044",
+      "kind": "blank",
+      "start_line": 67,
+      "end_line": 67,
+      "raw": "\n"
+    },
+    {
+      "id": "b000045",
+      "kind": "list",
+      "start_line": 68,
+      "end_line": 71,
+      "raw": "- MD4C 공식 태그·변경 기록에서 CommonMark 처리와 복잡도 관련 수정을 확인했다. 압축 원본 244,633 bytes, SHA-256 `353c346f376b87c954a13f3415ede2d51264cc61dc5abcd38ff1d2aa0d059b9e`.\n- LibYAML은 릴리스 주기가 긴 C 파서다. 공식 태그 목록에서 안정판 0.2.5와 0.2.6-rc.1을 확인했으며 안정판을 고정했다. 압축 원본 85,055 bytes, SHA-256 `fa240dbf262be053f3898006d502d514936c818e422afdcf33921c63bed9bf2e`. frontmatter 입력·이벤트·깊이를 제한하고 alias는 거부한다.\n- CMake `ContextParsers.cmake`에서 다운로드 해시를 검사한다. Markdown 토큰화와 YAML 문법을 직접 재구현하지 않고, iiLocalLLM 고유의 경로 범위·규칙 선택·순서·출처 조합만 C++에서 처리한다. glob의 regex 컴파일·매칭은 기존 Qt/PCRE2에 맡기며 지원하는 glob 표기와 차이는 ProjectContext.md에 명시한다.\n- macOS 빌드에서 C 파서를 활성화하면서 ggml의 `.m` 파일과 SDK의 `.mm` 파일을 구분하도록 Objective-C와 Objective-C++ 언어를 명시했다. llama.cpp 원본은 수정하지 않았다.\n",
+      "items": [
+        {
+          "marker": "-",
+          "text": "MD4C 공식 태그·변경 기록에서 CommonMark 처리와 복잡도 관련 수정을 확인했다. 압축 원본 244,633 bytes, SHA-256 `353c346f376b87c954a13f3415ede2d51264cc61dc5abcd38ff1d2aa0d059b9e`.",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "LibYAML은 릴리스 주기가 긴 C 파서다. 공식 태그 목록에서 안정판 0.2.5와 0.2.6-rc.1을 확인했으며 안정판을 고정했다. 압축 원본 85,055 bytes, SHA-256 `fa240dbf262be053f3898006d502d514936c818e422afdcf33921c63bed9bf2e`. frontmatter 입력·이벤트·깊이를 제한하고 alias는 거부한다.",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "CMake `ContextParsers.cmake`에서 다운로드 해시를 검사한다. Markdown 토큰화와 YAML 문법을 직접 재구현하지 않고, iiLocalLLM 고유의 경로 범위·규칙 선택·순서·출처 조합만 C++에서 처리한다. glob의 regex 컴파일·매칭은 기존 Qt/PCRE2에 맡기며 지원하는 glob 표기와 차이는 ProjectContext.md에 명시한다.",
+          "checked": null
+        },
+        {
+          "marker": "-",
+          "text": "macOS 빌드에서 C 파서를 활성화하면서 ggml의 `.m` 파일과 SDK의 `.mm` 파일을 구분하도록 Objective-C와 Objective-C++ 언어를 명시했다. llama.cpp 원본은 수정하지 않았다.",
+          "checked": null
+        }
+      ]
+    },
+    {
+      "id": "b000046",
+      "kind": "blank",
+      "start_line": 72,
+      "end_line": 72,
+      "raw": "\n"
+    },
+    {
+      "id": "b000047",
+      "kind": "heading",
+      "start_line": 73,
+      "end_line": 73,
+      "raw": "## MCP HTTP 클라이언트 (0.7.0)\n",
+      "level": 2,
+      "title": "MCP HTTP 클라이언트 (0.7.0)"
+    },
+    {
+      "id": "b000048",
+      "kind": "blank",
+      "start_line": 74,
+      "end_line": 74,
+      "raw": "\n"
+    },
+    {
+      "id": "b000049",
+      "kind": "paragraph",
+      "start_line": 75,
+      "end_line": 75,
+      "raw": "기존 Qt 6.8.3 Network를 재사용하여 HTTPS, HTTP 메시지 프레이밍과 소켓 처리를 맡겼다. Qt의 관리 상태·기존 배포 라이선스·추가 의존성 규모를 검토했으며 생산 패키지에 새 HTTP 또는 언어 런타임 의존성을 추가하지 않았다. 공통 JSON-RPC 처리, MCP 세션 및 SSE 이벤트 처리는 iiLocalLLM의 프로토콜 계약이다.\n"
+    },
+    {
+      "id": "b000050",
+      "kind": "blank",
+      "start_line": 76,
+      "end_line": 76,
+      "raw": "\n"
+    },
+    {
+      "id": "b000051",
+      "kind": "paragraph",
+      "start_line": 77,
+      "end_line": 77,
+      "raw": "Qt는 응답 헤더 전 EOF에서 POST를 재전송할 수 있으므로, 공개 QIODevice 및 [DoNotBufferUploadDataAttribute](https://doc.qt.io/qt-6.8/qnetworkrequest.html#Attribute-enum)를 사용하여 이미 읽힌 업로드를 되감지 못하게 한다. 중도 종료한 SSE 연결은 캐시에서 정리한다. HTTP 요청 자체의 파서를 복제하거나 Qt private API를 사용하지 않는다. Qt 구현 참조는 [v6.8.3 qhttpnetworkconnectionchannel.cpp](https://github.com/qt/qtbase/blob/v6.8.3/src/network/access/qhttpnetworkconnectionchannel.cpp)이며 이 소스를 패키지에 복사하지 않았다.\n"
+    },
+    {
+      "id": "b000052",
+      "kind": "blank",
+      "start_line": 78,
+      "end_line": 78,
+      "raw": "\n"
+    },
+    {
+      "id": "b000053",
+      "kind": "paragraph",
+      "start_line": 79,
+      "end_line": 79,
+      "raw": "공식 Python MCP SDK 1.26.0(MIT)와 해당 환경의 uvicorn은 HTTP 상호 운용 시험에만 사용한다. 자체 서명 TLS 거부 시험은 사용 가능한 OpenSSL 명령으로 build/tmp 안에 일회용 시험 인증서를 생성하며 생성된 키를 저장소·생산 패키지에 포함하지 않는다.\n"
+    },
+    {
+      "id": "b000054",
+      "kind": "blank",
+      "start_line": 80,
+      "end_line": 80,
+      "raw": "\n"
+    },
+    {
+      "id": "b000055",
+      "kind": "heading",
+      "start_line": 81,
+      "end_line": 81,
+      "raw": "## MCP HTTP 서버 (0.8.0)\n",
+      "level": 2,
+      "title": "MCP HTTP 서버 (0.8.0)"
+    },
+    {
+      "id": "b000056",
+      "kind": "blank",
+      "start_line": 82,
+      "end_line": 82,
+      "raw": "\n"
+    },
+    {
+      "id": "b000057",
+      "kind": "paragraph",
+      "start_line": 83,
+      "end_line": 83,
+      "raw": "기존 [cpp-httplib 0.54.1](https://github.com/yhirose/cpp-httplib/tree/v0.54.1)의 HTTP 서버·동적 worker pool·chunked content provider를 사용한다. MIT 원문과 기존 고정 해시를 유지한다. 별도 네트워크 파서·TLS 라이브러리·Python 생산 서버를 도입하지 않는다. 연결별 MCP 상태, 인증 principal과 세션 연결, SSE 재개 기록 및 상한은 iiLocalLLM의 고유 전송 계약으로 구현했다. 암호 해시와 UUID에는 기존 Qt Core를 사용한다. 공식 Python MCP SDK 1.26.0 및 httpx는 독립 HTTP 클라이언트 시험에만 사용한다.\n"
+    },
+    {
+      "id": "b000058",
+      "kind": "blank",
+      "start_line": 84,
+      "end_line": 84,
+      "raw": "\n"
+    },
+    {
+      "id": "b000059",
+      "kind": "heading",
+      "start_line": 85,
+      "end_line": 85,
+      "raw": "## 0.42.0 WebFetch HTML5 파서\n",
+      "level": 2,
+      "title": "0.42.0 WebFetch HTML5 파서"
+    },
+    {
+      "id": "b000060",
+      "kind": "blank",
+      "start_line": 86,
+      "end_line": 86,
+      "raw": "\n"
+    },
+    {
+      "id": "b000061",
+      "kind": "paragraph",
+      "start_line": 87,
+      "end_line": 87,
+      "raw": "[Lexbor v3.0.0](https://github.com/lexbor/lexbor/releases/tag/v3.0.0)을 2026-09-16 확인했다. 원본 archive SHA-256 `eafaa79ef9871f0bbb1978eda8677d184f7ecdcaa203d7cd25b3f86e32c014c2`, 다운로드 5,777,325바이트이다. 라이선스는 [Apache-2.0](https://github.com/lexbor/lexbor/blob/v3.0.0/LICENSE)이며 LICENSE와 NOTICE를 설치한다. cmake/WebParser.cmake는 core/dom/ns/tag/html/encoding과 플랫폼 ports만 비공개 object로 컴파일한다. C API/심볼/헤더를 SDK에 공개하지 않으며 추가 동적 라이브러리는 없다. 전체 CSS/style/URL 엔진·예제·upstream 테스트를 제품에 링크하지 않는다. 기존 Qt Network를 조회에 재사용한다. 의존성 선정과 구현 차이는 docs/WebFetch.md를 따른다.\n"
+    },
+    {
+      "id": "b000062",
+      "kind": "blank",
+      "start_line": 88,
+      "end_line": 88,
+      "raw": "\n"
+    },
+    {
+      "id": "b000063",
+      "kind": "paragraph",
+      "start_line": 89,
+      "end_line": 91,
+      "raw": "Nemotron Bolt의 Metal top-k=9 specialization은 MIT 라이선스의 llama.cpp\n[#30699](https://github.com/ggml-org/llama.cpp/pull/30699), 병합 커밋 `704366d`의\n수정이다. 다운로드된 빌드 의존성에만 적용하며 원본 shader 사본을 보존한다.\n"
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000001",
+      "parent_id": null,
+      "level": 1,
+      "title": "Third-party notices",
+      "anchor": "third-party-notices",
+      "start_line": 1
+    },
+    {
+      "block_id": "b000029",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "0.3.0 제어 카탈로그와 MLX 샘플러",
+      "anchor": "030-제어-카탈로그와-mlx-샘플러",
+      "start_line": 52
+    },
+    {
+      "block_id": "b000035",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "llama.cpp common conversation support",
+      "anchor": "llamacpp-common-conversation-support",
+      "start_line": 58
+    },
+    {
+      "block_id": "b000041",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "프로젝트 지침 파서 (2026-09-14)",
+      "anchor": "프로젝트-지침-파서-2026-09-14",
+      "start_line": 64
+    },
+    {
+      "block_id": "b000047",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "MCP HTTP 클라이언트 (0.7.0)",
+      "anchor": "mcp-http-클라이언트-070",
+      "start_line": 73
+    },
+    {
+      "block_id": "b000055",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "MCP HTTP 서버 (0.8.0)",
+      "anchor": "mcp-http-서버-080",
+      "start_line": 81
+    },
+    {
+      "block_id": "b000059",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "0.42.0 WebFetch HTML5 파서",
+      "anchor": "0420-webfetch-html5-파서",
+      "start_line": 85
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [
+      {
+        "block_id": "b000011",
+        "line": 25,
+        "text": "가속 모듈 빌드에는 플랫폼에 따라 Apple SDK, NVIDIA CUDA Toolkit, 또는 Vulkan SDK(glslc/SPIRV-Headers)가 필요하다. 설치되어 있는 도구 체인만 탐지하며 자동 다운로드·설치는 하지 않는다. CUDA Toolkit 및 GPU 드라이버의 배포 조건은 각 공급자 조건을 따른다. 모델 장치 선택은 ggml의 고정된 API를 사용하므로 GPU 탐지 라이브러리를 별도로 추가하지 않는다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000021",
+        "line": 43,
+        "text": "llama.cpp 정적 링크 시 원본 MIT 고지를 설치 패키지의 share/iiLocalLLM/licenses/llama.cpp.LICENSE에 포함한다. MLX 환경에는 원본 배포판의 고지를 유지한다. iiLocalLLM의 MIT 선언은 외부 라이선스를 대체하지 않는다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000023",
+        "line": 45,
+        "text": "원격 pull/CLI 도입에는 이미 유지 중인 Qt 6.8.3 Core/Network를 재사용했다. CLI는 추론 SDK를 링크하지 않는다. Qt의 공유 라이브러리 라이선스 조건을 유지하며 추가 Hub 의존성은 없다. [QNetworkAccessManager](https://doc.qt.io/qt-6.8/qnetworkaccessmanager.html)와 [QNetworkRequest의 redirect/transfer timeout](https://doc.qt.io/qt-6.8/qnetworkrequest.html)을 사용한다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000025",
+        "line": 47,
+        "text": "기본 Qwen registry는 [공식 GGUF 저장소의 고정 revision](https://huggingface.co/Qwen/Qwen3-8B-GGUF/tree/7c41481f57cb95916b40956ab2f0b139b296d974)을 참조한다. commit/파일 크기/LFS SHA-256을 공식 API로 확인했으며 실제 가중치는 번들에 포함하지 않는다. 모델 원본의 라이선스는 해당 저장소를 따른다. 사용자가 pull을 실행하기 전 SDK 빌드·설치에서 모델을 다운로드하지 않는다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000027",
+        "line": 49,
+        "text": "2026-09-13 최소 대화용 모델로 [공식 Qwen2.5-0.5B-Instruct-GGUF](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/tree/9217f5db79a29953eb74d5343926648285ec7e67)의 Q4_K_M을 등록했다. 원본 모델 카드는 Apache-2.0을 선언한다. 491,400,032 bytes의 작은 모델로 최초 다운로드·메모리 비용을 낮추고, 기존 llama.cpp 어댑터와 Qt 다운로드 경로를 그대로 사용한다. 추가 런타임·Hub 라이브러리 의존성은 없다. 모델 revision·파일 크기·SHA-256은 공식 API와 대조하며 SDK에 가중치를 재배포하지 않는다. 모델 품질과 모델 계열의 업그레이드는 SDK 추론 인터페이스와 독립적으로 검토한다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000043",
+        "line": 66,
+        "text": "Markdown은 [MD4C release-0.5.3](https://github.com/mity/md4c/tree/472c417005c2c71b8617de4f7b8d6b30411d78f4), YAML은 [LibYAML 0.2.5](https://github.com/yaml/libyaml/tree/2c891fc7a770e8ba2fec34fc6b545c672beb37e6)를 사용한다. 둘 다 MIT 라이선스이며 공개 C++ 헤더로 외부 타입을 노출하지 않는다. 원본 C 파서를 private object로 정적 포함하므로 실행 프로세스·Python·추가 공유 라이브러리가 필요하지 않다. 원본 라이선스는 설치된 `share/iiLocalLLM/licenses/md4c.LICENSE`와 `libyaml.LICENSE`에 포함한다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000051",
+        "line": 77,
+        "text": "Qt는 응답 헤더 전 EOF에서 POST를 재전송할 수 있으므로, 공개 QIODevice 및 [DoNotBufferUploadDataAttribute](https://doc.qt.io/qt-6.8/qnetworkrequest.html#Attribute-enum)를 사용하여 이미 읽힌 업로드를 되감지 못하게 한다. 중도 종료한 SSE 연결은 캐시에서 정리한다. HTTP 요청 자체의 파서를 복제하거나 Qt private API를 사용하지 않는다. Qt 구현 참조는 [v6.8.3 qhttpnetworkconnectionchannel.cpp](https://github.com/qt/qtbase/blob/v6.8.3/src/network/access/qhttpnetworkconnectionchannel.cpp)이며 이 소스를 패키지에 복사하지 않았다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000053",
+        "line": 79,
+        "text": "공식 Python MCP SDK 1.26.0(MIT)와 해당 환경의 uvicorn은 HTTP 상호 운용 시험에만 사용한다. 자체 서명 TLS 거부 시험은 사용 가능한 OpenSSL 명령으로 build/tmp 안에 일회용 시험 인증서를 생성하며 생성된 키를 저장소·생산 패키지에 포함하지 않는다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000057",
+        "line": 83,
+        "text": "기존 [cpp-httplib 0.54.1](https://github.com/yhirose/cpp-httplib/tree/v0.54.1)의 HTTP 서버·동적 worker pool·chunked content provider를 사용한다. MIT 원문과 기존 고정 해시를 유지한다. 별도 네트워크 파서·TLS 라이브러리·Python 생산 서버를 도입하지 않는다. 연결별 MCP 상태, 인증 principal과 세션 연결, SSE 재개 기록 및 상한은 iiLocalLLM의 고유 전송 계약으로 구현했다. 암호 해시와 UUID에는 기존 Qt Core를 사용한다. 공식 Python MCP SDK 1.26.0 및 httpx는 독립 HTTP 클라이언트 시험에만 사용한다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000061",
+        "line": 87,
+        "text": "[Lexbor v3.0.0](https://github.com/lexbor/lexbor/releases/tag/v3.0.0)을 2026-09-16 확인했다. 원본 archive SHA-256 `eafaa79ef9871f0bbb1978eda8677d184f7ecdcaa203d7cd25b3f86e32c014c2`, 다운로드 5,777,325바이트이다. 라이선스는 [Apache-2.0](https://github.com/lexbor/lexbor/blob/v3.0.0/LICENSE)이며 LICENSE와 NOTICE를 설치한다. cmake/WebParser.cmake는 core/dom/ns/tag/html/encoding과 플랫폼 ports만 비공개 object로 컴파일한다. C API/심볼/헤더를 SDK에 공개하지 않으며 추가 동적 라이브러리는 없다. 전체 CSS/style/URL 엔진·예제·upstream 테스트를 제품에 링크하지 않는다. 기존 Qt Network를 조회에 재사용한다. 의존성 선정과 구현 차이는 docs/WebFetch.md를 따른다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      }
+    ],
+    "commands": [],
+    "links": [
+      {
+        "block_id": "b000003",
+        "label": "NemotronBolt.md",
+        "target": "docs/NemotronBolt.md",
+        "kind": "relative",
+        "line": 6
+      },
+      {
+        "block_id": "b000007",
+        "label": " iiMultimodalAgent third-party notices",
+        "target": "../iiMultimodalAgent/THIRD_PARTY_NOTICES.md",
+        "kind": "relative",
+        "line": 14
+      },
+      {
+        "block_id": "b000019",
+        "label": "llama.cpp 고정 커밋",
+        "target": "https://github.com/ggml-org/llama.cpp/tree/5202104b59ada9005db079eea43882a2b7bf5802",
+        "kind": "external",
+        "line": 33
+      },
+      {
+        "block_id": "b000019",
+        "label": "C API",
+        "target": "https://github.com/ggml-org/llama.cpp/blob/5202104b59ada9005db079eea43882a2b7bf5802/include/llama.h",
+        "kind": "external",
+        "line": 35
+      },
+      {
+        "block_id": "b000019",
+        "label": "llama.cpp MIT license",
+        "target": "https://github.com/ggml-org/llama.cpp/blob/5202104b59ada9005db079eea43882a2b7bf5802/LICENSE",
+        "kind": "external",
+        "line": 35
+      },
+      {
+        "block_id": "b000019",
+        "label": "mlx-lm",
+        "target": "https://github.com/ml-explore/mlx-lm",
+        "kind": "external",
+        "line": 36
+      },
+      {
+        "block_id": "b000019",
+        "label": "generation",
+        "target": "https://github.com/ml-explore/mlx-lm/blob/6d21ce4b065a2e163fa6de76a9936c61aeb5784a/mlx_lm/generate.py",
+        "kind": "external",
+        "line": 36
+      },
+      {
+        "block_id": "b000019",
+        "label": "cache",
+        "target": "https://github.com/ml-explore/mlx-lm/blob/6d21ce4b065a2e163fa6de76a9936c61aeb5784a/mlx_lm/models/cache.py",
+        "kind": "external",
+        "line": 36
+      },
+      {
+        "block_id": "b000019",
+        "label": "MIT license",
+        "target": "https://github.com/ml-explore/mlx-lm/blob/main/LICENSE",
+        "kind": "external",
+        "line": 36
+      },
+      {
+        "block_id": "b000019",
+        "label": "Qt licensing",
+        "target": "https://doc.qt.io/qt-6/licensing.html",
+        "kind": "external",
+        "line": 37
+      },
+      {
+        "block_id": "b000019",
+        "label": "QLocalServer",
+        "target": "https://doc.qt.io/qt-6/qlocalserver.html",
+        "kind": "external",
+        "line": 37
+      },
+      {
+        "block_id": "b000019",
+        "label": "QCryptographicHash",
+        "target": "https://doc.qt.io/qt-6/qcryptographichash.html",
+        "kind": "external",
+        "line": 38
+      },
+      {
+        "block_id": "b000019",
+        "label": "QSaveFile",
+        "target": "https://doc.qt.io/qt-6/qsavefile.html",
+        "kind": "external",
+        "line": 38
+      },
+      {
+        "block_id": "b000019",
+        "label": "QLockFile",
+        "target": "https://doc.qt.io/qt-6/qlockfile.html",
+        "kind": "external",
+        "line": 38
+      },
+      {
+        "block_id": "b000019",
+        "label": "QDir::removeRecursively",
+        "target": "https://doc.qt.io/qt-6/qdir.html#removeRecursively",
+        "kind": "external",
+        "line": 38
+      },
+      {
+        "block_id": "b000019",
+        "label": "cpp-httplib v0.54.1",
+        "target": "https://github.com/yhirose/cpp-httplib/releases/tag/v0.54.1",
+        "kind": "external",
+        "line": 39
+      },
+      {
+        "block_id": "b000019",
+        "label": "고정 헤더",
+        "target": "https://github.com/yhirose/cpp-httplib/blob/v0.54.1/httplib.h",
+        "kind": "external",
+        "line": 39
+      },
+      {
+        "block_id": "b000019",
+        "label": "MIT license",
+        "target": "https://github.com/yhirose/cpp-httplib/blob/v0.54.1/LICENSE",
+        "kind": "external",
+        "line": 39
+      },
+      {
+        "block_id": "b000019",
+        "label": "Qt 6.8 chunked responder",
+        "target": "https://doc.qt.io/qt-6.8/qhttpserverresponder.html",
+        "kind": "external",
+        "line": 41
+      },
+      {
+        "block_id": "b000019",
+        "label": "OpenAI Chat Completions reference",
+        "target": "https://developers.openai.com/api/reference/resources/chat",
+        "kind": "external",
+        "line": 41
+      },
+      {
+        "block_id": "b000023",
+        "label": "QNetworkAccessManager",
+        "target": "https://doc.qt.io/qt-6.8/qnetworkaccessmanager.html",
+        "kind": "external",
+        "line": 45
+      },
+      {
+        "block_id": "b000023",
+        "label": "QNetworkRequest의 redirect/transfer timeout",
+        "target": "https://doc.qt.io/qt-6.8/qnetworkrequest.html",
+        "kind": "external",
+        "line": 45
+      },
+      {
+        "block_id": "b000025",
+        "label": "공식 GGUF 저장소의 고정 revision",
+        "target": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/tree/7c41481f57cb95916b40956ab2f0b139b296d974",
+        "kind": "external",
+        "line": 47
+      },
+      {
+        "block_id": "b000027",
+        "label": "공식 Qwen2.5-0.5B-Instruct-GGUF",
+        "target": "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/tree/9217f5db79a29953eb74d5343926648285ec7e67",
+        "kind": "external",
+        "line": 49
+      },
+      {
+        "block_id": "b000031",
+        "label": "ParameterSources.md",
+        "target": "docs/ParameterSources.md",
+        "kind": "relative",
+        "line": 54
+      },
+      {
+        "block_id": "b000043",
+        "label": "MD4C release-0.5.3",
+        "target": "https://github.com/mity/md4c/tree/472c417005c2c71b8617de4f7b8d6b30411d78f4",
+        "kind": "external",
+        "line": 66
+      },
+      {
+        "block_id": "b000043",
+        "label": "LibYAML 0.2.5",
+        "target": "https://github.com/yaml/libyaml/tree/2c891fc7a770e8ba2fec34fc6b545c672beb37e6",
+        "kind": "external",
+        "line": 66
+      },
+      {
+        "block_id": "b000051",
+        "label": "DoNotBufferUploadDataAttribute",
+        "target": "https://doc.qt.io/qt-6.8/qnetworkrequest.html#Attribute-enum",
+        "kind": "external",
+        "line": 77
+      },
+      {
+        "block_id": "b000051",
+        "label": "v6.8.3 qhttpnetworkconnectionchannel.cpp",
+        "target": "https://github.com/qt/qtbase/blob/v6.8.3/src/network/access/qhttpnetworkconnectionchannel.cpp",
+        "kind": "external",
+        "line": 77
+      },
+      {
+        "block_id": "b000057",
+        "label": "cpp-httplib 0.54.1",
+        "target": "https://github.com/yhirose/cpp-httplib/tree/v0.54.1",
+        "kind": "external",
+        "line": 83
+      },
+      {
+        "block_id": "b000061",
+        "label": "Lexbor v3.0.0",
+        "target": "https://github.com/lexbor/lexbor/releases/tag/v3.0.0",
+        "kind": "external",
+        "line": 87
+      },
+      {
+        "block_id": "b000061",
+        "label": "Apache-2.0",
+        "target": "https://github.com/lexbor/lexbor/blob/v3.0.0/LICENSE",
+        "kind": "external",
+        "line": 87
+      },
+      {
+        "block_id": "b000063",
+        "label": "#30699",
+        "target": "https://github.com/ggml-org/llama.cpp/pull/30699",
+        "kind": "external",
+        "line": 90
+      }
+    ],
+    "tables": [
+      {
+        "block_id": "b000009",
+        "columns": [
+          "의존성",
+          "도입 이유·규모",
+          "라이선스·유지보수"
+        ],
+        "rows": [
+          [
+            "Qt 6.8.3 Core/Network",
+            "기존 Core에 Network 추가. Local Socket, QProcess, QJsonDocument, Unicode 변환, QCryptographicHash, QSaveFile, QLockFile 재사용",
+            "기존 Qt 설치 조건. 모듈별 LGPL/GPL/상용 배포 조건 적용"
+          ],
+          [
+            "llama.cpp",
+            "GGUF, tokenizer, chat template, ggml 장치 검사, CPU/Metal/CUDA/Vulkan, sampler, KV. 기본 ON이며 명시적 OFF 가능, SDK에 정적 링크",
+            "MIT. API 변경을 관리하기 위해 커밋·아카이브 SHA-256 고정"
+          ],
+          [
+            "MLX / mlx-lm",
+            "Apple Silicon, sampler, prompt cache. 별도 Python 환경으로 기본 C++ 의존성 규모 제한",
+            "MIT. 검증 릴리스 mlx 0.32.2 / mlx-lm 0.31.3"
+          ],
+          [
+            "cpp-httplib 0.54.1",
+            "HTTP/1.1 parsing, body 상한, thread pool, chunked streaming, disconnect 검사. 약 767 KiB 단일 헤더를 내부에서 사용",
+            "MIT. 배포 태그와 SHA-256 고정, 원본 고지 설치. TLS·압축 외부 의존성 비활성화"
+          ],
+          [
+            "OS 하드웨어 API",
+            "Metal/sysctl, DXGI, sysfs/sysconf. 별도 SDK 라이브러리 배포 없이 OS API를 재사용",
+            "플랫폼 제공 API. 추가 vendoring 없음"
+          ]
+        ]
+      }
+    ]
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

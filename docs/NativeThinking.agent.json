@@ -1,0 +1,244 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:df1e2911898b18abf7b02023a87771652b86ea0bb62909f9343c796ec3e7125f",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "docs/NativeThinking.md",
+    "sha256": "104ea746462fa7db736d1700d315345c575ad92a0d6f339f4e3f91f10abb6214",
+    "bytes": 4262,
+    "line_count": 24,
+    "encoding": "utf-8",
+    "language": "ko"
+  },
+  "document": {
+    "title": "네이티브 모델의 추론 모드 제어 (0.12.1)",
+    "role": "guide",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "heading",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "# 네이티브 모델의 추론 모드 제어 (0.12.1)\n",
+      "level": 1,
+      "title": "네이티브 모델의 추론 모드 제어 (0.12.1)"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "paragraph",
+      "start_line": 3,
+      "end_line": 3,
+      "raw": "llama.cpp 모델 로딩의 `options.enable_thinking`은 boolean이다. 생략 시 기존 동작을 유지하며 구조화 대화의 기본값은 true이다. 명시한 true/false는 고정된 llama.cpp의 Jinja 템플릿 입력 `enable_thinking`에 전달한다. 템플릿이 이 입력을 지원해야 하며, 모든 모델이 추론 모드를 전환할 수 있다는 뜻은 아니다. MLX의 모델 로딩 옵션은 현재 이 설정을 지원하지 않으며 요청을 거절한다.\n"
+    },
+    {
+      "id": "b000004",
+      "kind": "blank",
+      "start_line": 4,
+      "end_line": 4,
+      "raw": "\n"
+    },
+    {
+      "id": "b000005",
+      "kind": "fenced_code",
+      "start_line": 5,
+      "end_line": 10,
+      "raw": "```cpp\niiLocalLLM::ModelLoadRequest request{\"model://qwen3-8b-q4\", 8192};\nrequest.options[\"enable_thinking\"] = false;\nrequest.options[\"tool_grammar\"] = false;\nservice.loadModel(request).get();\n```\n",
+      "language": "cpp",
+      "code": "iiLocalLLM::ModelLoadRequest request{\"model://qwen3-8b-q4\", 8192};\nrequest.options[\"enable_thinking\"] = false;\nrequest.options[\"tool_grammar\"] = false;\nservice.loadModel(request).get();\n",
+      "closed": true
+    },
+    {
+      "id": "b000006",
+      "kind": "blank",
+      "start_line": 11,
+      "end_line": 11,
+      "raw": "\n"
+    },
+    {
+      "id": "b000007",
+      "kind": "paragraph",
+      "start_line": 12,
+      "end_line": 12,
+      "raw": "같은 모델이 이미 로드되어 있으면 먼저 unload한 뒤 변경된 옵션으로 다시 로드한다. `ModelInfo.options`에서 수락된 설정을 확인한다. daemon의 기존 `models.load` RPC에도 `options` 객체로 전달할 수 있다. 도구 문법 제어와 추론 모드 제어는 독립적이다. 어떤 조합에서도 도구 파싱·실행 전 스키마·권한 검사는 적용한다.\n"
+    },
+    {
+      "id": "b000008",
+      "kind": "blank",
+      "start_line": 13,
+      "end_line": 13,
+      "raw": "\n"
+    },
+    {
+      "id": "b000009",
+      "kind": "paragraph",
+      "start_line": 14,
+      "end_line": 14,
+      "raw": "명시적 추론 모드 설정은 일반 text/chat과 구조화 conversation 양쪽에 적용한다. 일반 텍스트 경로는 이 설정이 있을 때 동일한 Jinja 템플릿으로 프롬프트를 구성한다. 옵션을 생략한 일반 텍스트 경로는 기존 formatter를 유지한다. 구조화 대화의 예산 측정과 생성은 같은 설정을 사용한다. 원래 모델 템플릿이나 가중치를 수정하지 않는다.\n"
+    },
+    {
+      "id": "b000010",
+      "kind": "blank",
+      "start_line": 15,
+      "end_line": 15,
+      "raw": "\n"
+    },
+    {
+      "id": "b000011",
+      "kind": "paragraph",
+      "start_line": 16,
+      "end_line": 16,
+      "raw": "Qwen3의 `/no_think`는 모델에 전달하는 소프트 지시이며 닫는 `</think>`를 포함한 구간이 여전히 필요하다. `enable_thinking=false`는 템플릿 단계에서 선택하는 별도의 제어이다. [Qwen3 공식 모델 문서](https://huggingface.co/Qwen/Qwen3-8B)의 두 모드를 구분한다. 현재 의존성은 [llama.cpp 고정 커밋의 템플릿 입력](https://github.com/ggml-org/llama.cpp/blob/5202104b59ada9005db079eea43882a2b7bf5802/common/chat.h)이며 새 의존성이나 Python 추론 단계를 추가하지 않았다.\n"
+    },
+    {
+      "id": "b000012",
+      "kind": "blank",
+      "start_line": 17,
+      "end_line": 17,
+      "raw": "\n"
+    },
+    {
+      "id": "b000013",
+      "kind": "paragraph",
+      "start_line": 18,
+      "end_line": 18,
+      "raw": "관측한 Qwen3 8B의 지연 도구 검색 실패에서는 모델이 `<think>` 뒤 `</think>`를 닫지 않고 TaskGet 호출을 생성했다. 네이티브 파서는 이를 reasoning으로 분류했다. ServiceModel은 reasoning만 있고 최종 답이나 실행 가능한 호출이 없으면 `protocol_error`로 거절하며 이 경우와 완전히 빈 응답을 구분한다. 추론 텍스트 안에 적힌 도구를 실행하거나 누락된 경계를 자동 삽입하지 않는다.\n"
+    },
+    {
+      "id": "b000014",
+      "kind": "blank",
+      "start_line": 19,
+      "end_line": 19,
+      "raw": "\n"
+    },
+    {
+      "id": "b000015",
+      "kind": "paragraph",
+      "start_line": 20,
+      "end_line": 20,
+      "raw": "`tests/reasoning_runtime_smoke.cpp`는 실제 llama 런타임과 제어용 Jinja 템플릿으로 타입·기본값·true/false 및 두 프롬프트 경로를 검증한다. `tests/service_tests.cpp`는 추론 안에 도구 형태의 문자열이 있어도 실행 가능한 호출로 바뀌지 않는지 검증한다. `IILOCALLLM_TEST_AGENT_THINKING_CONTROL=ON`은 기존 카탈로그 수락 검사에 `enable_thinking=false`를 적용한 별도 지연 공개 검사를 추가한다. 기존 기본 설정의 검사를 대체하지 않는다.\n"
+    },
+    {
+      "id": "b000016",
+      "kind": "blank",
+      "start_line": 21,
+      "end_line": 21,
+      "raw": "\n"
+    },
+    {
+      "id": "b000017",
+      "kind": "paragraph",
+      "start_line": 22,
+      "end_line": 22,
+      "raw": "공식 MCP Python 클라이언트 환경이 함께 설정되면 `tests/agent_runtime_smoke.cpp`의 카탈로그 검사도 추가한다. 같은 Qwen3 샘플링과 추론/문법 설정에서 MCP 도구를 검색·호출하고 고정 회귀 값과 새 임의 파일 값을 실제 결과로 읽는지 확인한다. 각 대화의 검색 성공, 실제 원격 호출, 진행 이벤트, 최종 값과 호출/결과 쌍을 모두 요구한다. 실제 결과와 모델 조건은 [Verification.md](Verification.md)에 기록한다.\n"
+    },
+    {
+      "id": "b000018",
+      "kind": "blank",
+      "start_line": 23,
+      "end_line": 23,
+      "raw": "\n"
+    },
+    {
+      "id": "b000019",
+      "kind": "paragraph",
+      "start_line": 24,
+      "end_line": 24,
+      "raw": "0.30.0의 C++ `ConversationRequest.enableThinking`과 `agent::ModelRequest.enableThinking`은 구조화 요청 한 번의 선택이다. 생략하면 로딩 설정을 따르며 true/false를 명시하면 해당 요청에만 적용한다. 모델을 다시 로드하거나 일반 ChatRequest 설정을 변경하지 않는다. ServiceModel의 예산 측정·생성은 동일하게 전달하며 네이티브 테스트는 요청 후 원래 기본값이 유지되는지도 검증한다. 프롬프트 훅은 false를 명시한다([PromptHooks.md](PromptHooks.md)).\n"
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000001",
+      "parent_id": null,
+      "level": 1,
+      "title": "네이티브 모델의 추론 모드 제어 (0.12.1)",
+      "anchor": "네이티브-모델의-추론-모드-제어-0121",
+      "start_line": 1
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [
+      {
+        "block_id": "b000009",
+        "line": 14,
+        "text": "명시적 추론 모드 설정은 일반 text/chat과 구조화 conversation 양쪽에 적용한다. 일반 텍스트 경로는 이 설정이 있을 때 동일한 Jinja 템플릿으로 프롬프트를 구성한다. 옵션을 생략한 일반 텍스트 경로는 기존 formatter를 유지한다. 구조화 대화의 예산 측정과 생성은 같은 설정을 사용한다. 원래 모델 템플릿이나 가중치를 수정하지 않는다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000013",
+        "line": 18,
+        "text": "관측한 Qwen3 8B의 지연 도구 검색 실패에서는 모델이 `<think>` 뒤 `</think>`를 닫지 않고 TaskGet 호출을 생성했다. 네이티브 파서는 이를 reasoning으로 분류했다. ServiceModel은 reasoning만 있고 최종 답이나 실행 가능한 호출이 없으면 `protocol_error`로 거절하며 이 경우와 완전히 빈 응답을 구분한다. 추론 텍스트 안에 적힌 도구를 실행하거나 누락된 경계를 자동 삽입하지 않는다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000015",
+        "line": 20,
+        "text": "`tests/reasoning_runtime_smoke.cpp`는 실제 llama 런타임과 제어용 Jinja 템플릿으로 타입·기본값·true/false 및 두 프롬프트 경로를 검증한다. `tests/service_tests.cpp`는 추론 안에 도구 형태의 문자열이 있어도 실행 가능한 호출로 바뀌지 않는지 검증한다. `IILOCALLLM_TEST_AGENT_THINKING_CONTROL=ON`은 기존 카탈로그 수락 검사에 `enable_thinking=false`를 적용한 별도 지연 공개 검사를 추가한다. 기존 기본 설정의 검사를 대체하지 않는다.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000019",
+        "line": 24,
+        "text": "0.30.0의 C++ `ConversationRequest.enableThinking`과 `agent::ModelRequest.enableThinking`은 구조화 요청 한 번의 선택이다. 생략하면 로딩 설정을 따르며 true/false를 명시하면 해당 요청에만 적용한다. 모델을 다시 로드하거나 일반 ChatRequest 설정을 변경하지 않는다. ServiceModel의 예산 측정·생성은 동일하게 전달하며 네이티브 테스트는 요청 후 원래 기본값이 유지되는지도 검증한다. 프롬프트 훅은 false를 명시한다([PromptHooks.md](PromptHooks.md)).",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      }
+    ],
+    "commands": [],
+    "links": [
+      {
+        "block_id": "b000011",
+        "label": "Qwen3 공식 모델 문서",
+        "target": "https://huggingface.co/Qwen/Qwen3-8B",
+        "kind": "external",
+        "line": 16
+      },
+      {
+        "block_id": "b000011",
+        "label": "llama.cpp 고정 커밋의 템플릿 입력",
+        "target": "https://github.com/ggml-org/llama.cpp/blob/5202104b59ada9005db079eea43882a2b7bf5802/common/chat.h",
+        "kind": "external",
+        "line": 16
+      },
+      {
+        "block_id": "b000017",
+        "label": "Verification.md",
+        "target": "Verification.md",
+        "kind": "relative",
+        "line": 22
+      },
+      {
+        "block_id": "b000019",
+        "label": "PromptHooks.md",
+        "target": "PromptHooks.md",
+        "kind": "relative",
+        "line": 24
+      }
+    ],
+    "tables": []
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

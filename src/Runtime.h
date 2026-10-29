@@ -47,6 +47,13 @@ public:
         throw Error(ErrorCode::RuntimeUnavailable, "Runtime does not support structured conversations");
     }
 };
+// Optional interface alongside RuntimeModel, so older runtime implementations
+// need not change their virtual table. Calls are serialized by Service.
+class IILOCALLLM_EXPORT EmbeddingRuntimeModel {
+public:
+    virtual ~EmbeddingRuntimeModel() = default;
+    virtual QList<float> embedText(const QString&, const CancellationToken&) = 0;
+};
 class IILOCALLLM_EXPORT Runtime {
 public:
     virtual ~Runtime() = default;

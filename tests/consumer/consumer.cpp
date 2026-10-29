@@ -26,6 +26,12 @@ int main(int argc, char** argv)
         {"id", "consumer"}, {"architecture", "fixture"}, {"format", "gguf"},
         {"quantization", "none"}, {"context_length", 512}, {"capabilities", QJsonArray{"chat"}}
     });
+    auto rejectedManifest = iiLocalLLM::manifestObject(manifest);
+    rejectedManifest["entry_point"] = "model.ONNX";
+    try { (void)iiLocalLLM::parseModelManifest(rejectedManifest); return 20; }
+    catch (const iiLocalLLM::Error& error) {
+        if (error.code() != iiLocalLLM::ErrorCode::InvalidManifest) return 21;
+    }
     const auto write = [](const QString& path, const QByteArray& bytes) {
         QFile file(path);
         return file.open(QIODevice::WriteOnly) && file.write(bytes) == bytes.size();
