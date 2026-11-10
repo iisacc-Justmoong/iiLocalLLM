@@ -21,7 +21,7 @@
       "document_id": "urn:iisacc:document:016439e270c53f2937ad52b3e5dd4ca28e72db1bee9e1d296574bf062925b47f",
       "source": "README.md",
       "agent_json": "docs/entrypoints/README.agent.json",
-      "source_sha256": "45c909d98d94b39f2ecfe6b20e389de5b3625f466a8a64139e05a20615be962c",
+      "source_sha256": "a85b236f4207c62aa7ef0d6cd7042ec6367220cdb2743d7d7c4823d176d02769",
       "role": "overview"
     },
     {
@@ -78,6 +78,13 @@
       "source": "docs/BackgroundTasks.md",
       "agent_json": "docs/BackgroundTasks.agent.json",
       "source_sha256": "ea121f25c711477c0b15c738adb3728e3a3e16a1c761aefb9fd5b35f0d41582b",
+      "role": "guide"
+    },
+    {
+      "document_id": "urn:iisacc:document:4f608738c06cbbad47f5630d20f7d5619177d1787feb1769ecfd7c42d7ddfb0b",
+      "source": "docs/BuildLayout.md",
+      "agent_json": "docs/BuildLayout.agent.json",
+      "source_sha256": "8edad47fddb750ae917b2efa4afb5e7d07f174131d35d3fef3fb314bb339b2bd",
       "role": "guide"
     },
     {
@@ -434,7 +441,7 @@
       "document_id": "urn:iisacc:document:7861f086a29fa5f40747fe32b95a2324bbffe94ced7ef0e7cf4271c0e1dc4c6c",
       "source": "docs/README.md",
       "agent_json": "docs/README.agent.json",
-      "source_sha256": "e58af6ccdaf5595abf0df5c740fe2fc58475165f862125dca096ad23761a9314",
+      "source_sha256": "6f10424d667b6d321d7a8a371e15098b8e1bcb400481b7053388a9b34ecd9ca6",
       "role": "overview"
     },
     {

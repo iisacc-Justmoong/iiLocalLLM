@@ -1,0 +1,93 @@
+{
+  "format": "iisacc.agent-document",
+  "schema_version": 1,
+  "document_id": "urn:iisacc:document:4f608738c06cbbad47f5630d20f7d5619177d1787feb1769ecfd7c42d7ddfb0b",
+  "project": {
+    "id": "urn:iisacc:project:SDK%2FiiLocalLLM",
+    "name": "iiLocalLLM",
+    "root": "SDK/iiLocalLLM",
+    "kind": "sdk"
+  },
+  "source": {
+    "path": "docs/BuildLayout.md",
+    "sha256": "8edad47fddb750ae917b2efa4afb5e7d07f174131d35d3fef3fb314bb339b2bd",
+    "bytes": 1455,
+    "line_count": 22,
+    "encoding": "utf-8",
+    "language": "en"
+  },
+  "document": {
+    "title": "Build and resource layout",
+    "role": "guide",
+    "authority": "markdown_source"
+  },
+  "blocks": [
+    {
+      "id": "b000001",
+      "kind": "heading",
+      "start_line": 1,
+      "end_line": 1,
+      "raw": "# Build and resource layout\n",
+      "level": 1,
+      "title": "Build and resource layout"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 2,
+      "end_line": 2,
+      "raw": "\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "paragraph",
+      "start_line": 3,
+      "end_line": 12,
+      "raw": "The module, its service entry points, and selected tests are built in `build/`.\nThe pinned llama.cpp source is kept under `resources/dependencies/llama.cpp`;\nits compiled files and generated patch copies remain in `build/`. An explicit\n`IILOCALLLM_LLAMA_SOURCE_DIR` continues to select a different checkout. Models,\nfixtures and Python environments recovered from older builds are preserved under\n`resources/`, with compatibility links while another module still refers to the\nold paths. These links do not imply that model inference was run.\nThe archive checksum applies when the source is first fetched; an existing\nresource checkout is reused without rehashing its contents. Preserve local edits\nand refresh that checkout explicitly when changing the upstream pin.\n"
+    },
+    {
+      "id": "b000004",
+      "kind": "blank",
+      "start_line": 13,
+      "end_line": 13,
+      "raw": "\n"
+    },
+    {
+      "id": "b000005",
+      "kind": "paragraph",
+      "start_line": 14,
+      "end_line": 22,
+      "raw": "Native test commands reserve short isolated `resources/t/` workspaces through\niiFileProvider, including temporary files and application endpoints, and remove\nthem after each test. Cross-compiled tests preserve the original direct target\nand emulator handling and need a suitable external temporary directory. Some\ntests start services or model inference; those require an explicit execution\nrequest. Recovered user data is ignored by Git and is not a build output.\nInference smoke executables are excluded from the default build when no model\nfixture is configured; they remain explicit targets and are included when a\nconfigured inference test needs them.\n"
+    }
+  ],
+  "outline": [
+    {
+      "block_id": "b000001",
+      "parent_id": null,
+      "level": 1,
+      "title": "Build and resource layout",
+      "anchor": "build-and-resource-layout",
+      "start_line": 1
+    }
+  ],
+  "indexes": {
+    "directive_candidates": [
+      {
+        "block_id": "b000003",
+        "line": 9,
+        "text": "old paths. These links do not imply that model inference was run.",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      }
+    ],
+    "commands": [],
+    "links": [],
+    "tables": []
+  },
+  "provenance": {
+    "generator": "workspace-docs",
+    "version": "1.0.0",
+    "profile": "lossless-blocks-v1",
+    "derived": true
+  }
+}

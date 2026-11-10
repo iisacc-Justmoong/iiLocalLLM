@@ -1,0 +1,22 @@
+if(BUILD_TESTING AND NOT CMAKE_CROSSCOMPILING)
+    find_package(Python3 3.10 REQUIRED COMPONENTS Interpreter)
+    set(_iillm_test_runner "${Python3_EXECUTABLE}" -B
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/resource_runner.py" auto
+        "${CMAKE_CURRENT_SOURCE_DIR}/resources")
+    add_test(NAME iiLocalLLM.ResourceWorkspace COMMAND ${_iillm_test_runner}
+        "${Python3_EXECUTABLE}" -B "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_resource_runner.py")
+endif()
+function(iillm_test name target)
+    if(CMAKE_CROSSCOMPILING)
+        add_test(NAME "${name}" COMMAND "${target}" ${ARGN})
+    else()
+        add_test(NAME "${name}" COMMAND ${_iillm_test_runner} "$<TARGET_FILE:${target}>" ${ARGN})
+    endif()
+endfunction()
+function(iillm_command name)
+    if(CMAKE_CROSSCOMPILING)
+        add_test(NAME "${name}" COMMAND ${ARGN})
+    else()
+        add_test(NAME "${name}" COMMAND ${_iillm_test_runner} ${ARGN})
+    endif()
+endfunction()

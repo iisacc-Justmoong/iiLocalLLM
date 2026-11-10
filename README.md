@@ -30,6 +30,7 @@ cmake --install build
 `./install.sh` also verifies an independent installed consumer. Backend settings
 and inference fixtures retain their IILOCALLLM_* options. No iiDecision accelerator
 packages are required by an inference-only consumer.
+The build and resource boundaries are described in [Build layout](docs/BuildLayout.md).
 
 ```cmake
 find_package(iiLocalLLM 0.56 CONFIG REQUIRED)

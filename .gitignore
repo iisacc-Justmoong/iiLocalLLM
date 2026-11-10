@@ -1,2 +1,9 @@
 /build/
+/resources/.recovery/
+/resources/.state/
+/resources/dependencies/
+/resources/t/
+**/.iisacc-temporary.lock
+**/.*.iisacc-preview
+**/*.iisacc.json
 .DS_Store

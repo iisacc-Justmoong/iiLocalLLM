@@ -31,15 +31,21 @@ function(iilocal_add_llama)
         set(_vulkan_default ON)
     endif()
     set(GGML_VULKAN ${_vulkan_default} CACHE BOOL "Compile Vulkan when its SDK and shader tools are installed")
+    set(_llama_resource_source "${CMAKE_CURRENT_SOURCE_DIR}/resources/dependencies/llama.cpp")
     if(IILOCALLLM_LLAMA_SOURCE_DIR)
-        add_subdirectory("${IILOCALLLM_LLAMA_SOURCE_DIR}" "${CMAKE_CURRENT_BINARY_DIR}/llama/build" EXCLUDE_FROM_ALL)
+        set(_llama_source "${IILOCALLLM_LLAMA_SOURCE_DIR}")
+    elseif(EXISTS "${_llama_resource_source}/CMakeLists.txt")
+        set(_llama_source "${_llama_resource_source}")
+    endif()
+    if(_llama_source)
+        add_subdirectory("${_llama_source}" "${CMAKE_CURRENT_BINARY_DIR}/llama/build" EXCLUDE_FROM_ALL)
     else()
         include(FetchContent)
         FetchContent_Declare(iilocal_llama
             URL https://codeload.github.com/ggml-org/llama.cpp/tar.gz/5202104b59ada9005db079eea43882a2b7bf5802
             URL_HASH SHA256=58345c999af65b5dec07b71601eabbb0a30cc1f8842d4f00190b87b5a776fc7e
             DOWNLOAD_EXTRACT_TIMESTAMP TRUE
-            SOURCE_DIR "${CMAKE_CURRENT_BINARY_DIR}/dependencies/llama.cpp"
+            SOURCE_DIR "${_llama_resource_source}"
             BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}/dependencies/llama/build"
             EXCLUDE_FROM_ALL)
         FetchContent_MakeAvailable(iilocal_llama)
