@@ -7,3 +7,4 @@
 **/.*.iisacc-preview
 **/*.iisacc.json
 .DS_Store
+resources/
