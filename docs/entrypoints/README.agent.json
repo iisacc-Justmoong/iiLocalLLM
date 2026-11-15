@@ -10,9 +10,9 @@
   },
   "source": {
     "path": "README.md",
-    "sha256": "a85b236f4207c62aa7ef0d6cd7042ec6367220cdb2743d7d7c4823d176d02769",
-    "bytes": 4455,
-    "line_count": 88,
+    "sha256": "5d0771ea42e7bb05244fe4e6a4114bcc79171eef6188bb29289df26913bae129",
+    "bytes": 4973,
+    "line_count": 96,
     "encoding": "utf-8",
     "language": "en"
   },
@@ -216,132 +216,146 @@
     },
     {
       "id": "b000027",
-      "kind": "heading",
+      "kind": "paragraph",
       "start_line": 65,
-      "end_line": 65,
-      "raw": "## License\n",
-      "level": 2,
-      "title": "License"
+      "end_line": 71,
+      "raw": "Hosts can also select F16, Q8_0, or Q4_0 GGUF KV caches and set a GPU layer\nlimit through `LlamaMemoryOptions` or the daemon's `--llama-kv-cache` and\n`--llama-gpu-layers` options. F16 remains the default; quantized caches may change\noutput and require compatible Flash Attention. The Python host wrapper is\n`share/iiLocalLLM/runtimes/llama_memory.py`. The settings do not increase\nphysical VRAM or quantize model weights. See [residency](docs/Residency.md) for\nthe memory estimate, tradeoffs, and verification scope.\n"
     },
     {
       "id": "b000028",
-      "kind": "blank",
-      "start_line": 66,
-      "end_line": 66,
-      "raw": "\n"
-    },
-    {
-      "id": "b000029",
-      "kind": "paragraph",
-      "start_line": 67,
-      "end_line": 67,
-      "raw": "SPDX-License-Identifier: MIT\n"
-    },
-    {
-      "id": "b000030",
-      "kind": "blank",
-      "start_line": 68,
-      "end_line": 68,
-      "raw": "\n"
-    },
-    {
-      "id": "b000031",
-      "kind": "paragraph",
-      "start_line": 69,
-      "end_line": 71,
-      "raw": "The original code and documentation in this repository are licensed under the\n[MIT License](LICENSE). Third-party code, libraries, fonts, tools, and model\nweights retain their respective licenses.\n"
-    },
-    {
-      "id": "b000032",
       "kind": "blank",
       "start_line": 72,
       "end_line": 72,
       "raw": "\n"
     },
     {
-      "id": "b000033",
-      "kind": "paragraph",
+      "id": "b000029",
+      "kind": "heading",
       "start_line": 73,
       "end_line": 73,
-      "raw": "Related implementation contracts: [Native tool-turn contracts](docs/NativeToolTemplates.md).\n"
+      "raw": "## License\n",
+      "level": 2,
+      "title": "License"
     },
     {
-      "id": "b000034",
+      "id": "b000030",
       "kind": "blank",
       "start_line": 74,
       "end_line": 74,
       "raw": "\n"
     },
     {
-      "id": "b000035",
+      "id": "b000031",
       "kind": "paragraph",
       "start_line": 75,
       "end_line": 75,
-      "raw": "Managed MLX environments build a validated Transformers import index to avoid repeated model-source scans during worker startup. See [MLX import metadata](docs/MlxImportIndex.md) for preparation, invalidation and unchanged inference deadlines.\n"
+      "raw": "SPDX-License-Identifier: MIT\n"
     },
     {
-      "id": "b000036",
+      "id": "b000032",
       "kind": "blank",
       "start_line": 76,
       "end_line": 76,
       "raw": "\n"
     },
     {
-      "id": "b000037",
+      "id": "b000033",
       "kind": "paragraph",
       "start_line": 77,
-      "end_line": 77,
-      "raw": "Model integrity still verifies every byte; the macOS streaming SHA-256 path uses the system implementation. See [model integrity](docs/ModelIntegrity.md).\n"
-    },
-    {
-      "id": "b000038",
-      "kind": "blank",
-      "start_line": 78,
-      "end_line": 78,
-      "raw": "\n"
-    },
-    {
-      "id": "b000039",
-      "kind": "paragraph",
-      "start_line": 79,
       "end_line": 79,
-      "raw": "Source and adjacent headers are grouped by responsibility under `src/`; installed flat include names remain unchanged. See [source layout](docs/SourceLayout.md).\n"
+      "raw": "The original code and documentation in this repository are licensed under the\n[MIT License](LICENSE). Third-party code, libraries, fonts, tools, and model\nweights retain their respective licenses.\n"
     },
     {
-      "id": "b000040",
+      "id": "b000034",
       "kind": "blank",
       "start_line": 80,
       "end_line": 80,
       "raw": "\n"
     },
     {
-      "id": "b000041",
-      "kind": "html",
+      "id": "b000035",
+      "kind": "paragraph",
       "start_line": 81,
       "end_line": 81,
-      "raw": "<!-- workspace-docs:readme:start -->\n"
+      "raw": "Related implementation contracts: [Native tool-turn contracts](docs/NativeToolTemplates.md).\n"
+    },
+    {
+      "id": "b000036",
+      "kind": "blank",
+      "start_line": 82,
+      "end_line": 82,
+      "raw": "\n"
+    },
+    {
+      "id": "b000037",
+      "kind": "paragraph",
+      "start_line": 83,
+      "end_line": 83,
+      "raw": "Managed MLX environments build a validated Transformers import index to avoid repeated model-source scans during worker startup. See [MLX import metadata](docs/MlxImportIndex.md) for preparation, invalidation and unchanged inference deadlines.\n"
+    },
+    {
+      "id": "b000038",
+      "kind": "blank",
+      "start_line": 84,
+      "end_line": 84,
+      "raw": "\n"
+    },
+    {
+      "id": "b000039",
+      "kind": "paragraph",
+      "start_line": 85,
+      "end_line": 85,
+      "raw": "Model integrity still verifies every byte; the macOS streaming SHA-256 path uses the system implementation. See [model integrity](docs/ModelIntegrity.md).\n"
+    },
+    {
+      "id": "b000040",
+      "kind": "blank",
+      "start_line": 86,
+      "end_line": 86,
+      "raw": "\n"
+    },
+    {
+      "id": "b000041",
+      "kind": "paragraph",
+      "start_line": 87,
+      "end_line": 87,
+      "raw": "Source and adjacent headers are grouped by responsibility under `src/`; installed flat include names remain unchanged. See [source layout](docs/SourceLayout.md).\n"
     },
     {
       "id": "b000042",
+      "kind": "blank",
+      "start_line": 88,
+      "end_line": 88,
+      "raw": "\n"
+    },
+    {
+      "id": "b000043",
+      "kind": "html",
+      "start_line": 89,
+      "end_line": 89,
+      "raw": "<!-- workspace-docs:readme:start -->\n"
+    },
+    {
+      "id": "b000044",
       "kind": "heading",
-      "start_line": 82,
-      "end_line": 82,
+      "start_line": 90,
+      "end_line": 90,
       "raw": "## Documentation entry points\n",
       "level": 2,
       "title": "Documentation entry points"
     },
     {
-      "id": "b000043",
+      "id": "b000045",
       "kind": "blank",
-      "start_line": 83,
-      "end_line": 83,
+      "start_line": 91,
+      "end_line": 91,
       "raw": "\n"
     },
     {
-      "id": "b000044",
+      "id": "b000046",
       "kind": "list",
-      "start_line": 84,
-      "end_line": 87,
+      "start_line": 92,
+      "end_line": 95,
       "raw": "- Human overview: this English `README.md`.\n- Agent instructions: [AGENT.md](AGENT.md).\n- Human documentation: [documentation index](docs/README.md).\n- Structured agent documentation: [agent index](docs/agent-index.json).\n",
       "items": [
         {
@@ -367,10 +381,10 @@
       ]
     },
     {
-      "id": "b000045",
+      "id": "b000047",
       "kind": "html",
-      "start_line": 88,
-      "end_line": 88,
+      "start_line": 96,
+      "end_line": 96,
       "raw": "<!-- workspace-docs:readme:end -->\n"
     }
   ],
@@ -392,20 +406,20 @@
       "start_line": 19
     },
     {
-      "block_id": "b000027",
+      "block_id": "b000029",
       "parent_id": "b000001",
       "level": 2,
       "title": "License",
       "anchor": "license",
-      "start_line": 65
+      "start_line": 73
     },
     {
-      "block_id": "b000042",
+      "block_id": "b000044",
       "parent_id": "b000001",
       "level": 2,
       "title": "Documentation entry points",
       "anchor": "documentation-entry-points",
-      "start_line": 82
+      "start_line": 90
     }
   ],
   "indexes": {
@@ -421,6 +435,13 @@
         "block_id": "b000019",
         "line": 44,
         "text": "Agent users must rebuild against iiMultimodalAgent::iiMultimodalAgent, include",
+        "basis": "lexical_match",
+        "context": "paragraph"
+      },
+      {
+        "block_id": "b000027",
+        "line": 69,
+        "text": "`share/iiLocalLLM/runtimes/llama_memory.py`. The settings do not increase",
         "basis": "lexical_match",
         "context": "paragraph"
       }
@@ -525,60 +546,67 @@
         "line": 62
       },
       {
-        "block_id": "b000031",
-        "label": "MIT License",
-        "target": "LICENSE",
+        "block_id": "b000027",
+        "label": "residency",
+        "target": "docs/Residency.md",
         "kind": "relative",
         "line": 70
       },
       {
         "block_id": "b000033",
-        "label": "Native tool-turn contracts",
-        "target": "docs/NativeToolTemplates.md",
+        "label": "MIT License",
+        "target": "LICENSE",
         "kind": "relative",
-        "line": 73
+        "line": 78
       },
       {
         "block_id": "b000035",
-        "label": "MLX import metadata",
-        "target": "docs/MlxImportIndex.md",
+        "label": "Native tool-turn contracts",
+        "target": "docs/NativeToolTemplates.md",
         "kind": "relative",
-        "line": 75
+        "line": 81
       },
       {
         "block_id": "b000037",
-        "label": "model integrity",
-        "target": "docs/ModelIntegrity.md",
+        "label": "MLX import metadata",
+        "target": "docs/MlxImportIndex.md",
         "kind": "relative",
-        "line": 77
+        "line": 83
       },
       {
         "block_id": "b000039",
-        "label": "source layout",
-        "target": "docs/SourceLayout.md",
-        "kind": "relative",
-        "line": 79
-      },
-      {
-        "block_id": "b000044",
-        "label": "AGENT.md",
-        "target": "AGENT.md",
+        "label": "model integrity",
+        "target": "docs/ModelIntegrity.md",
         "kind": "relative",
         "line": 85
       },
       {
-        "block_id": "b000044",
+        "block_id": "b000041",
+        "label": "source layout",
+        "target": "docs/SourceLayout.md",
+        "kind": "relative",
+        "line": 87
+      },
+      {
+        "block_id": "b000046",
+        "label": "AGENT.md",
+        "target": "AGENT.md",
+        "kind": "relative",
+        "line": 93
+      },
+      {
+        "block_id": "b000046",
         "label": "documentation index",
         "target": "docs/README.md",
         "kind": "relative",
-        "line": 86
+        "line": 94
       },
       {
-        "block_id": "b000044",
+        "block_id": "b000046",
         "label": "agent index",
         "target": "docs/agent-index.json",
         "kind": "relative",
-        "line": 87
+        "line": 95
       }
     ],
     "tables": []

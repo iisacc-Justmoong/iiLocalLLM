@@ -68,6 +68,16 @@ private slots:
     {
         QVERIFY(createLlamaRuntime());
         QVERIFY(createLlamaRuntime({false, 0, true}));
+        QVERIFY(createLlamaRuntime({}, LlamaKvCache::Q8_0));
+        QVERIFY(createLlamaRuntime({true, 4}, LlamaKvCache::Q4_0));
+        QVERIFY_THROWS_EXCEPTION(Error, createLlamaRuntime({}, static_cast<LlamaKvCache>(99)));
+        LlamaMemoryOptions memory;
+        memory.kvCache = LlamaKvCache::Q8_0;
+        memory.runtime.maxGpuLayers = 0;
+        Service service({}, {}, memory);
+        QVERIFY(service.hardware().ramBytes.has_value());
+        const auto mocked = inventory({gpu("llama.cpp/MTL/MTL0", GpuVendor::Apple, ComputeBackend::Metal)}, true);
+        QCOMPARE(createLlamaRuntime(memory.runtime, memory.kvCache)->devices(mocked).size(), llamaRuntimeAvailable() ? 1 : 0);
         try {
             createLlamaRuntime({true, -2});
             QFAIL("A negative GPU layer limit below -1 must be rejected");

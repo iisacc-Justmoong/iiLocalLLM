@@ -72,8 +72,15 @@ struct LlamaRuntimeOptions {
     int maxGpuLayers = -1;        // -1 retains the upstream default; otherwise caps native layer offload.
     bool validateTensorData = false; // Ask the native loader to reject invalid tensor data.
 };
+// Host policy; changing the KV format is lossy and must be selected explicitly.
+enum class LlamaKvCache { F16, Q8_0, Q4_0 };
+struct LlamaMemoryOptions {
+    LlamaRuntimeOptions runtime;
+    LlamaKvCache kvCache = LlamaKvCache::F16;
+};
 IILOCALLLM_EXPORT std::shared_ptr<Runtime> createLlamaRuntime();
 IILOCALLLM_EXPORT std::shared_ptr<Runtime> createLlamaRuntime(LlamaRuntimeOptions options);
+IILOCALLLM_EXPORT std::shared_ptr<Runtime> createLlamaRuntime(LlamaRuntimeOptions options, LlamaKvCache kvCache);
 struct MlxRuntimeOptions {
     QString pythonExecutable = QStringLiteral("python3");
     QString workerScript; // Explicit installed/source mlx_worker.py path; no working-directory lookup.

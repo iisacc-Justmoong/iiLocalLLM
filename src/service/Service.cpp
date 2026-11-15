@@ -47,17 +47,17 @@ public:
         SessionManager sessions;
         ContextCacheManager cache; // Destroy contexts before model weights.
     };
-    Impl(ServiceOptions o, MlxRuntimeOptions mlx) : options(checked(o)), hardware(detectHardware()),
+    Impl(ServiceOptions o, MlxRuntimeOptions mlx, LlamaMemoryOptions llama) : options(checked(o)), hardware(detectHardware()),
         state(std::make_unique<State>(options, hardware)), scheduler(options.maxQueuedRequests, [this] { state.reset(); },
             [this] { state->models.maintain(); })
     {
-        scheduler.submit([this, mlx = std::move(mlx)](const auto&) {
+        scheduler.submit([this, mlx = std::move(mlx), llama](const auto&) {
             state->models.setChanged([this](QList<ModelInfo> models) {
                 std::lock_guard lock(observationMutex);
                 observedModels = std::move(models);
                 observedAt = std::chrono::steady_clock::now();
             });
-            state->models.addRuntime(createLlamaRuntime());
+            state->models.addRuntime(createLlamaRuntime(llama.runtime, llama.kvCache));
             state->models.addRuntime(createMlxRuntime(mlx));
         }).get();
     }
@@ -74,7 +74,9 @@ public:
     std::chrono::steady_clock::time_point observedAt = std::chrono::steady_clock::now();
     Scheduler scheduler;
 };
-Service::Service(ServiceOptions options, MlxRuntimeOptions mlx) : d(std::make_unique<Impl>(options, std::move(mlx))) {}
+Service::Service(ServiceOptions options, MlxRuntimeOptions mlx) : Service(std::move(options), std::move(mlx), {}) {}
+Service::Service(ServiceOptions options, MlxRuntimeOptions mlx, LlamaMemoryOptions llama)
+    : d(std::make_unique<Impl>(std::move(options), std::move(mlx), llama)) {}
 Service::~Service() = default;
 HardwareInfo Service::hardware() const { return d->hardware; }
 std::future<void> Service::registerRuntime(std::shared_ptr<Runtime> runtime)

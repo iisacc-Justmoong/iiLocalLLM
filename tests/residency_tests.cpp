@@ -1,4 +1,5 @@
 #include "service/ModelResidencyManager.h"
+#include "runtimes/MemoryEstimate.h"
 #include <QtTest/QtTest>
 using namespace iiLocalLLM;
 using namespace iiLocalLLM::detail;
@@ -6,6 +7,24 @@ using namespace std::chrono_literals;
 class ResidencyTests : public QObject {
     Q_OBJECT
 private slots:
+    void llamaQuantizedKvReservation()
+    {
+        // One 128-element K and V head in 32 layers, two contexts of 4096 tokens.
+        const auto f16 = llamaKvReservation(32, 1, 128, 128, 4096, 2, LlamaKvCache::F16);
+        const auto q8 = llamaKvReservation(32, 1, 128, 128, 4096, 2, LlamaKvCache::Q8_0);
+        const auto q4 = llamaKvReservation(32, 1, 128, 128, 4096, 2, LlamaKvCache::Q4_0);
+        QCOMPARE(f16, quint64(32) * 256 * 2 * 4096 * 2);
+        QCOMPARE(q8, quint64(32) * 8 * 34 * 4096 * 2);
+        QCOMPARE(q4, quint64(32) * 8 * 18 * 4096 * 2);
+        QVERIFY(q4 < q8 && q8 < f16);
+        QCOMPARE(llamaKvReservation(1, 1, 128, 128, 257, 1, LlamaKvCache::Q8_0),
+                 llamaKvReservation(1, 1, 128, 128, 512, 1, LlamaKvCache::Q8_0));
+        // Unknown dimensions cannot safely justify a reduced reservation.
+        QCOMPARE(llamaKvReservation(1, 1, 127, 128, 256, 1, LlamaKvCache::Q8_0),
+                 llamaKvReservation(1, 1, 127, 128, 256, 1, LlamaKvCache::F16));
+        QVERIFY_THROWS_EXCEPTION(Error, llamaKvReservation(std::numeric_limits<quint64>::max(), 32, 128, 128,
+                                                           4096, 2, LlamaKvCache::Q4_0));
+    }
     void budgetLruAndActiveProtection()
     {
         ServiceOptions o; o.memoryBudgetBytes = 100; o.memoryReserveBytes = 10;

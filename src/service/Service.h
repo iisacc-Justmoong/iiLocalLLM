@@ -11,6 +11,8 @@ namespace iiLocalLLM {
 class IILOCALLLM_EXPORT Service {
 public:
     explicit Service(ServiceOptions options = {}, MlxRuntimeOptions mlx = {});
+    // Host-only native memory policy; does not expose device selection to clients.
+    Service(ServiceOptions options, MlxRuntimeOptions mlx, LlamaMemoryOptions llama);
     ~Service();
     Service(const Service&) = delete;
     Service& operator=(const Service&) = delete;

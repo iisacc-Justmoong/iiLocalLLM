@@ -74,6 +74,17 @@ int optionInt(const ModelSpec& spec, const char* key, int fallback, int low, int
         throw Error(ErrorCode::InvalidArgument, QStringLiteral("Invalid llama option: ") + QString::fromLatin1(key));
     return n;
 }
+void configureKvCache(llama_context_params& params, LlamaKvCache cache)
+{
+    switch (cache) {
+    case LlamaKvCache::F16: params.type_k = params.type_v = GGML_TYPE_F16; break;
+    case LlamaKvCache::Q8_0: params.type_k = params.type_v = GGML_TYPE_Q8_0; break;
+    case LlamaKvCache::Q4_0: params.type_k = params.type_v = GGML_TYPE_Q4_0; break;
+    default: throw Error(ErrorCode::InvalidArgument, "Unsupported llama KV cache type");
+    }
+    // The pinned llama.cpp requires Flash Attention for a quantized V cache.
+    if (cache != LlamaKvCache::F16) params.flash_attn_type = LLAMA_FLASH_ATTN_TYPE_ENABLED;
+}
 struct LlamaConversationState final : RuntimePromptState {
     common_chat_params chat;
     common_chat_parser_params parser;
@@ -86,9 +97,10 @@ struct LlamaConversationState final : RuntimePromptState {
 };
 class LlamaContext final : public RuntimeContext {
 public:
-    LlamaContext(ModelPtr model, const ModelSpec& spec, bool accelerated) : model_(std::move(model)), context_(nullptr, llama_free)
+    LlamaContext(ModelPtr model, const ModelSpec& spec, bool accelerated, LlamaKvCache cache) : model_(std::move(model)), context_(nullptr, llama_free)
     {
         auto params = llama_context_default_params();
+        configureKvCache(params, cache);
         params.n_ctx = spec.contextTokens;
         params.n_batch = std::min(spec.contextTokens, 512);
         params.n_ubatch = std::min(spec.contextTokens, 128);
@@ -98,7 +110,9 @@ public:
         params.offload_kqv = accelerated;
         params.op_offload = accelerated;
         context_.reset(llama_init_from_model(model_.get(), params));
-        if (!context_) throw Error(ErrorCode::RuntimeFailure, QStringLiteral("llama.cpp context creation failed"));
+        if (!context_) throw Error(ErrorCode::RuntimeFailure, cache == LlamaKvCache::F16
+            ? QStringLiteral("llama.cpp context creation failed")
+            : QStringLiteral("llama.cpp context creation failed: quantized KV requires compatible head sizes and Flash Attention"));
     }
     RuntimeResult generate(const TokenList& prompt, const GenerationOptions& options,
                            const CancellationToken& cancel, const TextCallback& onText) override
@@ -274,8 +288,8 @@ private:
 };
 class LlamaModel final : public RuntimeModel, public EmbeddingRuntimeModel {
 public:
-    LlamaModel(ModelPtr model, ModelSpec spec, bool accelerated, ggml_backend_dev_t device)
-        : model_(std::move(model)), spec_(std::move(spec)), accelerated_(accelerated) {
+    LlamaModel(ModelPtr model, ModelSpec spec, bool accelerated, ggml_backend_dev_t device, LlamaKvCache cache)
+        : model_(std::move(model)), spec_(std::move(spec)), accelerated_(accelerated), cache_(cache) {
         if(!spec_.projectorPath.isEmpty()) {
             projector_=std::make_shared<NativeProjector>();auto params=mtmd_context_params_default();
             params.use_gpu=accelerated_;params.device=device;params.n_threads=optionInt(spec_,"threads",4,1,512);params.warmup=false;
@@ -321,7 +335,7 @@ public:
         return tokens;
     }
     std::unique_ptr<RuntimeContext> createContext(const CancellationToken& cancel) override
-    { cancel.throwIfCancelled(); return std::make_unique<LlamaContext>(model_, spec_, accelerated_); }
+    { cancel.throwIfCancelled(); return std::make_unique<LlamaContext>(model_, spec_, accelerated_, cache_); }
     QList<float> embedText(const QString& text, const CancellationToken& cancel) override
     {
         cancel.throwIfCancelled();
@@ -338,6 +352,7 @@ public:
         if (llama_tokenize(vocab, bytes.constData(), bytes.size(), tokens.data(), count, true, true) != count)
             throw Error(ErrorCode::RuntimeFailure, "Embedding tokenization changed unexpectedly");
         auto params = llama_context_default_params();
+        configureKvCache(params, cache_);
         params.n_ctx = capacity; params.n_batch = capacity; params.n_ubatch = capacity;
         params.n_seq_max = 1; params.embeddings = true;
         params.n_threads = optionInt(spec_, "threads", 4, 1, 512); params.n_threads_batch = params.n_threads;
@@ -536,16 +551,19 @@ private:
     ModelPtr model_;
     ModelSpec spec_;
     bool accelerated_;
+    LlamaKvCache cache_;
     common_chat_templates_ptr templates_;
     std::shared_ptr<NativeProjector> projector_;
 };
 #endif
 class LlamaRuntime final : public Runtime {
 public:
-    explicit LlamaRuntime(LlamaRuntimeOptions options = {}) : options_(options)
+    explicit LlamaRuntime(LlamaRuntimeOptions options = {}, LlamaKvCache cache = LlamaKvCache::F16) : options_(options), cache_(cache)
     {
         if (options.maxGpuLayers < -1)
             throw Error(ErrorCode::InvalidArgument, "maxGpuLayers must be -1 or nonnegative");
+        if (cache != LlamaKvCache::F16 && cache != LlamaKvCache::Q8_0 && cache != LlamaKvCache::Q4_0)
+            throw Error(ErrorCode::InvalidArgument, "Unsupported llama KV cache type");
     }
     QString id() const override { return QStringLiteral("llama.cpp"); }
     bool supportsModel(const ModelSpec& spec) const override
@@ -559,6 +577,7 @@ public:
         QList<RuntimeDevice> result;
 #ifdef IILOCALLLM_WITH_LLAMA
         result.append({ComputeBackend::Cpu, {}});
+        if (options_.maxGpuLayers == 0) return result;
         for (const auto& gpu : hardware.gpus) {
             if (!gpu.id.startsWith(QStringLiteral("llama.cpp/"))) continue;
             for (const auto backend : gpu.availableBackends) result.append({backend, gpu.id});
@@ -593,9 +612,16 @@ public:
         };
         const auto heads = integer(".attention.head_count");
         const auto dim = heads ? integer(".embedding_length") / heads : 0;
-        const auto context = detail::kvReservation(integer(".block_count"), integer(".attention.head_count_kv", heads),
-            integer(".attention.key_length", dim), integer(".attention.value_length", dim), spec.contextTokens, contextSlots);
-        if (context) { estimate.contextBytes = context; estimate.basis = QStringLiteral("GGUF weight file + f16 KV metadata + scratch reserve"); }
+        const auto keyLength = integer(".attention.key_length", dim);
+        const auto valueLength = integer(".attention.value_length", dim);
+        const auto context = detail::llamaKvReservation(integer(".block_count"), integer(".attention.head_count_kv", heads),
+            keyLength, valueLength, spec.contextTokens, contextSlots, cache_);
+        if (context) {
+            estimate.contextBytes = context;
+            const char* name = (keyLength % 32 || valueLength % 32) ? "f16 conservative"
+                : cache_ == LlamaKvCache::Q8_0 ? "q8_0" : cache_ == LlamaKvCache::Q4_0 ? "q4_0" : "f16";
+            estimate.basis = QStringLiteral("GGUF weight file + %1 KV metadata estimate + scratch reserve").arg(QLatin1String(name));
+        }
 #endif
         return estimate;
     }
@@ -622,13 +648,19 @@ public:
         initializeLlama();
         auto selected = std::make_shared<std::vector<ggml_backend_dev_t>>();
         const bool accelerated = device.backend != ComputeBackend::Cpu;
+        if (accelerated && options_.maxGpuLayers == 0)
+            throw Error(ErrorCode::InvalidArgument, QStringLiteral("maxGpuLayers=0 requires the CPU device"));
         if (accelerated) {
             for (size_t n = 0; n < ggml_backend_dev_count(); ++n) {
                 const auto candidate = ggml_backend_dev_get(n);
                 if (deviceId(candidate) == device.deviceId && deviceBackend(candidate) == device.backend) {
                     ggml_backend_dev_props props{};
                     ggml_backend_dev_get_props(candidate, &props);
-                    if (props.type == GGML_BACKEND_DEVICE_TYPE_GPU && device.backend != ComputeBackend::Metal) {
+                    // A capped layer count intentionally leaves some weights on the CPU.
+                    // The full-file estimate cannot predict its GPU footprint; let the
+                    // native loader and the context allocation test determine fit.
+                    if (props.type == GGML_BACKEND_DEVICE_TYPE_GPU && device.backend != ComputeBackend::Metal
+                        && options_.maxGpuLayers < 0) {
                         size_t free = 0, total = 0;
                         ggml_backend_dev_memory(candidate, &free, &total);
                         if (total && estimateMemory(spec, 1).totalBytes() > free)
@@ -659,7 +691,7 @@ public:
         cancel.throwIfCancelled();
         if (!model) throw Error(ErrorCode::RuntimeFailure, QStringLiteral("llama.cpp could not load GGUF model"));
         const bool contextAccelerated = accelerated && params.n_gpu_layers != 0;
-        auto loaded = std::make_shared<LlamaModel>(std::move(model), spec, contextAccelerated, selected->front());
+        auto loaded = std::make_shared<LlamaModel>(std::move(model), spec, contextAccelerated, selected->front(), cache_);
         // Check context/KV allocation before advertising a successful GPU selection.
         if (contextAccelerated) (void)loaded->createContext(cancel);
         return loaded;
@@ -670,6 +702,7 @@ public:
     }
 private:
     LlamaRuntimeOptions options_;
+    LlamaKvCache cache_;
 };
 }
 namespace detail {
@@ -725,4 +758,5 @@ bool llamaRuntimeAvailable() noexcept
 }
 std::shared_ptr<Runtime> createLlamaRuntime() { return createLlamaRuntime({}); }
 std::shared_ptr<Runtime> createLlamaRuntime(LlamaRuntimeOptions options) { return std::make_shared<LlamaRuntime>(options); }
+std::shared_ptr<Runtime> createLlamaRuntime(LlamaRuntimeOptions options, LlamaKvCache cache) { return std::make_shared<LlamaRuntime>(options, cache); }
 } // namespace iiLocalLLM

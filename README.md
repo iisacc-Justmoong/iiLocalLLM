@@ -62,6 +62,14 @@ manifests or clients. The native Metal regression covers batched top-9 expert
 routing. See [Nemotron Bolt](docs/NemotronBolt.md) for the verified agent greeting,
 memory limits, and residency settings.
 
+Hosts can also select F16, Q8_0, or Q4_0 GGUF KV caches and set a GPU layer
+limit through `LlamaMemoryOptions` or the daemon's `--llama-kv-cache` and
+`--llama-gpu-layers` options. F16 remains the default; quantized caches may change
+output and require compatible Flash Attention. The Python host wrapper is
+`share/iiLocalLLM/runtimes/llama_memory.py`. The settings do not increase
+physical VRAM or quantize model weights. See [residency](docs/Residency.md) for
+the memory estimate, tradeoffs, and verification scope.
+
 ## License
 
 SPDX-License-Identifier: MIT

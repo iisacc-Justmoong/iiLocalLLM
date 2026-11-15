@@ -21,7 +21,7 @@
       "document_id": "urn:iisacc:document:016439e270c53f2937ad52b3e5dd4ca28e72db1bee9e1d296574bf062925b47f",
       "source": "README.md",
       "agent_json": "docs/entrypoints/README.agent.json",
-      "source_sha256": "a85b236f4207c62aa7ef0d6cd7042ec6367220cdb2743d7d7c4823d176d02769",
+      "source_sha256": "5d0771ea42e7bb05244fe4e6a4114bcc79171eef6188bb29289df26913bae129",
       "role": "overview"
     },
     {
@@ -91,7 +91,7 @@
       "document_id": "urn:iisacc:document:97bf53134878ec7f90ad363a23db2385a073782da638b30211397acae2f87d87",
       "source": "docs/CLI.md",
       "agent_json": "docs/CLI.agent.json",
-      "source_sha256": "a6b887567362f368828e5f66e2b498701cc2997c403953e3b7c72b30e08384fb",
+      "source_sha256": "d739b2a5d72c62a8e46600ef947c0589dae548a8408d51e988057d49ea60225b",
       "role": "guide"
     },
     {
@@ -161,7 +161,7 @@
       "document_id": "urn:iisacc:document:131ab8e865323bc79fc851ceb67f7e3b97b53a9b419d5d1bee6db634e0b9e6c9",
       "source": "docs/HardwarePolicy.md",
       "agent_json": "docs/HardwarePolicy.agent.json",
-      "source_sha256": "4a85896fc24e3a60f2c646aca23a2a621930af574d736d80ca6cebee2f39c842",
+      "source_sha256": "2760094c93f2a85556b2d271caccdacd2583fd77149e705f64f9bbc8a53d2a77",
       "role": "guide"
     },
     {
@@ -448,7 +448,7 @@
       "document_id": "urn:iisacc:document:41f10de289ab89470bb634dbdb1ccd5dab92794ef462faee09bd2d906a890a0b",
       "source": "docs/Residency.md",
       "agent_json": "docs/Residency.agent.json",
-      "source_sha256": "4475e71d31676dbb56e7c95223d4f720cb06f39749132ec29d88450e3a112aa1",
+      "source_sha256": "8a39d2fb516045ae1392e389ae40bf597769c0c99165710a1711b81b3781bbb7",
       "role": "guide"
     },
     {

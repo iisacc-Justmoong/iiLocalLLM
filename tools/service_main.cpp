@@ -40,6 +40,8 @@ int main(int argc, char** argv)
         {QStringLiteral("registry"), QStringLiteral("Download registry JSON (aliases, pinned manifests and URLs)"), QStringLiteral("file")},
         {QStringLiteral("memory-budget-mib"), QStringLiteral("Model residency budget; 0 uses physical RAM policy"), QStringLiteral("MiB"), QStringLiteral("0")},
         {QStringLiteral("memory-reserve-mib"), QStringLiteral("Live available RAM headroom"), QStringLiteral("MiB"), QStringLiteral("256")},
+        {QStringLiteral("llama-kv-cache"), QStringLiteral("GGUF KV cache format: f16, q8_0, or q4_0 (quantized formats are lossy)"), QStringLiteral("format"), QStringLiteral("f16")},
+        {QStringLiteral("llama-gpu-layers"), QStringLiteral("GGUF GPU layers: -1 for all, 0 for CPU, or a positive limit"), QStringLiteral("count"), QStringLiteral("-1")},
         {QStringLiteral("max-models"), QStringLiteral("Maximum resident models"), QStringLiteral("count"), QStringLiteral("4")},
         {QStringLiteral("context-tokens"), QStringLiteral("Default model context capacity"), QStringLiteral("count"), QStringLiteral("2048")},
         {QStringLiteral("keep-alive"), QStringLiteral("Idle model lifetime, e.g. 5m or 0; default is hardware-dependent"), QStringLiteral("duration")},
@@ -64,6 +66,17 @@ int main(int argc, char** argv)
         options.memoryReserveBytes = integer("memory-reserve-mib", 1048576) * 1024 * 1024;
         options.maxModels = int(integer("max-models", 1024));
         options.defaultContextTokens = int(integer("context-tokens", 1048576));
+        iiLocalLLM::LlamaMemoryOptions llama;
+        const auto cache = parser.value(QStringLiteral("llama-kv-cache"));
+        if (cache == QStringLiteral("f16")) llama.kvCache = iiLocalLLM::LlamaKvCache::F16;
+        else if (cache == QStringLiteral("q8_0")) llama.kvCache = iiLocalLLM::LlamaKvCache::Q8_0;
+        else if (cache == QStringLiteral("q4_0")) llama.kvCache = iiLocalLLM::LlamaKvCache::Q4_0;
+        else throw std::runtime_error("llama-kv-cache must be f16, q8_0, or q4_0");
+        bool layersValid = false;
+        const auto layers = parser.value(QStringLiteral("llama-gpu-layers")).toInt(&layersValid);
+        if (!layersValid || layers < -1 || layers > 1048576)
+            throw std::runtime_error("llama-gpu-layers must be -1 or an integer in [0, 1048576]");
+        llama.runtime.maxGpuLayers = layers;
         iiLocalLLM::HttpOptions httpOptions;
         httpOptions.workerThreads = int(integer("http-workers", 64));
         httpOptions.maxControlRequests = int(integer("http-control-requests", 16));
@@ -73,7 +86,7 @@ int main(int argc, char** argv)
             throw std::runtime_error("HTTP capacity options require --http-port");
         if (parser.isSet("keep-alive")) options.keepAliveMs = iiLocalLLM::parseKeepAlive(parser.value("keep-alive"));
         // Validate private credentials before hardware/driver initialization.
-        iiLocalLLM::Service service(options, {parser.value(QStringLiteral("mlx-python")), worker});
+        iiLocalLLM::Service service(options, {parser.value(QStringLiteral("mlx-python")), worker}, llama);
         if (parser.isSet(QStringLiteral("hardware"))) {
             std::cout << QJsonDocument(iiLocalLLM::hardwareObject(service.hardware())).toJson().constData();
             return 0;

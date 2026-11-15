@@ -10,8 +10,8 @@
   },
   "source": {
     "path": "docs/HardwarePolicy.md",
-    "sha256": "4a85896fc24e3a60f2c646aca23a2a621930af574d736d80ca6cebee2f39c842",
-    "bytes": 7674,
+    "sha256": "2760094c93f2a85556b2d271caccdacd2583fd77149e705f64f9bbc8a53d2a77",
+    "bytes": 8081,
     "line_count": 44,
     "encoding": "utf-8",
     "language": "ko"
@@ -43,7 +43,7 @@
       "kind": "paragraph",
       "start_line": 3,
       "end_line": 3,
-      "raw": "앱은 모델과 대화만 지정한다. ModelLoadRequest는 model URI/contextTokens/options이며 runtime/backend/device/gpu_layers 필드가 없다. IPC 모델 요청과 daemon 설정도 같은 계약을 따른다. ModelManager가 URI·manifest·파일 무결성을 검증한 후 내부 ModelSpec에 실제 경로와 형식을 전달한다. 실행 선택은 ModelInfo.execution, models.load 응답, models.loaded의 읽기 전용 결과이다. 서비스 호스트의 런타임 등록과 Python 실행 환경 설정은 배포 구성에 해당한다.\n"
+      "raw": "앱은 모델과 대화만 지정한다. ModelLoadRequest는 model URI/contextTokens/options이며 runtime/backend/device/gpu_layers 필드가 없다. IPC 모델 요청도 같은 계약을 따른다. ModelManager가 URI·manifest·파일 무결성을 검증한 후 내부 ModelSpec에 실제 경로와 형식을 전달한다. 실행 선택은 ModelInfo.execution, models.load 응답, models.loaded의 읽기 전용 결과이다. 데몬 호스트는 GGUF에 대한 전체 GPU 레이어 상한과 KV 형식을 구성할 수 있다. 서비스 호스트의 런타임 등록과 Python 실행 환경 설정은 배포 구성에 해당한다.\n"
     },
     {
       "id": "b000004",
@@ -232,7 +232,7 @@
       "kind": "paragraph",
       "start_line": 34,
       "end_line": 34,
-      "raw": "llama.cpp는 선택 장치 하나와 null로 끝나는 명시적 devices 배열, 모든 레이어 offload를 적용한다. GPU 컨텍스트와 KV를 한 번 사전 할당·해제하여 실패 시 모델 로드 단계에서 CPU로 전환할 수 있게 한다. CPU는 빈 devices 배열, n_gpu_layers=0, offload_kqv=false, op_offload=false를 적용한다. CPU 정책을 결정한 뒤 llama.cpp의 자동 GPU 선택을 다시 호출하지 않는다.\n"
+      "raw": "llama.cpp는 선택 장치 하나와 null로 끝나는 명시적 devices 배열을 사용하며 기본적으로 모든 레이어를 offload한다. 호스트가 `--llama-gpu-layers`로 상한을 지정하면 부분 적재하고 0이면 CPU 후보만 제시한다. 이때 전체 가중치 크기와 전용 VRAM의 사전 비교는 생략하고 실제 할당을 확인한다. GPU 컨텍스트와 KV를 한 번 사전 할당·해제하여 실패 시 모델 로드 단계에서 CPU로 전환할 수 있게 한다. CPU는 빈 devices 배열, n_gpu_layers=0, offload_kqv=false, op_offload=false를 적용한다. CPU 정책을 결정한 뒤 llama.cpp의 자동 GPU 선택을 다시 호출하지 않는다. KV 압축 설정과 한계는 [Residency.md](Residency.md)를 따른다.\n"
     },
     {
       "id": "b000020",
@@ -395,7 +395,7 @@
       {
         "block_id": "b000019",
         "line": 34,
-        "text": "llama.cpp는 선택 장치 하나와 null로 끝나는 명시적 devices 배열, 모든 레이어 offload를 적용한다. GPU 컨텍스트와 KV를 한 번 사전 할당·해제하여 실패 시 모델 로드 단계에서 CPU로 전환할 수 있게 한다. CPU는 빈 devices 배열, n_gpu_layers=0, offload_kqv=false, op_offload=false를 적용한다. CPU 정책을 결정한 뒤 llama.cpp의 자동 GPU 선택을 다시 호출하지 않는다.",
+        "text": "llama.cpp는 선택 장치 하나와 null로 끝나는 명시적 devices 배열을 사용하며 기본적으로 모든 레이어를 offload한다. 호스트가 `--llama-gpu-layers`로 상한을 지정하면 부분 적재하고 0이면 CPU 후보만 제시한다. 이때 전체 가중치 크기와 전용 VRAM의 사전 비교는 생략하고 실제 할당을 확인한다. GPU 컨텍스트와 KV를 한 번 사전 할당·해제하여 실패 시 모델 로드 단계에서 CPU로 전환할 수 있게 한다. CPU는 빈 devices 배열, n_gpu_layers=0, offload_kqv=false, op_offload=false를 적용한다. CPU 정책을 결정한 뒤 llama.cpp의 자동 GPU 선택을 다시 호출하지 않는다. KV 압축 설정과 한계는 [Residency.md](Residency.md)를 따른다.",
         "basis": "lexical_match",
         "context": "paragraph"
       },
@@ -416,6 +416,13 @@
     ],
     "commands": [],
     "links": [
+      {
+        "block_id": "b000019",
+        "label": "Residency.md",
+        "target": "Residency.md",
+        "kind": "relative",
+        "line": 34
+      },
       {
         "block_id": "b000027",
         "label": "llama.cpp 빌드 문서",

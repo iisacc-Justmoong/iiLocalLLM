@@ -1,6 +1,6 @@
 # 서비스의 하드웨어 검사와 자동 선택
 
-앱은 모델과 대화만 지정한다. ModelLoadRequest는 model URI/contextTokens/options이며 runtime/backend/device/gpu_layers 필드가 없다. IPC 모델 요청과 daemon 설정도 같은 계약을 따른다. ModelManager가 URI·manifest·파일 무결성을 검증한 후 내부 ModelSpec에 실제 경로와 형식을 전달한다. 실행 선택은 ModelInfo.execution, models.load 응답, models.loaded의 읽기 전용 결과이다. 서비스 호스트의 런타임 등록과 Python 실행 환경 설정은 배포 구성에 해당한다.
+앱은 모델과 대화만 지정한다. ModelLoadRequest는 model URI/contextTokens/options이며 runtime/backend/device/gpu_layers 필드가 없다. IPC 모델 요청도 같은 계약을 따른다. ModelManager가 URI·manifest·파일 무결성을 검증한 후 내부 ModelSpec에 실제 경로와 형식을 전달한다. 실행 선택은 ModelInfo.execution, models.load 응답, models.loaded의 읽기 전용 결과이다. 데몬 호스트는 GGUF에 대한 전체 GPU 레이어 상한과 KV 형식을 구성할 수 있다. 서비스 호스트의 런타임 등록과 Python 실행 환경 설정은 배포 구성에 해당한다.
 
 ## 시작 시 검사
 
@@ -31,7 +31,7 @@ Windows는 DXGI에서 GPU vendor와 전용 메모리를, Linux는 sysfs PCI disp
 4. 같은 가속 우선순위에서는 확인된 전용 VRAM 또는 Metal 권장 예산이 큰 장치를 먼저 쓰고, 같으면 device id로 정렬한다. 여러 GPU에 가중치를 분할하지 않는다. 같은 형식과 장치를 지원하는 런타임이 여럿이면 runtime id로 정렬한다.
 5. 선택된 런타임이 그 장치로 로드한 뒤에만 모델을 등록한다. GPU load가 runtime_unavailable/runtime_failure/resource_limit로 실패하면 다음 후보, 최종적으로 CPU를 시도한다. 선택 결과에 실패 이유와 CPU 전환 근거를 보존한다. 잘못된 입력, 취소, timeout은 재시도하지 않는다. CPU도 실패하면 모델을 등록하지 않고 오류를 반환한다.
 
-llama.cpp는 선택 장치 하나와 null로 끝나는 명시적 devices 배열, 모든 레이어 offload를 적용한다. GPU 컨텍스트와 KV를 한 번 사전 할당·해제하여 실패 시 모델 로드 단계에서 CPU로 전환할 수 있게 한다. CPU는 빈 devices 배열, n_gpu_layers=0, offload_kqv=false, op_offload=false를 적용한다. CPU 정책을 결정한 뒤 llama.cpp의 자동 GPU 선택을 다시 호출하지 않는다.
+llama.cpp는 선택 장치 하나와 null로 끝나는 명시적 devices 배열을 사용하며 기본적으로 모든 레이어를 offload한다. 호스트가 `--llama-gpu-layers`로 상한을 지정하면 부분 적재하고 0이면 CPU 후보만 제시한다. 이때 전체 가중치 크기와 전용 VRAM의 사전 비교는 생략하고 실제 할당을 확인한다. GPU 컨텍스트와 KV를 한 번 사전 할당·해제하여 실패 시 모델 로드 단계에서 CPU로 전환할 수 있게 한다. CPU는 빈 devices 배열, n_gpu_layers=0, offload_kqv=false, op_offload=false를 적용한다. CPU 정책을 결정한 뒤 llama.cpp의 자동 GPU 선택을 다시 호출하지 않는다. KV 압축 설정과 한계는 [Residency.md](Residency.md)를 따른다.
 
 MLX worker는 서비스가 정한 metal/cpu를 받아 기본 장치를 설정하고 작은 연산을 실행한 뒤 mlx_lm을 import한다. mlx_lm의 생성 stream이 import 시 기본 장치를 캡처하기 때문이다. worker가 확인한 backend가 서비스 선택과 다르면 protocol_error이다. 이 어댑터는 Apple Silicon의 기본 Metal GPU와 CPU만 지원하며 MLX의 다른 가속 변형을 자동 지원한다고 간주하지 않는다. Python/MLX 의존성이 없으면 명시적으로 로드에 실패한다. mlx-lm 0.31.3의 stream_generate는 Metal 설치 여부만으로 GPU 메모리 예산을 읽어 CPU에서 실패하므로 CPU 경로는 같은 라이브러리의 generate_step과 detokenizer를 이용해 청크를 전달한다. 추론·샘플러·KV는 기존 라이브러리를 그대로 사용하며 GPU 전용 메모리 래퍼만 거치지 않는다.
 

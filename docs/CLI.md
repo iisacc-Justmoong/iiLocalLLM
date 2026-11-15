@@ -12,6 +12,11 @@
 
 `iillm → Native IPC → iiLocalLLMD → Runtime` 관계이다. iillm은 Qt Core/Network만 링크하며 SDK의 Service나 추론 런타임을 생성하지 않는다. daemon 연결이 없으면 명시적인 연결 오류로 종료한다. `iiLocalLLMD`와 기존 `iilocal-llm-service`는 동일 서비스 진입점이다.
 
+GGUF의 메모리 사용량을 조정하는 호스트 옵션 `--llama-kv-cache`와
+`--llama-gpu-layers`는 클라이언트가 아닌 데몬 실행 시 지정한다. 기본은
+`f16`과 `-1`이다. Q8·Q4의 손실, 부분 적재의 속도 영향과 Python 예시는
+[Residency.md](Residency.md)에 설명한다.
+
 ```sh
 export IILLM_SOCKET="$PWD/build/llm.sock"
 ./build/iiLocalLLMD --socket "$IILLM_SOCKET" --models-root "$PWD/build/chat/Models" --http-port 8080
