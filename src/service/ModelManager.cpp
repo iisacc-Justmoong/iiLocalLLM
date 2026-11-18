@@ -94,6 +94,27 @@ ModelInfo ModelManager::load(const ModelLoadRequest& input, const CancellationTo
     publish();
     return loadedInfo(id);
 }
+ModelInfo ModelManager::pin(const ModelLoadRequest& request, const CancellationToken& token)
+{
+    const auto info = load(request, token);
+    token.throwIfCancelled();
+    const auto id = modelId(info.model.uri);
+    residency_.pin(id);
+    publish();
+    return loadedInfo(id);
+}
+void ModelManager::unpin(const QString& uri)
+{
+    const auto id = modelId(canonical(uri));
+    if (!loaded_.contains(id)) return;
+    residency_.unpin(id);
+    publish();
+}
+bool ModelManager::isPinned(const QString& uri) const
+{
+    const auto id = modelId(canonical(uri));
+    return loaded_.contains(id) && residency_.get(id).pinned;
+}
 void ModelManager::unload(const QString& uri)
 {
     const auto id = modelId(canonical(uri));
@@ -116,7 +137,7 @@ ModelInfo ModelManager::loadedInfo(const QString& id) const
     info.memory = entry.memory;
     info.keepAliveMs = entry.keepAliveMs;
     info.activeRequests = entry.active;
-    info.expiresInMs = entry.active ? -1 : std::max(qint64(0), qint64(std::chrono::duration_cast<std::chrono::milliseconds>(
+    info.expiresInMs = (entry.active || entry.pinned) ? -1 : std::max(qint64(0), qint64(std::chrono::duration_cast<std::chrono::milliseconds>(
         entry.expires - ModelResidencyManager::Clock::now()).count()));
     return info;
 }
@@ -136,7 +157,8 @@ void ModelManager::release(const QString& id)
 }
 void ModelManager::evict(const QString& id, bool automatic)
 {
-    if (residency_.get(id).active) throw Error(ErrorCode::ModelInUse, QStringLiteral("Active model cannot be unloaded"));
+    if (residency_.get(id).active || residency_.get(id).pinned)
+        throw Error(ErrorCode::ModelInUse, QStringLiteral("Active or pinned model cannot be unloaded"));
     if (beforeUnload_) beforeUnload_(id);
     runtimes_.unload(id);
     residency_.erased(id, automatic);

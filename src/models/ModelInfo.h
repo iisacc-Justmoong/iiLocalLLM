@@ -11,7 +11,7 @@ struct ModelInfo {
     ExecutionSelection execution;
     MemoryEstimate memory;
     qint64 keepAliveMs = 0;
-    qint64 expiresInMs = 0; // -1 while a generation holds the model.
+    qint64 expiresInMs = 0; // -1 while a generation holds the model or the host pins it.
     int activeRequests = 0;
 };
 } // namespace iiLocalLLM

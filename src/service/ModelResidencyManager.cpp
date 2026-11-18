@@ -29,13 +29,20 @@ QString ModelResidencyManager::oldestIdle() const
     const Entry* oldest = nullptr;
     QString result;
     for (const auto& [id, e] : entries_)
-        if (e.active == 0 && (!oldest || e.access < oldest->access)) { oldest = &e; result = id; }
+        if (e.active == 0 && !e.pinned && (!oldest || e.access < oldest->access)) { oldest = &e; result = id; }
     return result;
 }
 QList<QString> ModelResidencyManager::expired(Time now) const
 {
     QList<QString> result;
-    for (const auto& [id, e] : entries_) if (e.active == 0 && now >= e.expires) result.append(id);
+    for (const auto& [id, e] : entries_) if (e.active == 0 && !e.pinned && now >= e.expires) result.append(id);
+    return result;
+}
+std::optional<ModelResidencyManager::Time> ModelResidencyManager::nextExpiry() const
+{
+    std::optional<Time> result;
+    for (const auto& [id, e] : entries_)
+        if (!e.active && !e.pinned && (!result || e.expires < *result)) result = e.expires;
     return result;
 }
 void ModelResidencyManager::loaded(const QString& id, MemoryEstimate memory, qint64 keepAlive, Time now)
@@ -54,6 +61,14 @@ void ModelResidencyManager::touch(const QString& id, qint64 keepAlive, Time now)
     e.expires = now + std::chrono::milliseconds(e.keepAliveMs);
 }
 void ModelResidencyManager::acquire(const QString& id, qint64 keepAlive) { touch(id, keepAlive); ++entries_.at(id).active; }
+void ModelResidencyManager::pin(const QString& id) { entries_.at(id).pinned = true; }
+void ModelResidencyManager::unpin(const QString& id, Time now)
+{
+    auto& e = entries_.at(id);
+    if (!e.pinned) return;
+    e.pinned = false;
+    touch(id, -1, now);
+}
 void ModelResidencyManager::release(const QString& id, Time now)
 {
     auto& e = entries_.at(id);
@@ -65,7 +80,7 @@ void ModelResidencyManager::erased(const QString& id, bool eviction)
 {
     const auto it = entries_.find(id);
     if (it == entries_.end()) return;
-    if (it->second.active) throw Error(ErrorCode::ModelInUse, QStringLiteral("Active model cannot be evicted"));
+    if (it->second.active || it->second.pinned) throw Error(ErrorCode::ModelInUse, QStringLiteral("Active or pinned model cannot be evicted"));
     entries_.erase(it);
     if (eviction) ++evictions_;
 }

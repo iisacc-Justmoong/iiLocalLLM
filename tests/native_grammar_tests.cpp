@@ -3,7 +3,8 @@
 #include <QtCore/QFile>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
-#include <QtTest/QTest>
+#include "CTestSupport.h"
+#include <QtCore/QCoreApplication>
 #include <memory>
 #include <algorithm>
 
@@ -27,33 +28,25 @@ bool accepts(const std::string& source, const std::string& text)
 }
 }
 
-class NativeGrammarTests final : public QObject {
-    Q_OBJECT
-private slots:
+class NativeGrammarTests final {
+public:
     void requiredJsonToolPrefillStartsInsideTheCallEnvelope() {
-        QFile file(QString::fromUtf8(IILOCALLLM_LLAMA_TEMPLATES)+"/Qwen-Qwen2.5-7B-Instruct.jinja");QVERIFY(file.open(QIODevice::ReadOnly));
+        QFile file(QString::fromUtf8(IILOCALLLM_LLAMA_TEMPLATES)+"/Qwen-Qwen2.5-7B-Instruct.jinja");CTEST_CHECK(file.open(QIODevice::ReadOnly));
         auto templates=common_chat_templates_init(nullptr,file.readAll().toStdString(),"","<|im_end|>");
         common_chat_templates_inputs input;input.messages=common_chat_msgs_parse_oaicompat(common_json::array({{{"role","user"},{"content","Call Observe now."}}}));
         input.tools=common_chat_tools_parse_oaicompat(common_json::array({{{"type","function"},{"function",{{"name","Observe"},{"parameters",common_json{{"type","object"},{"properties",common_json::object()}}}}}}}));
         input.tool_choice=COMMON_CHAT_TOOL_CHOICE_REQUIRED;input.parallel_tool_calls=false;
         auto prepared=common_chat_templates_apply(templates.get(),input);prepared.generation_prompt+="<tool_call>\n";
         const std::string body=R"({"name":"Observe","arguments":{}})" "\n</tool_call>";
-        QVERIFY(accepts(prepared.grammar,prepared.generation_prompt+body));
-        QVERIFY(!accepts(prepared.grammar,prepared.generation_prompt+"The tool is not available."));
+        CTEST_CHECK(accepts(prepared.grammar,prepared.generation_prompt+body));
+        CTEST_CHECK(!accepts(prepared.grammar,prepared.generation_prompt+"The tool is not available."));
         common_chat_parser_params parser(prepared);parser.parser.load(prepared.parser);
-        const auto parsed=common_chat_parse(body,false,parser);QCOMPARE(parsed.tool_calls.size(),size_t(1));QCOMPARE(parsed.tool_calls[0].name,std::string("Observe"));
+        const auto parsed=common_chat_parse(body,false,parser);CTEST_COMPARE(parsed.tool_calls.size(),size_t(1));CTEST_COMPARE(parsed.tool_calls[0].name,std::string("Observe"));
     }
-    void conditionalArguments_data()
+    void conditionalArguments(const QString& filename, bool required)
     {
-        QTest::addColumn<QString>("filename");QTest::addColumn<bool>("required");
-        for(const auto& filename:{QString("Qwen3.5-4B.jinja"),QString("Qwen-Qwen3-0.6B.jinja")})
-            for(bool required:{false,true})
-                QTest::newRow(qPrintable(filename+(required?"-required":"-auto")))<<filename<<required;
-    }
-    void conditionalArguments()
-    {
-        QFETCH(QString,filename);QFETCH(bool,required);using json=common_json;
-        QFile file(QString::fromUtf8(IILOCALLLM_LLAMA_TEMPLATES)+'/'+filename);QVERIFY(file.open(QIODevice::ReadOnly));
+        using json=common_json;
+        QFile file(QString::fromUtf8(IILOCALLLM_LLAMA_TEMPLATES)+'/'+filename);CTEST_CHECK(file.open(QIODevice::ReadOnly));
         auto templates=common_chat_templates_init(nullptr,file.readAll().toStdString(),"","<|im_end|>");
         auto base=json::parse(R"({"type":"object","properties":{"to":{"type":"string"},"summary":{"type":"string"},"message":{"anyOf":[{"type":"string"},{"type":"object","properties":{"type":{"const":"shutdown_request"}},"required":["type"],"additionalProperties":false}]}},"required":["to","message"],"additionalProperties":false})");
         auto plain=base,control=base;
@@ -66,7 +59,7 @@ private slots:
         input.tools=common_chat_tools_parse_oaicompat(json::array({{{"type","function"},{"function",{{"name","Notify"},{"parameters",base}}}}}));
         input.tool_choice=required?COMMON_CHAT_TOOL_CHOICE_REQUIRED:COMMON_CHAT_TOOL_CHOICE_AUTO;
         input.parallel_tool_calls=false;input.enable_thinking=false;
-        const auto prepared=common_chat_templates_apply(templates.get(),input);QVERIFY(!prepared.grammar.empty());
+        const auto prepared=common_chat_templates_apply(templates.get(),input);CTEST_CHECK(!prepared.grammar.empty());
         const auto prefix=prepared.grammar_lazy?std::string():prepared.generation_prompt;
         common_chat_parser_params parser(prepared);if(!prepared.parser.empty())parser.parser.load(prepared.parser);
         const bool xml=filename.startsWith("Qwen3.5");
@@ -87,16 +80,16 @@ private slots:
             return text+"</function>\n</tool_call>\n";
         };
         const json missing{{"to","worker"},{"message","OBSERVED"}};
-        QVERIFY(!accepts(prepared.grammar,prefix+call(missing,{"to","message"})));
+        CTEST_CHECK(!accepts(prepared.grammar,prefix+call(missing,{"to","message"})));
         for(const auto& message:{json("OBSERVED"),json("{\"type\":\"shutdown_request\"}"),json{{"type","shutdown_request"}}}){
             json args{{"to","worker"},{"message",message}};
             if(message.is_string())args["summary"]="Observed";
             std::vector<std::string> order={"message","summary","to"};
             do{
                 const auto text=call(args,order);
-                QVERIFY2(accepts(prepared.grammar,prefix+text),text.c_str());
-                const auto parsed=common_chat_parse(text,false,parser);QCOMPARE(parsed.tool_calls.size(),size_t(1));
-                QCOMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(parsed.tool_calls[0].arguments)).object(),QJsonDocument::fromJson(QByteArray::fromStdString(args.dump())).object());
+                CTEST_CHECK_MESSAGE(accepts(prepared.grammar,prefix+text),text.c_str());
+                const auto parsed=common_chat_parse(text,false,parser);CTEST_COMPARE(parsed.tool_calls.size(),size_t(1));
+                CTEST_COMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(parsed.tool_calls[0].arguments)).object(),QJsonDocument::fromJson(QByteArray::fromStdString(args.dump())).object());
                 if(!xml)break;
             }while(std::next_permutation(order.begin(),order.end()));
         }
@@ -104,14 +97,14 @@ private slots:
         std::vector<std::string> order={"message","summary","to"};
         do{
             const auto text=call(controlWithSummary,order);
-            QVERIFY(accepts(prepared.grammar,prefix+text));
-            const auto parsed=common_chat_parse(text,false,parser);QCOMPARE(parsed.tool_calls.size(),size_t(1));
-            QCOMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(parsed.tool_calls[0].arguments)).object(),QJsonDocument::fromJson(QByteArray::fromStdString(controlWithSummary.dump())).object());
+            CTEST_CHECK(accepts(prepared.grammar,prefix+text));
+            const auto parsed=common_chat_parse(text,false,parser);CTEST_COMPARE(parsed.tool_calls.size(),size_t(1));
+            CTEST_COMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(parsed.tool_calls[0].arguments)).object(),QJsonDocument::fromJson(QByteArray::fromStdString(controlWithSummary.dump())).object());
             if(!xml)break;
         }while(std::next_permutation(order.begin(),order.end()));
         if(xml){
-            QVERIFY(!accepts(prepared.grammar,prefix+call(controlWithSummary,{"to","message","summary","summary"})));
-            QVERIFY(!accepts(prepared.grammar,prefix+call(controlWithSummary,{"to","message","to"})));
+            CTEST_CHECK(!accepts(prepared.grammar,prefix+call(controlWithSummary,{"to","message","summary","summary"})));
+            CTEST_CHECK(!accepts(prepared.grammar,prefix+call(controlWithSummary,{"to","message","to"})));
             const json historicalArgs{{"to","worker"},{"summary","Observed"},{"message","{\"type\":\"shutdown_request\"}"}};
             input.messages=common_chat_msgs_parse_oaicompat(json::array({
                 {{"role","user"},{"content","Send this text."}},
@@ -121,14 +114,14 @@ private slots:
             }));
             const auto continued=common_chat_templates_apply(templates.get(),input);
             const auto encoded="<parameter=message>\n"+historicalArgs["message"].dump()+"\n</parameter>";
-            QVERIFY2(continued.prompt.find(encoded)!=std::string::npos,"History must use the same typed XML encoding as generation");
-            QVERIFY(continued.prompt.find("JSON-encoded")!=std::string::npos);
+            CTEST_CHECK_MESSAGE(continued.prompt.find(encoded)!=std::string::npos,"History must use the same typed XML encoding as generation");
+            CTEST_CHECK(continued.prompt.find("JSON-encoded")!=std::string::npos);
         }
     }
     void taggedRootAndLargeSignatures()
     {
         using json=common_json;
-        QFile file(QString::fromUtf8(IILOCALLLM_LLAMA_TEMPLATES)+"/Qwen3.5-4B.jinja");QVERIFY(file.open(QIODevice::ReadOnly));
+        QFile file(QString::fromUtf8(IILOCALLLM_LLAMA_TEMPLATES)+"/Qwen3.5-4B.jinja");CTEST_CHECK(file.open(QIODevice::ReadOnly));
         auto templates=common_chat_templates_init(nullptr,file.readAll().toStdString(),"","<|im_end|>");
         // Partial alternatives must retain the root signature. The host still
         // validates constraints that this tagged grammar does not implement.
@@ -149,28 +142,16 @@ private slots:
                 return text+"</function>\n</tool_call>\n";
             };
             const auto text=call(true);
-            QVERIFY2(accepts(prepared.grammar,prepared.generation_prompt+text),text.c_str());
-            QVERIFY(!accepts(prepared.grammar,prepared.generation_prompt+call(false)));
-            const auto parsed=common_chat_parse(text,false,parser);QCOMPARE(parsed.tool_calls.size(),size_t(1));
-            QCOMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(parsed.tool_calls[0].arguments)).object(),QJsonDocument::fromJson(QByteArray::fromStdString(args.dump())).object());
+            CTEST_CHECK_MESSAGE(accepts(prepared.grammar,prepared.generation_prompt+text),text.c_str());
+            CTEST_CHECK(!accepts(prepared.grammar,prepared.generation_prompt+call(false)));
+            const auto parsed=common_chat_parse(text,false,parser);CTEST_COMPARE(parsed.tool_calls.size(),size_t(1));
+            CTEST_COMPARE(QJsonDocument::fromJson(QByteArray::fromStdString(parsed.tool_calls[0].arguments)).object(),QJsonDocument::fromJson(QByteArray::fromStdString(args.dump())).object());
         }
     }
-    void singleCallLimit_data()
+    void singleCallLimit(const QString& filename, bool required, bool parallel)
     {
-        QTest::addColumn<QString>("filename");
-        QTest::addColumn<bool>("required");
-        QTest::addColumn<bool>("parallel");
-        for (const auto& filename : {QString("Qwen-Qwen3-0.6B.jinja"), QString("Qwen-Qwen2.5-7B-Instruct.jinja")})
-            for (const bool required : {false, true})
-                for (const bool parallel : {false, true})
-                    QTest::newRow(qPrintable(filename + (required ? "-required" : "-auto") + (parallel ? "-parallel" : "-single")))
-                        << filename << required << parallel;
-    }
-    void singleCallLimit()
-    {
-        QFETCH(QString, filename); QFETCH(bool, required); QFETCH(bool, parallel);
         QFile file(QString::fromUtf8(IILOCALLLM_LLAMA_TEMPLATES) + '/' + filename);
-        QVERIFY(file.open(QIODevice::ReadOnly));
+        CTEST_CHECK(file.open(QIODevice::ReadOnly));
         auto templates = common_chat_templates_init(nullptr, file.readAll().toStdString(), "", "<|im_end|>");
         common_chat_templates_inputs input;
         input.messages = common_chat_msgs_parse_oaicompat(common_json::parse(R"([{"role":"user","content":"Read the note."}])"));
@@ -179,15 +160,36 @@ private slots:
         input.parallel_tool_calls = parallel;
         input.enable_thinking = false;
         const auto prepared = common_chat_templates_apply(templates.get(), input);
-        QVERIFY(!prepared.grammar.empty());
-        QCOMPARE(prepared.grammar_lazy, !required);
+        CTEST_CHECK(!prepared.grammar.empty());
+        CTEST_COMPARE(prepared.grammar_lazy, !required);
         const std::string call = "<tool_call>\n{\"name\":\"Read\",\"arguments\":{\"path\":\"note.txt\"}}\n</tool_call>\n";
         // Eager grammar includes the generation prefill; the native sampler
         // accepts it before generation. Lazy grammar starts at the tool marker.
         const auto prefix = prepared.grammar_lazy ? std::string() : prepared.generation_prompt;
-        QVERIFY2(accepts(prepared.grammar, prefix + call), prepared.grammar.c_str());
-        QCOMPARE(accepts(prepared.grammar, prefix + call + call), parallel);
+        CTEST_CHECK_MESSAGE(accepts(prepared.grammar, prefix + call), prepared.grammar.c_str());
+        CTEST_COMPARE(accepts(prepared.grammar, prefix + call + call), parallel);
     }
 };
-QTEST_GUILESS_MAIN(NativeGrammarTests)
-#include "native_grammar_tests.moc"
+int main(int argc, char** argv)
+{
+    QCoreApplication application(argc, argv);
+    iillm_ctest::CTestRunner runner;
+    NativeGrammarTests tests;
+    runner.run("requiredJsonToolPrefillStartsInsideTheCallEnvelope", [&] { tests.requiredJsonToolPrefillStartsInsideTheCallEnvelope(); });
+    for (const auto& filename : {QString("Qwen3.5-4B.jinja"), QString("Qwen-Qwen3-0.6B.jinja")}) {
+        for (const bool required : {false, true}) {
+            const auto name = "conditionalArguments:" + filename.toStdString() + (required ? "-required" : "-auto");
+            runner.run(name, [&] { tests.conditionalArguments(filename, required); });
+        }
+    }
+    runner.run("taggedRootAndLargeSignatures", [&] { tests.taggedRootAndLargeSignatures(); });
+    for (const auto& filename : {QString("Qwen-Qwen3-0.6B.jinja"), QString("Qwen-Qwen2.5-7B-Instruct.jinja")}) {
+        for (const bool required : {false, true}) {
+            for (const bool parallel : {false, true}) {
+                const auto name = "singleCallLimit:" + filename.toStdString() + (required ? "-required" : "-auto") + (parallel ? "-parallel" : "-single");
+                runner.run(name, [&] { tests.singleCallLimit(filename, required, parallel); });
+            }
+        }
+    }
+    return runner.result();
+}

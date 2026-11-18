@@ -2,6 +2,7 @@
 #include "Runtime.h"
 #include "ModelInfo.h"
 #include "ModelPull.h"
+#define IILOCALLLM_HAS_HOST_MODEL_PINNING 1
 
 namespace iiLocalLLM {
 
@@ -25,6 +26,10 @@ public:
     std::future<ModelRecord> resolveModel(QString model);
     std::future<ModelVerification> verifyModel(QString model);
     std::future<ModelInfo> loadModel(ModelLoadRequest request);
+    // Host-owned, idempotent residency: load and pin atomically on the worker.
+    std::future<ModelInfo> pinModel(ModelLoadRequest request, CancellationToken cancellation = {});
+    std::future<void> unpinModel(QString model);
+    std::future<bool> isModelPinned(QString model);
     std::future<void> unloadModel(QString model);
     std::future<QList<ModelInfo>> models();
     HardwareInfo hardware() const;

@@ -10,9 +10,9 @@
   },
   "source": {
     "path": "docs/Residency.md",
-    "sha256": "8a39d2fb516045ae1392e389ae40bf597769c0c99165710a1711b81b3781bbb7",
-    "bytes": 9110,
-    "line_count": 91,
+    "sha256": "b82406479a7bdc2bc77cf25fd356eb7708ff2a2571c0b4913351df4c2b6f9bb7",
+    "bytes": 11673,
+    "line_count": 122,
     "encoding": "utf-8",
     "language": "ko"
   },
@@ -32,31 +32,61 @@
       "title": "모델 상주와 메모리 예산"
     },
     {
-      "id": "b000002",
+      "id": "b000048",
       "kind": "blank",
       "start_line": 2,
       "end_line": 2,
       "raw": "\n"
     },
     {
-      "id": "b000003",
-      "kind": "paragraph",
+      "id": "b000049",
+      "kind": "heading",
       "start_line": 3,
       "end_line": 3,
-      "raw": "ModelResidencyManager는 모델별 메모리 예약, 마지막 사용 순서, 만료 시각, 활성 요청 수를 관리한다. RuntimeManager는 실제 가중치를 소유하고 ModelManager가 두 계층을 연결한다. GUI·CLI·HTTP 클라이언트는 하나의 iiLocalLLMD에 접속해 같은 모델 인스턴스를 사용한다.\n"
+      "raw": "## 호스트가 명시적으로 고정하는 모델\n",
+      "level": 2,
+      "title": "호스트가 명시적으로 고정하는 모델"
     },
     {
-      "id": "b000004",
+      "id": "b000050",
       "kind": "blank",
       "start_line": 4,
       "end_line": 4,
       "raw": "\n"
     },
     {
+      "id": "b000051",
+      "kind": "paragraph",
+      "start_line": 5,
+      "end_line": 13,
+      "raw": "호스트는 `Service::pinModel`로 설치된 모델의 실제 런타임 적재와 고정을\n한 작업으로 요청한다. 고정된 가중치는 유휴 만료, LRU 및 메모리 압박 정리의\n대상이 아니며 명시적 unload도 거부한다. 공간이 부족하면 다른 모델의 적재는\n실패한다. `unpinModel`은 고정만 해제하고 일반 유휴 수명을 다시 적용한다.\n서비스가 종료되면 모든 모델 리소스는 반환된다. `isModelPinned`는 상태를\n명시적으로 조회한다. 모델 준비 또는 파일 캐시는 이 고정 상태를 뜻하지 않는다.\n고정과 해제는 멱등이며 특정 서비스 인스턴스가 소유한다. 고정 요청에는 취소\n토큰을 전달할 수 있다. 적재 실패를 성공으로 보고하지 않는다. 이 호스트 정책은\n일반 IPC 클라이언트에 고정·해제 권한을 새로 제공하지 않는다.\n"
+    },
+    {
+      "id": "b000002",
+      "kind": "blank",
+      "start_line": 14,
+      "end_line": 14,
+      "raw": "\n"
+    },
+    {
+      "id": "b000003",
+      "kind": "paragraph",
+      "start_line": 15,
+      "end_line": 15,
+      "raw": "ModelResidencyManager는 모델별 메모리 예약, 마지막 사용 순서, 만료 시각, 활성 요청 수를 관리한다. RuntimeManager는 실제 가중치를 소유하고 ModelManager가 두 계층을 연결한다. GUI·CLI·HTTP 클라이언트는 하나의 iiLocalLLMD에 접속해 같은 모델 인스턴스를 사용한다.\n"
+    },
+    {
+      "id": "b000004",
+      "kind": "blank",
+      "start_line": 16,
+      "end_line": 16,
+      "raw": "\n"
+    },
+    {
       "id": "b000005",
       "kind": "list",
-      "start_line": 5,
-      "end_line": 10,
+      "start_line": 17,
+      "end_line": 22,
       "raw": "1. 정규 URI 또는 서비스 registry의 별칭으로 설치된 모델을 확인한다.\n2. 상주한 모델이면 같은 인스턴스를 재사용하고 활성 lease를 잡는다.\n3. 없으면 전체 파일 무결성을 확인하고 가중치·KV·런타임 여유분을 추정한다.\n4. 예약 합계, 모델 개수, 현재 가용 RAM을 검사한다. 부족하면 활성 요청이 없는 모델을 최근 사용이 오래된 순서로 내린다.\n5. 확보할 수 없거나 단일 모델이 예산을 넘으면 runtime load 전에 resource_limit으로 종료한다.\n6. 모델을 로드하고 생성한다. 성공·오류·취소 후 lease를 반환하며 유휴 만료 시각을 갱신한다.\n",
       "items": [
         {
@@ -94,29 +124,29 @@
     {
       "id": "b000006",
       "kind": "blank",
-      "start_line": 11,
-      "end_line": 11,
+      "start_line": 23,
+      "end_line": 23,
       "raw": "\n"
     },
     {
       "id": "b000007",
       "kind": "paragraph",
-      "start_line": 12,
-      "end_line": 12,
+      "start_line": 24,
+      "end_line": 24,
       "raw": "설치 파일, 대화 이력, KV, 모델 가중치는 별개의 수명이다. 자동 LRU/만료 시 해당 모델의 KV를 먼저 파괴한 뒤 가중치를 내린다. 유휴 세션의 대화 이력은 유지하며 다음 요청이 모델을 다시 로드하고 이력으로 prefill한다. 세션이 있다는 이유만으로 수 GB의 가중치를 고정하지 않는다. 명시적인 unload/remove는 기존 계약대로 해당 모델의 세션 종료를 요구한다.\n"
     },
     {
       "id": "b000008",
       "kind": "blank",
-      "start_line": 13,
-      "end_line": 13,
+      "start_line": 25,
+      "end_line": 25,
       "raw": "\n"
     },
     {
       "id": "b000009",
       "kind": "heading",
-      "start_line": 14,
-      "end_line": 14,
+      "start_line": 26,
+      "end_line": 26,
       "raw": "## 설정\n",
       "level": 2,
       "title": "설정"
@@ -124,15 +154,15 @@
     {
       "id": "b000010",
       "kind": "blank",
-      "start_line": 15,
-      "end_line": 15,
+      "start_line": 27,
+      "end_line": 27,
       "raw": "\n"
     },
     {
       "id": "b000011",
       "kind": "table",
-      "start_line": 16,
-      "end_line": 22,
+      "start_line": 28,
+      "end_line": 34,
       "raw": "| ServiceOptions | daemon 옵션 | 기본 동작 |\n| --- | --- | --- |\n| memoryBudgetBytes |--memory-budget-mib| 0이면 물리 RAM에서 max(2 GiB, 25%)를 제외한다. RAM이 그보다 작으면 절반을 예산으로 둔다. 명시 예산은 물리 RAM을 넘지 않는다 |\n| memoryReserveBytes |--memory-reserve-mib| 새 모델 예약 후 최소 256 MiB의 가용 RAM 여유를 요구한다 |\n| maxModels |--max-models| 상주 모델 최대 4개. 초과 시 유휴 LRU 후보를 찾는다 |\n| keepAliveMs |--keep-alive| -1/생략은 자동: RAM >8 GiB는 300,000ms, <=8 GiB는 0ms |\n| defaultContextTokens |--컨텍스트 토큰| 2048. manifest 상한 및 캐시 토큰 예산으로 제한한다 |\n",
       "columns": [
         "ServiceOptions",
@@ -170,29 +200,29 @@
     {
       "id": "b000012",
       "kind": "blank",
-      "start_line": 23,
-      "end_line": 23,
+      "start_line": 35,
+      "end_line": 35,
       "raw": "\n"
     },
     {
       "id": "b000013",
       "kind": "paragraph",
-      "start_line": 24,
-      "end_line": 24,
+      "start_line": 36,
+      "end_line": 36,
       "raw": "물리 RAM을 탐지하지 못하면 4 GiB를 기준으로 보수적인 자동 예산/수명을 사용한다. 메모리 바이트 설정은 서비스 배포 설정이며 앱의 모델 요청에 backend/device 또는 예산 변경 필드를 두지 않는다.\n"
     },
     {
       "id": "b000014",
       "kind": "blank",
-      "start_line": 25,
-      "end_line": 25,
+      "start_line": 37,
+      "end_line": 37,
       "raw": "\n"
     },
     {
       "id": "b000015",
       "kind": "heading",
-      "start_line": 26,
-      "end_line": 26,
+      "start_line": 38,
+      "end_line": 38,
       "raw": "## GGUF의 KV 압축과 부분 GPU 적재\n",
       "level": 2,
       "title": "GGUF의 KV 압축과 부분 GPU 적재"
@@ -200,29 +230,29 @@
     {
       "id": "b000016",
       "kind": "blank",
-      "start_line": 27,
-      "end_line": 27,
+      "start_line": 39,
+      "end_line": 39,
       "raw": "\n"
     },
     {
       "id": "b000017",
       "kind": "paragraph",
-      "start_line": 28,
-      "end_line": 32,
+      "start_line": 40,
+      "end_line": 44,
       "raw": "호스트는 데몬 시작 시 `--llama-kv-cache=f16|q8_0|q4_0`과\n`--llama-gpu-layers=-1|0|N`을 지정할 수 있다. 기본값은 각각 `f16`, `-1`이다.\n`-1`은 가능한 전체 레이어, `0`은 CPU, 양수 `N`은 GPU 레이어 상한을 뜻한다.\n이는 클라이언트가 모델마다 장치를 지정하는 옵션이 아니라 해당 데몬 전체의\n호스트 정책이다. MLX 모델에는 이 옵션을 적용하지 않는다.\n"
     },
     {
       "id": "b000018",
       "kind": "blank",
-      "start_line": 33,
-      "end_line": 33,
+      "start_line": 45,
+      "end_line": 45,
       "raw": "\n"
     },
     {
       "id": "b000019",
       "kind": "fenced_code",
-      "start_line": 34,
-      "end_line": 36,
+      "start_line": 46,
+      "end_line": 48,
       "raw": "```sh\niiLocalLLMD --models-root /path/to/Models --llama-kv-cache=q8_0 --llama-gpu-layers=12\n```\n",
       "language": "sh",
       "code": "iiLocalLLMD --models-root /path/to/Models --llama-kv-cache=q8_0 --llama-gpu-layers=12\n",
@@ -231,29 +261,29 @@
     {
       "id": "b000020",
       "kind": "blank",
-      "start_line": 37,
-      "end_line": 37,
+      "start_line": 49,
+      "end_line": 49,
       "raw": "\n"
     },
     {
       "id": "b000021",
       "kind": "paragraph",
-      "start_line": 38,
-      "end_line": 43,
+      "start_line": 50,
+      "end_line": 55,
       "raw": "C++에서는 `LlamaMemoryOptions`의 `kvCache`와 `runtime.maxGpuLayers`를 채워\n`Service(serviceOptions, mlxOptions, llamaOptions)`에 전달한다. 직접 런타임을\n구성할 때는 `createLlamaRuntime(runtimeOptions, LlamaKvCache::Q8_0)`을 쓴다.\n기존 생성자와 기본 설정은 유지한다. 설치된 Python의 `llama_memory`에서도 같은\n호스트 정책으로 데몬을 시작할 수 있으며, 반환된 프로세스의 종료·대기는 호출자\n책임이다. Python 경로에는 설치 접두사의 `share/iiLocalLLM/runtimes`를 추가한다.\n"
     },
     {
       "id": "b000022",
       "kind": "blank",
-      "start_line": 44,
-      "end_line": 44,
+      "start_line": 56,
+      "end_line": 56,
       "raw": "\n"
     },
     {
       "id": "b000023",
       "kind": "fenced_code",
-      "start_line": 45,
-      "end_line": 49,
+      "start_line": 57,
+      "end_line": 61,
       "raw": "```python\nfrom llama_memory import LlamaMemoryOptions, start_daemon\ndaemon = start_daemon(\"iiLocalLLMD\", LlamaMemoryOptions(\"q8_0\", 12),\n                      [\"--models-root\", \"/path/to/Models\"])\n```\n",
       "language": "python",
       "code": "from llama_memory import LlamaMemoryOptions, start_daemon\ndaemon = start_daemon(\"iiLocalLLMD\", LlamaMemoryOptions(\"q8_0\", 12),\n                      [\"--models-root\", \"/path/to/Models\"])\n",
@@ -262,57 +292,71 @@
     {
       "id": "b000024",
       "kind": "blank",
-      "start_line": 50,
-      "end_line": 50,
+      "start_line": 62,
+      "end_line": 62,
       "raw": "\n"
     },
     {
       "id": "b000025",
       "kind": "paragraph",
-      "start_line": 51,
-      "end_line": 57,
+      "start_line": 63,
+      "end_line": 69,
       "raw": "Q8_0과 Q4_0은 K와 V를 함께 양자화하고 Flash Attention을 요구한다. llama.cpp가\n모델의 head 크기 또는 장치의 해당 연산을 지원하지 않으면 실패하며 임의로 F16으로\n바꾸지 않는다. 양자화는 문맥 처리 결과와 모델 품질을 바꿀 수 있고 변환 연산 및\nCPU/GPU 간 전송으로 속도가 떨어질 수도 있다. 정밀도에 민감하면 F16을 사용한다.\n부분 오프로딩은 GPU 점유량을 줄이는 대신 시스템 RAM과 데이터 전송을 사용한다.\nApple Silicon에서는 CPU와 GPU가 같은 물리 메모리를 공유하므로 CPU로 옮겨도\n별도의 RAM이 생기지 않는다. 가중치의 양자화 형식은 이 옵션으로 바뀌지 않는다.\n"
     },
     {
       "id": "b000026",
       "kind": "blank",
-      "start_line": 58,
-      "end_line": 58,
+      "start_line": 70,
+      "end_line": 70,
+      "raw": "\n"
+    },
+    {
+      "id": "b000055",
+      "kind": "paragraph",
+      "start_line": 71,
+      "end_line": 76,
+      "raw": "macOS의 GGUF 메모리 매핑은 유지하되 모델 전체에 대한 동기 선읽기 힌트는\n발행하지 않는다. 필요한 페이지는 실제 접근할 때 읽고, 일반 모델 무결성 검사와\n메모리 예약은 그대로 적용한다. 이는 운영체제의 선읽기 호출이 완료될 때까지\n적재와 취소가 무기한 가려지는 경로를 피하기 위한 정책이며, 각 데이터 접근이나\n모델의 실제 로딩 시간이 즉시 끝난다는 보장은 아니다. 다른 플랫폼의 선읽기\n정책은 변경하지 않는다.\n"
+    },
+    {
+      "id": "b000056",
+      "kind": "blank",
+      "start_line": 77,
+      "end_line": 77,
       "raw": "\n"
     },
     {
       "id": "b000027",
       "kind": "paragraph",
-      "start_line": 59,
-      "end_line": 63,
+      "start_line": 78,
+      "end_line": 82,
       "raw": "고정 llama.cpp의 32원소 블록은 Q8_0이 34바이트, Q4_0이 18바이트다. 따라서\nKV 텐서 페이로드는 F16의 각각 약 53.1%, 28.1%지만 모델 가중치·작업 버퍼·\n할당 오버헤드는 포함하지 않는다. 256 토큰 정렬을 반영한 추정값을 `memory.basis`와\n`context_bytes`에 표시한다. head 차원이 호환되지 않으면 예약 추정은 F16으로\n보수적으로 처리하고, 실제 양자화 컨텍스트 생성은 호환성 오류를 반환한다.\n"
     },
     {
       "id": "b000028",
       "kind": "blank",
-      "start_line": 64,
-      "end_line": 64,
+      "start_line": 83,
+      "end_line": 83,
       "raw": "\n"
     },
     {
       "id": "b000029",
       "kind": "paragraph",
-      "start_line": 65,
-      "end_line": 68,
+      "start_line": 84,
+      "end_line": 87,
       "raw": "합성 가중치의 2층 모델과 4096 토큰 컨텍스트에서 Metal KV 버퍼는 F16 2,097,152,\nQ8_0 1,114,112, Q4_0 589,824바이트였다. 이 검사는 실제 Metal 할당과 부분 GPU\n레이어 선택을 확인하지만 사전 학습 모델의 응답 품질이나 속도, Windows/Linux\n장치의 실제 동작을 증명하지 않는다.\n"
     },
     {
       "id": "b000030",
       "kind": "blank",
-      "start_line": 69,
-      "end_line": 69,
+      "start_line": 88,
+      "end_line": 88,
       "raw": "\n"
     },
     {
       "id": "b000031",
       "kind": "fenced_code",
-      "start_line": 70,
-      "end_line": 73,
+      "start_line": 89,
+      "end_line": 92,
       "raw": "```sh\n./build/iiLocalLLMD --models-root \"$PWD/build/chat/Models\" --socket \"$PWD/build/llm.sock\" \\\n  --memory-budget-mib 18432 --memory-reserve-mib 512 --max-models 4 --keep-alive 5m\n```\n",
       "language": "sh",
       "code": "./build/iiLocalLLMD --models-root \"$PWD/build/chat/Models\" --socket \"$PWD/build/llm.sock\" \\\n  --memory-budget-mib 18432 --memory-reserve-mib 512 --max-models 4 --keep-alive 5m\n",
@@ -321,29 +365,29 @@
     {
       "id": "b000032",
       "kind": "blank",
-      "start_line": 74,
-      "end_line": 74,
+      "start_line": 93,
+      "end_line": 93,
       "raw": "\n"
     },
     {
       "id": "b000033",
       "kind": "paragraph",
-      "start_line": 75,
-      "end_line": 75,
+      "start_line": 94,
+      "end_line": 94,
       "raw": "IPC models.load/chat 및 HTTP /v1/chat/completions의 `keep_alive`는 숫자 초 또는 `250ms`, `30s`, `5m`, `1h` 문자열이다. 0~7일 범위에서 밀리초 정밀도를 허용한다. 생략은 기존 모델 정책 또는 서비스 기본값을 사용한다. C++ ModelLoadRequest/ChatRequest/CompletionRequest는 keepAliveMs=-1로 생략을 표현한다. 8 GiB 이하에서도 호스트/요청이 명시한 수명을 적용할 수 있다.\n"
     },
     {
       "id": "b000034",
       "kind": "blank",
-      "start_line": 76,
-      "end_line": 76,
+      "start_line": 95,
+      "end_line": 95,
       "raw": "\n"
     },
     {
       "id": "b000035",
       "kind": "fenced_code",
-      "start_line": 77,
-      "end_line": 79,
+      "start_line": 96,
+      "end_line": 98,
       "raw": "```json\n{\"id\":\"turn\",\"method\":\"chat\",\"params\":{\"session_id\":\"SESSION_ID\",\"prompt\":\"Hello\",\"keep_alive\":\"5m\",\"options\":{\"max_tokens\":128}}}\n```\n",
       "language": "json",
       "code": "{\"id\":\"turn\",\"method\":\"chat\",\"params\":{\"session_id\":\"SESSION_ID\",\"prompt\":\"Hello\",\"keep_alive\":\"5m\",\"options\":{\"max_tokens\":128}}}\n",
@@ -352,29 +396,29 @@
     {
       "id": "b000036",
       "kind": "blank",
-      "start_line": 80,
-      "end_line": 80,
+      "start_line": 99,
+      "end_line": 99,
       "raw": "\n"
     },
     {
-      "id": "b000037",
+      "id": "b000052",
       "kind": "paragraph",
-      "start_line": 81,
-      "end_line": 81,
-      "raw": "활성 생성은 keep_alive=0이어도 중간에 해제하지 않는다. 0은 생성 종료 정리에서 바로 해제한다. 양수 만료는 worker가 유휴 상태에서 약 100ms마다 확인하고 각 작업 종료 후에도 확인한다. 다른 긴 작업이 worker를 점유하면 만료 처리는 그 작업 이후로 지연된다. 만료에는 wall clock이 아닌 monotonic clock을 사용한다. 모델 재사용/명시 load와 생성 종료가 사용 순서를 갱신하며 읽기 전용 ps는 수명을 늘리지 않는다.\n"
+      "start_line": 100,
+      "end_line": 100,
+      "raw": "활성 생성은 keep_alive=0이어도 중간에 해제하지 않는다. 0은 생성 종료 정리에서 바로 해제한다. 유휴 모델의 가장 이른 만료 시각에만 worker를 깨우며, 만료 대상이 없으면 새 작업 또는 종료 요청까지 기다린다. 각 작업 종료 뒤에는 만료와 메모리 압박을 확인한다. 다른 긴 작업이 worker를 점유하면 만료 처리는 그 작업 이후로 지연된다. 만료에는 wall clock이 아닌 monotonic clock을 사용한다. 모델 재사용/명시 load와 생성 종료가 사용 순서를 갱신하며 읽기 전용 ps는 수명을 늘리지 않는다.\n"
     },
     {
       "id": "b000038",
       "kind": "blank",
-      "start_line": 82,
-      "end_line": 82,
+      "start_line": 101,
+      "end_line": 101,
       "raw": "\n"
     },
     {
       "id": "b000039",
       "kind": "heading",
-      "start_line": 83,
-      "end_line": 83,
+      "start_line": 102,
+      "end_line": 102,
       "raw": "## 메모리 값의 의미\n",
       "level": 2,
       "title": "메모리 값의 의미"
@@ -382,58 +426,86 @@
     {
       "id": "b000040",
       "kind": "blank",
-      "start_line": 84,
-      "end_line": 84,
+      "start_line": 103,
+      "end_line": 103,
       "raw": "\n"
     },
     {
       "id": "b000041",
       "kind": "paragraph",
-      "start_line": 85,
-      "end_line": 85,
+      "start_line": 104,
+      "end_line": 104,
       "raw": "MemoryEstimate는 weightsBytes + contextBytes + overheadBytes의 예약 추정치이다. 모델별 process RSS 측정값이나 OS의 하드 메모리 제한이 아니다. `ps --json`의 memory에 구성 요소와 산출 근거 basis가 있고 `stats`에 전체 resident_estimated_bytes, memory_budget_bytes, available_ram_bytes, model_loads, model_evictions가 있다. 가용 RAM을 측정할 수 없으면 available_ram_bytes는 null이며 예산 검사는 계속 적용한다.\n"
     },
     {
       "id": "b000042",
       "kind": "blank",
-      "start_line": 86,
-      "end_line": 86,
+      "start_line": 105,
+      "end_line": 105,
       "raw": "\n"
     },
     {
       "id": "b000043",
       "kind": "paragraph",
-      "start_line": 87,
-      "end_line": 87,
+      "start_line": 106,
+      "end_line": 106,
       "raw": "GGUF는 파일 크기에 메타데이터의 layer 수·KV head 수·key/value dimension·context 길이·캐시 수와 호스트가 지정한 KV 형식을 적용한 예약을 더한다. MLX는 번들 크기와 config.json의 같은 attention 정보로 f16을 추정한다. 모델이 사용할 수 있는 캐시 수는 min(maxCachedContexts, maxCachedContextTokens/contextTokens)이다. 런타임/allocator 여유분은 max(256 MiB, 가중치 파일 크기의 25%)이다. attention 정보를 해석하지 못한 형식은 컨텍스트당 토큰당 256 KiB를 예약하며 외부 Runtime은 estimateMemory를 재정의할 수 있다.\n"
     },
     {
       "id": "b000044",
       "kind": "blank",
-      "start_line": 88,
-      "end_line": 88,
+      "start_line": 107,
+      "end_line": 107,
       "raw": "\n"
+    },
+    {
+      "id": "b000053",
+      "kind": "paragraph",
+      "raw": "GGUF가 레이어별 KV head 배열을 제공하면 유효한 배열의 최댓값을 전체\n레이어에 적용해 보수적으로 예약한다. 배열 길이·형식·값이 유효하지 않으면\n기존 attention head 수를 사용한다. 레이어별 설정 때문에 일반 attention head\n수를 KV head 수로 오인해 과도하게 예약하지 않으며, 잘못된 메타데이터로\n예약이 줄어들지는 않는다.\n",
+      "start_line": 108,
+      "end_line": 112
+    },
+    {
+      "id": "b000054",
+      "kind": "blank",
+      "raw": "\n",
+      "start_line": 113,
+      "end_line": 113
     },
     {
       "id": "b000045",
       "kind": "paragraph",
-      "start_line": 89,
-      "end_line": 89,
+      "start_line": 114,
+      "end_line": 114,
       "raw": "macOS는 free+inactive 페이지, Linux는 /proc/meminfo의 MemAvailable, Windows는 GlobalMemoryStatusEx의 ullAvailPhys를 읽는다. macOS speculative 페이지는 free에 이미 포함되어 중복 합산하지 않는다. 통합 메모리는 RAM과 GPU 항목으로 두 번 더하지 않는다. 전체 GPU 적재에서는 알려진 전용 GPU 메모리가 부족할 때 CPU 후보로 넘어간다. 부분 적재는 전체 가중치 크기로 GPU 공간을 예측할 수 없으므로 실제 모델·컨텍스트 할당으로 확인한다. 실제 GPU/컨텍스트 할당 실패도 기존 fallback 경로로 전달한다.\n"
     },
     {
       "id": "b000046",
       "kind": "blank",
-      "start_line": 90,
-      "end_line": 90,
+      "start_line": 115,
+      "end_line": 115,
       "raw": "\n"
     },
     {
       "id": "b000047",
       "kind": "paragraph",
-      "start_line": 91,
-      "end_line": 91,
+      "start_line": 116,
+      "end_line": 116,
       "raw": "이 산식은 일반적인 attention KV를 기준으로 한다. 모델별 특수 state, 동적 MLX 그래프, mmap·압축·allocator 동작, 다른 프로세스의 동시 할당 때문에 실제 피크는 다를 수 있다. cgroup/job/container 제한과 여러 iiLocalLLMD 간의 전역 예산 조정은 구현하지 않았다. `memory-budget-mib`, context 및 캐시 상한으로 배포 기기에 맞게 조정한다. 실제 8 GiB 장비의 벤치마크 대신 작은 메모리 예산과 하드웨어 입력을 주입한 정책 테스트로 분기를 검증했다.\n"
+    },
+    {
+      "id": "b000057",
+      "kind": "blank",
+      "start_line": 117,
+      "end_line": 117,
+      "raw": "\n"
+    },
+    {
+      "id": "b000058",
+      "kind": "paragraph",
+      "start_line": 118,
+      "end_line": 122,
+      "raw": "llama.cpp 모델 로드 옵션 `cpu_repack`은 CPU 전용 추가 버퍼의 재배치를\n선택한다. 기본값은 `true`로 기존 동작을 유지한다. `false`를 지정하면\n해당 추가 버퍼를 사용하지 않아 mmap된 가중치의 별도 재배치 복사를 피한다.\n이 경우 최초 적재와 메모리 사용량은 줄 수 있지만 CPU 추론은 느려질 수 있다.\n이 옵션은 불리언만 허용하며 장치 선택이나 무결성·메모리 예약을 바꾸지 않는다.\n"
     }
   ],
   "outline": [
@@ -446,12 +518,20 @@
       "start_line": 1
     },
     {
+      "block_id": "b000049",
+      "parent_id": "b000001",
+      "level": 2,
+      "title": "호스트가 명시적으로 고정하는 모델",
+      "anchor": "호스트가-명시적으로-고정하는-모델",
+      "start_line": 3
+    },
+    {
       "block_id": "b000009",
       "parent_id": "b000001",
       "level": 2,
       "title": "설정",
       "anchor": "설정",
-      "start_line": 14
+      "start_line": 26
     },
     {
       "block_id": "b000015",
@@ -459,7 +539,7 @@
       "level": 2,
       "title": "GGUF의 KV 압축과 부분 GPU 적재",
       "anchor": "gguf의-kv-압축과-부분-gpu-적재",
-      "start_line": 26
+      "start_line": 38
     },
     {
       "block_id": "b000039",
@@ -467,50 +547,50 @@
       "level": 2,
       "title": "메모리 값의 의미",
       "anchor": "메모리-값의-의미",
-      "start_line": 83
+      "start_line": 102
     }
   ],
   "indexes": {
     "directive_candidates": [
       {
         "block_id": "b000007",
-        "line": 12,
+        "line": 24,
         "text": "설치 파일, 대화 이력, KV, 모델 가중치는 별개의 수명이다. 자동 LRU/만료 시 해당 모델의 KV를 먼저 파괴한 뒤 가중치를 내린다. 유휴 세션의 대화 이력은 유지하며 다음 요청이 모델을 다시 로드하고 이력으로 prefill한다. 세션이 있다는 이유만으로 수 GB의 가중치를 고정하지 않는다. 명시적인 unload/remove는 기존 계약대로 해당 모델의 세션 종료를 요구한다.",
         "basis": "lexical_match",
         "context": "paragraph"
       },
       {
         "block_id": "b000017",
-        "line": 32,
+        "line": 44,
         "text": "호스트 정책이다. MLX 모델에는 이 옵션을 적용하지 않는다.",
         "basis": "lexical_match",
         "context": "paragraph"
       },
       {
         "block_id": "b000027",
-        "line": 61,
+        "line": 80,
         "text": "할당 오버헤드는 포함하지 않는다. 256 토큰 정렬을 반영한 추정값을 `memory.basis`와",
         "basis": "lexical_match",
         "context": "paragraph"
       },
       {
         "block_id": "b000029",
-        "line": 68,
+        "line": 87,
         "text": "장치의 실제 동작을 증명하지 않는다.",
         "basis": "lexical_match",
         "context": "paragraph"
       },
       {
-        "block_id": "b000037",
-        "line": 81,
-        "text": "활성 생성은 keep_alive=0이어도 중간에 해제하지 않는다. 0은 생성 종료 정리에서 바로 해제한다. 양수 만료는 worker가 유휴 상태에서 약 100ms마다 확인하고 각 작업 종료 후에도 확인한다. 다른 긴 작업이 worker를 점유하면 만료 처리는 그 작업 이후로 지연된다. 만료에는 wall clock이 아닌 monotonic clock을 사용한다. 모델 재사용/명시 load와 생성 종료가 사용 순서를 갱신하며 읽기 전용 ps는 수명을 늘리지 않는다.",
+        "block_id": "b000045",
+        "line": 114,
+        "text": "macOS는 free+inactive 페이지, Linux는 /proc/meminfo의 MemAvailable, Windows는 GlobalMemoryStatusEx의 ullAvailPhys를 읽는다. macOS speculative 페이지는 free에 이미 포함되어 중복 합산하지 않는다. 통합 메모리는 RAM과 GPU 항목으로 두 번 더하지 않는다. 전체 GPU 적재에서는 알려진 전용 GPU 메모리가 부족할 때 CPU 후보로 넘어간다. 부분 적재는 전체 가중치 크기로 GPU 공간을 예측할 수 없으므로 실제 모델·컨텍스트 할당으로 확인한다. 실제 GPU/컨텍스트 할당 실패도 기존 fallback 경로로 전달한다.",
         "basis": "lexical_match",
         "context": "paragraph"
       },
       {
-        "block_id": "b000045",
-        "line": 89,
-        "text": "macOS는 free+inactive 페이지, Linux는 /proc/meminfo의 MemAvailable, Windows는 GlobalMemoryStatusEx의 ullAvailPhys를 읽는다. macOS speculative 페이지는 free에 이미 포함되어 중복 합산하지 않는다. 통합 메모리는 RAM과 GPU 항목으로 두 번 더하지 않는다. 전체 GPU 적재에서는 알려진 전용 GPU 메모리가 부족할 때 CPU 후보로 넘어간다. 부분 적재는 전체 가중치 크기로 GPU 공간을 예측할 수 없으므로 실제 모델·컨텍스트 할당으로 확인한다. 실제 GPU/컨텍스트 할당 실패도 기존 fallback 경로로 전달한다.",
+        "block_id": "b000058",
+        "line": 122,
+        "text": "이 옵션은 불리언만 허용하며 장치 선택이나 무결성·메모리 예약을 바꾸지 않는다.",
         "basis": "lexical_match",
         "context": "paragraph"
       }
@@ -567,7 +647,7 @@
     ]
   },
   "provenance": {
-    "generator": "workspace-docs",
+    "generator": "manual-lossless-update",
     "version": "1.0.0",
     "profile": "lossless-blocks-v1",
     "derived": true

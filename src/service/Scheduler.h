@@ -1,26 +1,31 @@
 #pragma once
 #include "Types.h"
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
+#include <optional>
 #include <thread>
 
 namespace iiLocalLLM::detail {
 
 class Scheduler {
 public:
-    explicit Scheduler(int capacity, std::function<void()> onExit = {}, std::function<void()> maintenance = {});
+    using Deadline = std::chrono::steady_clock::time_point;
+    explicit Scheduler(int capacity, std::function<void()> onExit = {}, std::function<void()> maintenance = {},
+                       std::function<std::optional<Deadline>()> nextDeadline = {});
     ~Scheduler();
     void shutdown();
     // Always settles work: rejected/cancelled items receive an Error in reject().
     void enqueue(CancellationToken cancellation, std::function<void()> run,
                  std::function<void(Error)> reject);
     template<class F> auto submit(F fn) -> std::future<std::invoke_result_t<F, const CancellationToken&>>
+    { return submit(CancellationToken{}, std::move(fn)); }
+    template<class F> auto submit(CancellationToken token, F fn) -> std::future<std::invoke_result_t<F, const CancellationToken&>>
     {
         using T = std::invoke_result_t<F, const CancellationToken&>;
         auto promise = std::make_shared<std::promise<T>>();
         auto future = promise->get_future();
-        CancellationToken token;
         enqueue(token, [fn = std::move(fn), promise, token]() mutable {
             try {
                 token.throwIfCancelled();
@@ -40,6 +45,7 @@ private:
     bool stopping_ = false;
     std::function<void()> onExit_;
     std::function<void()> maintenance_;
+    std::function<std::optional<Deadline>()> nextDeadline_;
     std::thread worker_;
     void loop();
 };

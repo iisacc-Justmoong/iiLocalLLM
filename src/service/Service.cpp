@@ -49,7 +49,7 @@ public:
     };
     Impl(ServiceOptions o, MlxRuntimeOptions mlx, LlamaMemoryOptions llama) : options(checked(o)), hardware(detectHardware()),
         state(std::make_unique<State>(options, hardware)), scheduler(options.maxQueuedRequests, [this] { state.reset(); },
-            [this] { state->models.maintain(); })
+            [this] { state->models.maintain(); }, [this] { return state->models.nextExpiry(); })
     {
         scheduler.submit([this, mlx = std::move(mlx), llama](const auto&) {
             state->models.setChanged([this](QList<ModelInfo> models) {
@@ -121,6 +121,24 @@ std::future<void> Service::unloadModel(QString id)
     return d->scheduler.submit([impl = d.get(), id = std::move(id)](const auto&) {
         if (impl->state->sessions.usesModel(modelId(impl->state->models.canonical(id)))) throw Error(ErrorCode::ModelInUse, QStringLiteral("Close model sessions before unloading"));
         impl->state->models.unload(id);
+    });
+}
+std::future<ModelInfo> Service::pinModel(ModelLoadRequest model, CancellationToken cancellation)
+{
+    return d->scheduler.submit(cancellation, [impl = d.get(), model = std::move(model)](const auto& token) {
+        return impl->state->models.pin(model, token);
+    });
+}
+std::future<void> Service::unpinModel(QString id)
+{
+    return d->scheduler.submit([impl = d.get(), id = std::move(id)](const auto&) {
+        impl->state->models.unpin(id);
+    });
+}
+std::future<bool> Service::isModelPinned(QString id)
+{
+    return d->scheduler.submit([impl = d.get(), id = std::move(id)](const auto&) {
+        return impl->state->models.isPinned(id);
     });
 }
 std::future<QList<ModelInfo>> Service::models()

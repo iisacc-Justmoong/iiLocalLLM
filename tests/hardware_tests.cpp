@@ -1,6 +1,9 @@
 #include <iiLocalLLM.h>
 #include "../src/service/Managers.h"
-#include <QtTest/QtTest>
+#include "CTestSupport.h"
+#include <QtCore/QCoreApplication>
+#include <array>
+#include <string_view>
 #include <QtCore/QJsonArray>
 
 using namespace iiLocalLLM;
@@ -61,72 +64,52 @@ public:
     }
 };
 }
-class HardwareTests : public QObject {
-    Q_OBJECT
-private slots:
+class HardwareTests {
+public:
     void nativeRuntimeLimits()
     {
-        QVERIFY(createLlamaRuntime());
-        QVERIFY(createLlamaRuntime({false, 0, true}));
-        QVERIFY(createLlamaRuntime({}, LlamaKvCache::Q8_0));
-        QVERIFY(createLlamaRuntime({true, 4}, LlamaKvCache::Q4_0));
-        QVERIFY_THROWS_EXCEPTION(Error, createLlamaRuntime({}, static_cast<LlamaKvCache>(99)));
+        CTEST_CHECK(createLlamaRuntime());
+        CTEST_CHECK(createLlamaRuntime({false, 0, true}));
+        CTEST_CHECK(createLlamaRuntime({}, LlamaKvCache::Q8_0));
+        CTEST_CHECK(createLlamaRuntime({true, 4}, LlamaKvCache::Q4_0));
+        CTEST_THROWS(Error, createLlamaRuntime({}, static_cast<LlamaKvCache>(99)));
         LlamaMemoryOptions memory;
         memory.kvCache = LlamaKvCache::Q8_0;
         memory.runtime.maxGpuLayers = 0;
         Service service({}, {}, memory);
-        QVERIFY(service.hardware().ramBytes.has_value());
+        CTEST_CHECK(service.hardware().ramBytes.has_value());
         const auto mocked = inventory({gpu("llama.cpp/MTL/MTL0", GpuVendor::Apple, ComputeBackend::Metal)}, true);
-        QCOMPARE(createLlamaRuntime(memory.runtime, memory.kvCache)->devices(mocked).size(), llamaRuntimeAvailable() ? 1 : 0);
+        CTEST_COMPARE(createLlamaRuntime(memory.runtime, memory.kvCache)->devices(mocked).size(), llamaRuntimeAvailable() ? 1 : 0);
         try {
             createLlamaRuntime({true, -2});
-            QFAIL("A negative GPU layer limit below -1 must be rejected");
+            iillm_ctest::fail(__FILE__, __LINE__, "A negative GPU layer limit below -1 must be rejected");
         } catch (const Error& error) {
-            QCOMPARE(error.code(), ErrorCode::InvalidArgument);
+            CTEST_COMPARE(error.code(), ErrorCode::InvalidArgument);
         }
     }
-    void policy_data()
+    void policy(const HardwareInfo& hardware, ComputeBackend expected)
     {
-        QTest::addColumn<HardwareInfo>("hardware");
-        QTest::addColumn<ComputeBackend>("expected");
-        QTest::newRow("no-gpu") << HardwareInfo{} << ComputeBackend::Cpu;
-        QTest::newRow("apple-silicon") << inventory({gpu("apple", GpuVendor::Apple, ComputeBackend::Metal)}, true) << ComputeBackend::Metal;
-        QTest::newRow("nvidia-cuda") << inventory({gpu("nvidia", GpuVendor::Nvidia, ComputeBackend::Cuda)}) << ComputeBackend::Cuda;
-        QTest::newRow("amd-vulkan") << inventory({gpu("amd", GpuVendor::Amd, ComputeBackend::Vulkan)}) << ComputeBackend::Vulkan;
-        QTest::newRow("intel-vulkan") << inventory({gpu("intel", GpuVendor::Intel, ComputeBackend::Vulkan)}) << ComputeBackend::Vulkan;
-        QTest::newRow("intel-mac-metal-is-not-apple-silicon") << inventory({gpu("intel", GpuVendor::Intel, ComputeBackend::Metal)}) << ComputeBackend::Cpu;
-        QTest::newRow("nvidia-no-cuda") << inventory({gpu("nvidia", GpuVendor::Nvidia, ComputeBackend::Vulkan)}) << ComputeBackend::Cpu;
-        QTest::newRow("unknown-vendor") << inventory({gpu("unknown", GpuVendor::Unknown, ComputeBackend::Vulkan)}) << ComputeBackend::Cpu;
-        QTest::newRow("cuda-before-vulkan") << inventory({gpu("amd", GpuVendor::Amd, ComputeBackend::Vulkan, 32),
-            gpu("nvidia", GpuVendor::Nvidia, ComputeBackend::Cuda, 8)}) << ComputeBackend::Cuda;
-        QTest::newRow("metal-before-cuda") << inventory({gpu("nvidia", GpuVendor::Nvidia, ComputeBackend::Cuda, 32),
-            gpu("apple", GpuVendor::Apple, ComputeBackend::Metal, 8)}, true) << ComputeBackend::Metal;
-    }
-    void policy()
-    {
-        QFETCH(HardwareInfo, hardware);
-        QFETCH(ComputeBackend, expected);
         const auto ordered = orderExecutionDevices(hardware, available(hardware));
-        QVERIFY(!ordered.isEmpty());
-        QCOMPARE(ordered.first().backend, expected);
-        QCOMPARE(ordered.last().backend, ComputeBackend::Cpu);
+        CTEST_CHECK(!ordered.isEmpty());
+        CTEST_COMPARE(ordered.first().backend, expected);
+        CTEST_COMPARE(ordered.last().backend, ComputeBackend::Cpu);
     }
     void unsupportedAndUnavailableAccelerationIsExcluded()
     {
         auto h = inventory({gpu("nvidia", GpuVendor::Nvidia, ComputeBackend::Cuda)});
-        QCOMPARE(orderExecutionDevices(h, {{ComputeBackend::Cpu, {}}}).first().backend, ComputeBackend::Cpu);
+        CTEST_COMPARE(orderExecutionDevices(h, {{ComputeBackend::Cpu, {}}}).first().backend, ComputeBackend::Cpu);
         h.cudaAvailable = false;
-        QCOMPARE(orderExecutionDevices(h, available(h)).first().backend, ComputeBackend::Cpu);
+        CTEST_COMPARE(orderExecutionDevices(h, available(h)).first().backend, ComputeBackend::Cpu);
         h.cudaAvailable = true;
         h.gpus.first().availableBackends.clear();
-        QCOMPARE(orderExecutionDevices(h, {{ComputeBackend::Cuda, "nvidia"}, {ComputeBackend::Cpu, {}}}).size(), 1);
-        QVERIFY(orderExecutionDevices(h, {{ComputeBackend::Cuda, "missing"}}).isEmpty());
+        CTEST_COMPARE(orderExecutionDevices(h, {{ComputeBackend::Cuda, "nvidia"}, {ComputeBackend::Cpu, {}}}).size(), 1);
+        CTEST_CHECK(orderExecutionDevices(h, {{ComputeBackend::Cuda, "missing"}}).isEmpty());
     }
     void neverCombinesCapabilitiesFromDifferentAdapters()
     {
         const auto h = inventory({gpu("nvidia", GpuVendor::Nvidia, ComputeBackend::Vulkan),
             gpu("amd", GpuVendor::Amd, ComputeBackend::Cuda)});
-        QCOMPARE(orderExecutionDevices(h, available(h)).first().backend, ComputeBackend::Cpu);
+        CTEST_COMPARE(orderExecutionDevices(h, available(h)).first().backend, ComputeBackend::Cpu);
     }
     void sameBackendUsesMemoryThenStableId()
     {
@@ -135,9 +118,9 @@ private slots:
         auto candidates = available(h);
         candidates.append(candidates);
         const auto ordered = orderExecutionDevices(h, candidates);
-        QCOMPARE(ordered.size(), 4);
-        QCOMPARE(ordered[0].deviceId, QStringLiteral("a"));
-        QCOMPARE(ordered[1].deviceId, QStringLiteral("z"));
+        CTEST_COMPARE(ordered.size(), 4);
+        CTEST_COMPARE(ordered[0].deviceId, QStringLiteral("a"));
+        CTEST_COMPARE(ordered[1].deviceId, QStringLiteral("z"));
     }
     void unifiedMemoryIsNotReportedAsVram()
     {
@@ -148,22 +131,14 @@ private slots:
         h.ramBytes = 32ull * 1024 * 1024 * 1024;
         const auto json = hardwareObject(h);
         const auto adapter = json["gpus"].toArray().first().toObject();
-        QVERIFY(adapter["vram_bytes"].isNull());
-        QCOMPARE(adapter["unified_memory"].toBool(), true);
-        QCOMPARE(adapter["recommended_working_set_bytes"].toInteger(), qint64(*g.recommendedWorkingSetBytes));
-        QCOMPARE(json["ram_bytes"].toInteger(), qint64(*h.ramBytes));
-        QVERIFY(hardwareObject({})["ram_bytes"].isNull());
+        CTEST_CHECK(adapter["vram_bytes"].isNull());
+        CTEST_COMPARE(adapter["unified_memory"].toBool(), true);
+        CTEST_COMPARE(adapter["recommended_working_set_bytes"].toInteger(), qint64(*g.recommendedWorkingSetBytes));
+        CTEST_COMPARE(json["ram_bytes"].toInteger(), qint64(*h.ramBytes));
+        CTEST_CHECK(hardwareObject({})["ram_bytes"].isNull());
     }
-    void gpuInitializationFallback_data()
+    void gpuInitializationFallback(ErrorCode failure)
     {
-        QTest::addColumn<ErrorCode>("failure");
-        QTest::newRow("allocation") << ErrorCode::ResourceLimit;
-        QTest::newRow("driver-disappeared") << ErrorCode::RuntimeUnavailable;
-        QTest::newRow("initialization") << ErrorCode::RuntimeFailure;
-    }
-    void gpuInitializationFallback()
-    {
-        QFETCH(ErrorCode, failure);
         const auto h = inventory({gpu("nvidia", GpuVendor::Nvidia, ComputeBackend::Cuda)});
         auto runtime = std::make_shared<RuntimeProbe>();
         runtime->supported = available(h);
@@ -171,32 +146,24 @@ private slots:
         detail::RuntimeManager manager(2, h);
         manager.addRuntime(runtime);
         const auto loaded = manager.load({"model", "fixture", 128}, {});
-        QCOMPARE(loaded.execution.runtime, runtime->id());
-        QCOMPARE(loaded.execution.device.backend, ComputeBackend::Cpu);
-        QCOMPARE(loaded.execution.fallbackReasons.size(), 1);
-        QCOMPARE(runtime->attempts.size(), 2);
-        QCOMPARE(runtime->attempts.first().backend, ComputeBackend::Cuda);
-        QCOMPARE(manager.list().first().execution.device.backend, ComputeBackend::Cpu);
+        CTEST_COMPARE(loaded.execution.runtime, runtime->id());
+        CTEST_COMPARE(loaded.execution.device.backend, ComputeBackend::Cpu);
+        CTEST_COMPARE(loaded.execution.fallbackReasons.size(), 1);
+        CTEST_COMPARE(runtime->attempts.size(), 2);
+        CTEST_COMPARE(runtime->attempts.first().backend, ComputeBackend::Cuda);
+        CTEST_COMPARE(manager.list().first().execution.device.backend, ComputeBackend::Cpu);
     }
-    void cancellationAndInvalidModelDoNotRetryOnCpu_data()
+    void cancellationAndInvalidModelDoNotRetryOnCpu(ErrorCode failure)
     {
-        QTest::addColumn<ErrorCode>("failure");
-        QTest::newRow("cancelled") << ErrorCode::Cancelled;
-        QTest::newRow("invalid-model") << ErrorCode::InvalidArgument;
-        QTest::newRow("not-found") << ErrorCode::NotFound;
-    }
-    void cancellationAndInvalidModelDoNotRetryOnCpu()
-    {
-        QFETCH(ErrorCode, failure);
         const auto h = inventory({gpu("apple", GpuVendor::Apple, ComputeBackend::Metal)}, true);
         auto runtime = std::make_shared<RuntimeProbe>();
         runtime->supported = available(h);
         runtime->gpuFailure = failure;
         detail::RuntimeManager manager(2, h);
         manager.addRuntime(runtime);
-        QVERIFY_THROWS_EXCEPTION(Error, manager.load({"model", "fixture", 128}, {}));
-        QCOMPARE(runtime->attempts.size(), 1);
-        QVERIFY(manager.list().isEmpty());
+        CTEST_THROWS(Error, manager.load({"model", "fixture", 128}, {}));
+        CTEST_COMPARE(runtime->attempts.size(), 1);
+        CTEST_CHECK(manager.list().isEmpty());
     }
     void formatAndCapabilitiesDetermineRuntime()
     {
@@ -209,8 +176,8 @@ private slots:
         detail::RuntimeManager manager(2, {});
         manager.addRuntime(irrelevant);
         manager.addRuntime(compatible);
-        QCOMPARE(manager.load({"model", "fixture", 128}, {}).execution.runtime, compatible->id());
-        QVERIFY(irrelevant->attempts.isEmpty());
+        CTEST_COMPARE(manager.load({"model", "fixture", 128}, {}).execution.runtime, compatible->id());
+        CTEST_CHECK(irrelevant->attempts.isEmpty());
     }
     void overrideAndFailedCpuNeverPublishModel()
     {
@@ -220,32 +187,73 @@ private slots:
         manager.addRuntime(runtime);
         for (const auto& field : {"runtime", "backend", "device", "device_id", "gpu_layers", "n_gpu_layers"}) {
             ModelSpec model{"model", "fixture", 128, {{QString::fromLatin1(field), "override"}}};
-            QVERIFY_THROWS_EXCEPTION(Error, manager.load(model, {}));
+            CTEST_THROWS(Error, manager.load(model, {}));
         }
-        QVERIFY(runtime->attempts.isEmpty());
+        CTEST_CHECK(runtime->attempts.isEmpty());
         runtime->failCpu = true;
-        QVERIFY_THROWS_EXCEPTION(Error, manager.load({"model", "fixture", 128}, {}));
-        QVERIFY(manager.list().isEmpty());
+        CTEST_THROWS(Error, manager.load({"model", "fixture", 128}, {}));
+        CTEST_CHECK(manager.list().isEmpty());
     }
     void nativeSnapshotIsStableAndQueryable()
     {
         Service service;
         const auto h = service.hardware();
-        QVERIFY(!h.cpuArchitecture.isEmpty());
-        QVERIFY(h.ramBytes && *h.ramBytes > 0);
-        QCOMPARE(hardwareObject(h), hardwareObject(detectHardware()));
+        CTEST_CHECK(!h.cpuArchitecture.isEmpty());
+        CTEST_CHECK(h.ramBytes && *h.ramBytes > 0);
+        CTEST_COMPARE(hardwareObject(h), hardwareObject(detectHardware()));
         for (const auto& gpu : h.gpus)
-            if (gpu.unifiedMemory.value_or(false)) QVERIFY(!gpu.vramBytes);
+            if (gpu.unifiedMemory.value_or(false)) CTEST_CHECK(!gpu.vramBytes);
         if (h.appleSilicon && h.metalAvailable) {
-            QVERIFY(std::any_of(h.gpus.begin(), h.gpus.end(), [](const auto& gpu) {
+            CTEST_CHECK(std::any_of(h.gpus.begin(), h.gpus.end(), [](const auto& gpu) {
                 return gpu.vendor == GpuVendor::Apple && gpu.unifiedMemory.value_or(false)
                     && !gpu.vramBytes && gpu.availableBackends.contains(ComputeBackend::Metal);
             }));
         }
     }
 };
-QTEST_GUILESS_MAIN(HardwareTests)
-#include "hardware_tests.moc"
+int main(int argc, char** argv)
+{
+    QCoreApplication application(argc, argv);
+    if (argc > 2 || (argc == 2 && std::string_view(argv[1]) != "--offline")) {
+        std::cerr << "Expected no argument or --offline" << std::endl;
+        return 1;
+    }
+    const bool offline = argc == 2;
+    iillm_ctest::CTestRunner runner;
+    HardwareTests tests;
+    if (!offline)
+        runner.run("nativeRuntimeLimits", [&] { tests.nativeRuntimeLimits(); });
+    struct PolicyRow { const char* name; HardwareInfo hardware; ComputeBackend expected; };
+    const std::array rows{
+        PolicyRow{"no-gpu", {}, ComputeBackend::Cpu},
+        PolicyRow{"apple-silicon", inventory({gpu("apple", GpuVendor::Apple, ComputeBackend::Metal)}, true), ComputeBackend::Metal},
+        PolicyRow{"nvidia-cuda", inventory({gpu("nvidia", GpuVendor::Nvidia, ComputeBackend::Cuda)}), ComputeBackend::Cuda},
+        PolicyRow{"amd-vulkan", inventory({gpu("amd", GpuVendor::Amd, ComputeBackend::Vulkan)}), ComputeBackend::Vulkan},
+        PolicyRow{"intel-vulkan", inventory({gpu("intel", GpuVendor::Intel, ComputeBackend::Vulkan)}), ComputeBackend::Vulkan},
+        PolicyRow{"intel-mac-metal-is-not-apple-silicon", inventory({gpu("intel", GpuVendor::Intel, ComputeBackend::Metal)}), ComputeBackend::Cpu},
+        PolicyRow{"nvidia-no-cuda", inventory({gpu("nvidia", GpuVendor::Nvidia, ComputeBackend::Vulkan)}), ComputeBackend::Cpu},
+        PolicyRow{"unknown-vendor", inventory({gpu("unknown", GpuVendor::Unknown, ComputeBackend::Vulkan)}), ComputeBackend::Cpu},
+        PolicyRow{"cuda-before-vulkan", inventory({gpu("amd", GpuVendor::Amd, ComputeBackend::Vulkan, 32), gpu("nvidia", GpuVendor::Nvidia, ComputeBackend::Cuda, 8)}), ComputeBackend::Cuda},
+        PolicyRow{"metal-before-cuda", inventory({gpu("nvidia", GpuVendor::Nvidia, ComputeBackend::Cuda, 32), gpu("apple", GpuVendor::Apple, ComputeBackend::Metal, 8)}, true), ComputeBackend::Metal}
+    };
+    for (const auto& row : rows)
+        runner.run(std::string("policy:") + row.name, [&] { tests.policy(row.hardware, row.expected); });
+    runner.run("unsupportedAndUnavailableAccelerationIsExcluded", [&] { tests.unsupportedAndUnavailableAccelerationIsExcluded(); });
+    runner.run("neverCombinesCapabilitiesFromDifferentAdapters", [&] { tests.neverCombinesCapabilitiesFromDifferentAdapters(); });
+    runner.run("sameBackendUsesMemoryThenStableId", [&] { tests.sameBackendUsesMemoryThenStableId(); });
+    runner.run("unifiedMemoryIsNotReportedAsVram", [&] { tests.unifiedMemoryIsNotReportedAsVram(); });
+    struct FailureRow { const char* name; ErrorCode failure; };
+    for (const auto& row : {FailureRow{"allocation", ErrorCode::ResourceLimit}, FailureRow{"driver-disappeared", ErrorCode::RuntimeUnavailable}, FailureRow{"initialization", ErrorCode::RuntimeFailure}})
+        runner.run(std::string("gpuInitializationFallback:") + row.name, [&] { tests.gpuInitializationFallback(row.failure); });
+    for (const auto& row : {FailureRow{"cancelled", ErrorCode::Cancelled}, FailureRow{"invalid-model", ErrorCode::InvalidArgument}, FailureRow{"not-found", ErrorCode::NotFound}})
+        runner.run(std::string("cancellationAndInvalidModelDoNotRetryOnCpu:") + row.name, [&] { tests.cancellationAndInvalidModelDoNotRetryOnCpu(row.failure); });
+    runner.run("formatAndCapabilitiesDetermineRuntime", [&] { tests.formatAndCapabilitiesDetermineRuntime(); });
+    runner.run("overrideAndFailedCpuNeverPublishModel", [&] { tests.overrideAndFailedCpuNeverPublishModel(); });
+    if (!offline)
+        runner.run("nativeSnapshotIsStableAndQueryable", [&] { tests.nativeSnapshotIsStableAndQueryable(); });
+    return runner.result();
+}
+
 #ifdef _WIN32
 #include <dxgi1_2.h>
 #endif

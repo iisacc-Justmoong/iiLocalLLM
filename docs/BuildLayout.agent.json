@@ -10,9 +10,9 @@
   },
   "source": {
     "path": "docs/BuildLayout.md",
-    "sha256": "8edad47fddb750ae917b2efa4afb5e7d07f174131d35d3fef3fb314bb339b2bd",
-    "bytes": 1455,
-    "line_count": 22,
+    "sha256": "a4a2be7d88abb7cc281955f47a82c794c93cd91cd51ecf6b035c889b0d9d1426",
+    "bytes": 3076,
+    "line_count": 51,
     "encoding": "utf-8",
     "language": "en"
   },
@@ -46,18 +46,116 @@
       "raw": "The module, its service entry points, and selected tests are built in `build/`.\nThe pinned llama.cpp source is kept under `resources/dependencies/llama.cpp`;\nits compiled files and generated patch copies remain in `build/`. An explicit\n`IILOCALLLM_LLAMA_SOURCE_DIR` continues to select a different checkout. Models,\nfixtures and Python environments recovered from older builds are preserved under\n`resources/`, with compatibility links while another module still refers to the\nold paths. These links do not imply that model inference was run.\nThe archive checksum applies when the source is first fetched; an existing\nresource checkout is reused without rehashing its contents. Preserve local edits\nand refresh that checkout explicitly when changing the upstream pin.\n"
     },
     {
-      "id": "b000004",
       "kind": "blank",
+      "raw": "\n",
+      "id": "b000004",
       "start_line": 13,
-      "end_line": 13,
+      "end_line": 13
+    },
+    {
+      "kind": "paragraph",
+      "raw": "For macOS, the build compiles a narrowly patched copy of the pinned llama.cpp\nmodel loader from `build/`: mmap stays enabled, while whole-model eager prefetch\nis disabled. The original resource checkout is not modified. Configuration\nfails when a different upstream loader cannot be matched safely. The native\nregression observes mmap and prefetch calls during a synthetic model load.\n",
+      "id": "b000005",
+      "start_line": 14,
+      "end_line": 18
+    },
+    {
+      "id": "b000006",
+      "kind": "blank",
+      "start_line": 19,
+      "end_line": 19,
       "raw": "\n"
     },
     {
-      "id": "b000005",
+      "id": "b000007",
       "kind": "paragraph",
-      "start_line": 14,
-      "end_line": 22,
+      "start_line": 20,
+      "end_line": 28,
       "raw": "Native test commands reserve short isolated `resources/t/` workspaces through\niiFileProvider, including temporary files and application endpoints, and remove\nthem after each test. Cross-compiled tests preserve the original direct target\nand emulator handling and need a suitable external temporary directory. Some\ntests start services or model inference; those require an explicit execution\nrequest. Recovered user data is ignored by Git and is not a build output.\nInference smoke executables are excluded from the default build when no model\nfixture is configured; they remain explicit targets and are included when a\nconfigured inference test needs them.\n"
+    },
+    {
+      "id": "b000008",
+      "kind": "blank",
+      "start_line": 29,
+      "end_line": 29,
+      "raw": "\n"
+    },
+    {
+      "id": "b000009",
+      "kind": "paragraph",
+      "start_line": 30,
+      "end_line": 32,
+      "raw": "Parameter validation and model catalog tests run through CTest without linking\nQt Test. Catalog fixtures use the resource workspace temporary directory; they\ndo not load models or perform inference.\n"
+    },
+    {
+      "id": "b000010",
+      "kind": "blank",
+      "start_line": 33,
+      "end_line": 33,
+      "raw": "\n"
+    },
+    {
+      "id": "b000011",
+      "kind": "paragraph",
+      "start_line": 34,
+      "end_line": 36,
+      "raw": "The native grammar test runs its existing template and option combinations as\nindividual CTest-runner cases without Qt Test. It parses grammar and templates\nonly; it does not load model weights or run inference.\n"
+    },
+    {
+      "id": "b000012",
+      "kind": "blank",
+      "start_line": 37,
+      "end_line": 37,
+      "raw": "\n"
+    },
+    {
+      "id": "b000013",
+      "kind": "paragraph",
+      "start_line": 38,
+      "end_line": 39,
+      "raw": "Residency and idle-scheduler cases use CTest and retain their timed event\nprocessing, including the pinned-model and no-polling regression cases.\n"
+    },
+    {
+      "id": "b000014",
+      "kind": "blank",
+      "start_line": 40,
+      "end_line": 40,
+      "raw": "\n"
+    },
+    {
+      "id": "b000015",
+      "kind": "paragraph",
+      "start_line": 41,
+      "end_line": 43,
+      "raw": "Hardware policy retains every device and error data row. The offline selection\nuses synthetic inventories and runtimes; the two real hardware snapshot cases\nremain in the full test and are excluded from the offline selection.\n"
+    },
+    {
+      "kind": "blank",
+      "raw": "\n",
+      "id": "b000016",
+      "start_line": 44,
+      "end_line": 44
+    },
+    {
+      "kind": "paragraph",
+      "raw": "Service tests preserve per-case fixture setup and cleanup, including cleanup on\nassertion failure. Their full suite includes local IPC and hardware discovery;\nthe offline selection runs only the UTF-8 decoder case.\n",
+      "id": "b000017",
+      "start_line": 45,
+      "end_line": 47
+    },
+    {
+      "kind": "blank",
+      "raw": "\n",
+      "id": "b000018",
+      "start_line": 48,
+      "end_line": 48
+    },
+    {
+      "kind": "paragraph",
+      "raw": "The HTTP test preserves its RPC cancellation and slow-response data rows as\nCTest cases. The complete module test configuration no longer requests Qt\nTest. HTTP cases start a local server and require an explicit execution request.\n",
+      "id": "b000019",
+      "start_line": 49,
+      "end_line": 51
     }
   ],
   "outline": [

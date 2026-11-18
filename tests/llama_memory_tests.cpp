@@ -5,7 +5,9 @@
 #include <ggml-backend.h>
 #include <iiFileProviderNativeDevice.h>
 #include "llama-ext.h"
+#include "../src/runtimes/LlamaLoadPolicy.h"
 #include <algorithm>
+#include <cstdint>
 #include <cstring>
 #include <iostream>
 #include <memory>
@@ -16,13 +18,17 @@
 #else
 #include <unistd.h>
 #endif
+#ifdef IILOCALLLM_TEST_DARWIN_PREFETCH
+#include <dlfcn.h>
+#include <sys/stat.h>
+#endif
 
 using namespace iiLocalLLM;
 
 namespace {
 void require(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
 
-void makeModel(const char* path, int width)
+void makeModel(const char* path, int width, int kvArrayMode = 0)
 {
     // All weights are synthetic zeroes. This fixture exercises allocation and
     // format compatibility, not pretrained inference or model quality.
@@ -36,8 +42,13 @@ void makeModel(const char* path, int width)
     gguf_set_val_u32(file.get(), "llama.embedding_length", width);
     gguf_set_val_u32(file.get(), "llama.block_count", 2);
     gguf_set_val_u32(file.get(), "llama.feed_forward_length", width * 2);
-    gguf_set_val_u32(file.get(), "llama.attention.head_count", 1);
-    gguf_set_val_u32(file.get(), "llama.attention.head_count_kv", 1);
+    gguf_set_val_u32(file.get(), "llama.attention.head_count", kvArrayMode ? 4 : 1);
+    if (kvArrayMode) {
+        const int32_t heads[] = {1, kvArrayMode == 1 ? 2 : -1};
+        gguf_set_arr_data(file.get(), "llama.attention.head_count_kv", GGUF_TYPE_INT32, heads, 2);
+        gguf_set_val_u32(file.get(), "llama.attention.key_length", 64);
+        gguf_set_val_u32(file.get(), "llama.attention.value_length", 64);
+    } else gguf_set_val_u32(file.get(), "llama.attention.head_count_kv", 1);
     gguf_set_val_u32(file.get(), "llama.rope.dimension_count", width);
     gguf_set_val_f32(file.get(), "llama.attention.layer_norm_rms_epsilon", 0.00001f);
     gguf_set_val_str(file.get(), "tokenizer.ggml.model", "llama");
@@ -106,8 +117,18 @@ int main(int argc, char** argv)
 {
     QCoreApplication application(argc, argv);
     try {
+        require(detail::useCpuRepack({}), "CPU repacking must retain its existing default");
+        require(!detail::useCpuRepack({{"cpu_repack", false}}),
+                "Explicitly disabling CPU repacking must select mapped weights");
+        require(detail::useCpuRepack({{"cpu_repack", true}}), "CPU repacking can be explicitly enabled");
+        bool invalidRepack = false;
+        try { (void)detail::useCpuRepack({{"cpu_repack", "false"}}); }
+        catch (const Error& error) { invalidRepack = error.code() == ErrorCode::InvalidArgument; }
+        require(invalidRepack, "CPU repacking accepts only boolean options");
         makeModel("synthetic.gguf", 64);
         makeModel("unaligned.gguf", 48);
+        makeModel("layered-kv.gguf", 64, 1);
+        makeModel("invalid-layered-kv.gguf", 64, 2);
         ModelSpec spec{"synthetic", "synthetic.gguf", 4096, {}, "gguf"};
         auto f16 = createLlamaRuntime({true, 0}, LlamaKvCache::F16);
         auto q8 = createLlamaRuntime({true, 0}, LlamaKvCache::Q8_0);
@@ -115,8 +136,33 @@ int main(int argc, char** argv)
         const auto f16Estimate = f16->estimateMemory(spec, 1);
         const auto q8Estimate = q8->estimateMemory(spec, 1);
         const auto q4Estimate = q4->estimateMemory(spec, 1);
+        const auto layered=f16->estimateMemory({"layered", "layered-kv.gguf", 4096, {}, "gguf"},1);
+        const auto invalid=f16->estimateMemory({"invalid", "invalid-layered-kv.gguf", 4096, {}, "gguf"},1);
+        require(layered.contextBytes == quint64(2) * 2 * (64 + 64) * 2 * 4096,
+                "Layered KV heads must reserve the largest per-layer value");
+        require(invalid.contextBytes == quint64(2) * 4 * (64 + 64) * 2 * 4096,
+                "Invalid KV arrays must fall back to the attention-head upper bound");
         require(q4Estimate.contextBytes < q8Estimate.contextBytes && q8Estimate.contextBytes < f16Estimate.contextBytes,
                 "Runtime reservation did not use the selected KV format");
+#ifdef IILOCALLLM_TEST_DARWIN_PREFETCH
+        {
+            struct stat info{};
+            require(stat("synthetic.gguf", &info) == 0, "Cannot inspect synthetic model identity");
+            using Begin = void (*)(std::uint64_t, std::uint64_t);
+            using Count = unsigned (*)();
+            auto begin = reinterpret_cast<Begin>(dlsym(RTLD_DEFAULT, "iilocal_test_mmap_begin"));
+            auto mappings = reinterpret_cast<Count>(dlsym(RTLD_DEFAULT, "iilocal_test_mmap_count"));
+            auto prefetches = reinterpret_cast<Count>(dlsym(RTLD_DEFAULT, "iilocal_test_prefetch_count"));
+            auto finish = reinterpret_cast<void (*)()>(dlsym(RTLD_DEFAULT, "iilocal_test_mmap_end"));
+            require(begin && mappings && prefetches && finish, "The macOS mmap observation library is missing");
+            begin(info.st_dev, info.st_ino);
+            try { (void)f16->load(spec, {ComputeBackend::Cpu, {}}, {}); }
+            catch (...) { finish(); throw; }
+            finish();
+            require(mappings() > 0, "Model weights must still be memory mapped");
+            require(prefetches() == 0, "macOS must not eagerly prefetch the whole mapped model");
+        }
+#endif
         {
             // Exercise the service's registered runtime and its published
             // reservation, using a synthetic package in the test workspace.
@@ -146,6 +192,15 @@ int main(int argc, char** argv)
             auto context = model->createContext({});
             require(bool(context), "Runtime failed to create synthetic context");
         }
+        auto mappedOnly = spec;
+        mappedOnly.options.insert(QStringLiteral("cpu_repack"), false);
+        auto mappedModel = f16->load(mappedOnly, {ComputeBackend::Cpu, {}}, {});
+        require(bool(mappedModel->createContext({})), "CPU model without repacking must create a context");
+        mappedOnly.options.insert(QStringLiteral("cpu_repack"), QStringLiteral("false"));
+        bool invalidRuntimeOption = false;
+        try { (void)f16->load(mappedOnly, {ComputeBackend::Cpu, {}}, {}); }
+        catch (const Error& error) { invalidRuntimeOption = error.code() == ErrorCode::InvalidArgument; }
+        require(invalidRuntimeOption, "Runtime must reject a non-boolean CPU repacking option");
         auto unaligned = spec; unaligned.path = "unaligned.gguf";
         auto fpModel = f16->load(unaligned, {ComputeBackend::Cpu, {}}, {});
         require(bool(fpModel->createContext({})), "F16 unaligned model should be accepted");

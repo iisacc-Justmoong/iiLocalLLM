@@ -2,6 +2,7 @@
 #include "Parameters.h"
 #include "Utf8Stream.h"
 #include "MemoryEstimate.h"
+#include "LlamaLoadPolicy.h"
 #include "MediaContent.h"
 #include "ToolTemplate.h"
 #include "ToolTurn.h"
@@ -12,6 +13,7 @@
 #include <QtCore/QJsonDocument>
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <mutex>
 #include <vector>
 #include <limits>
@@ -610,11 +612,32 @@ public:
             if (gguf_get_kv_type(metadata.get(), key) == GGUF_TYPE_UINT64) return gguf_get_val_u64(metadata.get(), key);
             return fallback;
         };
+        const auto layers = integer(".block_count");
         const auto heads = integer(".attention.head_count");
         const auto dim = heads ? integer(".embedding_length") / heads : 0;
-        const auto keyLength = integer(".attention.key_length", dim);
-        const auto valueLength = integer(".attention.value_length", dim);
-        const auto context = detail::llamaKvReservation(integer(".block_count"), integer(".attention.head_count_kv", heads),
+        const auto keyLength = std::max(integer(".attention.key_length", dim),integer(".attention.key_length_swa"));
+        const auto valueLength = std::max(integer(".attention.value_length", dim),integer(".attention.value_length_swa"));
+        auto kvHeads = integer(".attention.head_count_kv", heads);
+        const auto kvKey = gguf_find_key(metadata.get(), (architecture + ".attention.head_count_kv").constData());
+        if (heads && layers && kvKey >= 0 && gguf_get_kv_type(metadata.get(), kvKey) == GGUF_TYPE_ARRAY
+            && gguf_get_arr_n(metadata.get(), kvKey) == layers) {
+            const auto type = gguf_get_arr_type(metadata.get(), kvKey);
+            const auto *data = static_cast<const unsigned char *>(gguf_get_arr_data(metadata.get(), kvKey));
+            if (data && (type == GGUF_TYPE_INT32 || type == GGUF_TYPE_UINT32)) {
+                quint64 maximum = 0;
+                bool valid = true;
+                for (quint64 i = 0; i < layers; ++i) {
+                    quint32 raw = 0;
+                    std::memcpy(&raw, data + i * sizeof(raw), sizeof(raw));
+                    if (!raw || (type == GGUF_TYPE_INT32 && (raw & 0x80000000u))) { valid = false; break; }
+                    maximum = std::max(maximum, quint64(raw));
+                }
+                // Values larger than the query head count are retained as a
+                // conservative upper bound instead of being silently reduced.
+                if (valid) kvHeads = maximum;
+            }
+        }
+        const auto context = detail::llamaKvReservation(layers, kvHeads,
             keyLength, valueLength, spec.contextTokens, contextSlots, cache_);
         if (context) {
             estimate.contextBytes = context;
@@ -632,9 +655,10 @@ public:
         for (auto it = spec.options.begin(); it != spec.options.end(); ++it) {
             if (it.key() != QStringLiteral("threads") && it.key() != QStringLiteral("chat_template")
                 && it.key() != QStringLiteral("tool_grammar") && it.key() != QStringLiteral("enable_thinking")
-                && it.key() != QStringLiteral("embedding_pooling"))
+                && it.key() != QStringLiteral("embedding_pooling") && it.key() != QStringLiteral("cpu_repack"))
                 throw Error(ErrorCode::InvalidArgument, QStringLiteral("Unsupported model option: ") + it.key());
         }
+        const bool useCpuRepack = detail::useCpuRepack(spec.options);
         (void)optionInt(spec, "threads", 4, 1, 512);
         if (spec.options.contains(QStringLiteral("chat_template")) && !spec.options.value(QStringLiteral("chat_template")).isString())
             throw Error(ErrorCode::InvalidArgument, QStringLiteral("chat_template must be a string"));
@@ -679,6 +703,7 @@ public:
         params.devices = selected->data();
         params.n_gpu_layers = accelerated ? options_.maxGpuLayers : 0;
         params.check_tensors = options_.validateTensorData;
+        params.use_extra_bufts = useCpuRepack;
         if (!options_.memoryMapWeights) {
             params.load_mode = LLAMA_LOAD_MODE_NONE;
             params.lazy_mode = LLAMA_LAZY_MODE_OFF;

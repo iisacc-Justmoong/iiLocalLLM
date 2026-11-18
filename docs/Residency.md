@@ -1,5 +1,17 @@
 # 모델 상주와 메모리 예산
 
+## 호스트가 명시적으로 고정하는 모델
+
+호스트는 `Service::pinModel`로 설치된 모델의 실제 런타임 적재와 고정을
+한 작업으로 요청한다. 고정된 가중치는 유휴 만료, LRU 및 메모리 압박 정리의
+대상이 아니며 명시적 unload도 거부한다. 공간이 부족하면 다른 모델의 적재는
+실패한다. `unpinModel`은 고정만 해제하고 일반 유휴 수명을 다시 적용한다.
+서비스가 종료되면 모든 모델 리소스는 반환된다. `isModelPinned`는 상태를
+명시적으로 조회한다. 모델 준비 또는 파일 캐시는 이 고정 상태를 뜻하지 않는다.
+고정과 해제는 멱등이며 특정 서비스 인스턴스가 소유한다. 고정 요청에는 취소
+토큰을 전달할 수 있다. 적재 실패를 성공으로 보고하지 않는다. 이 호스트 정책은
+일반 IPC 클라이언트에 고정·해제 권한을 새로 제공하지 않는다.
+
 ModelResidencyManager는 모델별 메모리 예약, 마지막 사용 순서, 만료 시각, 활성 요청 수를 관리한다. RuntimeManager는 실제 가중치를 소유하고 ModelManager가 두 계층을 연결한다. GUI·CLI·HTTP 클라이언트는 하나의 iiLocalLLMD에 접속해 같은 모델 인스턴스를 사용한다.
 
 1. 정규 URI 또는 서비스 registry의 별칭으로 설치된 모델을 확인한다.
@@ -56,6 +68,13 @@ CPU/GPU 간 전송으로 속도가 떨어질 수도 있다. 정밀도에 민감�
 Apple Silicon에서는 CPU와 GPU가 같은 물리 메모리를 공유하므로 CPU로 옮겨도
 별도의 RAM이 생기지 않는다. 가중치의 양자화 형식은 이 옵션으로 바뀌지 않는다.
 
+macOS의 GGUF 메모리 매핑은 유지하되 모델 전체에 대한 동기 선읽기 힌트는
+발행하지 않는다. 필요한 페이지는 실제 접근할 때 읽고, 일반 모델 무결성 검사와
+메모리 예약은 그대로 적용한다. 이는 운영체제의 선읽기 호출이 완료될 때까지
+적재와 취소가 무기한 가려지는 경로를 피하기 위한 정책이며, 각 데이터 접근이나
+모델의 실제 로딩 시간이 즉시 끝난다는 보장은 아니다. 다른 플랫폼의 선읽기
+정책은 변경하지 않는다.
+
 고정 llama.cpp의 32원소 블록은 Q8_0이 34바이트, Q4_0이 18바이트다. 따라서
 KV 텐서 페이로드는 F16의 각각 약 53.1%, 28.1%지만 모델 가중치·작업 버퍼·
 할당 오버헤드는 포함하지 않는다. 256 토큰 정렬을 반영한 추정값을 `memory.basis`와
@@ -78,7 +97,7 @@ IPC models.load/chat 및 HTTP /v1/chat/completions의 `keep_alive`는 숫자 초
 {"id":"turn","method":"chat","params":{"session_id":"SESSION_ID","prompt":"Hello","keep_alive":"5m","options":{"max_tokens":128}}}
 ```
 
-활성 생성은 keep_alive=0이어도 중간에 해제하지 않는다. 0은 생성 종료 정리에서 바로 해제한다. 양수 만료는 worker가 유휴 상태에서 약 100ms마다 확인하고 각 작업 종료 후에도 확인한다. 다른 긴 작업이 worker를 점유하면 만료 처리는 그 작업 이후로 지연된다. 만료에는 wall clock이 아닌 monotonic clock을 사용한다. 모델 재사용/명시 load와 생성 종료가 사용 순서를 갱신하며 읽기 전용 ps는 수명을 늘리지 않는다.
+활성 생성은 keep_alive=0이어도 중간에 해제하지 않는다. 0은 생성 종료 정리에서 바로 해제한다. 유휴 모델의 가장 이른 만료 시각에만 worker를 깨우며, 만료 대상이 없으면 새 작업 또는 종료 요청까지 기다린다. 각 작업 종료 뒤에는 만료와 메모리 압박을 확인한다. 다른 긴 작업이 worker를 점유하면 만료 처리는 그 작업 이후로 지연된다. 만료에는 wall clock이 아닌 monotonic clock을 사용한다. 모델 재사용/명시 load와 생성 종료가 사용 순서를 갱신하며 읽기 전용 ps는 수명을 늘리지 않는다.
 
 ## 메모리 값의 의미
 
@@ -86,6 +105,18 @@ MemoryEstimate는 weightsBytes + contextBytes + overheadBytes의 예약 추정�
 
 GGUF는 파일 크기에 메타데이터의 layer 수·KV head 수·key/value dimension·context 길이·캐시 수와 호스트가 지정한 KV 형식을 적용한 예약을 더한다. MLX는 번들 크기와 config.json의 같은 attention 정보로 f16을 추정한다. 모델이 사용할 수 있는 캐시 수는 min(maxCachedContexts, maxCachedContextTokens/contextTokens)이다. 런타임/allocator 여유분은 max(256 MiB, 가중치 파일 크기의 25%)이다. attention 정보를 해석하지 못한 형식은 컨텍스트당 토큰당 256 KiB를 예약하며 외부 Runtime은 estimateMemory를 재정의할 수 있다.
 
+GGUF가 레이어별 KV head 배열을 제공하면 유효한 배열의 최댓값을 전체
+레이어에 적용해 보수적으로 예약한다. 배열 길이·형식·값이 유효하지 않으면
+기존 attention head 수를 사용한다. 레이어별 설정 때문에 일반 attention head
+수를 KV head 수로 오인해 과도하게 예약하지 않으며, 잘못된 메타데이터로
+예약이 줄어들지는 않는다.
+
 macOS는 free+inactive 페이지, Linux는 /proc/meminfo의 MemAvailable, Windows는 GlobalMemoryStatusEx의 ullAvailPhys를 읽는다. macOS speculative 페이지는 free에 이미 포함되어 중복 합산하지 않는다. 통합 메모리는 RAM과 GPU 항목으로 두 번 더하지 않는다. 전체 GPU 적재에서는 알려진 전용 GPU 메모리가 부족할 때 CPU 후보로 넘어간다. 부분 적재는 전체 가중치 크기로 GPU 공간을 예측할 수 없으므로 실제 모델·컨텍스트 할당으로 확인한다. 실제 GPU/컨텍스트 할당 실패도 기존 fallback 경로로 전달한다.
 
 이 산식은 일반적인 attention KV를 기준으로 한다. 모델별 특수 state, 동적 MLX 그래프, mmap·압축·allocator 동작, 다른 프로세스의 동시 할당 때문에 실제 피크는 다를 수 있다. cgroup/job/container 제한과 여러 iiLocalLLMD 간의 전역 예산 조정은 구현하지 않았다. `memory-budget-mib`, context 및 캐시 상한으로 배포 기기에 맞게 조정한다. 실제 8 GiB 장비의 벤치마크 대신 작은 메모리 예산과 하드웨어 입력을 주입한 정책 테스트로 분기를 검증했다.
+
+llama.cpp 모델 로드 옵션 `cpu_repack`은 CPU 전용 추가 버퍼의 재배치를
+선택한다. 기본값은 `true`로 기존 동작을 유지한다. `false`를 지정하면
+해당 추가 버퍼를 사용하지 않아 mmap된 가중치의 별도 재배치 복사를 피한다.
+이 경우 최초 적재와 메모리 사용량은 줄 수 있지만 CPU 추론은 느려질 수 있다.
+이 옵션은 불리언만 허용하며 장치 선택이나 무결성·메모리 예약을 바꾸지 않는다.

@@ -19,6 +19,10 @@ public:
     ModelRecord resolve(const QString& uri);
     ModelVerification verify(const QString& uri, const CancellationToken& token);
     ModelInfo load(const ModelLoadRequest& request, const CancellationToken& token);
+    ModelInfo pin(const ModelLoadRequest& request, const CancellationToken& token);
+    void unpin(const QString& uri);
+    bool isPinned(const QString& uri) const;
+    std::optional<ModelResidencyManager::Time> nextExpiry() const { return residency_.nextExpiry(); }
     LoadedModel& acquire(const QString& id, qint64 keepAlive, const CancellationToken& token);
     void release(const QString& id);
     void maintain();

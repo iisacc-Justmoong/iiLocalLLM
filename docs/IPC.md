@@ -45,7 +45,7 @@
 
 models.install은 관리 도구가 지정한 로컬 패키지를 서비스 저장소에 복사한다. 모델을 사용하는 요청은 model://id 또는 서비스 registry에 등록한 별칭을 받는다. manifest의 파일 목록은 IPC 응답에서 생략하며 절대 가중치 경로를 반환하지 않는다. 상대 entry_point는 manifest 메타데이터이다. 설치 스키마·원자적 게시·소유권 잠금·오류 계약은 [ModelManagement.md](ModelManagement.md)에 있다.
 
-models.load의 id/path/runtime/backend/device/device_id/gpu_layers 등 미지원 필드는 invalid_argument이다. 이전 path/model_id 계약은 허용하지 않는다. options 안의 실행 장치 지정도 거부한다. llama.cpp 모델 options는 threads 및 chat_template만 지원하며 MLX는 모델 options를 받지 않는다. 실행 선택은 서비스의 응답으로만 전달한다. context_tokens는 0~1,048,576 정수이며 1은 거부한다. 0 또는 생략 시 manifest 상한·서비스 기본값(2048)·캐시 토큰 예산 중 최솟값을 적용한다. 명시한 값이 manifest 상한을 넘으면 context_overflow이다.
+models.load의 id/path/runtime/backend/device/device_id/gpu_layers 등 미지원 필드는 invalid_argument이다. 이전 path/model_id 계약은 허용하지 않는다. options 안의 실행 장치 지정도 거부한다. llama.cpp 모델 options는 `threads`, `chat_template`, `tool_grammar`, `enable_thinking`, `embedding_pooling`, `cpu_repack`을 지원하며 MLX는 모델 options를 받지 않는다. `cpu_repack`은 불리언이며 생략하면 기존 재배치 동작을 유지한다. 실행 선택은 서비스의 응답으로만 전달한다. context_tokens는 0~1,048,576 정수이며 1은 거부한다. 0 또는 생략 시 manifest 상한·서비스 기본값(2048)·캐시 토큰 예산 중 최솟값을 적용한다. 명시한 값이 manifest 상한을 넘으면 context_overflow이다.
 
 ```json
 {"id":"load","result":{"model":"model://qwen3-8b-q4","manifest":{"schema_version":1,"id":"qwen3-8b-q4","architecture":"qwen3","format":"gguf","quantization":"Q4_K_M","context_length":32768,"capabilities":["text-generation","chat","tool-calling"],"entry_point":"model.gguf"},"loaded":true,"context_tokens":2048,"options":{},"execution":{"runtime":"llama.cpp","backend":"metal","device_id":"llama.cpp/MTL/MTL0","reason":"Apple Silicon with usable Metal","fallback_reasons":[]}}}

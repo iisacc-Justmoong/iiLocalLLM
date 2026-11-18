@@ -1,0 +1,19 @@
+#pragma once
+
+// C++ public entry for iiLocalLLM; the linked components select the API.
+#include <iiLocalLLM.h>
+#include <Types.h>
+#include <Parameters.h>
+#include <Hardware.h>
+#include <Memory.h>
+#include <ModelManifest.h>
+#include <ModelCatalog.h>
+#include <ModelInfo.h>
+#include <ModelPull.h>
+#include <Runtime.h>
+#include <Service.h>
+#include <Rpc.h>
+#include <LocalIpcServer.h>
+#include <HttpApiServer.h>
+#include <Multimodal.h>
+#include <MediaContent.h>

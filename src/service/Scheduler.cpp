@@ -2,8 +2,10 @@
 
 namespace iiLocalLLM::detail {
 
-Scheduler::Scheduler(int capacity, std::function<void()> onExit, std::function<void()> maintenance)
-    : capacity_(capacity), onExit_(std::move(onExit)), maintenance_(std::move(maintenance)), worker_([this] { loop(); }) {}
+Scheduler::Scheduler(int capacity, std::function<void()> onExit, std::function<void()> maintenance,
+                     std::function<std::optional<Deadline>()> nextDeadline)
+    : capacity_(capacity), onExit_(std::move(onExit)), maintenance_(std::move(maintenance)),
+      nextDeadline_(std::move(nextDeadline)), worker_([this] { loop(); }) {}
 Scheduler::~Scheduler() { shutdown(); }
 void Scheduler::shutdown()
 {
@@ -34,7 +36,9 @@ void Scheduler::loop()
         Item item;
         {
             std::unique_lock lock(mutex_);
-            ready_.wait_for(lock, std::chrono::milliseconds(100), [this] { return stopping_ || !queue_.empty(); });
+            const auto deadline = nextDeadline_ ? nextDeadline_() : std::nullopt;
+            if (deadline) ready_.wait_until(lock, *deadline, [this] { return stopping_ || !queue_.empty(); });
+            else ready_.wait(lock, [this] { return stopping_ || !queue_.empty(); });
             if (queue_.empty() && stopping_) break;
             if (queue_.empty()) {
                 lock.unlock();

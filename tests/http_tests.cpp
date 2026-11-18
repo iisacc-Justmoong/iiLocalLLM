@@ -1,5 +1,6 @@
 #include <iiLocalLLM.h>
-#include <QtTest/QtTest>
+#include "QtEventWait.h"
+#include <QtCore/QCoreApplication>
 #ifdef Q_OS_WIN
 #include <winsock2.h>
 #endif
@@ -10,6 +11,9 @@
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QTcpServer>
 #include <QtNetwork/QTcpSocket>
+#include <atomic>
+#include <functional>
+#include <future>
 #include <chrono>
 #include <mutex>
 #include <thread>
@@ -92,7 +96,7 @@ void write(const QString& name, const QByteArray& bytes)
     if (!file.open(QIODevice::WriteOnly) || file.write(bytes) != bytes.size()) throw std::runtime_error("Cannot create fixture");
 }
 struct Fixture {
-    QTemporaryDir root{QDir::current().filePath("http-XXXXXX")};
+    QTemporaryDir root{QDir::temp().filePath("http-XXXXXX")};
     std::shared_ptr<Probe> probe = std::make_shared<Probe>();
     std::unique_ptr<Service> service;
     explicit Fixture(int queue = 64)
@@ -142,15 +146,8 @@ QList<QJsonObject> events(const Reply& reply)
 }
 }
 class HttpTests : public QObject {
-    Q_OBJECT
-private slots:
-    void connectedRpcCancellationFinishesTheEventStream_data() {
-        QTest::addColumn<int>("code");
-        QTest::newRow("hook-cancellation")<<int(ErrorCode::Cancelled);
-        QTest::newRow("backend-shutdown")<<int(ErrorCode::ShuttingDown);
-    }
-    void connectedRpcCancellationFinishesTheEventStream() {
-        QFETCH(int,code);
+public:
+    void connectedRpcCancellationFinishesTheEventStream(int code) {
         class Handler final:public RpcHandler {
         public:
             ErrorCode code;
@@ -162,14 +159,14 @@ private slots:
                 return {"hook-stop",{},result};
             }
         };
-        Fixture fixture;HttpApiServer server(*fixture.service);server.setRpcHandler(std::make_shared<Handler>(ErrorCode(code)));QVERIFY(server.listen());
+        Fixture fixture;HttpApiServer server(*fixture.service);server.setRpcHandler(std::make_shared<Handler>(ErrorCode(code)));CTEST_CHECK(server.listen());
         const auto response=request(server.port(),QJsonDocument(QJsonObject{{"id","request"},{"method","test/hook"},{"stream",true}}).toJson(),
             "/v1/rpc",false,{{"Authorization","Bearer fixture"}});
-        QCOMPARE(response.status,200);QVERIFY(response.bytes.endsWith("data: [DONE]\n\n"));
-        const auto frames=events(response);QCOMPARE(frames.size(),3);QCOMPARE(frames.first()["event"],"accepted");
-        QCOMPARE(frames[1]["data"].toObject()["event"],"hook");QCOMPARE(frames.last()["event"],"done");
-        QCOMPARE(frames.last()["error"].toObject()["code"],enumName(ErrorCode(code)));
-        QCOMPARE(frames.last()["error"].toObject()["message"],"HOOK_STOP");QCOMPARE(frames.last()["request_id"],"hook-stop");
+        CTEST_COMPARE(response.status,200);CTEST_CHECK(response.bytes.endsWith("data: [DONE]\n\n"));
+        const auto frames=events(response);CTEST_COMPARE(frames.size(),3);CTEST_COMPARE(frames.first()["event"],"accepted");
+        CTEST_COMPARE(frames[1]["data"].toObject()["event"],"hook");CTEST_COMPARE(frames.last()["event"],"done");
+        CTEST_COMPARE(frames.last()["error"].toObject()["code"],enumName(ErrorCode(code)));
+        CTEST_COMPARE(frames.last()["error"].toObject()["message"],"HOOK_STOP");CTEST_COMPARE(frames.last()["request_id"],"hook-stop");
     }
     void waitingRpcCannotOccupyThePermissionControlCapacity() {
         class Handler final:public RpcHandler {
@@ -184,33 +181,27 @@ private slots:
             }
         };
         Fixture fixture;auto handler=std::make_shared<Handler>();HttpOptions limits;limits.workerThreads=1;limits.maxControlRequests=1;limits.requestTimeoutMs=1800;
-        HttpApiServer server(*fixture.service,limits);server.setRpcHandler(handler);QVERIFY(server.listen());
+        HttpApiServer server(*fixture.service,limits);server.setRpcHandler(handler);CTEST_CHECK(server.listen());
         const QList<QPair<QByteArray,QByteArray>> headers{{"Authorization","Bearer fixture-credential"}};
         auto rpc=[&](const QString& method){return request(server.port(),QJsonDocument(QJsonObject{{"id",method},{"method",method}}).toJson(),"/v1/rpc",false,headers);};
         auto waiting=std::async(std::launch::async,[&]{return rpc("test/wait");});
         struct Release {std::shared_ptr<Handler> handler;~Release(){try{handler->held.set_value(QJsonObject{});}catch(...) {}}} release{handler};
-        QTRY_VERIFY(handler->entered.load());QElapsedTimer timer;timer.start();
-        const auto control=rpc("agent.permissions.pending");QCOMPARE(control.status,200);
-        QVERIFY2(timer.elapsed()<700,"Permission control waited behind ordinary HTTP work");
-        QCOMPARE(rpc("test/ordinary").status,429);
-        QCOMPARE(request(server.port(),{},"/v1/models",true).status,429);
-        QCOMPARE(request(server.port(),{},"/health",true).status,200);
-        handler->held.set_value(QJsonObject{});QCOMPARE(waiting.get().status,200);
+        CTEST_WAIT_DEFAULT(handler->entered.load());QElapsedTimer timer;timer.start();
+        const auto control=rpc("agent.permissions.pending");CTEST_COMPARE(control.status,200);
+        CTEST_CHECK_MESSAGE(timer.elapsed()<700,"Permission control waited behind ordinary HTTP work");
+        CTEST_COMPARE(rpc("test/ordinary").status,429);
+        CTEST_COMPARE(request(server.port(),{},"/v1/models",true).status,429);
+        CTEST_COMPARE(request(server.port(),{},"/health",true).status,200);
+        handler->held.set_value(QJsonObject{});CTEST_COMPARE(waiting.get().status,200);
         auto controlWaiting=std::async(std::launch::async,[&]{return rpc("test/controlWait");});
         struct ControlRelease {std::shared_ptr<Handler> handler;~ControlRelease(){try{handler->heldControl.set_value(QJsonObject{});}catch(...) {}}} controlRelease{handler};
-        QTRY_VERIFY(handler->controlEntered.load());
-        QCOMPARE(rpc("agent.permissions.pending").status,429);
-        QCOMPARE(rpc("test/ordinary").status,200);
-        handler->heldControl.set_value(QJsonObject{});QCOMPARE(controlWaiting.get().status,200);
-        QCOMPARE(rpc("agent.permissions.pending").status,200);
+        CTEST_WAIT_DEFAULT(handler->controlEntered.load());
+        CTEST_COMPARE(rpc("agent.permissions.pending").status,429);
+        CTEST_COMPARE(rpc("test/ordinary").status,200);
+        handler->heldControl.set_value(QJsonObject{});CTEST_COMPARE(controlWaiting.get().status,200);
+        CTEST_COMPARE(rpc("agent.permissions.pending").status,200);
     }
-    void slowResponseKeepsCapacityUntilTheSocketCloses_data() {
-        QTest::addColumn<bool>("streaming");QTest::addColumn<bool>("control");
-        QTest::newRow("json-work")<<false<<false;QTest::newRow("sse-work")<<true<<false;
-        QTest::newRow("json-control")<<false<<true;QTest::newRow("sse-control")<<true<<true;
-    }
-    void slowResponseKeepsCapacityUntilTheSocketCloses() {
-        QFETCH(bool,streaming);QFETCH(bool,control);
+    void slowResponseKeepsCapacityUntilTheSocketCloses(bool streaming, bool control) {
         class Handler final:public RpcHandler {
         public:
             bool isControlMethod(const QString& method) const override {return method.startsWith("control/");}
@@ -223,137 +214,137 @@ private slots:
         };
         Fixture fixture;HttpOptions limits;limits.workerThreads=1;limits.maxControlRequests=1;
         limits.maxBufferedOutputBytes=24*1024*1024;limits.writeTimeoutMs=10000;
-        HttpApiServer server(*fixture.service,limits);server.setRpcHandler(std::make_shared<Handler>());QVERIFY(server.listen());
+        HttpApiServer server(*fixture.service,limits);server.setRpcHandler(std::make_shared<Handler>());CTEST_CHECK(server.listen());
         const auto prefix=control?QString("control/"):QString("work/");
         QTcpSocket stalled;stalled.setReadBufferSize(1);
 #ifdef Q_OS_WIN
         // Apply SO_RCVBUF before the handshake so TCP window scaling cannot
         // absorb the whole response before the deliberate slow reader starts.
         const auto socket = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, nullptr, 0, WSA_FLAG_OVERLAPPED);
-        QVERIFY(socket != INVALID_SOCKET);
+        CTEST_CHECK(socket != INVALID_SOCKET);
         const int receiveBytes = 1024;
-        QCOMPARE(setsockopt(socket, SOL_SOCKET, SO_RCVBUF,
+        CTEST_COMPARE(setsockopt(socket, SOL_SOCKET, SO_RCVBUF,
             reinterpret_cast<const char *>(&receiveBytes), sizeof(receiveBytes)), 0);
         sockaddr_in address{}; address.sin_family = AF_INET;
         address.sin_addr.s_addr = htonl(INADDR_LOOPBACK); address.sin_port = htons(server.port());
-        QCOMPARE(::connect(socket, reinterpret_cast<const sockaddr *>(&address), sizeof(address)), 0);
-        QVERIFY(stalled.setSocketDescriptor(qintptr(socket), QAbstractSocket::ConnectedState));
+        CTEST_COMPARE(::connect(socket, reinterpret_cast<const sockaddr *>(&address), sizeof(address)), 0);
+        CTEST_CHECK(stalled.setSocketDescriptor(qintptr(socket), QAbstractSocket::ConnectedState));
 #else
-        stalled.connectToHost("127.0.0.1",server.port());QVERIFY(stalled.waitForConnected());
+        stalled.connectToHost("127.0.0.1",server.port());CTEST_CHECK(stalled.waitForConnected());
 #endif
         stalled.setSocketOption(QAbstractSocket::ReceiveBufferSizeSocketOption,1024);
         const auto body=QJsonDocument(QJsonObject{{"id","slow"},{"method",prefix+"large"},{"stream",streaming}}).toJson(QJsonDocument::Compact);
         const QByteArray headers="POST /v1/rpc HTTP/1.1\r\nHost: 127.0.0.1:"+QByteArray::number(server.port())
             +"\r\nAuthorization: Bearer fixture\r\nContent-Type: application/json\r\nConnection: close\r\nContent-Length: "+QByteArray::number(body.size())+"\r\n\r\n";
-        stalled.write(headers+body);QVERIFY(stalled.waitForBytesWritten());QVERIFY(stalled.waitForReadyRead());
+        stalled.write(headers+body);CTEST_CHECK(stalled.waitForBytesWritten());CTEST_CHECK(stalled.waitForReadyRead());
         auto probe=[&](const QString& method){return request(server.port(),QJsonDocument(QJsonObject{{"id","probe"},{"method",method}}).toJson(),
             "/v1/rpc",false,{{"Authorization","Bearer fixture"}}).status;};
-        QCOMPARE(probe(prefix+"small"),429);
-        QCOMPARE(probe((control?QString("work/"):QString("control/"))+"small"),200);
-        stalled.abort();QTRY_COMPARE(probe(prefix+"small"),200);
+        CTEST_COMPARE(probe(prefix+"small"),429);
+        CTEST_COMPARE(probe((control?QString("work/"):QString("control/"))+"small"),200);
+        stalled.abort();CTEST_WAIT_COMPARE(probe(prefix+"small"),200);
     }
     void structuredToolsRoundTripAndSse()
     {
-        Fixture fixture; HttpApiServer http(*fixture.service); QVERIFY(http.listen());
+        Fixture fixture; HttpApiServer http(*fixture.service); CTEST_CHECK(http.listen());
         auto value = body();
         value["tools"] = QJsonArray{QJsonObject{{"type", "function"}, {"function", QJsonObject{{"name", "app_lookup"},
             {"description", "Read an app value"}, {"parameters", QJsonObject{{"type", "object"}}}}}}};
         value["tool_choice"] = "required"; value["parallel_tool_calls"] = false;
-        const auto first = post(http.port(), value); QCOMPARE(first.status, 200);
+        const auto first = post(http.port(), value); CTEST_COMPARE(first.status, 200);
         const auto choice = object(first)["choices"].toArray().first().toObject();
-        QCOMPARE(choice["finish_reason"].toString(), "tool_calls");
-        const auto message = choice["message"].toObject(); QVERIFY(message["content"].isNull());
+        CTEST_COMPARE(choice["finish_reason"].toString(), "tool_calls");
+        const auto message = choice["message"].toObject(); CTEST_CHECK(message["content"].isNull());
         const auto call = message["tool_calls"].toArray().first().toObject();
-        QCOMPARE(call["id"].toString(), "app-call"); QCOMPARE(call["function"].toObject()["arguments"].toString(), "{\"key\":\"value\"}");
+        CTEST_COMPARE(call["id"].toString(), "app-call"); CTEST_COMPARE(call["function"].toObject()["arguments"].toString(), "{\"key\":\"value\"}");
         { std::lock_guard lock(fixture.probe->mutex);
-            QCOMPARE(fixture.probe->conversation.toolChoice, "required"); QVERIFY(!fixture.probe->conversation.parallelToolCalls); }
+            CTEST_COMPARE(fixture.probe->conversation.toolChoice, "required"); CTEST_CHECK(!fixture.probe->conversation.parallelToolCalls); }
         auto history = value["messages"].toArray(); history.append(message);
         history.append(QJsonObject{{"role", "tool"}, {"tool_call_id", "app-call"}, {"content", "actual app value"}});
         auto followup = value; followup["messages"] = history; followup["tool_choice"] = "auto";
-        const auto second = post(http.port(), followup); QCOMPARE(second.status, 200);
-        QCOMPARE(object(second)["choices"].toArray().first().toObject()["message"].toObject()["content"].toString(), "actual app value");
+        const auto second = post(http.port(), followup); CTEST_COMPARE(second.status, 200);
+        CTEST_COMPARE(object(second)["choices"].toArray().first().toObject()["message"].toObject()["content"].toString(), "actual app value");
         value["stream"] = true; value["stream_options"] = QJsonObject{{"include_usage", true}};
-        const auto stream = post(http.port(), value); QCOMPARE(stream.status, 200);
-        QVERIFY(stream.bytes.endsWith("data: [DONE]\n\n"));
+        const auto stream = post(http.port(), value); CTEST_COMPARE(stream.status, 200);
+        CTEST_CHECK(stream.bytes.endsWith("data: [DONE]\n\n"));
         int toolChunks = 0, terminals = 0;
         for (const auto& event : events(stream)) for (const auto& item : event["choices"].toArray()) {
             const auto part = item.toObject(); const auto calls = part["delta"].toObject()["tool_calls"].toArray();
             if (!calls.isEmpty()) {
-                ++toolChunks; QCOMPARE(calls.first().toObject()["index"].toInt(), 0); QCOMPARE(calls.first().toObject()["id"].toString(), "app-call");
+                ++toolChunks; CTEST_COMPARE(calls.first().toObject()["index"].toInt(), 0); CTEST_COMPARE(calls.first().toObject()["id"].toString(), "app-call");
             }
             if (part["finish_reason"] == "tool_calls") ++terminals;
         }
-        QCOMPARE(toolChunks, 1); QCOMPARE(terminals, 1);
-        QCOMPARE(events(stream).last()["usage"].toObject()["completion_tokens"].toInt(), 5);
-        QCOMPARE(fixture.service->stats().get().sessions, 0);
+        CTEST_COMPARE(toolChunks, 1); CTEST_COMPARE(terminals, 1);
+        CTEST_COMPARE(events(stream).last()["usage"].toObject()["completion_tokens"].toInt(), 5);
+        CTEST_COMPARE(fixture.service->stats().get().sessions, 0);
     }
     void automaticResidencyAndKeepAlive()
     {
-        Fixture fixture; HttpApiServer http(*fixture.service); QVERIFY(http.listen());
+        Fixture fixture; HttpApiServer http(*fixture.service); CTEST_CHECK(http.listen());
         fixture.service->unloadModel("model://test").get();
         auto value = body(); value["keep_alive"] = "5m";
-        QCOMPARE(post(http.port(), value).status, 200);
-        QCOMPARE(fixture.service->models().get().size(), 1);
-        QCOMPARE(fixture.service->models().get().first().keepAliveMs, qint64(300000));
+        CTEST_COMPARE(post(http.port(), value).status, 200);
+        CTEST_COMPARE(fixture.service->models().get().size(), 1);
+        CTEST_COMPARE(fixture.service->models().get().first().keepAliveMs, qint64(300000));
         const auto before = fixture.service->stats().get().modelLoads;
-        QCOMPARE(post(http.port(), value).status, 200);
-        QCOMPARE(fixture.service->stats().get().modelLoads, before);
+        CTEST_COMPARE(post(http.port(), value).status, 200);
+        CTEST_COMPARE(fixture.service->stats().get().modelLoads, before);
         value["keep_alive"] = 0;
-        QCOMPARE(post(http.port(), value).status, 200);
-        QVERIFY(fixture.service->models().get().isEmpty());
-        QCOMPARE(fixture.service->stats().get().cachedContexts, 0);
+        CTEST_COMPARE(post(http.port(), value).status, 200);
+        CTEST_CHECK(fixture.service->models().get().isEmpty());
+        CTEST_COMPARE(fixture.service->stats().get().cachedContexts, 0);
         for (const auto& invalid : {QJsonValue(-1), QJsonValue("forever"), QJsonValue(QJsonValue::Null)}) {
-            value["keep_alive"] = invalid; QCOMPARE(post(http.port(), value).status, 400);
+            value["keep_alive"] = invalid; CTEST_COMPARE(post(http.port(), value).status, 400);
         }
-        QCOMPARE(fixture.service->stats().get().modelLoads, before);
+        CTEST_COMPARE(fixture.service->stats().get().modelLoads, before);
     }
     void jsonConversationAndDiscovery()
     {
-        Fixture fixture; HttpApiServer http(*fixture.service); QVERIFY(http.listen());
-        QCOMPARE(object(request(http.port(), {}, "/health", true)).value("status").toString(), QStringLiteral("ok"));
+        Fixture fixture; HttpApiServer http(*fixture.service); CTEST_CHECK(http.listen());
+        CTEST_COMPARE(object(request(http.port(), {}, "/health", true)).value("status").toString(), QStringLiteral("ok"));
         const auto models = object(request(http.port(), {}, "/v1/models", true)).value("data").toArray();
-        QCOMPARE(models.size(), 1); QCOMPARE(models[0].toObject().value("id").toString(), QStringLiteral("model://test"));
+        CTEST_COMPARE(models.size(), 1); CTEST_COMPARE(models[0].toObject().value("id").toString(), QStringLiteral("model://test"));
         auto value = body();
         value["messages"] = QJsonArray{QJsonObject{{"role", "system"}, {"content", "concise"}}, QJsonObject{{"role", "user"}, {"content", "old"}},
             QJsonObject{{"role", "assistant"}, {"content", "previous"}}, QJsonObject{{"role", "user"}, {"content", "latest"}}};
-        const auto reply = post(http.port(), value); QCOMPARE(reply.status, 200);
+        const auto reply = post(http.port(), value); CTEST_COMPARE(reply.status, 200);
         const auto result = object(reply);
-        QCOMPARE(result.value("object").toString(), QStringLiteral("chat.completion"));
-        QCOMPARE(result.value("choices").toArray()[0].toObject().value("message").toObject().value("content").toString(), QStringLiteral("안녕 🌍"));
-        QCOMPARE(result.value("usage").toObject().value("prompt_tokens").toInt(), 16);
-        { std::lock_guard lock(fixture.probe->mutex); QCOMPARE(fixture.probe->messages.size(), 4); QCOMPARE(fixture.probe->messages[2].content, QStringLiteral("previous")); }
-        QCOMPARE(fixture.service->stats().get().sessions, 0); QCOMPARE(fixture.service->stats().get().cachedContexts, 0);
-        const auto second = post(http.port(), body("fresh")); QCOMPARE(second.status, 200);
-        { std::lock_guard lock(fixture.probe->mutex); QCOMPARE(fixture.probe->messages.size(), 1); }
-        http.close(); QCOMPARE(http.port(), quint16(0)); QVERIFY(http.listen());
+        CTEST_COMPARE(result.value("object").toString(), QStringLiteral("chat.completion"));
+        CTEST_COMPARE(result.value("choices").toArray()[0].toObject().value("message").toObject().value("content").toString(), QStringLiteral("안녕 🌍"));
+        CTEST_COMPARE(result.value("usage").toObject().value("prompt_tokens").toInt(), 16);
+        { std::lock_guard lock(fixture.probe->mutex); CTEST_COMPARE(fixture.probe->messages.size(), 4); CTEST_COMPARE(fixture.probe->messages[2].content, QStringLiteral("previous")); }
+        CTEST_COMPARE(fixture.service->stats().get().sessions, 0); CTEST_COMPARE(fixture.service->stats().get().cachedContexts, 0);
+        const auto second = post(http.port(), body("fresh")); CTEST_COMPARE(second.status, 200);
+        { std::lock_guard lock(fixture.probe->mutex); CTEST_COMPARE(fixture.probe->messages.size(), 1); }
+        http.close(); CTEST_COMPARE(http.port(), quint16(0)); CTEST_CHECK(http.listen());
     }
     void sseStreamsUnicodeUsageAndStop()
     {
-        Fixture fixture; HttpApiServer http(*fixture.service); QVERIFY(http.listen());
+        Fixture fixture; HttpApiServer http(*fixture.service); CTEST_CHECK(http.listen());
         auto value = body("slow", true); value["max_tokens"] = 5; value["stream_options"] = QJsonObject{{"include_usage", true}};
         int fragments = 0;
         const auto reply = request(http.port(), QJsonDocument(value).toJson(), "/v1/chat/completions", false, {},
             [&](auto*, const auto&) { ++fragments; });
-        QCOMPARE(reply.status, 200); QVERIFY(reply.contentType.startsWith("text/event-stream")); QVERIFY(fragments > 1);
-        QVERIFY(reply.bytes.endsWith("data: [DONE]\n\n")); QCOMPARE(reply.bytes.count("data: [DONE]"), 1);
-        const auto chunks = events(reply); QCOMPARE(chunks.first().value("object").toString(), QStringLiteral("chat.completion.chunk"));
-        QCOMPARE(chunks.first().value("choices").toArray()[0].toObject().value("delta").toObject().value("role").toString(), QStringLiteral("assistant"));
-        QVERIFY(chunks.first().value("usage").isNull());
-        QCOMPARE(chunks.last().value("usage").toObject().value("completion_tokens").toInt(), 5);
+        CTEST_COMPARE(reply.status, 200); CTEST_CHECK(reply.contentType.startsWith("text/event-stream")); CTEST_CHECK(fragments > 1);
+        CTEST_CHECK(reply.bytes.endsWith("data: [DONE]\n\n")); CTEST_COMPARE(reply.bytes.count("data: [DONE]"), 1);
+        const auto chunks = events(reply); CTEST_COMPARE(chunks.first().value("object").toString(), QStringLiteral("chat.completion.chunk"));
+        CTEST_COMPARE(chunks.first().value("choices").toArray()[0].toObject().value("delta").toObject().value("role").toString(), QStringLiteral("assistant"));
+        CTEST_CHECK(chunks.first().value("usage").isNull());
+        CTEST_COMPARE(chunks.last().value("usage").toObject().value("completion_tokens").toInt(), 5);
         value = body("hello", true); value["stop"] = QStringLiteral("안녕");
         const auto stopped = events(post(http.port(), value)); QString text;
         for (const auto& chunk : stopped) for (const auto& choice : chunk.value("choices").toArray()) text += choice.toObject().value("delta").toObject().value("content").toString();
-        QVERIFY(text.isEmpty()); QCOMPARE(fixture.service->stats().get().cachedContexts, 0);
+        CTEST_CHECK(text.isEmpty()); CTEST_COMPARE(fixture.service->stats().get().cachedContexts, 0);
     }
     void validationAndHttpBoundaries()
     {
-        Fixture fixture; HttpOptions options; options.maxRequestBytes = 2048; HttpApiServer http(*fixture.service, options); QVERIFY(http.listen());
-        QCOMPARE(request(http.port(), "{").status, 400);
-        QCOMPARE(request(http.port(), QByteArray(3000, 'x')).status, 413);
-        QCOMPARE(request(http.port(), "{}", "/missing").status, 404);
-        QCOMPARE(request(http.port(), "{}", "/v1/chat/completions", false, {{"Content-Type", "text/plain"}}).status, 415);
-        QCOMPARE(request(http.port(), "{}", "/v1/chat/completions", false, {{"Origin", "https://example.com"}}).status, 403);
-        QCOMPARE(request(http.port(), "{}", "/v1/chat/completions", false, {{"Host", "rebind.example"}}).status, 403);
+        Fixture fixture; HttpOptions options; options.maxRequestBytes = 2048; HttpApiServer http(*fixture.service, options); CTEST_CHECK(http.listen());
+        CTEST_COMPARE(request(http.port(), "{").status, 400);
+        CTEST_COMPARE(request(http.port(), QByteArray(3000, 'x')).status, 413);
+        CTEST_COMPARE(request(http.port(), "{}", "/missing").status, 404);
+        CTEST_COMPARE(request(http.port(), "{}", "/v1/chat/completions", false, {{"Content-Type", "text/plain"}}).status, 415);
+        CTEST_COMPARE(request(http.port(), "{}", "/v1/chat/completions", false, {{"Origin", "https://example.com"}}).status, 403);
+        CTEST_COMPARE(request(http.port(), "{}", "/v1/chat/completions", false, {{"Host", "rebind.example"}}).status, 403);
         for (const auto& patch : QList<QJsonObject>{{{"model", "/model.gguf"}}, {{"runtime", "mlx"}}, {{"n", 2}}, {{"tools", QJsonObject{}}},
             {{"tool_choice", "invalid"}}, {{"tool_choice", "required"}}, {{"parallel_tool_calls", "false"}},
             {{"stream", 1}}, {{"max_tokens", 3.5}}, {{"max_tokens", 0}}, {{"max_tokens", 4}, {"max_completion_tokens", 4}},
@@ -361,54 +352,54 @@ private slots:
             {{"messages", QJsonArray{QJsonObject{{"role", "assistant"}, {"content", "invalid end"}}}}},
             {{"messages", QJsonArray{QJsonObject{{"role", "user"}, {"content", QJsonArray{}}}}}}}) {
             auto value = body(); for (auto it = patch.begin(); it != patch.end(); ++it) value[it.key()] = it.value();
-            const auto reply = post(http.port(), value); QCOMPARE(reply.status, 400); QVERIFY(object(reply).contains("error"));
+            const auto reply = post(http.port(), value); CTEST_COMPARE(reply.status, 400); CTEST_CHECK(object(reply).contains("error"));
         }
         auto missing = body(); missing["model"] = "model://missing";
-        QCOMPARE(post(http.port(), missing).status, 404);
-        QCOMPARE(fixture.probe->entered.load(), 0); QCOMPARE(fixture.service->stats().get().sessions, 0);
-        QTcpServer occupied; QVERIFY(occupied.listen(QHostAddress::LocalHost));
-        HttpApiServer conflict(*fixture.service); QVERIFY(!conflict.listen(occupied.serverPort())); QVERIFY(!conflict.errorString().isEmpty());
+        CTEST_COMPARE(post(http.port(), missing).status, 404);
+        CTEST_COMPARE(fixture.probe->entered.load(), 0); CTEST_COMPARE(fixture.service->stats().get().sessions, 0);
+        QTcpServer occupied; CTEST_CHECK(occupied.listen(QHostAddress::LocalHost));
+        HttpApiServer conflict(*fixture.service); CTEST_CHECK(!conflict.listen(occupied.serverPort())); CTEST_CHECK(!conflict.errorString().isEmpty());
     }
     void detailedGenerationParametersReachRuntime()
     {
-        Fixture fixture; HttpApiServer http(*fixture.service); QVERIFY(http.listen());
+        Fixture fixture; HttpApiServer http(*fixture.service); CTEST_CHECK(http.listen());
         auto value = body();
         value.insert("min_p",.05); value.insert("repetition_penalty",1.1);
         value.insert("presence_penalty",.2); value.insert("frequency_penalty",.3);
         value.insert("logit_bias",QJsonObject{{"42",-5}});
-        QCOMPARE(post(http.port(),value).status,200);
+        CTEST_COMPARE(post(http.port(),value).status,200);
         std::lock_guard lock(fixture.probe->mutex);
-        QCOMPARE(fixture.probe->options.minP,.05);
-        QCOMPARE(fixture.probe->options.repetitionPenalty,1.1);
-        QCOMPARE(fixture.probe->options.presencePenalty,.2);
-        QCOMPARE(fixture.probe->options.frequencyPenalty,.3);
-        QCOMPARE(fixture.probe->options.logitBias,QJsonObject({{"42",-5}}));
+        CTEST_COMPARE(fixture.probe->options.minP,.05);
+        CTEST_COMPARE(fixture.probe->options.repetitionPenalty,1.1);
+        CTEST_COMPARE(fixture.probe->options.presencePenalty,.2);
+        CTEST_COMPARE(fixture.probe->options.frequencyPenalty,.3);
+        CTEST_COMPARE(fixture.probe->options.logitBias,QJsonObject({{"42",-5}}));
     }
     void runtimeFailureDisconnectAndCleanup()
     {
-        Fixture fixture; HttpApiServer http(*fixture.service); QVERIFY(http.listen());
-        const auto failed = post(http.port(), body("fail")); QCOMPARE(failed.status, 500);
-        const auto stream = post(http.port(), body("fail", true)); QCOMPARE(stream.status, 200);
-        const auto chunks = events(stream); QVERIFY(chunks.last().contains("error")); QVERIFY(stream.bytes.endsWith("data: [DONE]\n\n"));
+        Fixture fixture; HttpApiServer http(*fixture.service); CTEST_CHECK(http.listen());
+        const auto failed = post(http.port(), body("fail")); CTEST_COMPARE(failed.status, 500);
+        const auto stream = post(http.port(), body("fail", true)); CTEST_COMPARE(stream.status, 200);
+        const auto chunks = events(stream); CTEST_CHECK(chunks.last().contains("error")); CTEST_CHECK(stream.bytes.endsWith("data: [DONE]\n\n"));
         request(http.port(), QJsonDocument(body("slow", true)).toJson(), "/v1/chat/completions", false, {},
             [](auto* reply, const auto&) { reply->abort(); });
-        QTRY_VERIFY_WITH_TIMEOUT(fixture.probe->cancelled.load() > 0, 3000);
-        QCOMPARE(fixture.service->stats().get().sessions, 0); QCOMPARE(fixture.service->stats().get().cachedContexts, 0);
-        QCOMPARE(post(http.port(), body()).status, 200);
+        CTEST_WAIT_VERIFY(fixture.probe->cancelled.load() > 0, 3000);
+        CTEST_COMPARE(fixture.service->stats().get().sessions, 0); CTEST_COMPARE(fixture.service->stats().get().cachedContexts, 0);
+        CTEST_COMPARE(post(http.port(), body()).status, 200);
     }
     void queueLimitsDeadlineAndSharedScheduler()
     {
         Fixture fixture(1); const auto session = fixture.service->createSession("model://test").get();
         auto native = fixture.service->chat({session, "slow", {}});
-        QTRY_VERIFY(fixture.probe->entered.load() == 1);
+        CTEST_WAIT_DEFAULT(fixture.probe->entered.load() == 1);
         auto queued = fixture.service->stats();
-        HttpApiServer http(*fixture.service); QVERIFY(http.listen());
-        const auto full = post(http.port(), body()); QCOMPARE(full.status, 429);
-        QCOMPARE(object(full).value("error").toObject().value("code").toString(), QStringLiteral("queue_full"));
+        HttpApiServer http(*fixture.service); CTEST_CHECK(http.listen());
+        const auto full = post(http.port(), body()); CTEST_COMPARE(full.status, 429);
+        CTEST_COMPARE(object(full).value("error").toObject().value("code").toString(), QStringLiteral("queue_full"));
         native.cancel(); (void)native.result.get(); (void)queued.get();
-        HttpOptions options; options.requestTimeoutMs = 80; HttpApiServer deadline(*fixture.service, options); QVERIFY(deadline.listen());
-        native = fixture.service->chat({session, "slow", {}}); QTRY_VERIFY(fixture.probe->entered.load() == 2);
-        QCOMPARE(post(deadline.port(), body()).status, 504);
+        HttpOptions options; options.requestTimeoutMs = 80; HttpApiServer deadline(*fixture.service, options); CTEST_CHECK(deadline.listen());
+        native = fixture.service->chat({session, "slow", {}}); CTEST_WAIT_DEFAULT(fixture.probe->entered.load() == 2);
+        CTEST_COMPARE(post(deadline.port(), body()).status, 504);
         native.cancel(); (void)native.result.get();
         // The timed-out HTTP job is cancelled but may still occupy the sole queue slot
         // until the scheduler observes it. Wait for admission before asserting cleanup.
@@ -416,23 +407,48 @@ private slots:
             try { (void)fixture.service->stats().get(); return true; }
             catch (const Error& error) { if (error.code() == ErrorCode::QueueFull) return false; throw; }
         };
-        QTRY_VERIFY(drained());
-        fixture.service->closeSession(session).get(); QCOMPARE(fixture.service->stats().get().sessions, 0);
+        CTEST_WAIT_DEFAULT(drained());
+        fixture.service->closeSession(session).get(); CTEST_COMPARE(fixture.service->stats().get().sessions, 0);
     }
     void outputLimitAndServerShutdown()
     {
-        Fixture fixture; HttpOptions options; options.maxBufferedOutputBytes = 1024; HttpApiServer http(*fixture.service, options); QVERIFY(http.listen());
-        QCOMPARE(post(http.port(), body("large")).status, 429);
-        QCOMPARE(fixture.service->stats().get().sessions, 0);
+        Fixture fixture; HttpOptions options; options.maxBufferedOutputBytes = 1024; HttpApiServer http(*fixture.service, options); CTEST_CHECK(http.listen());
+        CTEST_COMPARE(post(http.port(), body("large")).status, 429);
+        CTEST_COMPARE(fixture.service->stats().get().sessions, 0);
         QNetworkAccessManager network;
         QNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/v1/chat/completions").arg(http.port())));
         request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
         auto* reply = network.post(request, QJsonDocument(body("slow", true)).toJson());
-        QTRY_VERIFY(fixture.probe->entered.load() >= 2);
+        CTEST_WAIT_DEFAULT(fixture.probe->entered.load() >= 2);
         http.close(); reply->abort();
-        QCOMPARE(fixture.service->stats().get().sessions, 0); QCOMPARE(fixture.service->stats().get().cachedContexts, 0);
-        QVERIFY(fixture.probe->cancelled.load() > 0);
+        CTEST_COMPARE(fixture.service->stats().get().sessions, 0); CTEST_COMPARE(fixture.service->stats().get().cachedContexts, 0);
+        CTEST_CHECK(fixture.probe->cancelled.load() > 0);
     }
 };
-QTEST_GUILESS_MAIN(HttpTests)
-#include "http_tests.moc"
+int main(int argc, char** argv)
+{
+    QCoreApplication application(argc, argv);
+    if (argc > 2) {
+        std::cerr << "Expected an optional case name" << std::endl;
+        return 1;
+    }
+    iillm_ctest::CTestRunner runner(argc == 2 ? argv[1] : "");
+    HttpTests tests;
+    runner.run("connectedRpcCancellationFinishesTheEventStream:hook-cancellation", [&] { tests.connectedRpcCancellationFinishesTheEventStream(int(ErrorCode::Cancelled)); });
+    runner.run("connectedRpcCancellationFinishesTheEventStream:backend-shutdown", [&] { tests.connectedRpcCancellationFinishesTheEventStream(int(ErrorCode::ShuttingDown)); });
+    runner.run("waitingRpcCannotOccupyThePermissionControlCapacity", [&] { tests.waitingRpcCannotOccupyThePermissionControlCapacity(); });
+    runner.run("slowResponseKeepsCapacityUntilTheSocketCloses:json-work", [&] { tests.slowResponseKeepsCapacityUntilTheSocketCloses(false, false); });
+    runner.run("slowResponseKeepsCapacityUntilTheSocketCloses:sse-work", [&] { tests.slowResponseKeepsCapacityUntilTheSocketCloses(true, false); });
+    runner.run("slowResponseKeepsCapacityUntilTheSocketCloses:json-control", [&] { tests.slowResponseKeepsCapacityUntilTheSocketCloses(false, true); });
+    runner.run("slowResponseKeepsCapacityUntilTheSocketCloses:sse-control", [&] { tests.slowResponseKeepsCapacityUntilTheSocketCloses(true, true); });
+    runner.run("structuredToolsRoundTripAndSse", [&] { tests.structuredToolsRoundTripAndSse(); });
+    runner.run("automaticResidencyAndKeepAlive", [&] { tests.automaticResidencyAndKeepAlive(); });
+    runner.run("jsonConversationAndDiscovery", [&] { tests.jsonConversationAndDiscovery(); });
+    runner.run("sseStreamsUnicodeUsageAndStop", [&] { tests.sseStreamsUnicodeUsageAndStop(); });
+    runner.run("validationAndHttpBoundaries", [&] { tests.validationAndHttpBoundaries(); });
+    runner.run("detailedGenerationParametersReachRuntime", [&] { tests.detailedGenerationParametersReachRuntime(); });
+    runner.run("runtimeFailureDisconnectAndCleanup", [&] { tests.runtimeFailureDisconnectAndCleanup(); });
+    runner.run("queueLimitsDeadlineAndSharedScheduler", [&] { tests.queueLimitsDeadlineAndSharedScheduler(); });
+    runner.run("outputLimitAndServerShutdown", [&] { tests.outputLimitAndServerShutdown(); });
+    return runner.result();
+}
