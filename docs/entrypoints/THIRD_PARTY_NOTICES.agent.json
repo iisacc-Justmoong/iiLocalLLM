@@ -10,8 +10,8 @@
   },
   "source": {
     "path": "THIRD_PARTY_NOTICES.md",
-    "sha256": "68b236f8fc30b54664985d92e58116b4fb79d71c92240f8e99305fa054ba0bf2",
-    "bytes": 14383,
+    "sha256": "f50a263113bbe09fd9cbdfd680286da911af260977ca7cfa32656c477d8a96e8",
+    "bytes": 14390,
     "line_count": 91,
     "encoding": "utf-8",
     "language": "ko"
@@ -248,7 +248,7 @@
       "kind": "paragraph",
       "start_line": 43,
       "end_line": 43,
-      "raw": "llama.cpp 정적 링크 시 원본 MIT 고지를 설치 패키지의 share/iiLocalLLM/licenses/llama.cpp.LICENSE에 포함한다. MLX 환경에는 원본 배포판의 고지를 유지한다. iiLocalLLM의 MIT 선언은 외부 라이선스를 대체하지 않는다.\n"
+      "raw": "llama.cpp 정적 링크 시 원본 MIT 고지를 설치 패키지의 share/iiLocalLLM/licenses/llama.cpp.LICENSE에 포함한다. MLX 환경에는 원본 배포판의 고지를 유지한다. iiLocalLLM의 Apache-2.0 선언은 외부 라이선스를 대체하지 않는다.\n"
     },
     {
       "id": "b000022",
@@ -649,7 +649,7 @@
       {
         "block_id": "b000021",
         "line": 43,
-        "text": "llama.cpp 정적 링크 시 원본 MIT 고지를 설치 패키지의 share/iiLocalLLM/licenses/llama.cpp.LICENSE에 포함한다. MLX 환경에는 원본 배포판의 고지를 유지한다. iiLocalLLM의 MIT 선언은 외부 라이선스를 대체하지 않는다.",
+        "text": "llama.cpp 정적 링크 시 원본 MIT 고지를 설치 패키지의 share/iiLocalLLM/licenses/llama.cpp.LICENSE에 포함한다. MLX 환경에는 원본 배포판의 고지를 유지한다. iiLocalLLM의 Apache-2.0 선언은 외부 라이선스를 대체하지 않는다.",
         "basis": "lexical_match",
         "context": "paragraph"
       },

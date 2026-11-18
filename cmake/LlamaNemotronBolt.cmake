@@ -1,5 +1,7 @@
 # Backport the per-layer pruned expert handling from ggml-org/llama.cpp
-# cd0a5b6a180dff0048e5fd993098b21c0b2c91b8 (MIT). Keep fetched sources intact.
+# cd0a5b6a180dff0048e5fd993098b21c0b2c91b8. Fetched llama.cpp sources stay
+# under their upstream MIT license. This first-party CMake file is
+# Apache-2.0. Model weights keep their own licenses. Keep fetched sources intact.
 function(iilocal_fix_nemotron_bolt)
     get_target_property(_root llama SOURCE_DIR)
     set(_original "${_root}/models/nemotron-h.cpp")

@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 project(iiLocalLLM VERSION 0.56.1 LANGUAGES CXX)
+set(iiLocalLLM_SPDX_LICENSE "Apache-2.0")
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -27,6 +28,13 @@ find_package(Threads REQUIRED)
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
 include(CTest)
+if(BUILD_TESTING)
+    add_test(NAME iiLocalLLM.license
+        COMMAND ${CMAKE_COMMAND}
+            -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+            -DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/license_text.cmake)
+endif()
 include(cmake/SourceHeaders.cmake)
 include(cmake/TestWorkspace.cmake)
 # Qt and cpp-httplib are included in both library and executable targets.
@@ -340,7 +348,7 @@ install(FILES src/media/Multimodal.h src/media/MediaContent.h DESTINATION ${CMAK
 install(FILES src/core/Export.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 install(FILES catalog/parameters.json catalog/parameter-sources.json catalog/parameter-coverage.json DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM)
 install(FILES catalog/registry.json DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM)
-install(FILES README.md LICENSE THIRD_PARTY_NOTICES.md DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM)
+install(FILES README.md LICENSE NOTICE THIRD_PARTY_NOTICES.md DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM)
 install(DIRECTORY docs/ DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/docs)
 install(FILES src/runtimes/mlx_worker.py src/runtimes/mlx_sample_utils.py src/runtimes/mlx_import_index.py src/runtimes/mlx-requirements.txt src/runtimes/llama_memory.py DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/runtimes)
 install(FILES third_party/cpp-httplib/LICENSE DESTINATION ${CMAKE_INSTALL_DATADIR}/iiLocalLLM/licenses RENAME cpp-httplib.LICENSE)
