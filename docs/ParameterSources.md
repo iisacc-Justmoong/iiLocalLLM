@@ -2,6 +2,8 @@
 
 확인일: 2026-09-13. 설정 이름·주석·기본값을 공식 소스에서 추출하고 iiLocalLLM 스키마로 변환했다. 원본 코드를 실행하지 않는다. 카탈로그에 표현된 주석·선언의 원본 저작권 및 라이선스는 유지되며 아래 고지 파일도 설치한다.
 
+iiLocalLLM 자사 코드·문서·도구·테스트는 Apache-2.0이다. 아래 표와 `parameter-licenses`의 고지는 파라미터를 추출한 외부 프로젝트의 라이선스이며, 모델 가중치 라이선스와 구분한다.
+
 | 제공자 | 고정 revision | 필드 수 (상속 포함) | 라이선스 |
 | --- | --- | --- | --- |
 |가속| [f13f7c13b64c](https://github.com/huggingface/accelerate/tree/f13f7c13b64c10b6eb7e2d73171ea1b94c748701) | 177 | [Apache-2.0](parameter-licenses/accelerate-LICENSE) |

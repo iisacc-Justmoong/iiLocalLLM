@@ -1,4 +1,5 @@
 @PACKAGE_INIT@
+set(iiLocalLLM_SPDX_LICENSE "Apache-2.0")
 
 include(CMakeFindDependencyMacro)
 find_dependency(iiFileProvider 0.6 CONFIG HINTS "$ENV{IIFILEPROVIDER_PREFIX}" "$ENV{HOME}/.local/SDK/iiFileProvider")

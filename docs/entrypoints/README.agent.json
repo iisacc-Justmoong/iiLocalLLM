@@ -10,9 +10,9 @@
   },
   "source": {
     "path": "README.md",
-    "sha256": "5d0771ea42e7bb05244fe4e6a4114bcc79171eef6188bb29289df26913bae129",
-    "bytes": 4973,
-    "line_count": 96,
+    "sha256": "ed07626fafcee59bcaa1fe5bc4843dea9ec917dadfed0bbc5bfc5742b0fdfd59",
+    "bytes": 5330,
+    "line_count": 104,
     "encoding": "utf-8",
     "language": "en"
   },
@@ -249,7 +249,7 @@
       "kind": "paragraph",
       "start_line": 75,
       "end_line": 75,
-      "raw": "SPDX-License-Identifier: MIT\n"
+      "raw": "SPDX-License-Identifier: Apache-2.0\n"
     },
     {
       "id": "b000032",
@@ -262,100 +262,128 @@
       "id": "b000033",
       "kind": "paragraph",
       "start_line": 77,
-      "end_line": 79,
-      "raw": "The original code and documentation in this repository are licensed under the\n[MIT License](LICENSE). Third-party code, libraries, fonts, tools, and model\nweights retain their respective licenses.\n"
+      "end_line": 81,
+      "raw": "The iiLocalLLM module in this repository is licensed under the\n[Apache License, Version 2.0](LICENSE) (SPDX `Apache-2.0`).\nThe copyright notice is `Copyright (c) 2026 iisacc`. Attribution for this\ndistribution is in [NOTICE](NOTICE). The Korean statement of the same policy\nis [docs/License.md](docs/License.md).\n"
     },
     {
       "id": "b000034",
-      "kind": "blank",
-      "start_line": 80,
-      "end_line": 80,
-      "raw": "\n"
-    },
-    {
-      "id": "b000035",
-      "kind": "paragraph",
-      "start_line": 81,
-      "end_line": 81,
-      "raw": "Related implementation contracts: [Native tool-turn contracts](docs/NativeToolTemplates.md).\n"
-    },
-    {
-      "id": "b000036",
       "kind": "blank",
       "start_line": 82,
       "end_line": 82,
       "raw": "\n"
     },
     {
-      "id": "b000037",
+      "id": "b000035",
       "kind": "paragraph",
       "start_line": 83,
-      "end_line": 83,
-      "raw": "Managed MLX environments build a validated Transformers import index to avoid repeated model-source scans during worker startup. See [MLX import metadata](docs/MlxImportIndex.md) for preparation, invalidation and unchanged inference deadlines.\n"
+      "end_line": 84,
+      "raw": "iisacc products under Product are licensed under the GNU Affero General\nPublic License, version 3 or later (AGPL-3.0-or-later).\n"
+    },
+    {
+      "id": "b000036",
+      "kind": "blank",
+      "start_line": 85,
+      "end_line": 85,
+      "raw": "\n"
+    },
+    {
+      "id": "b000037",
+      "kind": "paragraph",
+      "start_line": 86,
+      "end_line": 87,
+      "raw": "Third-party and vendored code, libraries, fonts, tools, and model weights\nkeep their original licenses.\n"
     },
     {
       "id": "b000038",
-      "kind": "blank",
-      "start_line": 84,
-      "end_line": 84,
-      "raw": "\n"
-    },
-    {
-      "id": "b000039",
-      "kind": "paragraph",
-      "start_line": 85,
-      "end_line": 85,
-      "raw": "Model integrity still verifies every byte; the macOS streaming SHA-256 path uses the system implementation. See [model integrity](docs/ModelIntegrity.md).\n"
-    },
-    {
-      "id": "b000040",
-      "kind": "blank",
-      "start_line": 86,
-      "end_line": 86,
-      "raw": "\n"
-    },
-    {
-      "id": "b000041",
-      "kind": "paragraph",
-      "start_line": 87,
-      "end_line": 87,
-      "raw": "Source and adjacent headers are grouped by responsibility under `src/`; installed flat include names remain unchanged. See [source layout](docs/SourceLayout.md).\n"
-    },
-    {
-      "id": "b000042",
       "kind": "blank",
       "start_line": 88,
       "end_line": 88,
       "raw": "\n"
     },
     {
-      "id": "b000043",
-      "kind": "html",
+      "id": "b000039",
+      "kind": "paragraph",
       "start_line": 89,
       "end_line": 89,
-      "raw": "<!-- workspace-docs:readme:start -->\n"
+      "raw": "Related implementation contracts: [Native tool-turn contracts](docs/NativeToolTemplates.md).\n"
+    },
+    {
+      "id": "b000040",
+      "kind": "blank",
+      "start_line": 90,
+      "end_line": 90,
+      "raw": "\n"
+    },
+    {
+      "id": "b000041",
+      "kind": "paragraph",
+      "start_line": 91,
+      "end_line": 91,
+      "raw": "Managed MLX environments build a validated Transformers import index to avoid repeated model-source scans during worker startup. See [MLX import metadata](docs/MlxImportIndex.md) for preparation, invalidation and unchanged inference deadlines.\n"
+    },
+    {
+      "id": "b000042",
+      "kind": "blank",
+      "start_line": 92,
+      "end_line": 92,
+      "raw": "\n"
+    },
+    {
+      "id": "b000043",
+      "kind": "paragraph",
+      "start_line": 93,
+      "end_line": 93,
+      "raw": "Model integrity still verifies every byte; the macOS streaming SHA-256 path uses the system implementation. See [model integrity](docs/ModelIntegrity.md).\n"
     },
     {
       "id": "b000044",
+      "kind": "blank",
+      "start_line": 94,
+      "end_line": 94,
+      "raw": "\n"
+    },
+    {
+      "id": "b000045",
+      "kind": "paragraph",
+      "start_line": 95,
+      "end_line": 95,
+      "raw": "Source and adjacent headers are grouped by responsibility under `src/`; installed flat include names remain unchanged. See [source layout](docs/SourceLayout.md).\n"
+    },
+    {
+      "id": "b000046",
+      "kind": "blank",
+      "start_line": 96,
+      "end_line": 96,
+      "raw": "\n"
+    },
+    {
+      "id": "b000047",
+      "kind": "html",
+      "start_line": 97,
+      "end_line": 97,
+      "raw": "<!-- workspace-docs:readme:start -->\n"
+    },
+    {
+      "id": "b000048",
       "kind": "heading",
-      "start_line": 90,
-      "end_line": 90,
+      "start_line": 98,
+      "end_line": 98,
       "raw": "## Documentation entry points\n",
       "level": 2,
       "title": "Documentation entry points"
     },
     {
-      "id": "b000045",
+      "id": "b000049",
       "kind": "blank",
-      "start_line": 91,
-      "end_line": 91,
+      "start_line": 99,
+      "end_line": 99,
       "raw": "\n"
     },
     {
-      "id": "b000046",
+      "id": "b000050",
       "kind": "list",
-      "start_line": 92,
-      "end_line": 95,
+      "start_line": 100,
+      "end_line": 103,
       "raw": "- Human overview: this English `README.md`.\n- Agent instructions: [AGENT.md](AGENT.md).\n- Human documentation: [documentation index](docs/README.md).\n- Structured agent documentation: [agent index](docs/agent-index.json).\n",
       "items": [
         {
@@ -381,10 +409,10 @@
       ]
     },
     {
-      "id": "b000047",
+      "id": "b000051",
       "kind": "html",
-      "start_line": 96,
-      "end_line": 96,
+      "start_line": 104,
+      "end_line": 104,
       "raw": "<!-- workspace-docs:readme:end -->\n"
     }
   ],
@@ -414,12 +442,12 @@
       "start_line": 73
     },
     {
-      "block_id": "b000044",
+      "block_id": "b000048",
       "parent_id": "b000001",
       "level": 2,
       "title": "Documentation entry points",
       "anchor": "documentation-entry-points",
-      "start_line": 90
+      "start_line": 98
     }
   ],
   "indexes": {
@@ -554,59 +582,73 @@
       },
       {
         "block_id": "b000033",
-        "label": "MIT License",
+        "label": "Apache License, Version 2.0",
         "target": "LICENSE",
         "kind": "relative",
         "line": 78
       },
       {
-        "block_id": "b000035",
-        "label": "Native tool-turn contracts",
-        "target": "docs/NativeToolTemplates.md",
+        "block_id": "b000033",
+        "label": "NOTICE",
+        "target": "NOTICE",
+        "kind": "relative",
+        "line": 80
+      },
+      {
+        "block_id": "b000033",
+        "label": "docs/License.md",
+        "target": "docs/License.md",
         "kind": "relative",
         "line": 81
       },
       {
-        "block_id": "b000037",
-        "label": "MLX import metadata",
-        "target": "docs/MlxImportIndex.md",
-        "kind": "relative",
-        "line": 83
-      },
-      {
         "block_id": "b000039",
-        "label": "model integrity",
-        "target": "docs/ModelIntegrity.md",
+        "label": "Native tool-turn contracts",
+        "target": "docs/NativeToolTemplates.md",
         "kind": "relative",
-        "line": 85
+        "line": 89
       },
       {
         "block_id": "b000041",
-        "label": "source layout",
-        "target": "docs/SourceLayout.md",
+        "label": "MLX import metadata",
+        "target": "docs/MlxImportIndex.md",
         "kind": "relative",
-        "line": 87
+        "line": 91
       },
       {
-        "block_id": "b000046",
-        "label": "AGENT.md",
-        "target": "AGENT.md",
+        "block_id": "b000043",
+        "label": "model integrity",
+        "target": "docs/ModelIntegrity.md",
         "kind": "relative",
         "line": 93
       },
       {
-        "block_id": "b000046",
+        "block_id": "b000045",
+        "label": "source layout",
+        "target": "docs/SourceLayout.md",
+        "kind": "relative",
+        "line": 95
+      },
+      {
+        "block_id": "b000050",
+        "label": "AGENT.md",
+        "target": "AGENT.md",
+        "kind": "relative",
+        "line": 101
+      },
+      {
+        "block_id": "b000050",
         "label": "documentation index",
         "target": "docs/README.md",
         "kind": "relative",
-        "line": 94
+        "line": 102
       },
       {
-        "block_id": "b000046",
+        "block_id": "b000050",
         "label": "agent index",
         "target": "docs/agent-index.json",
         "kind": "relative",
-        "line": 95
+        "line": 103
       }
     ],
     "tables": []
